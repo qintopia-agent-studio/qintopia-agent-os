@@ -104,6 +104,8 @@ function runFinalizer(repoFixtureRoot, binRoot, files) {
       files.productionRealActivity,
       "--qiwe-group-arrival-confirmation",
       files.qiweGroupArrivalConfirmation,
+      "--daily-case-report-observation",
+      files.dailyCaseReportObservation,
       "--output",
       files.output,
     ],
@@ -155,6 +157,11 @@ function createFixtureRepo() {
       repoFixtureRoot,
       "qiwe-group-arrival-confirmation-output.txt",
       "xiaoman_qiwe_group_arrival_confirmation_evidence={}\n"
+    ),
+    dailyCaseReportObservation: writeFile(
+      repoFixtureRoot,
+      "daily-case-report-observation.json",
+      '{"schema_version":1}\n'
     ),
     output: path.join(
       repoFixtureRoot,

@@ -23,6 +23,8 @@ Allowed targets:
 ```text
 qiwe-image-send
 xiaoman-daily-case-report-auto-publish
+hermes-cron-snapshot
+hermes-cron-live-parity
 erhua-morning-brief-worker-run
 xiaoman-daily-case-report-worker-run
 xiaoman-weekly-recruitment-worker-run
@@ -55,6 +57,33 @@ without exposing raw secrets. Successful evidence includes
 `xiaoman_daily_case_report_auto_publish_observation_state=enabled` or
 `xiaoman_daily_case_report_auto_publish_observation_state=disabled`.
 
+## Hermes Cron Snapshot And Parity
+
+`hermes-cron-snapshot` checks only the fixed server-local snapshot boundary. Successful
+evidence is limited to:
+
+- `hermes_cron_snapshot_observation_result=success`
+- `hermes_cron_snapshot_timer_unit_present=true`
+- `hermes_cron_snapshot_service_unit_present=true`
+- `hermes_cron_snapshot_repo_present=true`
+- `hermes_cron_snapshot_remote_absent=true`
+- `hermes_cron_snapshot_latest_commit_epoch=<unix>`
+
+`hermes-cron-live-parity` compares the reviewed registry in `release/current` with the
+live Hermes profile `jobs.json` files. It verifies schedule, script, `no_agent`,
+`deliver`, and the fixed `origin` routing boundary, resolving live chat ids only from
+the reviewed server-local profile env files. Successful evidence is limited to:
+
+- `hermes_cron_live_parity_result=success`
+- `hermes_cron_live_parity_reviewed_count=5`
+- `hermes_cron_live_parity_live_count=5`
+- `hermes_cron_live_parity_enabled_count=<count>`
+
+Both targets emit only fixed failure reason tokens through
+`hermes_cron_snapshot_observation_error=<token>` or
+`hermes_cron_live_parity_observation_error=<token>`. They must not print live
+`jobs.json`, snapshot contents, group ids, prompts, env values, or raw script output.
+
 ## Worker-Run Evidence
 
 The `*-worker-run` targets prove a reviewed Hermes cron wrapper actually reached its
@@ -70,20 +99,26 @@ target checks, through the fixed release-local
   exists and keeps the reviewed draft invariants (`requires_human_confirmation=true`,
   `external_send_executed=false`, `safe_for_member_chat=false`) plus a valid
   `date`/`week_start`.
+- For `xiaoman-daily-case-report-worker-run`, a new worker summary is optional for
+  backward-compatible observation. When present, it is parsed only for safe counters and
+  character-universe schema flags, and the observation fails if the summary claims
+  `raw_messages_included=true` or `profile_fact_text_included=true`.
 
 Successful evidence records only sanitized fields such as
 `erhua_morning_brief_worker_run_result=success`,
 `erhua_morning_brief_worker_run_epoch=<unix>`, and for weekly targets
 `xiaoman_weekly_preview_worker_summary_present=true` and
-`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. When the fixed Hermes cron
-log is absent or contains no reviewed sentinel for the task, the observation passes with
-`<key>_worker_run_result=not_started`: before the first scheduled trigger this means the
-Hermes job has not fired yet, not a regression. Rerun the observation after the
-scheduled time; `not_started` after the scheduled time means the Hermes job did not
-reach the reviewed wrapper and needs reviewed investigation. Failure evidence records
-only the fixed reason token, one of `worker_failed`, `summary_missing`,
-`summary_invalid`, or `python_unavailable`. The script echoes no log output, env values,
-group ids, or summary text.
+`xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. For the daily case report,
+new runs may also record `xiaoman_daily_case_report_worker_character_count=<count>` and
+`xiaoman_daily_case_report_worker_character_universe_schema_version=<schema>`. When the
+fixed Hermes cron log is absent or contains no reviewed sentinel for the task, the
+observation passes with `<key>_worker_run_result=not_started`: before the first
+scheduled trigger this means the Hermes job has not fired yet, not a regression. Rerun
+the observation after the scheduled time; `not_started` after the scheduled time means
+the Hermes job did not reach the reviewed wrapper and needs reviewed investigation.
+Failure evidence records only the fixed reason token, one of `worker_failed`,
+`summary_missing`, `summary_invalid`, or `python_unavailable`. The script echoes no log
+output, env values, group ids, or summary text.
 
 Worker-run evidence is read-only: it inspects the fixed Hermes cron log and reads the
 worker's summary JSON only. It does not start or stop services, write state, or call

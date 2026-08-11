@@ -40,6 +40,46 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             '"${report_date_args[@]}"',
             worker,
         )
+        self.assertIn(
+            'content_metrics = candidate.get("content_metrics") or {}',
+            worker,
+        )
+        self.assertIn(
+            'character_universe = rendered.get("character_universe") or {}',
+            worker,
+        )
+        self.assertIn(
+            '"content_metrics": {',
+            worker,
+        )
+        self.assertIn(
+            '"character_universe": {',
+            worker,
+        )
+        self.assertIn(
+            '"raw_messages_included": character_universe.get("raw_messages_included") is True',
+            worker,
+        )
+        self.assertIn(
+            '"profile_fact_text_included": character_universe.get("profile_fact_text_included") is True',
+            worker,
+        )
+        self.assertIn(
+            '"storyline_candidate_count": len(character_universe.get("storyline_candidates") or [])',
+            worker,
+        )
+        self.assertIn(
+            '"$PYTHON_BIN" - "$render_report" "$upload_report" "$publish_report"',
+            worker,
+        )
+        self.assertNotIn(
+            '"daily_report_markdown": rendered.get("daily_report_markdown")',
+            worker,
+        )
+        self.assertNotIn(
+            '"people": character_universe.get("people")',
+            worker,
+        )
 
     def test_backfill_starts_reviewed_service_with_single_date_override(self) -> None:
         backfill = BACKFILL_PATH.read_text(encoding="utf-8")

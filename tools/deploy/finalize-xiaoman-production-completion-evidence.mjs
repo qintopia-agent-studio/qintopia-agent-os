@@ -28,6 +28,8 @@ runNodeScript("build Xiaoman production completion manifest", [
   options.productionRealActivity,
   "--qiwe-group-arrival-confirmation",
   options.qiweGroupArrivalConfirmation,
+  "--daily-case-report-observation",
+  options.dailyCaseReportObservation,
   "--output",
   options.output,
 ]);
@@ -48,6 +50,8 @@ runNodeScript("check Xiaoman production completion evidence", [
   options.productionRealActivity,
   "--qiwe-group-arrival-confirmation",
   options.qiweGroupArrivalConfirmation,
+  "--daily-case-report-observation",
+  options.dailyCaseReportObservation,
 ]);
 
 process.stdout.write(
@@ -78,6 +82,7 @@ function parseArgs(argv) {
     "huabaosi-production-canary",
     "production-real-activity",
     "qiwe-group-arrival-confirmation",
+    "daily-case-report-observation",
     "output",
   ]) {
     if (!parsed[key]) {
@@ -116,6 +121,10 @@ function parseArgs(argv) {
     qiweGroupArrivalConfirmation: resolveExistingFile(
       parsed["qiwe-group-arrival-confirmation"],
       "qiwe-group-arrival-confirmation"
+    ),
+    dailyCaseReportObservation: resolveExistingFile(
+      parsed["daily-case-report-observation"],
+      "daily-case-report-observation"
     ),
     output: path.resolve(parsed.output),
   };
@@ -170,7 +179,7 @@ function releaseTag(value) {
 
 function usage() {
   fail(
-    "usage: node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --staging-runtime-readiness <staging-runtime-readiness-output.txt> --huabaosi-staging <huabaosi-staging-output.txt> --qiwe-staging <qiwe-staging-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --output <completed-xiaoman-production-completion-evidence.json>"
+    "usage: node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs --release-please-pr-number <number> --release-please-head-sha <sha> --release-tag <vX.Y.Z> --released-commit-sha <sha> --qiwe-production-enablement-pr-number <number> --qiwe-production-enablement-head-sha <sha> --staging-runtime-readiness <staging-runtime-readiness-output.txt> --huabaosi-staging <huabaosi-staging-output.txt> --qiwe-staging <qiwe-staging-output.txt> --huabaosi-production-canary <huabaosi-production-canary-output.txt> --production-real-activity <production-evidence-output.txt> --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> --daily-case-report-observation <production-observation-deploy-result.json> --output <completed-xiaoman-production-completion-evidence.json>"
   );
 }
 

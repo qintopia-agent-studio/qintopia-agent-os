@@ -40,6 +40,7 @@ DEFAULT_CASE_LIMIT = 6
 PRODUCTION_PSQL_BIN = "/usr/bin/psql"
 PRODUCTION_PSQL_PATH = "/usr/bin:/bin"
 DEFAULT_SUSPECT_LIMIT = 5
+DEFAULT_CHARACTER_LIMIT = 4
 DEFAULT_HOURLY_BUCKETS = 24
 DEFAULT_WINDOW_HOURS = 24
 DEFAULT_MIN_CASE_MESSAGES = 3
@@ -51,6 +52,7 @@ DEFAULT_HOT_TOPIC_MAX_CHARS = 8
 DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
 TEMPLATE_VERSION = "xiaoman-daily-case-report-v2"
+MEMORY_LOOKBACK_DAYS = 90
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -109,6 +111,51 @@ TOPIC_MARKER_HINTS: tuple[str, ...] = (
     "安排",
 )
 
+CHARACTER_ROLE_RULES: tuple[tuple[str, str, str, tuple[str, ...]], ...] = (
+    (
+        "activity_organizer",
+        "活动推进者",
+        "把松散聊天推成下一步行动",
+        ("活动", "报名", "接龙", "安排", "预告", "提醒", "收集", "表单"),
+    ),
+    (
+        "resource_scout",
+        "资料投喂员",
+        "把有用线索递到群友手边",
+        ("分享", "资料", "链接", "推荐", "文章", "工具", "教程", "收藏"),
+    ),
+    (
+        "question_raiser",
+        "问题发射台",
+        "把模糊卡点抛到台面上",
+        ("求助", "请问", "怎么", "有没有", "为什么", "吗", "？", "?"),
+    ),
+    (
+        "answerer",
+        "现场解法师",
+        "把经验拆成群里能接住的话",
+        ("建议", "可以", "试试", "检查", "经验", "我觉得", "先", "注意"),
+    ),
+    (
+        "atmosphere",
+        "气氛承包人",
+        "负责让一天的聊天不只是信息流",
+        ("欢迎", "哈哈", "加油", "稳住", "笑死", "太好", "厉害"),
+    ),
+)
+
+MEMORY_FACT_ROLE_LABELS: dict[str, str] = {
+    "activity_organizer": "活动推进者",
+    "activity_participation": "活动在场者",
+    "content_story_lead": "故事线雷达",
+    "operation_signal": "规则观察员",
+    "resource_scout": "资料投喂员",
+    "service_need": "需求提醒人",
+    "unresolved_question": "问题发射台",
+}
+
+MEMORY_FACT_TYPES: tuple[str, ...] = tuple(MEMORY_FACT_ROLE_LABELS)
+
 CASE_CARD_COLORS = [
     ("#fef3c7", "#92400e"),  # amber
     ("#fee2e2", "#991b1b"),  # red
@@ -127,6 +174,7 @@ class ReportMessage:
     text: str
     sent_at: datetime | None
     message_kind: str
+    person_id: str | None = None
 
 
 @dataclass
@@ -153,6 +201,26 @@ class Suspect:
 
 
 @dataclass
+class CharacterCard:
+    rank: int
+    name: str
+    role_label: str
+    one_liner: str
+    evidence: str
+    message_count: int
+    topic_count: int
+    memory_label: str = ""
+
+
+@dataclass
+class CharacterMemory:
+    person_id: str
+    recent_fact_count: int
+    lifetime_fact_count: int
+    dominant_role_label: str
+
+
+@dataclass
 class HotTopic:
     rank: int
     keyword: str
@@ -176,6 +244,9 @@ class ReportData:
     suspects: list[Suspect]
     highlight: str | None
     hot_topics: list[HotTopic] = field(default_factory=list)
+    character_count: int = 0
+    characters: list[CharacterCard] = field(default_factory=list)
+    character_universe: dict[str, Any] = field(default_factory=dict)
     window_start: str = ""
     window_end: str = ""
     timezone: str = DEFAULT_TIMEZONE
@@ -298,6 +369,7 @@ def _normalize_message_times(
                 text=msg.text,
                 sent_at=sent_at,
                 message_kind=msg.message_kind,
+                person_id=msg.person_id,
             )
         )
     return normalized
@@ -333,6 +405,7 @@ def _load_fixture(path: str) -> list[ReportMessage]:
                 text=(item.get("text") or ""),
                 sent_at=sent_at,
                 message_kind=str(item.get("message_kind", "text")),
+                person_id=str(item.get("sender_person_id") or item.get("person_id") or "") or None,
             )
         )
     return messages
@@ -362,7 +435,8 @@ def _fetch_messages(
             m.sender_name,
             m.text,
             m.message_kind,
-            COALESCE(m.sent_at, m.received_at) AS report_time
+            COALESCE(m.sent_at, m.received_at) AS report_time,
+            m.sender_person_id::text AS sender_person_id
         FROM qintopia_messages.messages m
         WHERE m.platform = 'qiwe'
           AND m.chat_type = 'group'
@@ -391,6 +465,7 @@ def _fetch_messages(
                         text=row[3] or "",
                         sent_at=row[5],
                         message_kind=row[4] or "text",
+                        person_id=row[6],
                     )
                 )
     return messages
@@ -438,7 +513,8 @@ def _fetch_messages_with_psql(
                 COALESCE(m.sender_name, '匿名') AS sender_name,
                 COALESCE(m.text, '') AS text,
                 COALESCE(m.message_kind, 'text') AS message_kind,
-                COALESCE(m.sent_at, m.received_at) AS report_time
+                COALESCE(m.sent_at, m.received_at) AS report_time,
+                m.sender_person_id::text AS sender_person_id
             FROM qintopia_messages.messages m
             WHERE m.platform = 'qiwe'
               AND m.chat_type = 'group'
@@ -506,9 +582,183 @@ def _fetch_messages_with_psql(
                 text=str(row.get("text", "")),
                 sent_at=report_time,
                 message_kind=str(row.get("message_kind", "text") or "text"),
+                person_id=str(row.get("sender_person_id") or "") or None,
             )
         )
     return messages
+
+
+def _fetch_character_memory(
+    person_ids: set[str],
+    end: datetime,
+) -> dict[str, CharacterMemory]:
+    clean_ids = sorted(
+        {
+            person_id
+            for person_id in person_ids
+            if re.fullmatch(r"[0-9a-fA-F-]{32,36}", person_id or "")
+        }
+    )
+    if not clean_ids:
+        return {}
+    db_url = _database_url()
+    if not db_url:
+        return {}
+
+    start = end - timedelta(days=MEMORY_LOOKBACK_DAYS)
+    try:
+        import psycopg
+    except ImportError:
+        return _fetch_character_memory_with_psql(db_url, clean_ids, start, end)
+
+    sql = """
+        WITH facts AS (
+            SELECT
+                mf.person_id::text AS person_id,
+                mf.fact_type,
+                mf.observed_at
+            FROM qintopia_identity.member_facts mf
+            WHERE mf.person_id::text = ANY(%s::text[])
+              AND mf.revoked_at IS NULL
+              AND mf.fact_type = ANY(%s::text[])
+              AND mf.observed_at < %s
+        ),
+        role_counts AS (
+            SELECT person_id, fact_type, count(*)::int AS fact_count
+            FROM facts
+            GROUP BY person_id, fact_type
+        ),
+        dominant AS (
+            SELECT DISTINCT ON (person_id) person_id, fact_type
+            FROM role_counts
+            ORDER BY person_id, fact_count DESC, fact_type ASC
+        )
+        SELECT
+            facts.person_id,
+            count(*) FILTER (WHERE facts.observed_at >= %s)::int AS recent_fact_count,
+            count(*)::int AS lifetime_fact_count,
+            dominant.fact_type AS dominant_fact_type
+        FROM facts
+        JOIN dominant ON dominant.person_id = facts.person_id
+        GROUP BY facts.person_id, dominant.fact_type
+    """
+    with psycopg.connect(db_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (clean_ids, list(MEMORY_FACT_TYPES), end, start))
+            return _character_memory_from_rows(cur.fetchall())
+
+
+def _fetch_character_memory_with_psql(
+    db_url: str,
+    person_ids: list[str],
+    start: datetime,
+    end: datetime,
+) -> dict[str, CharacterMemory]:
+    sql = r"""
+        WITH facts AS (
+            SELECT
+                mf.person_id::text AS person_id,
+                mf.fact_type,
+                mf.observed_at
+            FROM qintopia_identity.member_facts mf
+            WHERE mf.person_id::text = ANY(string_to_array(:'person_ids', ','))
+              AND mf.revoked_at IS NULL
+              AND mf.fact_type = ANY(ARRAY[
+                'activity_organizer',
+                'activity_participation',
+                'content_story_lead',
+                'operation_signal',
+                'resource_scout',
+                'service_need',
+                'unresolved_question'
+              ]::text[])
+              AND mf.observed_at < :'memory_end'::timestamptz
+        ),
+        role_counts AS (
+            SELECT person_id, fact_type, count(*)::int AS fact_count
+            FROM facts
+            GROUP BY person_id, fact_type
+        ),
+        dominant AS (
+            SELECT DISTINCT ON (person_id) person_id, fact_type
+            FROM role_counts
+            ORDER BY person_id, fact_count DESC, fact_type ASC
+        ),
+        selected AS (
+            SELECT
+                facts.person_id,
+                count(*) FILTER (WHERE facts.observed_at >= :'memory_start'::timestamptz)::int AS recent_fact_count,
+                count(*)::int AS lifetime_fact_count,
+                dominant.fact_type AS dominant_fact_type
+            FROM facts
+            JOIN dominant ON dominant.person_id = facts.person_id
+            GROUP BY facts.person_id, dominant.fact_type
+        )
+        SELECT COALESCE(json_agg(row_to_json(selected)), '[]'::json)::text
+        FROM selected;
+    """
+    command = [
+        PRODUCTION_PSQL_BIN,
+        "--no-psqlrc",
+        "--no-align",
+        "--tuples-only",
+        "--quiet",
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--set",
+        f"person_ids={','.join(person_ids)}",
+        "--set",
+        f"memory_start={start.isoformat()}",
+        "--set",
+        f"memory_end={end.isoformat()}",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            input=sql,
+            env=_psql_env(db_url),
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"database reads require psycopg or executable {PRODUCTION_PSQL_BIN}"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("member profile memory query timed out") from exc
+    if completed.returncode != 0:
+        raise RuntimeError("member profile memory query failed")
+    try:
+        rows = json.loads(completed.stdout.strip() or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("member profile memory query returned invalid JSON") from exc
+    return _character_memory_from_rows(
+        (
+            row.get("person_id"),
+            row.get("recent_fact_count"),
+            row.get("lifetime_fact_count"),
+            row.get("dominant_fact_type"),
+        )
+        for row in rows
+    )
+
+
+def _character_memory_from_rows(rows: Any) -> dict[str, CharacterMemory]:
+    memory: dict[str, CharacterMemory] = {}
+    for person_id, recent_count, lifetime_count, dominant_fact_type in rows:
+        person_id = str(person_id or "")
+        if not person_id:
+            continue
+        role_label = MEMORY_FACT_ROLE_LABELS.get(str(dominant_fact_type or ""), "长期在场者")
+        memory[person_id] = CharacterMemory(
+            person_id=person_id,
+            recent_fact_count=int(recent_count or 0),
+            lifetime_fact_count=int(lifetime_count or 0),
+            dominant_role_label=role_label,
+        )
+    return memory
 
 
 def _uses_real_messages(args: argparse.Namespace) -> bool:
@@ -940,6 +1190,212 @@ def _compute_suspects(messages: list[ReportMessage], limit: int = DEFAULT_SUSPEC
     return suspects
 
 
+def _character_role(messages: list[ReportMessage]) -> tuple[str, str, int]:
+    text = "\n".join(_clean_text(message.text) for message in messages)
+    best_label = "在场感选手"
+    best_line = "用持续出现把当天话题接住"
+    best_score = 0
+    for _role, label, line, hints in CHARACTER_ROLE_RULES:
+        score = sum(text.count(hint) for hint in hints)
+        if score > best_score:
+            best_label = label
+            best_line = line
+            best_score = score
+    return best_label, best_line, best_score
+
+
+def _character_evidence(messages: list[ReportMessage]) -> str:
+    candidates: list[tuple[int, str]] = []
+    for message in messages:
+        text = _clean_text(message.text)
+        if not _is_digest_snippet_text(text):
+            continue
+        score = min(len(text), 90)
+        if any(word in text for word in HIGHLIGHT_SIGNAL_WORDS):
+            score += 20
+        if any(hint in text for _role, _label, _line, hints in CHARACTER_ROLE_RULES for hint in hints):
+            score += 12
+        candidates.append((score, text))
+    if not candidates:
+        for message in messages:
+            text = _clean_text(message.text)
+            if text:
+                candidates.append((len(text), text))
+    if not candidates:
+        return "今天有持续参与，但没有适合公开摘录的长句。"
+    candidates.sort(reverse=True)
+    best = candidates[0][1]
+    return best[:58] + ("..." if len(best) > 58 else "")
+
+
+def _compute_characters(
+    messages: list[ReportMessage],
+    memory_by_person: dict[str, CharacterMemory] | None = None,
+    limit: int = DEFAULT_CHARACTER_LIMIT,
+) -> list[CharacterCard]:
+    memory_by_person = memory_by_person or {}
+    grouped: dict[str, list[ReportMessage]] = {}
+    for message in messages:
+        name = (message.sender_name or "").strip()
+        if not name or name == "匿名":
+            continue
+        grouped.setdefault(name, []).append(message)
+
+    ranked: list[tuple[float, CharacterCard]] = []
+    for name, group in grouped.items():
+        role_label, one_liner, role_score = _character_role(group)
+        topic_count = len(
+            {
+                token
+                for message in group
+                for token in _tokenize(message.text)
+                if _is_clean_topic(token)
+            }
+        )
+        if len(group) < 2 and role_score == 0:
+            continue
+        word_count = sum(len(_clean_text(message.text)) for message in group)
+        person_ids = [message.person_id for message in group if message.person_id]
+        memory = memory_by_person.get(person_ids[0]) if person_ids else None
+        memory_score = min(memory.recent_fact_count, 10) if memory else 0
+        memory_label = ""
+        if memory:
+            memory_label = (
+                f"近{MEMORY_LOOKBACK_DAYS}天 {memory.recent_fact_count} 次角色复现"
+                f" · 长期偏「{memory.dominant_role_label}」"
+            )
+        score = (
+            len(group) * 3
+            + role_score * 4
+            + min(topic_count, 6)
+            + min(word_count / 80, 4)
+            + memory_score
+        )
+        ranked.append(
+            (
+                score,
+                CharacterCard(
+                    rank=0,
+                    name=name,
+                    role_label=role_label,
+                    one_liner=one_liner,
+                    evidence=_character_evidence(group),
+                    message_count=len(group),
+                    topic_count=topic_count,
+                    memory_label=memory_label,
+                ),
+            )
+        )
+
+    ranked.sort(key=lambda item: (-item[0], item[1].name))
+    characters = [card for _score, card in ranked[:limit]]
+    for index, character in enumerate(characters, start=1):
+        character.rank = index
+    return characters
+
+
+def _node_key(label: str) -> str:
+    cleaned = re.sub(r"\s+", "-", _clean_text(label)).strip("-")
+    cleaned = re.sub(r"[^\w\u4e00-\u9fff-]+", "", cleaned)
+    return cleaned[:48] or "node"
+
+
+def _build_character_universe(
+    cases: list[CaseCard],
+    hot_topics: list[HotTopic],
+    characters: list[CharacterCard],
+    report_date: str,
+) -> dict[str, Any]:
+    people = [
+        {
+            "type": "people",
+            "key": _node_key(character.name),
+            "label": character.name,
+            "role_label": character.role_label,
+            "daily_line": character.one_liner,
+            "evidence": character.evidence,
+            "message_count": character.message_count,
+            "topic_count": character.topic_count,
+            "memory_label": character.memory_label,
+            "risk": "internal",
+        }
+        for character in characters
+    ]
+    topics = [
+        {
+            "type": "topics",
+            "key": _node_key(topic.keyword),
+            "label": topic.keyword,
+            "message_count": topic.message_count,
+            "participant_count": topic.participant_count,
+            "risk": "public_safe_summary",
+        }
+        for topic in hot_topics
+    ]
+    events = [
+        {
+            "type": "events",
+            "key": _node_key(case.title),
+            "label": case.title,
+            "case_no": case.case_no,
+            "time_label": case.time_label,
+            "summary": case.summary,
+            "top_speaker": case.top_speaker,
+            "evidence": case.bullets[:3],
+            "risk": "internal",
+        }
+        for case in cases
+    ]
+    storyline_candidates = [
+        {
+            "type": "storylines",
+            "key": _node_key(case.title),
+            "label": case.title.replace("关于「", "").replace("」的讨论", ""),
+            "status": "candidate",
+            "last_seen": report_date,
+            "reason": f"{case.message_count} 条消息，{case.participant_count} 人参与",
+            "related_event": case.case_no,
+            "risk": "internal_review_required",
+        }
+        for case in cases
+        if case.message_count >= DEFAULT_MIN_CASE_MESSAGES
+    ]
+    edges: list[dict[str, Any]] = []
+    for character in characters:
+        for case in cases:
+            if character.name == case.top_speaker or character.name in " ".join(case.bullets):
+                edges.append(
+                    {
+                        "source": _node_key(character.name),
+                        "target": _node_key(case.title),
+                        "relation": "appears_in",
+                        "evidence": case.case_no,
+                    }
+                )
+        for topic in hot_topics:
+            if topic.keyword in character.evidence:
+                edges.append(
+                    {
+                        "source": _node_key(character.name),
+                        "target": _node_key(topic.keyword),
+                        "relation": "mentions_topic",
+                        "evidence": "daily_character_note",
+                    }
+                )
+    return {
+        "schema_version": "xiaoman-character-universe-v1",
+        "source": "daily_case_report_second_pass",
+        "retained_source_policy": "curated_summary_only",
+        "raw_messages_included": False,
+        "profile_fact_text_included": False,
+        "people": people,
+        "topics": topics,
+        "events": events,
+        "storyline_candidates": storyline_candidates,
+        "edges": edges,
+    }
+
+
 def _extract_highlight(messages: list[ReportMessage]) -> str | None:
     """Pick one real, quotable group message for the '今日高亮' block."""
     candidates = []
@@ -1001,6 +1457,17 @@ def _build_report(args: argparse.Namespace) -> ReportData:
     cases = _cluster_cases(discussion_messages)
     hot_topics = _hot_topics(discussion_messages)
     suspects = _compute_suspects(discussion_messages)
+    character_memory = {}
+    if not args.dry_run and not args.fixture:
+        try:
+            character_memory = _fetch_character_memory(
+                {message.person_id for message in discussion_messages if message.person_id},
+                end,
+            )
+        except Exception:
+            character_memory = {}
+    characters = _compute_characters(discussion_messages, character_memory)
+    character_universe = _build_character_universe(cases, hot_topics, characters, display_date)
     hourly = _hourly_timeline(messages, start)
     max_hourly = max(hourly) if hourly else 1
 
@@ -1020,6 +1487,9 @@ def _build_report(args: argparse.Namespace) -> ReportData:
         suspects=suspects,
         highlight=_extract_highlight(discussion_messages),
         hot_topics=hot_topics,
+        character_count=len(characters),
+        characters=characters,
+        character_universe=character_universe,
         window_start=start.isoformat(),
         window_end=end.isoformat(),
         timezone=args.timezone,
@@ -1178,6 +1648,17 @@ def _render_html(report: ReportData, width: int) -> str:
     )}</div>
   </section>"""
 
+    characters_html = ""
+    if report.characters:
+        characters_html = f"""
+  <section class="characters">
+    <div class="characters-heading"><span>CHARACTER NOTES</span><h2>今日人物群像</h2></div>
+    <div class="character-grid">{"".join(
+        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)}</strong><p>{html.escape(character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{character.message_count} 条 · {character.topic_count} 个话题触点{(" · " + html.escape(character.memory_label)) if character.memory_label else ""}</small></div></article>'''
+        for character in report.characters
+    )}</div>
+  </section>"""
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -1216,6 +1697,19 @@ def _render_html(report: ReportData, width: int) -> str:
   .hot-rank {{ display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 11px; font-weight: 900; }}
   .hot-topic strong {{ min-width: 0; font-size: 14px; }}
   .hot-topic small {{ color: #555555; font-size: 10px; white-space: nowrap; }}
+  .characters {{ margin: 22px 24px 0; padding: 18px 16px 16px; border: 4px solid #111111; background: #ffffff; }}
+  .characters-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }}
+  .characters-heading span {{ color: #f25a18; font-size: 11px; font-weight: 800; }}
+  .characters-heading h2 {{ font-size: 21px; font-weight: 900; }}
+  .character-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+  .character-card {{ display: grid; grid-template-columns: 34px 1fr; min-height: 142px; border: 3px solid #111111; background: #fff8df; }}
+  .character-rank {{ display: grid; place-items: center; border-right: 2px solid #111111; background: #88d7ff; font-size: 16px; font-weight: 900; }}
+  .character-copy {{ min-width: 0; padding: 10px 12px; }}
+  .character-copy h3 {{ font-size: 16px; font-weight: 900; line-height: 1.25; }}
+  .character-copy strong {{ display: block; margin-top: 4px; color: #f25a18; font-size: 12px; }}
+  .character-copy p {{ margin-top: 5px; color: #333333; font-size: 11px; line-height: 1.45; }}
+  .character-copy blockquote {{ margin-top: 7px; padding-left: 8px; border-left: 3px solid #111111; font-size: 10px; line-height: 1.45; }}
+  .character-copy small {{ display: block; margin-top: 6px; color: #555555; font-size: 10px; }}
   .section {{ margin: 34px 24px 0; }}
   .section-kicker {{ color: #f25a18; }}
   .section h2 {{ margin-top: 6px; }}
@@ -1254,12 +1748,80 @@ def _render_html(report: ReportData, width: int) -> str:
   </section>
   {highlight_html}
   {hot_topics_html}
+  {characters_html}
   {cases_html}
   {mvp_html}
   <footer class="footer">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</footer>
 </main>
 </body>
 </html>"""
+
+
+def _render_daily_markdown(report: ReportData) -> str:
+    lines = [
+        f"# {report.group_name}｜{report.report_title}",
+        "",
+        f"- 日期：{report.report_date}",
+        f"- 时间范围：{report.time_range}",
+        f"- 消息：{report.message_count} 条",
+        f"- 活跃：{report.participant_count} 人",
+        f"- 话题：{report.case_count} 个",
+        f"- 人物群像：{report.character_count} 位",
+        "",
+    ]
+    if report.highlight:
+        lines.extend(["## 今日高亮", "", f"> {report.highlight}", ""])
+    if report.hot_topics:
+        lines.extend(["## 群聊热榜", ""])
+        for topic in report.hot_topics:
+            lines.append(
+                f"- {topic.rank}. {topic.keyword}：{topic.message_count} 条，{topic.participant_count} 人参与"
+            )
+        lines.append("")
+    if report.characters:
+        lines.extend(["## 今日人物群像", ""])
+        for character in report.characters:
+            memory = f"（{character.memory_label}）" if character.memory_label else ""
+            lines.extend(
+                [
+                    f"### {character.rank}. {character.name}｜{character.role_label}",
+                    "",
+                    f"{character.one_liner}{memory}",
+                    "",
+                    f"> {character.evidence}",
+                    "",
+                ]
+            )
+    if report.cases:
+        lines.extend(["## 今日局势", ""])
+        for case in report.cases:
+            lines.extend(
+                [
+                    f"### {case.case_no}｜{case.title}",
+                    "",
+                    f"- 时间：{case.time_label}",
+                    f"- 规模：{case.summary}",
+                    f"- 主讲：{case.top_speaker}",
+                    "",
+                ]
+            )
+            lines.extend(f"- {bullet}" for bullet in case.bullets[:3])
+            lines.append("")
+    if report.suspects:
+        lines.extend(["## 今日 MVP", ""])
+        for suspect in report.suspects:
+            lines.append(
+                f"- {suspect.rank}. {suspect.name}：{suspect.message_count} 条 / {suspect.word_count} 字"
+            )
+        lines.append("")
+    universe = report.character_universe or {}
+    if universe.get("storyline_candidates"):
+        lines.extend(["## 可沉淀故事线", ""])
+        for item in universe["storyline_candidates"][:5]:
+            lines.append(f"- [[{item['label']}]]：{item['reason']}")
+        lines.append("")
+    lines.append("本日报由小满根据最新群聊窗口自动整理；长期画像只以角色复现计数参与，不展示内部画像原文。")
+    return "\n".join(lines)
 
 
 def _file_url(path: Path) -> str:
@@ -1483,6 +2045,56 @@ def _render_image_with_pillow(
             text_right(x + topic_width - 10 * scale, row_top + 10 * scale, f"{topic.message_count} 条 · {topic.participant_count} 人", tiny_font, ink)
         y = hotlist_top + hotlist_height + 38 * scale
 
+    if report.characters:
+        character_top = y
+        character_rows = (len(report.characters) + 1) // 2
+        character_height = (58 + 138 * character_rows) * scale
+        draw.rectangle((outer, character_top, canvas_width - outer, character_top + character_height), fill="#ffffff", outline=ink, width=3 * scale)
+        draw.text((padding, character_top + 16 * scale), "CHARACTER NOTES", font=tiny_font, fill=orange)
+        draw.text((padding + 132 * scale, character_top + 12 * scale), "今日人物群像", font=body_font, fill=ink)
+        card_width = (content_width - gutter) // 2
+        card_height = 116 * scale
+        for index, character in enumerate(report.characters):
+            column = index % 2
+            row = index // 2
+            x = padding + column * (card_width + gutter)
+            card_y = character_top + (48 + row * 128) * scale
+            draw.rectangle((x, card_y, x + card_width, card_y + card_height), fill=cream, outline=ink, width=2 * scale)
+            draw.rectangle((x, card_y, x + 34 * scale, card_y + card_height), fill=blue, outline=ink, width=2 * scale)
+            draw.text((x + 12 * scale, card_y + 42 * scale), str(character.rank), font=tiny_font, fill=ink)
+            copy_x = x + 46 * scale
+            draw.text((copy_x, card_y + 10 * scale), character.name, font=body_font, fill=ink)
+            draw.text((copy_x, card_y + 34 * scale), character.role_label, font=tiny_font, fill=orange)
+            _draw_wrapped_text(
+                draw,
+                (copy_x, card_y + 54 * scale),
+                f"{character.one_liner}｜{character.evidence}",
+                tiny_font,
+                ink,
+                card_width - 58 * scale,
+                max_lines=3,
+                line_gap=2 * scale,
+            )
+            text_right(
+                x + card_width - 10 * scale,
+                card_y + 92 * scale,
+                f"{character.message_count} 条 · {character.topic_count} 触点",
+                tiny_font,
+                "#555555",
+            )
+            if character.memory_label:
+                _draw_wrapped_text(
+                    draw,
+                    (copy_x, card_y + 92 * scale),
+                    character.memory_label,
+                    tiny_font,
+                    "#555555",
+                    card_width - 104 * scale,
+                    max_lines=1,
+                    line_gap=0,
+                )
+        y = character_top + character_height + 38 * scale
+
     y = section_label(y, "PLAY BY PLAY", "今日局势")
     cases = report.cases[:DEFAULT_CASE_LIMIT]
     if not cases:
@@ -1665,6 +2277,13 @@ def _artifact_candidate(
             "time_range": report.time_range,
             "timezone": report.timezone,
         },
+        "content_metrics": {
+            "message_count": report.message_count,
+            "participant_count": report.participant_count,
+            "case_count": report.case_count,
+            "character_count": report.character_count,
+            "hot_topic_count": len(report.hot_topics),
+        },
         "source_chat_ref": _source_chat_ref(source_chat_id),
         "retained_source_policy": "sanitized_metadata_only",
     }
@@ -1679,11 +2298,13 @@ def _operator_review_message(
     lines = [
         f"【{report.group_name}｜{report.report_title}】",
         f"档案日期：{report.report_date}（{report.time_range}）",
-        f"消息 {report.message_count} 条 / 活跃 {report.participant_count} 人 / 案件 {report.case_count} 起 / 嫌疑人 {report.suspect_count} 名",
+        f"消息 {report.message_count} 条 / 活跃 {report.participant_count} 人 / 案件 {report.case_count} 起 / 人物 {report.character_count} 位 / 嫌疑人 {report.suspect_count} 名",
         "",
     ]
     for case in report.cases:
         lines.append(f"• {case.case_no}：{case.title}（{case.summary}）")
+    for character in report.characters:
+        lines.append(f"• 人物 {character.rank}：{character.name}｜{character.role_label}")
     lines.append("")
     if image_path:
         lines.append(f"图片文件：{image_path}")
@@ -1701,10 +2322,14 @@ def _result_json(
     image_path: Path | None,
     image_format: str | None = None,
     html_path: Path | None = None,
+    markdown_path: Path | None = None,
+    universe_path: Path | None = None,
     output_width: int | None = None,
     source_chat_id: str | None = None,
 ) -> dict[str, Any]:
     html_exists = html_path is not None and html_path.exists()
+    markdown_exists = markdown_path is not None and markdown_path.exists()
+    universe_exists = universe_path is not None and universe_path.exists()
     artifact_candidate = (
         _artifact_candidate(image_path, image_format, report, output_width, source_chat_id)
         if image_path is not None and image_format is not None and image_path.exists()
@@ -1722,6 +2347,7 @@ def _result_json(
         "message_count": report.message_count,
         "participant_count": report.participant_count,
         "case_count": report.case_count,
+        "character_count": report.character_count,
         "suspect_count": report.suspect_count,
         "deliverable_path": str(deliverable_path),
         "image_path": str(image_path) if image_path else None,
@@ -1729,6 +2355,10 @@ def _result_json(
         "image_mime_type": _image_mime_type(image_format) if image_format else None,
         "png_path": str(image_path) if image_format == "png" and image_path else None,
         "html_path": str(html_path) if html_exists else None,
+        "daily_report_markdown_path": str(markdown_path) if markdown_exists else None,
+        "daily_report_markdown": _render_daily_markdown(report),
+        "character_universe_path": str(universe_path) if universe_exists else None,
+        "character_universe": report.character_universe,
         "artifact_candidate": artifact_candidate,
         "operator_review_message": _operator_review_message(
             report, html_path or deliverable_path, image_path, html_exists
@@ -1764,12 +2394,19 @@ def main() -> int:
     output_dir = _prepare_output_dir(args.output_dir)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     html_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.html"
+    markdown_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.md"
+    universe_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.character-universe.json"
     image_path = output_dir / (
         f"xiaoman-daily-case-report-{timestamp}.{_image_extension(args.image_format)}"
     )
 
     html_content = _render_html(report, args.output_width)
     _write_private_text(html_path, html_content)
+    _write_private_text(markdown_path, _render_daily_markdown(report))
+    _write_private_text(
+        universe_path,
+        json.dumps(report.character_universe, ensure_ascii=False, indent=2),
+    )
 
     image_generated = False
     try:
@@ -1797,6 +2434,8 @@ def main() -> int:
             image_path if image_generated else None,
             args.image_format if image_generated else None,
             None if real_messages else html_path if html_path.exists() else None,
+            markdown_path if markdown_path.exists() else None,
+            universe_path if universe_path.exists() else None,
             args.output_width if image_generated else None,
             args.chat_id if image_generated else None,
         )

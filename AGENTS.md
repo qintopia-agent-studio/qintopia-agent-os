@@ -44,6 +44,8 @@
 - Markdown lint: `pnpm lint:md`
 - Xiaoman production evidence chain local repository verification:
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
+- Xiaoman daily case-report character-universe local readiness check:
+  `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - Local PR quick tier: `pnpm check:pr:quick`
@@ -426,22 +428,27 @@
 - Production runtime observation should use the `Observe Production Runtime` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-observation` deploy-runner request and accepts only these
-  fixed targets: `qiwe-image-send`, `xiaoman-daily-case-report-auto-publish`, and the
-  worker-run evidence targets `erhua-morning-brief-worker-run`,
-  `xiaoman-daily-case-report-worker-run`, `xiaoman-weekly-recruitment-worker-run`,
+  fixed targets: `qiwe-image-send`, `xiaoman-daily-case-report-auto-publish`,
+  `hermes-cron-snapshot`, `hermes-cron-live-parity`, and the worker-run evidence targets
+  `erhua-morning-brief-worker-run`, `xiaoman-daily-case-report-worker-run`,
+  `xiaoman-weekly-recruitment-worker-run`,
   `xiaoman-weekly-plan-confirmation-worker-run`, and
-  `xiaoman-weekly-preview-worker-run`. Migrated worker-run targets prove the reviewed
-  Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok` sentinel and the worker
-  exited successfully (weekly targets also validate the worker's `latest-summary.json`
-  draft invariants). When the fixed Hermes cron log is absent or contains no reviewed
-  sentinel for the task, the observation passes with
+  `xiaoman-weekly-preview-worker-run`. `hermes-cron-snapshot` reports only safe
+  server-local snapshot unit/repo facts, and `hermes-cron-live-parity` reports only
+  reviewed/live/enabled counts after comparing the reviewed registry to live
+  declarations including `deliver` and `origin` boundaries. Migrated worker-run targets
+  prove the reviewed Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok`
+  sentinel and the worker exited successfully (weekly targets also validate the worker's
+  `latest-summary.json` draft invariants). When the fixed Hermes cron log is absent or
+  contains no reviewed sentinel for the task, the observation passes with
   `<key>_worker_run_result=not_started`; before the first scheduled trigger this means
   the Hermes job has not fired yet, not a regression, while `not_started` after the
   scheduled time means the Hermes job did not reach the reviewed wrapper and needs
   reviewed investigation. Observation is read-only: it may run only fixed release-local
   observation scripts, must not enable or disable timers, write persistent config,
   retire legacy cron files, call QiWe/Feishu/Postgres mutation commands, or run
-  activation/rollback scripts.
+  activation/rollback scripts, and must not print live `jobs.json`, group ids, prompts,
+  env values, snapshot contents, or raw script output.
 - Production immediate worker/backfill runs should use the
   `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
   containing the runner support is deployed and the corresponding release-managed timer
@@ -610,6 +617,7 @@
     --huabaosi-production-canary <production-canary-output.txt> \
     --production-real-activity <production-evidence-output.txt> \
     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+    --daily-case-report-observation <production-observation-deploy-result.json> \
     --output <completed-xiaoman-production-completion-evidence.json>
   ```
 
@@ -624,7 +632,8 @@
     --qiwe-staging <qiwe-staging-output.txt> \
     --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
     --production-real-activity <production-evidence-output.txt> \
-    --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt>
+    --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+    --daily-case-report-observation <production-observation-deploy-result.json>
   ```
 
 - One-shot final Xiaoman production completion manifest build + validation from retained
@@ -644,6 +653,7 @@
     --huabaosi-production-canary <huabaosi-production-canary-output.txt> \
     --production-real-activity <production-evidence-output.txt> \
     --qiwe-group-arrival-confirmation <qiwe-group-arrival-confirmation-output.txt> \
+    --daily-case-report-observation <production-observation-deploy-result.json> \
     --output <completed-xiaoman-production-completion-evidence.json>
   ```
 
@@ -1179,9 +1189,12 @@ Use `rg` and `rg --files` for search.
   only the fixed schema ids, AgentOS UUIDs, release/database hashes, reviewed
   `runtime_artifact_profile` facts, the owner-approved sidecar binary hash,
   release-binary verification booleans, `artifact_content_hash`, reviewed PR
-  numbers/head SHAs, production Release commit binding, and boolean execution facts; it
-  must not retain raw QiWe callback bodies, request ids, file credentials, group ids,
-  message ids, media URLs, database URLs, provider responses, raw chat, or raw logs.
+  numbers/head SHAs, production Release commit binding, boolean execution facts, and
+  Xiaoman daily case-report safe counters/schema flags (`xiaoman-character-universe-v1`,
+  `daily_case_report_second_pass`, `raw_messages_included=false`,
+  `profile_fact_text_included=false`); it must not retain raw QiWe callback bodies,
+  request ids, file credentials, group ids, message ids, media URLs, database URLs,
+  provider responses, raw chat, raw logs, daily-report Markdown, or raw character nodes.
 - `xiaoman-real-activity-production-evidence` is a read-only retention exporter. It may
   run only from the immutable
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar`
@@ -1287,6 +1300,10 @@ Use `rg` and `rg --files` for search.
   approval, reviewed release SHA, and `YYYY-MM-DD` date. The worker may honor
   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE` only when paired with the matching backfill
   approval; do not send missed reports by local image path or ad-hoc QiWe calls.
+- Xiaoman daily case-report character-universe outputs are private second-pass
+  artifacts. Production worker logs and send-ready metadata may retain only safe
+  counters and schema flags; never retain Markdown body, raw universe nodes, member
+  labels, story labels, or source excerpts.
 - The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
   may be built only by manual artifact workflow dispatch or
   `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`

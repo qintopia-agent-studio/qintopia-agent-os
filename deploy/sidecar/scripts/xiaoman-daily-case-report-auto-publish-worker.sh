@@ -172,6 +172,8 @@ with open(sys.argv[2], encoding="utf-8") as fh:
 
 candidate = rendered.get("artifact_candidate") or {}
 window = candidate.get("report_window") or {}
+content_metrics = candidate.get("content_metrics") or {}
+character_universe = rendered.get("character_universe") or {}
 artifact_uri = uploaded.get("artifact_uri")
 if not artifact_uri:
     raise SystemExit("media upload did not return artifact_uri")
@@ -204,7 +206,8 @@ print(json.dumps({
     "summary": (
         f"消息 {rendered.get('message_count', 0)} 条 / "
         f"活跃 {rendered.get('participant_count', 0)} 人 / "
-        f"案件 {rendered.get('case_count', 0)} 起"
+        f"案件 {rendered.get('case_count', 0)} 起 / "
+        f"人物 {rendered.get('character_count', 0)} 位"
     ),
     "source_chat_ref": candidate.get("source_chat_ref") or {},
     "template_version": candidate.get("template_version", ""),
@@ -212,6 +215,25 @@ print(json.dumps({
         "created_by_command": "xiaoman-daily-case-report-auto-publish-worker",
         "render_width": (candidate.get("render") or {}).get("width"),
         "report_timezone": window.get("timezone"),
+        "content_metrics": {
+            "message_count": content_metrics.get("message_count", rendered.get("message_count", 0)),
+            "participant_count": content_metrics.get("participant_count", rendered.get("participant_count", 0)),
+            "case_count": content_metrics.get("case_count", rendered.get("case_count", 0)),
+            "character_count": content_metrics.get("character_count", rendered.get("character_count", 0)),
+            "hot_topic_count": content_metrics.get("hot_topic_count", 0),
+        },
+        "character_universe": {
+            "schema_version": character_universe.get("schema_version", ""),
+            "source": character_universe.get("source", ""),
+            "retained_source_policy": character_universe.get("retained_source_policy", ""),
+            "raw_messages_included": character_universe.get("raw_messages_included") is True,
+            "profile_fact_text_included": character_universe.get("profile_fact_text_included") is True,
+            "people_count": len(character_universe.get("people") or []),
+            "topic_count": len(character_universe.get("topics") or []),
+            "event_count": len(character_universe.get("events") or []),
+            "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
+            "edge_count": len(character_universe.get("edges") or []),
+        },
     },
 }, ensure_ascii=False))
 PY
@@ -221,14 +243,20 @@ PY
   --apply \
   --payload-json "$publish_payload" >"$publish_report"
 
-"$PYTHON_BIN" - "$upload_report" "$publish_report" <<'PY'
+"$PYTHON_BIN" - "$render_report" "$upload_report" "$publish_report" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as fh:
-    upload = json.load(fh)
+    rendered = json.load(fh)
 with open(sys.argv[2], encoding="utf-8") as fh:
+    upload = json.load(fh)
+with open(sys.argv[3], encoding="utf-8") as fh:
     publish = json.load(fh)
+
+candidate = rendered.get("artifact_candidate") or {}
+content_metrics = candidate.get("content_metrics") or {}
+character_universe = rendered.get("character_universe") or {}
 
 print(json.dumps({
     "success": publish.get("success") is True,
@@ -245,5 +273,24 @@ print(json.dumps({
     "review_status": publish.get("review_status"),
     "content_hash": publish.get("content_hash"),
     "idempotency_key": publish.get("idempotency_key"),
+    "content_metrics": {
+        "message_count": content_metrics.get("message_count", rendered.get("message_count", 0)),
+        "participant_count": content_metrics.get("participant_count", rendered.get("participant_count", 0)),
+        "case_count": content_metrics.get("case_count", rendered.get("case_count", 0)),
+        "character_count": content_metrics.get("character_count", rendered.get("character_count", 0)),
+        "hot_topic_count": content_metrics.get("hot_topic_count", 0),
+    },
+    "character_universe": {
+        "schema_version": character_universe.get("schema_version", ""),
+        "source": character_universe.get("source", ""),
+        "retained_source_policy": character_universe.get("retained_source_policy", ""),
+        "raw_messages_included": character_universe.get("raw_messages_included") is True,
+        "profile_fact_text_included": character_universe.get("profile_fact_text_included") is True,
+        "people_count": len(character_universe.get("people") or []),
+        "topic_count": len(character_universe.get("topics") or []),
+        "event_count": len(character_universe.get("events") or []),
+        "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
+        "edge_count": len(character_universe.get("edges") or []),
+    },
 }, ensure_ascii=False, indent=2))
 PY

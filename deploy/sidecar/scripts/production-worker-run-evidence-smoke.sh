@@ -123,6 +123,119 @@ case "$parse_status" in
 esac
 
 summary_date=""
+daily_case_report_summary=""
+if [[ "$target" == "xiaoman-daily-case-report-worker-run" ]]; then
+  if ! daily_case_report_summary="$("$PYTHON_BIN" - "$log_path" "$task_name" "$evidence_key" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+task = sys.argv[2]
+key = sys.argv[3]
+pattern = re.compile(
+    r"^(?P<ts>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) "
+    + re.escape(task)
+    + r" run=(?P<status>ok|failed)(?: exit=[0-9]+)?$"
+)
+
+try:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+except OSError:
+    raise SystemExit(1)
+
+latest_index = None
+for index, line in enumerate(lines):
+    match = pattern.fullmatch(line.strip())
+    if match and match.group("status") == "ok":
+        latest_index = index
+
+if latest_index is None:
+    raise SystemExit(1)
+
+body_lines = lines[latest_index + 1 :]
+json_start = next(
+    (index for index, line in enumerate(body_lines) if line.lstrip().startswith("{")),
+    None,
+)
+if json_start is None:
+    print(f"{key}_worker_summary_present=false")
+    raise SystemExit(0)
+
+text = "\n".join(body_lines[json_start:])
+try:
+    data, _ = json.JSONDecoder().raw_decode(text)
+except Exception:
+    raise SystemExit(2)
+
+if not isinstance(data, dict):
+    raise SystemExit(2)
+if data.get("worker") != "xiaoman-daily-case-report-auto-publish-worker":
+    raise SystemExit(2)
+
+metrics = data.get("content_metrics")
+universe = data.get("character_universe")
+if not isinstance(metrics, dict) or not isinstance(universe, dict):
+    raise SystemExit(2)
+if universe.get("raw_messages_included") is not False:
+    raise SystemExit(3)
+if universe.get("profile_fact_text_included") is not False:
+    raise SystemExit(3)
+
+def number(name: str, default: int = 0) -> int:
+    value = metrics.get(name, default)
+    if isinstance(value, bool):
+        raise SystemExit(2)
+    try:
+        parsed = int(value)
+    except Exception:
+        raise SystemExit(2)
+    if parsed < 0 or parsed > 100000:
+        raise SystemExit(2)
+    return parsed
+
+def universe_count(name: str) -> int:
+    value = universe.get(name, 0)
+    if isinstance(value, bool):
+        raise SystemExit(2)
+    try:
+        parsed = int(value)
+    except Exception:
+        raise SystemExit(2)
+    if parsed < 0 or parsed > 100000:
+        raise SystemExit(2)
+    return parsed
+
+def safe_label(name: str) -> str:
+    value = universe.get(name, "")
+    if not isinstance(value, str):
+        raise SystemExit(2)
+    if value and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", value):
+        raise SystemExit(2)
+    return value
+
+print(f"{key}_worker_summary_present=true")
+print(f"{key}_worker_message_count={number('message_count')}")
+print(f"{key}_worker_participant_count={number('participant_count')}")
+print(f"{key}_worker_case_count={number('case_count')}")
+print(f"{key}_worker_character_count={number('character_count')}")
+print(f"{key}_worker_hot_topic_count={number('hot_topic_count')}")
+print(f"{key}_worker_character_universe_schema_version={safe_label('schema_version')}")
+print(f"{key}_worker_character_universe_source={safe_label('source')}")
+print(f"{key}_worker_character_universe_raw_messages_included=false")
+print(f"{key}_worker_character_universe_profile_fact_text_included=false")
+print(f"{key}_worker_character_universe_people_count={universe_count('people_count')}")
+print(f"{key}_worker_character_universe_topic_count={universe_count('topic_count')}")
+print(f"{key}_worker_character_universe_event_count={universe_count('event_count')}")
+print(f"{key}_worker_character_universe_storyline_candidate_count={universe_count('storyline_candidate_count')}")
+print(f"{key}_worker_character_universe_edge_count={universe_count('edge_count')}")
+PY
+)"; then
+    fail_evidence "daily_case_report_summary_invalid"
+  fi
+fi
+
 if [[ -n "$summary_path" ]]; then
   if [[ ! -f "$summary_path" ]]; then
     fail_evidence "summary_missing"
@@ -171,6 +284,9 @@ fi
 
 echo "${evidence_key}_worker_run_result=success"
 echo "${evidence_key}_worker_run_epoch=${run_epoch}"
+if [[ -n "$daily_case_report_summary" ]]; then
+  echo "$daily_case_report_summary"
+fi
 if [[ -n "$summary_path" ]]; then
   echo "${evidence_key}_worker_summary_present=true"
   echo "${evidence_key}_worker_summary_date=${summary_date}"

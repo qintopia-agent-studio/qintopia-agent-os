@@ -33,6 +33,7 @@
     "deploy:rollback:check": "node tools/deploy/check-deploy-contracts.mjs",
     "deploy:smoke:check": "node tools/deploy/check-deploy-contracts.mjs",
     "deploy:runner:check": "node tools/deploy/check-deploy-runner.mjs",
+    "deploy:xiaoman-daily-case-report:local-check": "node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs",
     "deploy:erhua-member-recognition:local-check": "node tools/deploy/check-erhua-member-recognition-local.mjs",
     "deploy:erhua-member-recognition:coverage-finalize": "node tools/deploy/finalize-erhua-member-recognition-coverage.mjs",
     "deploy:erhua-member-recognition:finalize": "node tools/deploy/finalize-erhua-member-recognition-completion.mjs",

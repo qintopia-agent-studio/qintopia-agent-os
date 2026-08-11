@@ -176,6 +176,7 @@ node tools/deploy/build-xiaoman-production-completion-manifest.mjs \
   --huabaosi-production-canary huabaosi-production-canary-output.txt \
   --production-real-activity production-evidence-output.txt \
   --qiwe-group-arrival-confirmation qiwe-group-arrival-confirmation-output.txt \
+  --daily-case-report-observation production-observation-deploy-result.json \
   --output completed-xiaoman-production-completion-evidence.json
 
 node tools/deploy/check-xiaoman-production-completion-evidence.mjs \
@@ -185,7 +186,8 @@ node tools/deploy/check-xiaoman-production-completion-evidence.mjs \
   --qiwe-staging <qiwe-staging-output.txt> \
   --huabaosi-production-canary huabaosi-production-canary-output.txt \
   --production-real-activity production-evidence-output.txt \
-  --qiwe-group-arrival-confirmation qiwe-group-arrival-confirmation-output.txt
+  --qiwe-group-arrival-confirmation qiwe-group-arrival-confirmation-output.txt \
+  --daily-case-report-observation production-observation-deploy-result.json
 ```
 
 To reduce handoff mistakes during the owner-operated final step, you may run the
@@ -205,6 +207,7 @@ node tools/deploy/finalize-xiaoman-production-completion-evidence.mjs \
   --huabaosi-production-canary huabaosi-production-canary-output.txt \
   --production-real-activity production-evidence-output.txt \
   --qiwe-group-arrival-confirmation qiwe-group-arrival-confirmation-output.txt \
+  --daily-case-report-observation production-observation-deploy-result.json \
   --output completed-xiaoman-production-completion-evidence.json
 ```
 
