@@ -1036,6 +1036,48 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(report["error"], "records are required unless read-through is enabled")
         self.assertFalse(report["action"]["external_send_executed"])
 
+    def test_xiaoman_activity_announcement_prepare_resolves_records_once(self):
+        self.enable_xiaoman_activity_wrappers()
+        calls = []
+        original = self.module._xiaoman_activity_announcement_records
+
+        def fake_announcement_records(args, actor_agent):
+            calls.append((dict(args), actor_agent))
+            return (
+                [
+                    {
+                        "table_role": "activity_plan",
+                        "record_ref": "activity_plan:abc123def456",
+                        "title": "木作体验课",
+                        "activity_date": "2026-07-21",
+                        "start_time": "15:00",
+                        "location": "秦托邦工坊",
+                        "owner_name": "阿成",
+                        "promotion_status": "待确认",
+                    }
+                ],
+                "read_through",
+                "",
+            )
+
+        self.module._xiaoman_activity_announcement_records = fake_announcement_records
+        try:
+            report = json.loads(
+                self.module.handle_qintopia_xiaoman_activity_announcement_prepare(
+                    {
+                        "date": "2026-07-21",
+                        "operator_name": "刘珊",
+                    }
+                )
+            )
+        finally:
+            self.module._xiaoman_activity_announcement_records = original
+
+        self.assertTrue(report["success"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][1], "xiaoman")
+        self.assertIn("木作体验课", report["announcement_text"])
+
     def test_xiaoman_activity_announcement_prepare_weekly_preview(self):
         self.enable_xiaoman_activity_wrappers()
 
