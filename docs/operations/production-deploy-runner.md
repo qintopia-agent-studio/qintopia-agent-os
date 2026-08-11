@@ -371,6 +371,15 @@ directory and `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` 
 repo. Do not grant write access to the whole Xiaoman Hermes profile, the whole
 qintopia-agentos state directory, or the whole home.
 
+When adding a new non-optional `ReadWritePaths` entry under `/home/ubuntu`, the release
+systemd installer must prepare that exact fixed directory before installing the updated
+runner unit. If the path is missing when systemd starts the runner, startup can fail
+before `ExecStart`, leaving GitHub deploy requests waiting for a result that will never
+be uploaded. The Hermes cron snapshot path is prepared as `ubuntu:ubuntu 0700` so both
+the root deploy-runner apply path and the ubuntu Hermes snapshot timer share the same
+server-local git history boundary. Preparation must reject symlinks in every fixed path
+component before creating or changing ownership, not only inspect the final directory.
+
 ## Validation
 
 ```bash
