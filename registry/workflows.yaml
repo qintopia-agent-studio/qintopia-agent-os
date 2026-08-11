@@ -19,7 +19,8 @@ entries:
     status: draft
     notes:
       Daily Erhua morning text draft that combines Xiaoman same-day activities with
-      QunMind public-source AI news; send activation remains separately gated.
+      QunMind public-source AI news; recurrence lives in Hermes cron and send activation
+      remains separately gated.
   - id: workflows/xiaoman-activity-signal
     path: workflows/xiaoman-activity-signal
     manifest: workflows/xiaoman-activity-signal/workflow.yaml
@@ -33,21 +34,22 @@ entries:
     status: draft
     notes:
       Daily Xiaoman community case-report generator targeting automatic QiWe publication
-      after reviewed artifact, adapter, and timer gates land.
+      after reviewed artifact, adapter, and Hermes cron gates land.
   - id: workflows/xiaoman-weekly-loop
     path: workflows/xiaoman-weekly-loop
     manifest: workflows/xiaoman-weekly-loop/workflow.yaml
     status: active
     notes:
       Deterministic Saturday recruitment and Sunday plan-confirmation draft generator;
-      production timers are release-managed and keep human confirmation before handoff.
+      production recurrence lives in Hermes cron and keeps human confirmation before
+      handoff.
   - id: workflows/xiaoman-weekly-preview
     path: workflows/xiaoman-weekly-preview
     manifest: workflows/xiaoman-weekly-preview/workflow.yaml
     status: active
     notes:
-      Deterministic Monday activity-preview draft generator; production timer activation
-      is release-managed and keeps human confirmation before handoff.
+      Deterministic Monday activity-preview draft generator; production recurrence lives
+      in Hermes cron and keeps human confirmation before handoff.
   - id: workflows/visual-asset-request
     path: workflows/visual-asset-request
     manifest: workflows/visual-asset-request/workflow.yaml

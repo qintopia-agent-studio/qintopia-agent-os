@@ -1,10 +1,16 @@
 # Erhua Morning Brief Production Activation Runbook
 
-This runbook activates the reviewed Erhua morning brief timer. By default it generates a
-pending `text_announcement` artifact. When the explicit auto-publish gates below are
-enabled, the same release-managed worker approves the generated text, creates and
-confirms the `group_message_request`, records send-ready, and sends the text to the
-allowlisted QiWe group through the reviewed QiWe production sidecar companion.
+> **Status: rollback-only.** The forward 08:10 recurrence lives in the Erhua Hermes cron
+> job documented by `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`. Use
+> this systemd activation runbook only to restore the retired timer after disabling the
+> Hermes job.
+
+This runbook restores the reviewed Erhua morning brief systemd timer during rollback. By
+default it generates a pending `text_announcement` artifact. When the explicit
+auto-publish gates below are enabled, the same release-managed worker approves the
+generated text, creates and confirms the `group_message_request`, records send-ready,
+and sends the text to the allowlisted QiWe group through the reviewed QiWe production
+sidecar companion.
 
 ## Reviewed Assets
 

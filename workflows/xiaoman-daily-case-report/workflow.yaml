@@ -34,16 +34,17 @@ tags:
   - community
   - image
 next_actions:
-  - Add psycopg, Playwright, and Chromium through a reviewed runtime packaging boundary
-    before enabling production JPEG/database runs; do not hand-install them on servers.
+  - Keep production JPEG/database runs on the reviewed fixed runtime tools; do not
+    hand-install Python packages or browsers on servers.
   - Keep the reviewed render/upload entrypoint
     `xiaoman-daily-case-report-auto-publish-worker.sh` in the release bundle so the
     local JPEG becomes a stable HTTPS artifact URI before publish creation.
   - Production publication must use the reviewed QiWe image-send adapter branch for
     `workflow_type=daily_case_report`; do not add a Python QiWe sender or send from a
     local image path.
-  - Activate only through
-    `activate-xiaoman-daily-case-report-auto-publish-production.sh`; rollback only
-    through `rollback-xiaoman-daily-case-report-auto-publish-production.sh`.
-  - Keep status draft until production observation proves the daily timer, artifact
-    binding, QiWe upload/callback/send, idempotency, and rollback evidence.
+  - Schedule only through
+    `docs/operations/xiaoman-daily-case-report-hermes-cron-runbook.md`; keep
+    `rollback-xiaoman-daily-case-report-auto-publish-production.sh` as the retired
+    systemd rollback target.
+  - Keep status draft until production observation proves the daily Hermes cron,
+    artifact binding, QiWe upload/callback/send, idempotency, and rollback evidence.

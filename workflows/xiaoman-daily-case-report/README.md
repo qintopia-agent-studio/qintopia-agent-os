@@ -1,16 +1,16 @@
 # Workflow: Xiaoman Daily Community Scoreboard Report
 
 `workflows/xiaoman-daily-case-report` generates a playful daily community scoreboard
-poster for Xiaoman community groups. The production target is a release-managed daily
-timer that reads the latest rolling 24 hours of QiWe group messages, renders a JPEG
-poster, and publishes it automatically to the reviewed target group through the governed
-QiWe image-send boundary.
+poster for Xiaoman community groups. The production recurrence is a Xiaoman Hermes cron
+job that reads the latest rolling 24 hours of QiWe group messages, calls the
+release-managed worker to render a JPEG poster, and publishes it automatically to the
+reviewed target group through the governed QiWe image-send boundary.
 
 The current script generates the report image locally and emits artifact identity. The
 sidecar has the reviewed binding command that turns a durable JPEG URI into an approved
 `generated_image` artifact plus one automatic QiWe send-ready work item. Production
-activation still needs the render/upload entrypoint, runtime packaging, timer,
-observation, and rollback path from the immutable release.
+recurrence is installed through the Hermes cron apply path, while render/upload,
+observation, rollback, and send boundaries still run from the immutable release.
 
 ## Responsibility
 
@@ -132,9 +132,10 @@ deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh
 ```
 
 It requires the persistent production env to provide read-through, target group, and
-media upload values. The systemd timer is rendered as
-`qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer` and is activated only by
-`activate-xiaoman-daily-case-report-auto-publish-production.sh`.
+media upload values. The Hermes cron wrapper is
+`runtime/hermes/scripts/qintopia_xiaoman_daily_case_report.sh`, with the reviewed
+declaration at `runtime/hermes/cron/xiaoman/daily-case-report.job.json`. The retired
+systemd timer is retained only as a rollback target after the Hermes job is disabled.
 
 ## Acceptance Scenarios
 
@@ -193,9 +194,9 @@ media upload values. The systemd timer is rendered as
   upload command. The create command rechecks the public media base, allowed host,
   content hash, MD5, byte size, dimensions, MIME type, and filename before it can
   approve the artifact or queue QiWe send-ready.
-- Daily scheduling must be installed by reviewed deploy/runner code with observation and
-  rollback checks. A hand-copied systemd unit or conversation-created cron is not an
-  acceptable production activation.
+- Daily scheduling must be installed by the reviewed Hermes cron apply script with
+  observation and rollback checks. A hand-copied systemd unit, local-image-path sender,
+  or unreviewed runtime cron edit is not an acceptable production activation.
 
 ## Validation
 

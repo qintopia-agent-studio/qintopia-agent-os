@@ -249,17 +249,17 @@ QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256=<approved-production-data
   news behavior, and send-request payload preparation.
 - `node tools/workflows/check-workflows.mjs` validates the workflow manifest.
 
-## Production Activation
+## Production Recurrence
 
-The release deploy bundle includes this workflow and the release-local activation
-scripts under `deploy/sidecar/scripts/`. The systemd renderer installs the timer
-disabled; activation still requires an explicit owner command and reviewed persistent
-runtime values.
+The release deploy bundle includes this workflow, the release-managed worker, and the
+Hermes cron wrapper. Hermes cron owns the live schedule, enablement, and delivery
+target; the worker and QiWe text-send chain remain release-managed and approval-gated.
 
 The reviewed production shape:
 
-- installs a release-managed timer for `08:10 Asia/Shanghai`
-  (`OnCalendar=*-*-* 08:10:00`);
+- installs the reviewed Hermes cron declaration
+  `runtime/hermes/cron/erhua/morning-brief.job.json` for `08:10 Asia/Shanghai`
+  (`10 8 * * *`);
 - keeps the morning brief after the Xiaoman daily case-report `07:45` window so the two
   morning group outputs do not start at the same minute;
 - includes the Sunday morning no-publishable-activity follow-up path after the Saturday
@@ -273,8 +273,9 @@ The reviewed production shape:
 - when auto-publish is enabled, completes those gates inside the release worker and
   calls the reviewed QiWe text sender once.
 
-Use `docs/operations/erhua-morning-brief-production-activation-runbook.md` for the
-activation and rollback sequence.
+Use `docs/operations/erhua-morning-brief-hermes-cron-runbook.md` for the forward
+activation sequence. The old production activation runbook is retained only as a
+rollback target after the Hermes job is disabled.
 
 Do not activate this through a hand-copied cron, server-local script, or an unreviewed
 direct QiWe sender.
