@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Xiaoman weekly minimum-loop draft runner.
 
-This is the deterministic release-managed path for the Saturday recruitment draft and
-Sunday plan-confirmation draft. It prepares operations-review text only and never sends.
+This is the deterministic worker path used by the Xiaoman Hermes cron jobs for the
+Saturday recruitment draft and Sunday plan-confirmation draft. It prepares
+operations-review text only and never sends.
 """
 from __future__ import annotations
 

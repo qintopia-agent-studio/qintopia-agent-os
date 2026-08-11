@@ -22,17 +22,19 @@ deployment docs.
 - [production-deploy-runner.md](production-deploy-runner.md): GitHub Release-triggered
   production deploy requests, COS pull runner, release promotion, and rollback model.
 - [production-timer-activation-runbook.md](production-timer-activation-runbook.md):
-  signed production timer activation requests for reviewed Erhua/Xiaoman timers through
-  the deploy runner.
+  historical signed production systemd timer activation requests. Recurring Agent tasks
+  now use Hermes cron as the source of truth; keep this runbook for rollback-only
+  systemd paths until they are fully retired.
 - [production-runtime-observation-runbook.md](production-runtime-observation-runbook.md):
   signed read-only production observations for QiWe image-send and Xiaoman daily
   case-report state before reviewed activation decisions.
 - [production-legacy-cron-retirement-runbook.md](production-legacy-cron-retirement-runbook.md):
-  signed production legacy Hermes cron retirement requests before release-managed timer
-  activation retries.
+  historical signed production legacy Hermes cron retirement requests from the temporary
+  systemd cutover direction. Forward recurring-task changes now use the reviewed Hermes
+  cron allowlist and apply scripts.
 - [production-runtime-one-shot-runbook.md](production-runtime-one-shot-runbook.md):
   signed, owner-approved immediate production worker/backfill requests for fixed targets
-  after the corresponding release-managed timer is already enabled.
+  after the corresponding reviewed recurrence is already enabled.
 - [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
   owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,
   and final completion-manifest sequence. The same runbook also includes the reviewed
@@ -45,14 +47,14 @@ deployment docs.
   2026-08-01 Xiaoman three-step weekly operations loop status and action content for the
   Sunday 20:00 plan confirmation.
 - [xiaoman-weekly-loop-cutover-runbook.md](xiaoman-weekly-loop-cutover-runbook.md):
-  release-managed Saturday recruitment and Sunday plan-confirmation timer activation,
-  observation, and rollback for the Xiaoman weekly loop.
+  rollback-only systemd path for Saturday recruitment and Sunday plan-confirmation. The
+  live forward paths are the Xiaoman Hermes cron runbooks.
 - [xiaoman-weekly-preview-cutover-runbook.md](xiaoman-weekly-preview-cutover-runbook.md):
-  release-managed Xiaoman weekly preview timer activation, observation, and rollback
-  while preserving the human confirmation gate.
+  rollback-only systemd path for the Xiaoman weekly preview while preserving the human
+  confirmation gate. The live forward path is the Xiaoman Hermes cron runbook.
 - [erhua-morning-brief-production-activation-runbook.md](erhua-morning-brief-production-activation-runbook.md):
-  release-managed Erhua morning brief timer activation, observation, and rollback for
-  the reviewed 08:10 text artifact workflow.
+  rollback-only systemd path for the reviewed 08:10 text artifact workflow. The live
+  forward path is the Erhua Hermes cron runbook.
 - [erhua-member-recognition-production-runbook.md](erhua-member-recognition-production-runbook.md):
   release-local production config observation, then release-local QiWe room roster sync,
   identity bootstrap, safe profile refresh, coverage checker, sanitized answer-context
@@ -61,8 +63,8 @@ deployment docs.
   database `person_id` values.
 - Xiaoman activity read-through production config is applied through the release-local
   `deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py`
-  allowlist copier before release-managed Erhua or weekly-preview workers are manually
-  exercised in production. Feishu Base mode must be enabled with
+  allowlist copier before Erhua or weekly-preview workers are manually exercised in
+  production. Feishu Base mode must be enabled with
   `QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE=1`; otherwise the read-through wrapper
   omits `--use-feishu-base` and no live activity records are read.
 - [profile-bundles/m10f-profile-template-plan.md](profile-bundles/m10f-profile-template-plan.md):

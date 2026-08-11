@@ -30,11 +30,10 @@ tags:
   - activity
   - weekly-preview
 next_actions:
-  - Activate via the owner-approved runbook at
-    docs/operations/xiaoman-weekly-preview-cutover-runbook.md; use the release-managed
-    systemd timer and keep the legacy Xiaoman Hermes cron observation empty before
-    enablement.
+  - Schedule via the owner-approved Hermes cron runbook at
+    docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md; keep the old
+    release-managed systemd timer path as rollback-only.
   - Keep the human confirmation gate; the script only drafts, Liu Shan must confirm
     before any Erhua handoff or group send.
-  - Do not hot-edit production units; enable only through release-local config,
-    activation, observation, and rollback scripts.
+  - Do not hot-edit production units or live jobs.json; install and enable the Hermes
+    job only through reviewed apply scripts.

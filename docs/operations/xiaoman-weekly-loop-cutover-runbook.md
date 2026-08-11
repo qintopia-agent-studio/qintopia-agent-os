@@ -63,15 +63,10 @@ QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_CONFIG=approved-production-xiaoma
 
 Plan confirmation config now follows the Hermes cron runbook, not this section.
 
-## Activate
+## Restore The Retired Systemd Timer
 
-Prefer the `Activate Production Timers` GitHub workflow with the recruitment target:
-
-```text
-xiaoman-weekly-recruitment
-```
-
-Manual release-local activation, if needed after owner review:
+Use this path only during rollback, after the Xiaoman Hermes cron recruitment job is
+disabled through the reviewed Hermes cron apply path:
 
 ```bash
 QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_ACTIVATION=approved-production-xiaoman-weekly-recruitment \

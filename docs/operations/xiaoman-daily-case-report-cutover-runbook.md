@@ -2,15 +2,14 @@
 
 Updated: 2026-08-11
 
-> Deprecated as the forward activation path. The daily 08:00 case-report auto-publish is
-> migrating to a Hermes cron job (task 4); use
+> **Status: rollback-only.** The daily 08:00 case-report auto-publish lives in a Xiaoman
+> Hermes cron job; use
 > `docs/operations/xiaoman-daily-case-report-hermes-cron-runbook.md` for cutover. This
-> systemd runbook is kept only as the rollback target until the Hermes cron is observed
-> healthy in production.
+> systemd runbook is kept only as the rollback target after the Hermes job is disabled.
 
-This document records the reviewed cutover shape for promoting
-`workflows/xiaoman-daily-case-report` from a merged, `status: draft` workflow package
-into a live, release-managed daily automatic publisher.
+This document records the retired systemd cutover shape for
+`workflows/xiaoman-daily-case-report`. Use it only to restore the old systemd publisher
+during rollback.
 
 Do not copy unit files to the host, create cron jobs, edit production parameters by
 hand, or send the image from a local path. Production activation uses only the
@@ -24,7 +23,8 @@ through the governed QiWe image-send adapter.
 
 In scope:
 
-- Run the daily report flow every day at 08:00 from a release-managed systemd timer.
+- Restore the daily report flow every day at 08:00 from the retired release-managed
+  systemd timer only after disabling the Hermes cron job.
 - Render the daily JPEG from the immutable release workflow package.
 - Upload the JPEG through `operations-daily-case-report-media-upload`.
 - Create one idempotent automatic publish work item with
@@ -43,8 +43,9 @@ Out of scope:
 1. The release checkout contains
    `workflows/xiaoman-daily-case-report/daily_case_report.py`.
 2. Message-store read-through works on the live host for the reviewed target group.
-3. The immutable production runtime has `/usr/bin/python3`, `psycopg`, Playwright,
-   Chromium, and the report script dependencies.
+3. The immutable production runtime has `/usr/bin/python3`, the reviewed `/usr/bin/psql`
+   fallback, system Pillow renderer, and the report script dependencies. Do not install
+   Python packages or browser binaries on the server during rollback.
 4. The release includes: `xiaoman-daily-case-report-auto-publish-worker.sh`,
    `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh`,
    `activate-xiaoman-daily-case-report-auto-publish-production.sh`,
@@ -133,8 +134,9 @@ callback completion, and no duplicate send on rerun.
 
 ## Backfill
 
-To publish a missed calendar day, start the same release-managed service through the
-reviewed backfill entrypoint. For example, on 2026-08-09, yesterday is 2026-08-08:
+To publish a missed calendar day during rollback, start the same retired release-managed
+service through the reviewed backfill entrypoint. For example, on 2026-08-09, yesterday
+is 2026-08-08:
 
 ```bash
 QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL=approved-production-xiaoman-daily-case-report-auto-publish-backfill \
@@ -169,7 +171,8 @@ unchanged.
 ## Acceptance
 
 - No per-day human confirmation is required after reviewed activation.
-- The report is generated and published by a reviewed release-managed systemd timer.
+- The forward path is Hermes cron. This systemd path may generate and publish only
+  during a reviewed rollback window after the Hermes job is disabled.
 - External delivery uses the reviewed QiWe image-send adapter.
 - One report window creates at most one successful group send.
 - Deploy contract, timer observation, QiWe observation, and rollback checks pass.
