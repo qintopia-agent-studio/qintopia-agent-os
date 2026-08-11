@@ -5372,7 +5372,6 @@ def handle_qintopia_xiaoman_activity_announcement_prepare(args: dict[str, Any], 
     else:
         display_date = date
         records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
-        records, record_source, record_error = _xiaoman_activity_announcement_records(args, actor_agent)
     if record_error:
         return _xiaoman_activity_error(
             skill,
