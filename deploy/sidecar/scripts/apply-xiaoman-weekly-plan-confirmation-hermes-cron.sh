@@ -122,7 +122,7 @@ if stat.S_ISLNK(parent_stat.st_mode) or not stat.S_ISDIR(parent_stat.st_mode):
 entry_stat = os.lstat(cron_file)
 if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
     fail("Xiaoman cron file must be a regular file")
-if entry_stat.st_size > 65536:
+if entry_stat.st_size > 1024 * 1024:
     fail("Xiaoman cron file is too large")
 previous_mode = stat.S_IMODE(entry_stat.st_mode)
 if previous_mode & 0o002:

@@ -59,7 +59,7 @@ JOB_NAME = "小满·周一活动预告（文字稿+海报简报）"
 JOB_SCHEDULE_EXPR = "30 9 * * 1"
 JOB_SCRIPT = "qintopia_xiaoman_weekly_preview.sh"
 CHAT_ID_KEY = "WECOM_HOME_CHANNEL"
-MAX_CRON_BYTES = 65536
+MAX_CRON_BYTES = 1024 * 1024
 MAX_ENV_BYTES = 1024 * 1024
 MAX_WRAPPER_BYTES = 65536
 

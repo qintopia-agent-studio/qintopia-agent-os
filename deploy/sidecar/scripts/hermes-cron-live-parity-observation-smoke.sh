@@ -46,7 +46,7 @@ env_files = {
     "erhua": Path(sys.argv[5]),
 }
 
-MAX_JSON_BYTES = 65536
+MAX_JSON_BYTES = 1024 * 1024
 MAX_ENV_BYTES = 1024 * 1024
 CHAT_ID_KEY = "WECOM_HOME_CHANNEL"
 
@@ -60,13 +60,15 @@ def read_regular(path: Path, max_bytes: int, reason: str) -> bytes:
     try:
         entry_stat = os.lstat(path)
     except FileNotFoundError:
-        fail(reason)
+        fail(f"{reason}_missing")
     if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISREG(entry_stat.st_mode):
-        fail(reason)
-    if entry_stat.st_size <= 0 or entry_stat.st_size > max_bytes:
-        fail(reason)
+        fail(f"{reason}_not_regular")
+    if entry_stat.st_size <= 0:
+        fail(f"{reason}_empty")
+    if entry_stat.st_size > max_bytes:
+        fail(f"{reason}_too_large")
     if stat.S_IMODE(entry_stat.st_mode) & (stat.S_IWGRP | stat.S_IWOTH):
-        fail(reason)
+        fail(f"{reason}_writable")
     return path.read_bytes()
 
 
@@ -74,9 +76,9 @@ def load_json(path: Path, reason: str) -> dict:
     try:
         value = json.loads(read_regular(path, MAX_JSON_BYTES, reason).decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
-        fail(reason)
+        fail(f"{reason}_json_invalid")
     if not isinstance(value, dict):
-        fail(reason)
+        fail(f"{reason}_not_envelope")
     return value
 
 
@@ -138,12 +140,12 @@ live_jobs: dict[str, list[dict]] = {}
 live_count = 0
 enabled_count = 0
 for profile, cron_file in cron_files.items():
-    value = load_json(cron_file, "cron_invalid")
+    value = load_json(cron_file, "cron")
     if value.get("schema_version") != 1:
-        fail("cron_invalid")
+        fail("cron_schema_invalid")
     jobs = value.get("jobs")
     if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
-        fail("cron_invalid")
+        fail("cron_jobs_invalid")
     live_jobs[profile] = jobs
     live_count += len(jobs)
     enabled_count += sum(1 for job in jobs if job.get("enabled") is True)
