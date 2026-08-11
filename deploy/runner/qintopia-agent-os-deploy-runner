@@ -94,6 +94,7 @@ allowed_scope = {
     "hermes-profile-erhua",
     "production-activation",
     "production-observation",
+    "production-hermes-cron-apply",
     "production-legacy-cron-retirement",
     "production-runtime-one-shot",
 }
@@ -109,6 +110,14 @@ allowed_legacy_cron_retirement_targets = {
     "erhua-legacy-cron",
     "xiaoman-legacy-cron",
 }
+allowed_hermes_cron_apply_targets = {
+    "erhua-morning-brief",
+    "xiaoman-daily-case-report",
+    "xiaoman-weekly-recruitment",
+    "xiaoman-weekly-plan-confirmation",
+    "xiaoman-weekly-preview",
+}
+allowed_hermes_cron_apply_modes = {"install", "enable"}
 allowed_observation_targets = {
     "qiwe-image-send",
     "xiaoman-daily-case-report-auto-publish",
@@ -279,6 +288,31 @@ if "production-legacy-cron-retirement" in release_scope:
 elif data.get("legacy_cron_retirement") is not None:
     fail("legacy_cron_retirement metadata is only allowed for production-legacy-cron-retirement")
 
+if "production-hermes-cron-apply" in release_scope:
+    if release_scope != ["production-hermes-cron-apply"]:
+        fail("production-hermes-cron-apply must be the only release scope")
+    if restart_targets != ["qintopia-system-services"]:
+        fail("production-hermes-cron-apply requires exactly qintopia-system-services")
+    if data.get("rollback_on_smoke_failure") is not False:
+        fail("production-hermes-cron-apply requires rollback_on_smoke_failure=false")
+    if data.get("dry_run") is not False:
+        fail("production-hermes-cron-apply does not support dry_run")
+    hermes_cron_apply = data.get("hermes_cron_apply")
+    if not isinstance(hermes_cron_apply, dict):
+        fail("production-hermes-cron-apply requires hermes_cron_apply metadata")
+    targets = hermes_cron_apply.get("targets")
+    if not isinstance(targets, list) or not targets:
+        fail("hermes_cron_apply.targets must be a non-empty list")
+    if set(targets) - allowed_hermes_cron_apply_targets or len(set(targets)) != len(targets):
+        fail("hermes_cron_apply.targets contains unsupported or duplicate entries")
+    mode = hermes_cron_apply.get("mode")
+    if mode not in allowed_hermes_cron_apply_modes:
+        fail("hermes_cron_apply.mode must be install or enable")
+    if data.get("profile_dry_run_request_id") is not None:
+        fail("production-hermes-cron-apply must not set profile_dry_run_request_id")
+elif data.get("hermes_cron_apply") is not None:
+    fail("hermes_cron_apply metadata is only allowed for production-hermes-cron-apply")
+
 if "production-runtime-one-shot" in release_scope:
     if release_scope != ["production-runtime-one-shot"]:
         fail("production-runtime-one-shot must be the only release scope")
@@ -391,6 +425,8 @@ profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
 activation_targets="$(json_get activation.targets)"
 observation_targets="$(json_get observation.targets)"
 legacy_cron_retirement_targets="$(json_get legacy_cron_retirement.targets)"
+hermes_cron_apply_targets="$(json_get hermes_cron_apply.targets)"
+hermes_cron_apply_mode="$(json_get hermes_cron_apply.mode)"
 runtime_one_shot_targets="$(json_get runtime_one_shot.targets)"
 runtime_one_shot_backfill_date="$(json_get runtime_one_shot.backfill_date)"
 runtime_one_shot_approval="$(json_get runtime_one_shot.approval)"
@@ -430,6 +466,7 @@ write_result() {
     "${RESULT_DIR}/${request_id}.activation.json" \
     "${RESULT_DIR}/${request_id}.observation.json" \
     "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" \
+    "${RESULT_DIR}/${request_id}.hermes-cron-apply.json" \
     "${RESULT_DIR}/${request_id}.runtime-one-shot.json" <<'PY'
 import json
 import os
@@ -464,8 +501,9 @@ import sys
     activation_evidence_path,
     observation_evidence_path,
     legacy_cron_retirement_evidence_path,
+    hermes_cron_apply_evidence_path,
     runtime_one_shot_evidence_path,
-) = sys.argv[1:30]
+) = sys.argv[1:31]
 
 runner_check = {
     "name": "deploy-runner",
@@ -551,6 +589,14 @@ if os.path.isfile(legacy_cron_retirement_evidence_path):
         "status": "passed" if status == "succeeded" else "failed",
         "detail": json.dumps(legacy_cron_retirement_evidence, separators=(",", ":")),
     })
+if os.path.isfile(hermes_cron_apply_evidence_path):
+    with open(hermes_cron_apply_evidence_path, encoding="utf-8") as fh:
+        hermes_cron_apply_evidence = json.load(fh)
+    result["checks"].append({
+        "name": "production-hermes-cron-apply",
+        "status": "passed" if status == "succeeded" else "failed",
+        "detail": json.dumps(hermes_cron_apply_evidence, separators=(",", ":")),
+    })
 if os.path.isfile(runtime_one_shot_evidence_path):
     with open(runtime_one_shot_evidence_path, encoding="utf-8") as fh:
         runtime_one_shot_evidence = json.load(fh)
@@ -611,6 +657,8 @@ observation_release_dir=""
 observation_evidence_file="${RESULT_DIR}/${request_id}.observation.json"
 legacy_cron_retirement_release_dir=""
 legacy_cron_retirement_evidence_file="${RESULT_DIR}/${request_id}.legacy-cron-retirement.json"
+hermes_cron_apply_release_dir=""
+hermes_cron_apply_evidence_file="${RESULT_DIR}/${request_id}.hermes-cron-apply.json"
 runtime_one_shot_release_dir=""
 runtime_one_shot_evidence_file="${RESULT_DIR}/${request_id}.runtime-one-shot.json"
 validate_current_activation_release() {
@@ -691,6 +739,32 @@ PY
   legacy_cron_retirement_release_dir="$current_release"
 }
 
+validate_current_hermes_cron_apply_release() {
+  local current_release=""
+  current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  if [[ -z "$current_release" || ! -d "$current_release" ]]; then
+    echo "current release is unavailable for production Hermes cron apply" >&2
+    return 1
+  fi
+  python3 - "$request_file" "${current_release}/manifest.json" "$current_release" <<'PY'
+import json
+import os
+import sys
+
+request_path, manifest_path, current_release = sys.argv[1:4]
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if os.path.basename(current_release) != request["release_sha"]:
+    raise SystemExit("production Hermes cron apply request must target the current release SHA")
+for key in ("release_sha", "runtime_sha", "deploy_bundle_sha", "commit_sha"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"current release manifest {key} mismatch")
+PY
+  hermes_cron_apply_release_dir="$current_release"
+}
+
 validate_current_runtime_one_shot_release() {
   local current_release=""
   current_release="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
@@ -765,6 +839,39 @@ else:
     evidence = {"schema_version": 1, "targets": []}
 evidence["targets"].append({
     "target": target,
+    "status": status,
+    "detail": detail,
+    "recorded_at": now,
+})
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(evidence, fh, ensure_ascii=False, indent=2)
+    fh.write("\n")
+PY
+}
+
+write_hermes_cron_apply_evidence() {
+  local target="$1"
+  local mode="$2"
+  local status="$3"
+  local detail="${4:-}"
+  python3 - "$hermes_cron_apply_evidence_file" "$target" "$mode" "$status" "$detail" <<'PY'
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+path, target, mode, status, detail = sys.argv[1:6]
+now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+if os.path.isfile(path):
+    with open(path, encoding="utf-8") as fh:
+        evidence = json.load(fh)
+else:
+    evidence = {"schema_version": 1, "mode": mode, "targets": []}
+if evidence.get("mode") != mode:
+    raise SystemExit("Hermes cron apply evidence mode changed during request")
+evidence["targets"].append({
+    "target": target,
+    "mode": mode,
     "status": status,
     "detail": detail,
     "recorded_at": now,
@@ -1001,6 +1108,44 @@ run_legacy_cron_retirement_target() {
       ;;
     *)
       echo "unsupported production legacy cron retirement target: ${target}" >&2
+      return 2
+      ;;
+  esac
+}
+
+run_hermes_cron_apply_target() {
+  local target="$1"
+  local mode="$2"
+  local script_dir="${hermes_cron_apply_release_dir}/deploy/sidecar/scripts"
+  local mode_arg="--${mode}"
+  case "$target" in
+    erhua-morning-brief)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON=approved-production-erhua-morning-brief-hermes-cron \
+        "${script_dir}/apply-erhua-morning-brief-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
+      ;;
+    xiaoman-daily-case-report)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON=approved-production-xiaoman-daily-case-report-hermes-cron \
+        "${script_dir}/apply-xiaoman-daily-case-report-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
+      ;;
+    xiaoman-weekly-recruitment)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_HERMES_CRON=approved-production-xiaoman-weekly-recruitment-hermes-cron \
+        "${script_dir}/apply-xiaoman-weekly-recruitment-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
+      ;;
+    xiaoman-weekly-plan-confirmation)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON=approved-production-xiaoman-weekly-plan-confirmation-hermes-cron \
+        "${script_dir}/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
+      ;;
+    xiaoman-weekly-preview)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_HERMES_CRON=approved-production-xiaoman-weekly-preview-hermes-cron \
+        "${script_dir}/apply-xiaoman-weekly-preview-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
+      ;;
+    *)
+      echo "unsupported production Hermes cron apply target: ${target}" >&2
       return 2
       ;;
   esac
@@ -1245,6 +1390,33 @@ run_production_legacy_cron_retirement() {
   write_result succeeded
 }
 
+run_production_hermes_cron_apply() {
+  deploy_stage="validate-current-hermes-cron-apply-release"
+  validate_current_hermes_cron_apply_release || return $?
+  rm -f "$hermes_cron_apply_evidence_file"
+  local apply_log_dir
+  apply_log_dir="$(mktemp -d)"
+  IFS=',' read -r -a hermes_cron_apply_target_list <<< "$hermes_cron_apply_targets"
+  local target
+  for target in "${hermes_cron_apply_target_list[@]}"; do
+    deploy_stage="hermes-cron-${hermes_cron_apply_mode}-${target}"
+    local target_log="${apply_log_dir}/${target}.log"
+    if run_hermes_cron_apply_target "$target" "$hermes_cron_apply_mode" >"$target_log" 2>&1; then
+      write_hermes_cron_apply_evidence "$target" "$hermes_cron_apply_mode" passed \
+        "mode=${hermes_cron_apply_mode}"
+    else
+      local status=$?
+      write_hermes_cron_apply_evidence "$target" "$hermes_cron_apply_mode" failed \
+        "exit ${status}"
+      rm -rf "$apply_log_dir"
+      return "$status"
+    fi
+  done
+  rm -rf "$apply_log_dir"
+  deploy_stage="write-hermes-cron-apply-success-result"
+  write_result succeeded
+}
+
 run_production_runtime_one_shot() {
   deploy_stage="validate-current-runtime-one-shot-release"
   validate_current_runtime_one_shot_release || return $?
@@ -1271,6 +1443,11 @@ run_production_runtime_one_shot() {
 }
 
 run_promotion() {
+  if [[ "$release_scope" == "production-hermes-cron-apply" ]]; then
+    run_production_hermes_cron_apply
+    return
+  fi
+
   if [[ "$release_scope" == "production-runtime-one-shot" ]]; then
     run_production_runtime_one_shot
     return

@@ -54,6 +54,7 @@
           "hermes-profile-erhua",
           "production-activation",
           "production-observation",
+          "production-hermes-cron-apply",
           "production-legacy-cron-retirement",
           "production-runtime-one-shot"
         ]
@@ -180,6 +181,28 @@
             "enum": ["erhua-legacy-cron", "xiaoman-legacy-cron"]
           }
         }
+      }
+    },
+    "hermes_cron_apply": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets", "mode"],
+      "properties": {
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "erhua-morning-brief",
+              "xiaoman-daily-case-report",
+              "xiaoman-weekly-recruitment",
+              "xiaoman-weekly-plan-confirmation",
+              "xiaoman-weekly-preview"
+            ]
+          }
+        },
+        "mode": { "enum": ["install", "enable"] }
       }
     },
     "runtime_one_shot": {
@@ -379,6 +402,39 @@
       },
       "then": {
         "not": { "required": ["legacy_cron_retirement"] }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "contains": { "const": "production-hermes-cron-apply" }
+          }
+        }
+      },
+      "then": {
+        "required": ["hermes_cron_apply"],
+        "properties": {
+          "release_scope": { "const": ["production-hermes-cron-apply"] },
+          "restart_targets": { "const": ["qintopia-system-services"] },
+          "dry_run": { "const": false },
+          "rollback_on_smoke_failure": { "const": false }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "not": { "contains": { "const": "production-hermes-cron-apply" } }
+          }
+        },
+        "required": ["release_scope"]
+      },
+      "then": {
+        "not": { "required": ["hermes_cron_apply"] }
       }
     },
     {

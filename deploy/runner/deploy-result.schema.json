@@ -46,7 +46,12 @@
           "sidecar-runtime",
           "deploy-bundle",
           "hermes-plugins",
-          "hermes-profile-erhua"
+          "hermes-profile-erhua",
+          "production-activation",
+          "production-observation",
+          "production-hermes-cron-apply",
+          "production-legacy-cron-retirement",
+          "production-runtime-one-shot"
         ]
       }
     },

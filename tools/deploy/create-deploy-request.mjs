@@ -175,6 +175,16 @@ const legacyCronRetirementTargets = splitList(
     process.env.DEPLOY_LEGACY_CRON_RETIREMENT_TARGETS || ""
   )
 );
+const hermesCronApplyTargets = splitList(
+  argValue(
+    "--hermes-cron-apply-targets",
+    process.env.DEPLOY_HERMES_CRON_APPLY_TARGETS || ""
+  )
+);
+const hermesCronApplyMode = argValue(
+  "--hermes-cron-apply-mode",
+  process.env.DEPLOY_HERMES_CRON_APPLY_MODE || ""
+);
 const runtimeOneShotTargets = splitList(
   argValue(
     "--runtime-one-shot-targets",
@@ -249,6 +259,12 @@ if (observationTargets.length > 0) {
 }
 if (legacyCronRetirementTargets.length > 0) {
   request.legacy_cron_retirement = { targets: legacyCronRetirementTargets };
+}
+if (hermesCronApplyTargets.length > 0) {
+  request.hermes_cron_apply = {
+    targets: hermesCronApplyTargets,
+    mode: hermesCronApplyMode,
+  };
 }
 if (runtimeOneShotTargets.length > 0) {
   request.runtime_one_shot = {

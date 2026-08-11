@@ -113,7 +113,14 @@ Important fields:
   when runtime and deploy bundle were built together.
 - `release_scope`: one or more of `sidecar-runtime`, `deploy-bundle`, and
   `hermes-plugins`. The fixed `hermes-profile-erhua` scope is exclusive and requires
-  exactly the `hermes-erhua` restart target.
+  exactly the `hermes-erhua` restart target. Production action scopes such as
+  `production-hermes-cron-apply`, `production-activation`, `production-observation`,
+  `production-legacy-cron-retirement`, and `production-runtime-one-shot` are also
+  exclusive and require exactly the `qintopia-system-services` restart target.
+- `production-hermes-cron-apply`: exclusive scope for owner-approved repository-to-live
+  Hermes cron writes. It accepts only fixed reviewed recurring-task targets and
+  `mode=install|enable`, calls release-local apply scripts with fixed approval strings,
+  and records sanitized target/mode/status evidence only.
 - `production-runtime-one-shot`: exclusive scope for owner-approved immediate production
   runs after the matching timer is already enabled. It accepts exactly one fixed target,
   either `erhua-morning-brief` or `xiaoman-daily-case-report-auto-publish-backfill`,
@@ -209,7 +216,9 @@ The target server currently has:
 - runner `ReadWritePaths` access to `/home/ubuntu/.hermes/profiles/erhua`
 - runner `ReadWritePaths` access to the fixed
   `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory for reviewed Xiaoman legacy
-  cron retirement only
+  cron retirement and Hermes cron apply only
+- runner `ReadWritePaths` access to `/home/ubuntu/.hermes/scripts` for reviewed Hermes
+  cron wrapper installs
 
 The COS env file was observed as `root:ubuntu 0600`, so the production runner should run
 as a root-owned system service and execute only the fixed runner scripts. If a dedicated

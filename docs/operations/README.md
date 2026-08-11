@@ -28,6 +28,9 @@ deployment docs.
 - [production-runtime-observation-runbook.md](production-runtime-observation-runbook.md):
   signed read-only production observations for QiWe image-send and Xiaoman daily
   case-report state before reviewed activation decisions.
+- [production-hermes-cron-apply-runbook.md](production-hermes-cron-apply-runbook.md):
+  signed production repository-to-live Hermes cron apply requests for fixed reviewed
+  recurring Agent tasks.
 - [production-legacy-cron-retirement-runbook.md](production-legacy-cron-retirement-runbook.md):
   historical signed production legacy Hermes cron retirement requests from the temporary
   systemd cutover direction. Forward recurring-task changes now use the reviewed Hermes

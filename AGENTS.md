@@ -117,6 +117,20 @@
   `QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot deploy/sidecar/scripts/install-hermes-cron-snapshot-timer.sh`.
   The snapshot repo holds real chat ids and prompts; it has no remote, stays `0700`, and
   only sanitized counts may leave the server.
+- Production Hermes cron live apply should use the `Apply Production Hermes Crons`
+  GitHub workflow after the reviewed release containing the runner support is deployed.
+  It creates a signed `production-hermes-cron-apply` deploy-runner request and accepts
+  only `apply_mode=install|enable` plus these fixed targets: `erhua-morning-brief`,
+  `xiaoman-daily-case-report`, `xiaoman-weekly-recruitment`,
+  `xiaoman-weekly-plan-confirmation`, and `xiaoman-weekly-preview`. This is the
+  repository-to-live step for `/home/ubuntu/.hermes/profiles/<profile>/cron/jobs.json`:
+  install first writes the reviewed job disabled and installs the reviewed wrapper under
+  `/home/ubuntu/.hermes/scripts/`; enable is a later explicit request after live
+  declaration parity is proven. The approval strings authorize the production action
+  boundary, not a cryptographic signature over `jobs.json`. The workflow must not accept
+  chat ids, cron JSON, script paths, approval strings, env-file paths, systemctl
+  commands, or arbitrary shell from inputs, and deploy results must not record live cron
+  content, group ids, prompts, env values, or script output.
 - Production legacy Hermes cron retirement should use the
   `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
   the runner support is deployed. It creates a signed
