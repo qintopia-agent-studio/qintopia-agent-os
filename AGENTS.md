@@ -133,7 +133,11 @@
   content, group ids, prompts, env values, or raw script output. Apply scripts may emit
   a bounded safe failure reason only through the explicit
   `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must ignore all
-  other stdout/stderr for result details.
+  other stdout/stderr for result details. Because each apply ends by running
+  `sync-hermes-cron-snapshot.sh`, the deploy-runner service must grant `ReadWritePaths`
+  to the fixed server-local snapshot repo
+  `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; do not broaden this
+  to the whole qintopia-agentos state directory or whole home.
 - Production legacy Hermes cron retirement should use the
   `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
   the runner support is deployed. It creates a signed
