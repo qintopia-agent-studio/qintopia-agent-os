@@ -54,6 +54,9 @@ unless correcting historical evidence.
      [hermes-cron-migration](hermes-cron-migration/README.md): task 0 builds the shared
      registry, wrapper template, snapshot sync, and smoke redesign; tasks 1-5 migrate
      the five production timers in parallel.
+   - After release, repository-reviewed Hermes cron templates are applied to live
+     production `jobs.json` through the signed `Apply Production Hermes Crons` workflow,
+     first `install` disabled and then `enable` through a later explicit request.
    - Operator contract:
      [Hermes cron as source of truth](../../operations/hermes-cron-source-of-truth.md).
 

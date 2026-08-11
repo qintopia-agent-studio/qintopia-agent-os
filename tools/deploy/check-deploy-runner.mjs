@@ -51,6 +51,7 @@ const requiredFiles = [
   ".github/workflows/rollback-production.yml",
   ".github/workflows/activate-production-timers.yml",
   ".github/workflows/observe-production-runtime.yml",
+  ".github/workflows/apply-production-hermes-crons.yml",
   ".github/workflows/retire-production-legacy-crons.yml",
   ".github/workflows/run-production-runtime-one-shot.yml",
   "deploy/runner/README.md",
@@ -88,6 +89,7 @@ const requiredFiles = [
   "tools/deploy/test-production-timer-activation-runner.mjs",
   "tools/deploy/test-production-observation-runner.mjs",
   "tools/deploy/test-production-worker-run-evidence-smoke.mjs",
+  "tools/deploy/test-production-hermes-cron-apply-runner.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-production-runtime-one-shot-runner.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
@@ -103,6 +105,7 @@ const requiredFiles = [
   "deploy/sidecar/scripts/xiaoman-profile-bundle-observation-smoke.sh",
   "docs/operations/production-timer-activation-runbook.md",
   "docs/operations/production-runtime-observation-runbook.md",
+  "docs/operations/production-hermes-cron-apply-runbook.md",
   "docs/operations/production-legacy-cron-retirement-runbook.md",
   "docs/operations/production-runtime-one-shot-runbook.md",
 ];
@@ -488,6 +491,91 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       break;
     }
   }
+  const productionHermesCronApplyRequest = {
+    ...sampleRequest,
+    release_scope: ["production-hermes-cron-apply"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+    rollback_on_smoke_failure: false,
+    hermes_cron_apply: {
+      targets: [
+        "erhua-morning-brief",
+        "xiaoman-daily-case-report",
+        "xiaoman-weekly-recruitment",
+        "xiaoman-weekly-plan-confirmation",
+        "xiaoman-weekly-preview",
+      ],
+      mode: "install",
+    },
+  };
+  if (!validateRequest(productionHermesCronApplyRequest)) {
+    addError(
+      `deploy request schema must accept fixed production Hermes cron apply requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  const productionHermesCronEnableRequest = {
+    ...productionHermesCronApplyRequest,
+    hermes_cron_apply: {
+      targets: ["xiaoman-weekly-preview"],
+      mode: "enable",
+    },
+  };
+  if (!validateRequest(productionHermesCronEnableRequest)) {
+    addError(
+      `deploy request schema must accept fixed production Hermes cron enable requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
+  for (const badRequest of [
+    {
+      ...sampleRequest,
+      hermes_cron_apply: {
+        targets: ["xiaoman-weekly-preview"],
+        mode: "install",
+      },
+    },
+    {
+      ...productionHermesCronApplyRequest,
+      release_scope: ["production-hermes-cron-apply", "deploy-bundle"],
+    },
+    {
+      ...productionHermesCronApplyRequest,
+      restart_targets: ["hermes-xiaoman"],
+    },
+    { ...productionHermesCronApplyRequest, dry_run: true },
+    { ...productionHermesCronApplyRequest, rollback_on_smoke_failure: true },
+    {
+      ...productionHermesCronApplyRequest,
+      hermes_cron_apply: {
+        targets: ["xiaoman-weekly-preview", "xiaoman-weekly-preview"],
+        mode: "install",
+      },
+    },
+    {
+      ...productionHermesCronApplyRequest,
+      hermes_cron_apply: {
+        targets: ["unknown-target"],
+        mode: "install",
+      },
+    },
+    {
+      ...productionHermesCronApplyRequest,
+      hermes_cron_apply: {
+        targets: ["xiaoman-weekly-preview"],
+        mode: "run",
+      },
+    },
+  ]) {
+    if (validateRequest(badRequest)) {
+      addError(
+        "deploy request schema must reject unsafe production Hermes cron apply variants"
+      );
+      break;
+    }
+  }
   const productionRuntimeOneShotRequest = {
     ...sampleRequest,
     release_scope: ["production-runtime-one-shot"],
@@ -607,6 +695,27 @@ if (exists("deploy/runner/deploy-result.schema.json")) {
   if (!validateResult(sampleResult)) {
     addError(
       `deploy/runner/deploy-result.schema.json: sample result failed validation ${JSON.stringify(
+        validateResult.errors
+      )}`
+    );
+  }
+  const productionHermesCronApplyResult = {
+    ...sampleResult,
+    status: "succeeded",
+    release_scope: ["production-hermes-cron-apply"],
+    checks: [
+      { name: "deploy-runner", status: "passed" },
+      {
+        name: "production-hermes-cron-apply",
+        status: "passed",
+        detail:
+          '{"schema_version":1,"mode":"install","targets":[{"target":"xiaoman-weekly-preview","mode":"install","status":"passed","detail":"mode=install"}]}',
+      },
+    ],
+  };
+  if (!validateResult(productionHermesCronApplyResult)) {
+    addError(
+      `deploy/runner/deploy-result.schema.json: production Hermes cron apply result failed validation ${JSON.stringify(
         validateResult.errors
       )}`
     );
@@ -1171,6 +1280,118 @@ if (exists(".github/workflows/observe-production-runtime.yml")) {
   }
 }
 
+if (exists(".github/workflows/apply-production-hermes-crons.yml")) {
+  const workflow = YAML.parse(
+    readText(".github/workflows/apply-production-hermes-crons.yml")
+  );
+  const workflowText = readText(".github/workflows/apply-production-hermes-crons.yml");
+  const job = workflow?.jobs?.["request-hermes-cron-apply"];
+  const targetsInput =
+    workflow?.on?.workflow_dispatch?.inputs?.hermes_cron_apply_targets;
+  const modeInput = workflow?.on?.workflow_dispatch?.inputs?.apply_mode;
+  const releaseShaInput = workflow?.on?.workflow_dispatch?.inputs?.release_sha;
+
+  if (!workflow?.on?.workflow_dispatch) {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: must use workflow_dispatch"
+    );
+  }
+  if (workflow?.concurrency?.group !== "production-deploy") {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: must share production-deploy concurrency"
+    );
+  }
+  if (job?.environment !== "production") {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: request-hermes-cron-apply must use production environment"
+    );
+  }
+  if (job?.permissions?.contents !== "read") {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: request-hermes-cron-apply must keep contents permission read-only"
+    );
+  }
+  if (releaseShaInput?.required !== true || releaseShaInput?.type !== "string") {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: release_sha must be a required string input"
+    );
+  }
+  if (
+    modeInput?.required !== true ||
+    modeInput?.type !== "choice" ||
+    modeInput?.default !== "install"
+  ) {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: apply_mode must be a required install-default choice"
+    );
+  }
+  const modeOptions = modeInput?.options || [];
+  for (const expectedMode of ["install", "enable"]) {
+    if (!modeOptions.includes(expectedMode)) {
+      addError(
+        `.github/workflows/apply-production-hermes-crons.yml: missing mode option ${expectedMode}`
+      );
+    }
+  }
+  if (
+    targetsInput?.default !==
+    "erhua-morning-brief,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview"
+  ) {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: default targets must stay limited to the five reviewed Hermes cron jobs"
+    );
+  }
+  const uploadJobNames = Object.entries(workflow?.jobs || {})
+    .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
+    .map(([jobName]) => jobName);
+  if (uploadJobNames.length !== 0) {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: Hermes cron apply must not require contents: write"
+    );
+  }
+  if (hasDangerousInputInterpolationInRun(workflowText)) {
+    addError(
+      ".github/workflows/apply-production-hermes-crons.yml: workflow_dispatch inputs must not be interpolated directly inside run scripts"
+    );
+  }
+  for (const forbidden of ["ssh ", "bash -c", "eval ", "gh release upload"]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/apply-production-hermes-crons.yml: forbidden ${forbidden}`
+      );
+    }
+  }
+  for (const fragment of [
+    "Apply Production Hermes Crons",
+    "ref: master",
+    "require_single_line()",
+    "normalize_csv_allowlist()",
+    "release_sha must be a lowercase 40-character git SHA.",
+    "git merge-base --is-ancestor",
+    "apply_mode must be install or enable.",
+    "erhua-morning-brief,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview",
+    "pnpm deploy:runner:check",
+    "DEPLOY_RELEASE_SCOPE: production-hermes-cron-apply",
+    "DEPLOY_RESTART_TARGETS: qintopia-system-services",
+    'DEPLOY_DRY_RUN: "false"',
+    'DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"',
+    "DEPLOY_HERMES_CRON_APPLY_TARGETS",
+    "DEPLOY_HERMES_CRON_APPLY_MODE",
+    "DEPLOY_REQUEST_SIGNING_KEY",
+    "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
+    "create-deploy-request.mjs",
+    "upload-deploy-request.sh",
+    "wait-deploy-result.sh",
+    "WAIT_FOR_SERVER_DEPLOY_RESULT",
+  ]) {
+    if (!workflowText.includes(fragment)) {
+      addError(
+        `.github/workflows/apply-production-hermes-crons.yml: missing ${fragment}`
+      );
+    }
+  }
+}
+
 if (exists(".github/workflows/retire-production-legacy-crons.yml")) {
   const workflow = YAML.parse(
     readText(".github/workflows/retire-production-legacy-crons.yml")
@@ -1432,6 +1653,10 @@ for (const fragment of [
   "production-observation requires exactly qintopia-system-services",
   "production-observation requires rollback_on_smoke_failure=false",
   "observation metadata is only allowed for production-observation",
+  "production-hermes-cron-apply must be the only release scope",
+  "production-hermes-cron-apply requires exactly qintopia-system-services",
+  "production-hermes-cron-apply requires rollback_on_smoke_failure=false",
+  "hermes_cron_apply metadata is only allowed for production-hermes-cron-apply",
   "production-legacy-cron-retirement must be the only release scope",
   "production-legacy-cron-retirement requires exactly qintopia-system-services",
   "production-legacy-cron-retirement requires rollback_on_smoke_failure=false",
@@ -1442,6 +1667,7 @@ for (const fragment of [
   "runtime_one_shot metadata is only allowed for production-runtime-one-shot",
   "validate_current_activation_release",
   "validate_current_observation_release",
+  "validate_current_hermes_cron_apply_release",
   "validate_current_retirement_release",
   "validate_current_runtime_one_shot_release",
   "observe_erhua_legacy_cron",
@@ -1450,10 +1676,12 @@ for (const fragment of [
   "observe_enabled_xiaoman_daily_case_report_timer_for_one_shot",
   "run_production_activation",
   "run_production_observation",
+  "run_production_hermes_cron_apply",
   "run_production_legacy_cron_retirement",
   "run_production_runtime_one_shot",
   "production-timer-activation",
   "production-observation",
+  "production-hermes-cron-apply",
   "production-legacy-cron-retirement",
   "production-runtime-one-shot",
   "runtime_one_shot.backfill_date",
@@ -1469,6 +1697,17 @@ for (const fragment of [
   "qiwe-image-send-production-observation-smoke.sh",
   "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
   "production-worker-run-evidence-smoke.sh",
+  "apply-erhua-morning-brief-hermes-cron.sh",
+  "apply-xiaoman-daily-case-report-hermes-cron.sh",
+  "apply-xiaoman-weekly-recruitment-hermes-cron.sh",
+  "apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
+  "apply-xiaoman-weekly-preview-hermes-cron.sh",
+  "approved-production-erhua-morning-brief-hermes-cron",
+  "approved-production-xiaoman-daily-case-report-hermes-cron",
+  "approved-production-xiaoman-weekly-recruitment-hermes-cron",
+  "approved-production-xiaoman-weekly-plan-confirmation-hermes-cron",
+  "approved-production-xiaoman-weekly-preview-hermes-cron",
+  "hermes_cron_apply.mode",
   "run_worker_run_evidence_observation",
   "QINTOPIA_PRODUCTION_WORKER_RUN_EVIDENCE_ENABLE",
   "validate_current_profile_release",
@@ -1630,6 +1869,9 @@ for (const fragment of [
   "DEPLOY_REQUEST_SIGNING_KEY_ID",
   "DEPLOY_OBSERVATION_TARGETS",
   "request.observation",
+  "DEPLOY_HERMES_CRON_APPLY_TARGETS",
+  "DEPLOY_HERMES_CRON_APPLY_MODE",
+  "request.hermes_cron_apply",
   "DEPLOY_RUNTIME_ONE_SHOT_TARGETS",
   "DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE",
   "DEPLOY_RUNTIME_ONE_SHOT_APPROVAL",
@@ -1738,6 +1980,14 @@ if (
 ) {
   addError(
     "deploy runner service must explicitly allow fixed Xiaoman cron retirement writes"
+  );
+}
+if (
+  runnerServiceText &&
+  !runnerReadWritePaths.includes("/home/ubuntu/.hermes/scripts")
+) {
+  addError(
+    "deploy runner service must explicitly allow fixed Hermes cron wrapper installs"
   );
 }
 if (
@@ -1985,6 +2235,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-production-worker-run-evidence-smoke.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-production-hermes-cron-apply-runner.mjs"], {
     cwd: repoRoot,
   });
   execFileSync(
