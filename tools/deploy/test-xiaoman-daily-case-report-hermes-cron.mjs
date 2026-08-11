@@ -456,6 +456,7 @@ try {
       "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0",
       "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PRODUCTION_APPROVAL=approved-production-xiaoman-daily-case-report",
       "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1",
+      "PATH=/tmp/unreviewed",
       "",
     ].join("\n"),
     "utf8"
@@ -491,6 +492,14 @@ try {
       .replaceAll("/etc/qintopia/message-sidecar.env", wrapperEnvFile)
       .replaceAll("/home/ubuntu/.local/state/qintopia-agentos", wrapperStateRoot),
     "utf8"
+  );
+  check(
+    fs
+      .readFileSync(sourceWrapper, "utf8")
+      .includes(
+        'WORKER="${release_dir}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"'
+      ),
+    "daily case report wrapper must execute the worker from the resolved release dir"
   );
   fs.chmodSync(wrapperScript, 0o755);
   const wrapperLog = path.join(

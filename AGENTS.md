@@ -474,7 +474,13 @@
     plus `apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh --install` then
     `--enable`. Disable the old timer with
     `rollback-xiaoman-weekly-plan-confirmation-production.sh` before enabling the job;
-    health is the allowlist observation smoke plus the snapshot git history. Follow
+    because the rollback script requires
+    `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED=0` in the sidecar env while the
+    worker requires `1`, the wrapper exports that flag itself and the env file keeps `0`
+    for the retired systemd path. The wrapper also re-exports
+    `QINTOPIA_DEPLOYED_COMMIT_SHA` from `release/current` after sourcing the persistent
+    env, then executes the worker from the same resolved release directory. Health is
+    the allowlist observation smoke plus the snapshot git history. Follow
     `docs/operations/xiaoman-weekly-plan-confirmation-hermes-cron-runbook.md`.
 
   The recruitment and plan-confirmation Hermes crons both keep using the Xiaoman

@@ -276,11 +276,51 @@ try {
     throw new Error("Erhua morning brief apply accepted a drifted declaration");
   }
 
+  driftJob.schedule = { kind: "cron", expr: "10 8 * * *", display: "10 8 * * *" };
+  driftJob.origin.chat_name = "unreviewed-chat-name";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("Erhua morning brief apply accepted drifted origin routing fields");
+  }
+
+  driftJob.origin.chat_name = null;
+  driftJob.deliver = "none";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("Erhua morning brief apply accepted drifted deliver mode");
+  }
+
+  driftJob.deliver = "origin";
+  driftJob.origin.platform = "feishu";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("Erhua morning brief apply accepted drifted origin platform");
+  }
+
+  driftJob.origin.platform = "wecom";
+  driftJob.origin.chat_id = "unreviewed-chat-id";
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  result = run("--enable", {
+    QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("definition drifts")) {
+    throw new Error("Erhua morning brief apply accepted drifted origin chat id");
+  }
+
   const staleSha = "9".repeat(40);
   const sidecarEnvFile = path.join(tmpRoot, "message-sidecar.env");
   fs.writeFileSync(
     sidecarEnvFile,
-    `QINTOPIA_DEPLOYED_COMMIT_SHA=${staleSha}\n`,
+    `QINTOPIA_DEPLOYED_COMMIT_SHA=${staleSha}\nPATH=/tmp/unreviewed\n`,
     "utf8"
   );
   fs.chmodSync(sidecarEnvFile, 0o600);
@@ -294,7 +334,7 @@ try {
   );
   writeExecutable(
     fakeWorker,
-    '#!/usr/bin/env bash\nprintf "worker_sha=%s\\n" "${QINTOPIA_DEPLOYED_COMMIT_SHA:-unset}"\n'
+    '#!/usr/bin/env bash\nprintf "worker_sha=%s\\n" "${QINTOPIA_DEPLOYED_COMMIT_SHA:-unset}"\nprintf "worker_path=%s\\n" "${PATH}"\n'
   );
   const wrapperFixture = fs
     .readFileSync(
@@ -310,6 +350,26 @@ try {
     .replaceAll(fixedReleaseDir, releaseCurrent)
     .replaceAll("/etc/qintopia/message-sidecar.env", sidecarEnvFile)
     .replaceAll("/home/ubuntu/.local/state/qintopia-agentos/", `${stateRoot}/`);
+  if (
+    !fs
+      .readFileSync(
+        path.join(
+          repoRoot,
+          "runtime",
+          "hermes",
+          "scripts",
+          "qintopia_erhua_morning_brief.sh"
+        ),
+        "utf8"
+      )
+      .includes(
+        'WORKER="${release_dir}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh"'
+      )
+  ) {
+    throw new Error(
+      "morning brief wrapper must execute the worker from the resolved release dir"
+    );
+  }
   const wrapperPath = path.join(scriptsDir, "qintopia_erhua_morning_brief.sh");
   writeExecutable(wrapperPath, wrapperFixture);
   const wrapperRun = spawnSync("bash", [wrapperPath], {
@@ -334,6 +394,11 @@ try {
   if (wrapperLog.includes(`worker_sha=${staleSha}`)) {
     throw new Error(
       "morning brief wrapper let a stale persistent env value override the release SHA"
+    );
+  }
+  if (!wrapperLog.includes("worker_path=/usr/bin:/bin:/usr/sbin:/sbin")) {
+    throw new Error(
+      "morning brief wrapper let persistent PATH override the fixed PATH"
     );
   }
 } finally {

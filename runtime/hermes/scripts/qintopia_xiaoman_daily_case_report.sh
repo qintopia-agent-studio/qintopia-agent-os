@@ -9,7 +9,6 @@ set -euo pipefail
 
 TASK_NAME="xiaoman-daily-case-report"
 RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"
-WORKER="${RELEASE_CURRENT}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 STATE_DIR="/home/ubuntu/.local/state/qintopia-agentos/${TASK_NAME}"
 LOG_FILE="${STATE_DIR}/hermes-cron.log"
@@ -24,6 +23,7 @@ set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+export PATH="/usr/bin:/bin"
 
 # The Hermes runner passes the gateway process env through, while the retired systemd
 # unit started from a clean environment. Clear the runtime path override group so
@@ -38,18 +38,17 @@ unset QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_OUTPUT_DIR
 # deliberately keep coming from the reviewed sidecar env file.
 export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1
 
-# The retired systemd unit bound both release SHAs at the exec boundary; derive the
-# same value from release/current so the worker's Feishu upload boundary and the
-# release-identity checks behave identically. Export after sourcing the persistent
-# env so a stale value there cannot override the release binding.
-release_sha="$(cd "$RELEASE_CURRENT" && pwd -P)"
-release_sha="${release_sha##*/}"
+# The retired systemd unit bound both release SHAs at the exec boundary; resolve
+# release/current once and use that immutable path for both identity and execution.
+release_dir="$(cd "$RELEASE_CURRENT" && pwd -P)"
+release_sha="${release_dir##*/}"
 if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ ]]; then
   echo "${TASK_NAME} wrapper could not resolve the release SHA from release/current"
   exit 1
 fi
 export QINTOPIA_DEPLOYED_COMMIT_SHA="$release_sha"
 export QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA="$release_sha"
+WORKER="${release_dir}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if output="$("$WORKER" 2>&1)"; then

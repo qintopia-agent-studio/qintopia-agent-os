@@ -438,6 +438,7 @@ try {
       "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_ENABLED=0",
       "QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_APPROVAL=approved-production-xiaoman-weekly-recruitment",
       "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1",
+      "PATH=/tmp/unreviewed",
       "",
     ].join("\n"),
     "utf8"
@@ -449,6 +450,7 @@ try {
         "#!/usr/bin/env bash",
         'echo "ENABLED=${QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_ENABLED:-unset}"',
         'echo "SHA=${QINTOPIA_DEPLOYED_COMMIT_SHA:-unset}"',
+        'echo "PATH_VALUE=${PATH}"',
         'echo "APPROVAL=${QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PRODUCTION_APPROVAL:-unset}"',
         'echo "RELEASE_DIR_DEFINED=${QINTOPIA_RELEASE_DIR+yes}"',
         'echo "RECRUITMENT_PYTHON_DEFINED=${QINTOPIA_XIAOMAN_WEEKLY_RECRUITMENT_PYTHON+yes}"',
@@ -475,6 +477,14 @@ try {
       .replaceAll("/etc/qintopia/message-sidecar.env", wrapperEnvFile)
       .replaceAll("/home/ubuntu/.local/state/qintopia-agentos", wrapperStateRoot),
     "utf8"
+  );
+  check(
+    fs
+      .readFileSync(sourceWrapper, "utf8")
+      .includes(
+        'WORKER="${release_dir}/deploy/sidecar/scripts/xiaoman-weekly-recruitment-worker.sh"'
+      ),
+    "weekly recruitment wrapper must execute the worker from the resolved release dir"
   );
   fs.chmodSync(wrapperScript, 0o755);
   const wrapperLog = path.join(
@@ -506,6 +516,7 @@ try {
       logText.includes("run=ok") &&
       logText.includes("ENABLED=1") &&
       logText.includes(`SHA=${wrapperReleaseSha}`) &&
+      logText.includes("PATH_VALUE=/usr/bin:/bin:/usr/sbin:/sbin\n") &&
       logText.includes("APPROVAL=approved-production-xiaoman-weekly-recruitment") &&
       logText.includes("RELEASE_DIR_DEFINED=\n") &&
       logText.includes("RECRUITMENT_PYTHON_DEFINED=\n") &&

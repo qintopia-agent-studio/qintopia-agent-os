@@ -1,6 +1,6 @@
 # Xiaoman Weekly Plan Confirmation Hermes Cron Runbook
 
-Updated: 2026-08-10
+Updated: 2026-08-11
 
 This runbook migrates the Sunday 20:00 plan-confirmation timer from the release-managed
 systemd timer back to a Xiaoman Hermes cron job. The worker and its persistent runtime
@@ -35,11 +35,19 @@ and emits only its SHA-256 in evidence.
 
 - A reviewed Release containing the assets above is deployed and `release/current`
   points at it.
-- The existing persistent config is enabled:
+- Before rollback, the existing persistent config is enabled:
   `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED=1` plus
   `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_PRODUCTION_APPROVAL=approved-production-xiaoman-weekly-plan-confirmation`
   and the three Xiaoman activity flags in `/etc/qintopia/message-sidecar.env`.
 - The Sunday systemd timer is still the active scheduler until step 4.
+
+After step 3, `/etc/qintopia/message-sidecar.env` must keep
+`QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED=0` so the retired systemd path stays
+inert. The Hermes wrapper exports `QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_ENABLED=1`
+itself, clears the worker's runtime path override group, and rebinds
+`QINTOPIA_DEPLOYED_COMMIT_SHA` from `release/current` after sourcing the persistent env.
+It also executes the worker from that same resolved release directory, not from the
+mutable `release/current` symlink path.
 
 ## Cutover Steps
 
