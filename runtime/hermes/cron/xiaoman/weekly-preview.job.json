@@ -1,0 +1,15 @@
+{
+  "name": "小满·周一活动预告（文字稿+海报简报）",
+  "schedule": { "kind": "cron", "expr": "30 9 * * 1", "display": "30 9 * * 1" },
+  "no_agent": true,
+  "script": "qintopia_xiaoman_weekly_preview.sh",
+  "deliver": "origin",
+  "origin": {
+    "platform": "wecom",
+    "chat_id": "{{QINTOPIA_XIAOMAN_TECHNICAL_HOME_CHANNEL}}",
+    "chat_name": null,
+    "thread_id": null
+  },
+  "enabled": false,
+  "skills": []
+}

@@ -92,6 +92,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/xiaoman-weekly-preview-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-xiaoman-weekly-preview-production.sh",
   "deploy/sidecar/scripts/rollback-xiaoman-weekly-preview-production.sh",
+  "deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh",
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
   "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
