@@ -574,6 +574,70 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(characters[0].memory_label, "近90天 7 次角色复现 · 长期偏「活动推进者」")
         self.assertNotIn("fact_text", characters[0].memory_label)
 
+    def test_character_cards_do_not_merge_same_display_name_people(self) -> None:
+        first_person_id = "11111111-1111-1111-1111-111111111111"
+        second_person_id = "22222222-2222-2222-2222-222222222222"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="今晚活动我来提醒大家报名。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=first_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="报名表和活动问题收集我都同步一下。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=first_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m3",
+                sender_id="u2",
+                sender_name="小雨",
+                text="我来整理今天的内容复盘和案例素材。",
+                sent_at=datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=second_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m4",
+                sender_id="u2",
+                sender_name="小雨",
+                text="复盘里会把内容结构和故事线标出来。",
+                sent_at=datetime(2026, 8, 8, 10, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=second_person_id,
+            ),
+        ]
+        memory = {
+            first_person_id: daily_case_report.CharacterMemory(
+                person_id=first_person_id,
+                recent_fact_count=7,
+                lifetime_fact_count=18,
+                dominant_role_label="活动推进者",
+            )
+        }
+
+        characters = daily_case_report._compute_characters(messages, memory)
+        universe = daily_case_report._build_character_universe([], [], characters, "2026年08月08日")
+
+        self.assertEqual([character.name for character in characters].count("小雨"), 2)
+        self.assertEqual([character.message_count for character in characters], [2, 2])
+        self.assertEqual(
+            sum(1 for character in characters if "长期偏「活动推进者」" in character.memory_label),
+            1,
+        )
+        people_keys = [person["key"] for person in universe["people"]]
+        self.assertEqual(len(people_keys), len(set(people_keys)))
+        self.assertNotIn(first_person_id, json.dumps(universe, ensure_ascii=False))
+        self.assertNotIn(second_person_id, json.dumps(universe, ensure_ascii=False))
+
     def test_character_memory_rows_map_only_allowed_role_labels(self) -> None:
         memory = daily_case_report._character_memory_from_rows(
             [

@@ -139,6 +139,10 @@ pattern = re.compile(
     + re.escape(task)
     + r" run=(?P<status>ok|failed)(?: exit=[0-9]+)?$"
 )
+sentinel_pattern = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z "
+    r"[A-Za-z0-9_.-]+ run=(?:ok|failed)(?: exit=[0-9]+)?$"
+)
 
 try:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -155,6 +159,11 @@ if latest_index is None:
     raise SystemExit(1)
 
 body_lines = lines[latest_index + 1 :]
+next_sentinel = next(
+    (index for index, line in enumerate(body_lines) if sentinel_pattern.fullmatch(line.strip())),
+    len(body_lines),
+)
+body_lines = body_lines[:next_sentinel]
 json_start = next(
     (index for index, line in enumerate(body_lines) if line.lstrip().startswith("{")),
     None,

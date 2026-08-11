@@ -209,6 +209,7 @@ class CharacterCard:
     evidence: str
     message_count: int
     topic_count: int
+    node_key: str = ""
     memory_label: str = ""
 
 
@@ -1235,14 +1236,24 @@ def _compute_characters(
 ) -> list[CharacterCard]:
     memory_by_person = memory_by_person or {}
     grouped: dict[str, list[ReportMessage]] = {}
+    group_person_ids: dict[str, str] = {}
     for message in messages:
         name = (message.sender_name or "").strip()
         if not name or name == "匿名":
             continue
-        grouped.setdefault(name, []).append(message)
+        if message.person_id:
+            group_key = f"person:{message.person_id}"
+            group_person_ids[group_key] = message.person_id
+        else:
+            group_key = f"name:{name}"
+        grouped.setdefault(group_key, []).append(message)
 
     ranked: list[tuple[float, CharacterCard]] = []
-    for name, group in grouped.items():
+    for group_key, group in grouped.items():
+        names = Counter((message.sender_name or "").strip() for message in group)
+        names.pop("", None)
+        names.pop("匿名", None)
+        name = names.most_common(1)[0][0] if names else "群友"
         role_label, one_liner, role_score = _character_role(group)
         topic_count = len(
             {
@@ -1255,8 +1266,8 @@ def _compute_characters(
         if len(group) < 2 and role_score == 0:
             continue
         word_count = sum(len(_clean_text(message.text)) for message in group)
-        person_ids = [message.person_id for message in group if message.person_id]
-        memory = memory_by_person.get(person_ids[0]) if person_ids else None
+        person_id = group_person_ids.get(group_key)
+        memory = memory_by_person.get(person_id) if person_id else None
         memory_score = min(memory.recent_fact_count, 10) if memory else 0
         memory_label = ""
         if memory:
@@ -1282,6 +1293,7 @@ def _compute_characters(
                     evidence=_character_evidence(group),
                     message_count=len(group),
                     topic_count=topic_count,
+                    node_key=_character_node_key(group_key, name),
                     memory_label=memory_label,
                 ),
             )
@@ -1292,6 +1304,13 @@ def _compute_characters(
     for index, character in enumerate(characters, start=1):
         character.rank = index
     return characters
+
+
+def _character_node_key(group_key: str, name: str) -> str:
+    if group_key.startswith("person:"):
+        digest = hashlib.sha256(group_key.encode("utf-8")).hexdigest()[:12]
+        return f"person-{digest}"
+    return _node_key(name)
 
 
 def _node_key(label: str) -> str:
@@ -1309,7 +1328,7 @@ def _build_character_universe(
     people = [
         {
             "type": "people",
-            "key": _node_key(character.name),
+            "key": character.node_key or _node_key(character.name),
             "label": character.name,
             "role_label": character.role_label,
             "daily_line": character.one_liner,
@@ -1362,11 +1381,12 @@ def _build_character_universe(
     ]
     edges: list[dict[str, Any]] = []
     for character in characters:
+        character_key = character.node_key or _node_key(character.name)
         for case in cases:
             if character.name == case.top_speaker or character.name in " ".join(case.bullets):
                 edges.append(
                     {
-                        "source": _node_key(character.name),
+                        "source": character_key,
                         "target": _node_key(case.title),
                         "relation": "appears_in",
                         "evidence": case.case_no,
@@ -1376,7 +1396,7 @@ def _build_character_universe(
             if topic.keyword in character.evidence:
                 edges.append(
                     {
-                        "source": _node_key(character.name),
+                        "source": character_key,
                         "target": _node_key(topic.keyword),
                         "relation": "mentions_topic",
                         "evidence": "daily_character_note",

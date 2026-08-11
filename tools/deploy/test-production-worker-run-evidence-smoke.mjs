@@ -174,6 +174,39 @@ writeFile(
   "state/xiaoman-daily-case-report/hermes-cron.log",
   [
     "2026-08-10T01:30:00Z xiaoman-daily-case-report run=ok",
+    "raw worker output with group-id-fixture",
+    "2026-08-10T01:31:00Z xiaoman-weekly-preview run=ok",
+    JSON.stringify(
+      {
+        worker: "xiaoman-daily-case-report-auto-publish-worker",
+        content_metrics: { character_count: 99 },
+        character_universe: {
+          schema_version: "xiaoman-character-universe-v1",
+          source: "daily_case_report_second_pass",
+          raw_messages_included: false,
+          profile_fact_text_included: false,
+        },
+      },
+      null,
+      2
+    ),
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 0, "daily summary stops at next sentinel");
+expectNoLeak(result, "daily summary stops at next sentinel");
+check(
+  result.stdout.includes("xiaoman_daily_case_report_worker_run_result=success") &&
+    result.stdout.includes("xiaoman_daily_case_report_worker_summary_present=false") &&
+    !result.stdout.includes("xiaoman_daily_case_report_worker_character_count=99"),
+  `daily parser crossed next sentinel\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=ok",
     JSON.stringify(
       {
         worker: "xiaoman-daily-case-report-auto-publish-worker",
