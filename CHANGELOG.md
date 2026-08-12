@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.124](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.123...v0.2.124) (2026-08-12)
+
+
+### Features
+
+* add Xiaoman creative profile candidates ([7290bc2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7290bc2562cbdaeee9ae7927646ea71548bda3a2))
+* add Xiaoman daily private review bundle ([#534](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/534)) ([dddc54d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/dddc54dc1b1d6362701722279d8502b518777ab6))
+* deepen Xiaoman daily character universe ([bd8f11a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bd8f11a83b9a6d51e44e57753155e6b96ef6219a))
+* deepen Xiaoman daily character universe ([09fc64f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/09fc64fee9dec8370bed50aeb3da1e0d10830c73))
+* reshape xiaoman daily report narrative style ([#531](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/531)) ([eed5f1c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/eed5f1c4d2192205a341c961707578385d18355e))
+
+
+### Bug Fixes
+
+* add Hermes cron snapshot bootstrap one-shot ([#530](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/530)) ([d6f91e8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d6f91e8269c64a94dcd5840081ad4fb45759ca06))
+
 ## [0.2.123](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.122...v0.2.123) (2026-08-12)
 
 
