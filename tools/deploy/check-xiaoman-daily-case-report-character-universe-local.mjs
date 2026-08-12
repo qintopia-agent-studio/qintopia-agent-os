@@ -70,6 +70,20 @@ for (const [fragment, label] of [
   ["MEMORY_FACT_ROLE_LABELS", "daily workflow role-memory labels"],
   ["m.sender_person_id::text AS sender_person_id", "daily workflow person binding"],
   ["def _fetch_character_memory(", "daily workflow character memory query"],
+  ["class CreativeProfileMemory:", "daily workflow reviewed creative-profile memory"],
+  [
+    "def _fetch_creative_profile_memory(",
+    "daily workflow reviewed creative-profile query",
+  ],
+  [
+    "profile_kind = 'creative_profile'",
+    "daily workflow reads reviewed creative-profile snapshots",
+  ],
+  [
+    "profile_version = 'xiaoman-daily-creative-profile-v1'",
+    "daily workflow reads the reviewed creative-profile version",
+  ],
+  ["s.safe_reply_hints", "daily workflow reads only safe creative-profile hints"],
   ["def _compute_characters(", "daily workflow character cards"],
   ["def _build_character_universe(", "daily workflow universe builder"],
   ["def _build_quote_map(", "daily workflow wx-cli-style quote map"],
@@ -111,6 +125,10 @@ for (const [fragment, label] of [
     "creative-profile candidates expose upgrade status",
   ],
   [
+    '"creative_profile_status": character.creative_profile_status',
+    "universe exposes reviewed creative-profile status",
+  ],
+  [
     '"blocked_reason": (',
     "creative-profile candidates preserve daily-note block reason",
   ],
@@ -150,6 +168,10 @@ for (const [fragment, label] of [
     "run manifest preserves latest chat records",
   ],
   [
+    '"reviewed_creative_profiles_used": any(',
+    "run manifest proves reviewed creative profiles were reused",
+  ],
+  [
     '"public_surface_allowed": False',
     "private review outputs are not public-surface allowed",
   ],
@@ -160,6 +182,10 @@ for (const [fragment, label] of [
   [
     "except Exception:\n            character_memory = {}",
     "character memory soft dependency",
+  ],
+  [
+    "except Exception:\n            creative_profile_memory = {}",
+    "creative-profile memory soft dependency",
   ],
 ]) {
   requireIncludes(workflow, fragment, label);
@@ -204,6 +230,14 @@ for (const [fragment, label] of [
   [
     "test_build_report_keeps_latest_messages_when_character_memory_fails",
     "character memory failure regression test",
+  ],
+  [
+    "test_character_cards_reuse_reviewed_creative_profiles_for_callbacks",
+    "reviewed creative-profile reuse regression test",
+  ],
+  [
+    "test_creative_profile_rows_keep_only_safe_reviewed_fields",
+    "reviewed creative-profile safe field regression test",
   ],
   [
     "test_character_universe_uses_curated_second_pass_nodes",

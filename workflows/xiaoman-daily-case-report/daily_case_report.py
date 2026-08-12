@@ -211,6 +211,7 @@ class CharacterCard:
     topic_count: int
     node_key: str = ""
     memory_label: str = ""
+    member_fact_memory_used: bool = False
     story_function: str = ""
     callback_hint: str = ""
     arc_label: str = ""
@@ -223,6 +224,8 @@ class CharacterCard:
     profile_evidence_count: int = 0
     profile_upgrade_status: str = ""
     profile_upgrade_reason: str = ""
+    creative_profile_label: str = ""
+    creative_profile_status: str = ""
 
 
 @dataclass
@@ -235,6 +238,19 @@ class CharacterMemory:
     depth_label: str = ""
     memory_weight_label: str = ""
     callback_seed: str = ""
+
+
+@dataclass
+class CreativeProfileMemory:
+    person_id: str
+    role_label: str
+    story_function: str = ""
+    daily_arc: str = ""
+    memory_weight_label: str = ""
+    meme_seed: str = ""
+    callback_hint: str = ""
+    evidence_anchor: str = ""
+    recurrence_evidence_count: int = 0
 
 
 @dataclass
@@ -778,6 +794,180 @@ def _character_memory_from_rows(rows: Any) -> dict[str, CharacterMemory]:
             depth_label=_memory_depth_label(int(lifetime_count or 0)),
             memory_weight_label=_memory_weight_label(int(recent_count or 0), int(lifetime_count or 0)),
             callback_seed=_memory_callback_seed(role_label, int(recent_count or 0)),
+        )
+    return memory
+
+
+def _safe_creative_text(value: Any, limit: int = 80) -> str:
+    if not isinstance(value, str):
+        return ""
+    cleaned = _clean_text(value).strip()
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if any(marker in lowered for marker in ("raw_message", "fact_text", "profile_text", "database_url")):
+        return ""
+    cleaned = re.sub(r"[`$<>{}\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+", "", cleaned).strip()
+    return cleaned[:limit]
+
+
+def _safe_creative_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return 0
+    if parsed < 0:
+        return 0
+    return min(parsed, 1000)
+
+
+def _fetch_creative_profile_memory(
+    person_ids: set[str],
+    end: datetime,
+) -> dict[str, CreativeProfileMemory]:
+    clean_ids = sorted(
+        {
+            person_id
+            for person_id in person_ids
+            if re.fullmatch(r"[0-9a-fA-F-]{32,36}", person_id or "")
+        }
+    )
+    if not clean_ids:
+        return {}
+    db_url = _database_url()
+    if not db_url:
+        return {}
+
+    try:
+        import psycopg
+    except ImportError:
+        return _fetch_creative_profile_memory_with_psql(db_url, clean_ids, end)
+
+    sql = """
+        SELECT DISTINCT ON (s.person_id)
+            s.person_id::text AS person_id,
+            s.communication_style,
+            s.safe_reply_hints
+        FROM qintopia_identity.member_profile_snapshots s
+        WHERE s.person_id::text = ANY(%s::text[])
+          AND s.profile_kind = 'creative_profile'
+          AND s.profile_version = 'xiaoman-daily-creative-profile-v1'
+          AND s.status = 'active'
+          AND s.reviewed_at IS NOT NULL
+          AND s.generated_at < %s
+          AND COALESCE((s.do_not_disclose->>'public_surface_allowed')::boolean, false) = false
+          AND COALESCE((s.safe_reply_hints->>'public_surface_allowed')::boolean, false) = false
+        ORDER BY s.person_id, s.reviewed_at DESC NULLS LAST, s.generated_at DESC
+    """
+    with psycopg.connect(db_url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (clean_ids, end))
+            return _creative_profile_memory_from_rows(cur.fetchall())
+
+
+def _fetch_creative_profile_memory_with_psql(
+    db_url: str,
+    person_ids: list[str],
+    end: datetime,
+) -> dict[str, CreativeProfileMemory]:
+    sql = r"""
+        WITH selected AS (
+            SELECT DISTINCT ON (s.person_id)
+                s.person_id::text AS person_id,
+                s.communication_style,
+                s.safe_reply_hints
+            FROM qintopia_identity.member_profile_snapshots s
+            WHERE s.person_id::text = ANY(string_to_array(:'person_ids', ','))
+              AND s.profile_kind = 'creative_profile'
+              AND s.profile_version = 'xiaoman-daily-creative-profile-v1'
+              AND s.status = 'active'
+              AND s.reviewed_at IS NOT NULL
+              AND s.generated_at < :'memory_end'::timestamptz
+              AND COALESCE((s.do_not_disclose->>'public_surface_allowed')::boolean, false) = false
+              AND COALESCE((s.safe_reply_hints->>'public_surface_allowed')::boolean, false) = false
+            ORDER BY s.person_id, s.reviewed_at DESC NULLS LAST, s.generated_at DESC
+        )
+        SELECT COALESCE(json_agg(row_to_json(selected)), '[]'::json)::text
+        FROM selected;
+    """
+    command = [
+        PRODUCTION_PSQL_BIN,
+        "--no-psqlrc",
+        "--no-align",
+        "--tuples-only",
+        "--quiet",
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--set",
+        f"person_ids={','.join(person_ids)}",
+        "--set",
+        f"memory_end={end.isoformat()}",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            input=sql,
+            env=_psql_env(db_url),
+            text=True,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"database reads require psycopg or executable {PRODUCTION_PSQL_BIN}"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("creative profile memory query timed out") from exc
+    if completed.returncode != 0:
+        raise RuntimeError("creative profile memory query failed")
+    try:
+        rows = json.loads(completed.stdout.strip() or "[]")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("creative profile memory query returned invalid JSON") from exc
+    return _creative_profile_memory_from_rows(
+        (
+            row.get("person_id"),
+            row.get("communication_style") or {},
+            row.get("safe_reply_hints") or {},
+        )
+        for row in rows
+    )
+
+
+def _creative_profile_memory_from_rows(rows: Any) -> dict[str, CreativeProfileMemory]:
+    memory: dict[str, CreativeProfileMemory] = {}
+    for person_id, communication_style, safe_reply_hints in rows:
+        person_id = str(person_id or "")
+        if not person_id:
+            continue
+        if not isinstance(communication_style, dict):
+            communication_style = {}
+        if not isinstance(safe_reply_hints, dict):
+            safe_reply_hints = {}
+        role_label = _safe_creative_text(
+            safe_reply_hints.get("role_label") or communication_style.get("role_label"),
+            32,
+        )
+        if not role_label:
+            continue
+        memory[person_id] = CreativeProfileMemory(
+            person_id=person_id,
+            role_label=role_label,
+            story_function=_safe_creative_text(
+                safe_reply_hints.get("story_function") or communication_style.get("story_function"),
+                48,
+            ),
+            daily_arc=_safe_creative_text(safe_reply_hints.get("daily_arc"), 120),
+            memory_weight_label=_safe_creative_text(safe_reply_hints.get("memory_weight_label"), 64),
+            meme_seed=_safe_creative_text(safe_reply_hints.get("meme_seed"), 80),
+            callback_hint=_safe_creative_text(safe_reply_hints.get("callback_hint"), 120),
+            evidence_anchor=_safe_creative_text(safe_reply_hints.get("evidence_anchor"), 80),
+            recurrence_evidence_count=_safe_creative_int(
+                safe_reply_hints.get("recurrence_evidence_count")
+            ),
         )
     return memory
 
@@ -1370,14 +1560,19 @@ def _character_meme_seed(
 
 def _profile_evidence_count(
     memory: CharacterMemory | None,
+    creative_memory: CreativeProfileMemory | None,
     message_count: int,
     topic_count: int,
     relationship_hint: str,
 ) -> int:
     count = min(memory.recent_fact_count, 20) if memory else 0
+    if creative_memory:
+        count = max(count, min(creative_memory.recurrence_evidence_count, 20))
     if message_count >= 2:
         count += 1
     if memory and topic_count >= 2:
+        count += 1
+    if creative_memory and topic_count >= 1:
         count += 1
     if relationship_hint:
         count += 1
@@ -1465,9 +1660,11 @@ def _relationship_hints(
 def _compute_characters(
     messages: list[ReportMessage],
     memory_by_person: dict[str, CharacterMemory] | None = None,
+    creative_memory_by_person: dict[str, CreativeProfileMemory] | None = None,
     limit: int = DEFAULT_CHARACTER_LIMIT,
 ) -> list[CharacterCard]:
     memory_by_person = memory_by_person or {}
+    creative_memory_by_person = creative_memory_by_person or {}
     grouped: dict[str, list[ReportMessage]] = {}
     group_person_ids: dict[str, str] = {}
     for message in messages:
@@ -1514,12 +1711,23 @@ def _compute_characters(
         word_count = sum(len(_clean_text(message.text)) for message in group)
         person_id = group_person_ids.get(group_key)
         memory = memory_by_person.get(person_id) if person_id else None
+        creative_memory = creative_memory_by_person.get(person_id) if person_id else None
         memory_score = min(memory.recent_fact_count, 10) if memory else 0
+        if creative_memory:
+            memory_score += min(creative_memory.recurrence_evidence_count, 8)
         memory_label = ""
         if memory:
             memory_label = (
                 f"近{MEMORY_LOOKBACK_DAYS}天 {memory.recent_fact_count} 次角色复现"
                 f" · 长期偏「{memory.dominant_role_label}」"
+            )
+        creative_profile_label = ""
+        if creative_memory:
+            creative_profile_label = f"已审核创意画像「{creative_memory.role_label}」"
+            memory_label = (
+                f"{memory_label} · {creative_profile_label}"
+                if memory_label
+                else creative_profile_label
             )
         evidence = _character_evidence(group)
         relationship_hint, relationship_target_key, relationship_topic = relationship_hints.get(
@@ -1529,10 +1737,32 @@ def _compute_characters(
         node_key = node_key_by_group.get(group_key, _character_node_key(group_key, name))
         profile_evidence_count = _profile_evidence_count(
             memory,
+            creative_memory,
             len(group),
             topic_count,
             relationship_hint,
         )
+        profile_upgrade_reason = _profile_upgrade_reason(
+            profile_evidence_count,
+            memory,
+            len(group),
+            topic_count,
+            relationship_hint,
+        )
+        if creative_memory:
+            profile_upgrade_reason = (
+                f"已审核 creative_profile 复用；{profile_upgrade_reason}"
+                if profile_upgrade_reason
+                else "已审核 creative_profile 复用"
+            )
+        memory_weight_label = "只按今日表现呈现"
+        if memory:
+            memory_weight_label = memory.memory_weight_label or _memory_weight_label(
+                memory.recent_fact_count,
+                memory.lifetime_fact_count,
+            )
+        if creative_memory and creative_memory.memory_weight_label:
+            memory_weight_label = creative_memory.memory_weight_label
         score = (
             len(group) * 3
             + role_score * 4
@@ -1553,29 +1783,29 @@ def _compute_characters(
                     topic_count=topic_count,
                     node_key=node_key,
                     memory_label=memory_label,
-                    story_function=_character_story_function(role_label, len(group), topic_count),
-                    callback_hint=_character_callback_hint(role_label, evidence, memory_label),
-                    arc_label=_character_arc_label(role_label, memory, len(group)),
+                    member_fact_memory_used=memory is not None,
+                    story_function=creative_memory.story_function
+                    if creative_memory and creative_memory.story_function
+                    else _character_story_function(role_label, len(group), topic_count),
+                    callback_hint=creative_memory.callback_hint
+                    if creative_memory and creative_memory.callback_hint
+                    else _character_callback_hint(role_label, evidence, memory_label),
+                    arc_label=creative_memory.daily_arc
+                    if creative_memory and creative_memory.daily_arc
+                    else _character_arc_label(role_label, memory, len(group)),
                     relationship_hint=relationship_hint,
                     relationship_target_key=relationship_target_key,
                     relationship_topic=relationship_topic,
-                    meme_seed=_character_meme_seed(role_label, topic_count, evidence, memory),
-                    memory_weight_label=(
-                        memory.memory_weight_label
-                        or _memory_weight_label(memory.recent_fact_count, memory.lifetime_fact_count)
-                        if memory
-                        else "只按今日表现呈现"
-                    ),
+                    meme_seed=creative_memory.meme_seed
+                    if creative_memory and creative_memory.meme_seed
+                    else _character_meme_seed(role_label, topic_count, evidence, memory),
+                    memory_weight_label=memory_weight_label,
                     evidence_anchor=f"daily_character_note:{node_key}",
                     profile_evidence_count=profile_evidence_count,
                     profile_upgrade_status=_profile_upgrade_status(profile_evidence_count),
-                    profile_upgrade_reason=_profile_upgrade_reason(
-                        profile_evidence_count,
-                        memory,
-                        len(group),
-                        topic_count,
-                        relationship_hint,
-                    ),
+                    profile_upgrade_reason=profile_upgrade_reason,
+                    creative_profile_label=creative_profile_label,
+                    creative_profile_status="active_reviewed" if creative_memory else "",
                 ),
             )
         )
@@ -1651,6 +1881,8 @@ def _build_character_universe(
             "evidence_anchor": character_anchor(character),
             "profile_evidence_count": character_evidence_count(character),
             "profile_upgrade_status": character_upgrade_status(character),
+            "creative_profile_label": character.creative_profile_label,
+            "creative_profile_status": character.creative_profile_status,
             "risk": "internal",
         }
         for character in characters
@@ -2007,6 +2239,7 @@ def _build_wiki_bundle(report: ReportData, quote_map: dict[str, Any]) -> dict[st
                 "memory_weight_label": item.get("memory_weight_label", ""),
                 "evidence_anchor": item.get("evidence_anchor", ""),
                 "profile_upgrade_status": item.get("profile_upgrade_status", ""),
+                "creative_profile_status": item.get("creative_profile_status", ""),
                 "quote_keys": people_quote_keys.get(key, []),
                 "status": "candidate",
                 "risk": "internal_review_required",
@@ -2147,7 +2380,11 @@ def _build_run_manifest(
             "participant_count": report.participant_count,
             "latest_chat_records_preserved": True,
             "long_term_member_facts_used": any(
-                bool(character.memory_label) for character in report.characters
+                character.member_fact_memory_used for character in report.characters
+            ),
+            "reviewed_creative_profiles_used": any(
+                character.creative_profile_status == "active_reviewed"
+                for character in report.characters
             ),
             "long_term_member_fact_text_included": False,
         },
@@ -2203,6 +2440,7 @@ def _render_review_report(
         "",
         f"- 时间范围：{report.time_range}",
         f"- 最新聊天记录：保留，{report.message_count} 条消息 / {report.participant_count} 位活跃成员",
+        f"- 已审核创意画像复用：{sum(1 for character in report.characters if character.creative_profile_status == 'active_reviewed')} 位",
         f"- 今日主线：{report.case_count} 条",
         f"- 今日剧中人：{report.character_count} 位",
         f"- 引用映射：{quote_map.get('entry_count', 0)} 条候选证据",
@@ -2211,6 +2449,7 @@ def _render_review_report(
         "## 审核清单",
         "",
         "- [ ] 公开日报是否只使用群聊窗口内的当日内容和安全衍生标签",
+        "- [ ] 已审核 creative_profile 只作为风格/回调提示，不能覆盖当日消息证据",
         "- [ ] 今日剧中人的角色是否有 quote-map 或 case bullet 支撑",
         "- [ ] eligible_for_review 是否满足最小复现证据；daily_note_only 不得写入长期画像",
         "- [ ] creative_profile_candidates 是否仍为 candidate_only，没有写入长期画像表",
@@ -2244,6 +2483,7 @@ def _render_review_report(
             "## 产物策略",
             "",
             "- 画报和日报 Markdown 用于人工查看。",
+            "- 已审核 `creative_profile` 只读取 safe_reply_hints / communication_style 的安全字段，不读取 summary。",
             "- quote-map / wiki-bundle / run-manifest 只用于内部审核和后续人工确认。",
             "- worker-run evidence 只能保留 presence/count/privacy flags，不能保留 quote、wiki 节点正文或人物画像文本。",
         ]
@@ -2402,15 +2642,18 @@ def _build_report(args: argparse.Namespace) -> ReportData:
     hot_topics = _hot_topics(discussion_messages, cases)
     suspects = _compute_suspects(discussion_messages)
     character_memory = {}
+    creative_profile_memory = {}
     if not args.dry_run and not args.fixture:
+        person_ids = {message.person_id for message in discussion_messages if message.person_id}
         try:
-            character_memory = _fetch_character_memory(
-                {message.person_id for message in discussion_messages if message.person_id},
-                end,
-            )
+            character_memory = _fetch_character_memory(person_ids, end)
         except Exception:
             character_memory = {}
-    characters = _compute_characters(discussion_messages, character_memory)
+        try:
+            creative_profile_memory = _fetch_creative_profile_memory(person_ids, end)
+        except Exception:
+            creative_profile_memory = {}
+    characters = _compute_characters(discussion_messages, character_memory, creative_profile_memory)
     character_universe = _build_character_universe(cases, hot_topics, characters, display_date)
     hourly = _hourly_timeline(messages, start)
     max_hourly = max(hourly) if hourly else 1

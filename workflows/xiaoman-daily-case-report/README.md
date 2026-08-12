@@ -101,12 +101,17 @@ Character notes follow the reference `wx-cli` project’s useful pattern: daily 
 separates current-window behavior from long-term character memory. The displayed role is
 derived from today’s source messages; long-term Postgres profile facts only contribute
 bounded recurrence counts and a coarse role label such as `活动推进者` or `故事线雷达`.
-The workflow also emits private `xiaoman-daily-case-report-*` review artifacts:
-`character-universe.json`, `quote-map.json`, `wiki-bundle.json`, `run-manifest.json`,
-and `review.md`. This matches the reference project's Wiki/graph/review idea with a
-safer source policy: people, topics, events, storyline candidates, quote anchors, and
-edges come from the generated daily report layer, not from raw chat archives. It also
-emits `creative_profile_candidates` as private review material with
+When owner-reviewed `creative_profile` snapshots already exist, the workflow reads only
+their `safe_reply_hints` / `communication_style` safe fields and reuses them for
+cross-day arc, meme, callback, and story-function hints. It does not read or publish
+snapshot `summary`, raw facts, or hidden profile text; today's role and evidence still
+come from the latest message window. The workflow also emits private
+`xiaoman-daily-case-report-*` review artifacts: `character-universe.json`,
+`quote-map.json`, `wiki-bundle.json`, `run-manifest.json`, and `review.md`. This matches
+the reference project's Wiki/graph/review idea with a safer source policy: people,
+topics, events, storyline candidates, quote anchors, and edges come from the generated
+daily report layer, not from raw chat archives. It also emits
+`creative_profile_candidates` as private review material with
 `public_surface_allowed=false`, safe evidence anchors, recurrence evidence counts, and
 `profile_upgrade_status`. `daily_note_only` candidates remain daily notes. Only
 `eligible_for_review` candidates may be copied into the separate reviewed payload for
@@ -257,6 +262,12 @@ candidate text.
 - The private character-universe JSON is generated in the same `0700` output directory
   with mode `0600`. It may contain member display names and curated report excerpts, so
   it follows the same temporary production cleanup policy as Markdown and HTML.
+- Reviewed `creative_profile` reuse is a read-only style/memory input for the daily
+  report. The query is keyed by reviewed `person_id`, active
+  `profile_kind='creative_profile'`, and
+  `profile_version='xiaoman-daily-creative-profile-v1'`; it reads only
+  `safe_reply_hints` / `communication_style` and fails soft so latest message reporting
+  remains available when the profile layer is unavailable.
 - The private quote-map, wiki-bundle, run-manifest, and review report are generated in
   the same `0700` output directory with mode `0600`. They may contain curated excerpts,
   labels, and candidate nodes, so production worker metadata may retain only their

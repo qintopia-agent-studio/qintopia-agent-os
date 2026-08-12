@@ -1336,6 +1336,12 @@ Use `rg` and `rg --files` for search.
   artifacts. Production worker logs and send-ready metadata may retain only safe
   counters and schema flags; never retain Markdown body, raw universe nodes, member
   labels, story labels, or source excerpts.
+- Xiaoman daily case-report may reuse active reviewed `creative_profile` snapshots only
+  as read-only style memory keyed by stable `person_id`. The read path may use only
+  `safe_reply_hints` and `communication_style` fields from
+  `profile_version='xiaoman-daily-creative-profile-v1'`; never read or publish snapshot
+  `summary`, raw messages, fact text, private profile text, or display-name-guessed
+  identities. If this layer fails, keep generating the latest-message daily report.
 - Xiaoman daily case-report creative-profile candidates may be applied only through the
   reviewed candidate path. The daily export must keep `person_id` out of
   `creative_profile_candidates`; a separate owner-reviewed payload supplies the exact

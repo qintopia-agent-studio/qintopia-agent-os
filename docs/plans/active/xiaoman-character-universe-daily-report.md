@@ -134,6 +134,16 @@ it must not accept payload JSON, payload paths, person ids, display names, candi
 text, or raw profile fields from workflow inputs. Production evidence may retain the
 reviewed payload SHA-256 and sanitized counts/privacy flags only.
 
+The daily workflow now also reuses already-reviewed `creative_profile` snapshots as a
+read-only style/memory layer. The read path is keyed by stable `person_id`, active
+`profile_kind='creative_profile'`, and
+`profile_version='xiaoman-daily-creative-profile-v1'`; it reads only `safe_reply_hints`
+/ `communication_style`, never snapshot `summary`, fact text, raw messages, or private
+profile text. These reviewed hints can shape the daily arc, story-function, meme seed,
+and callback hint, while today's role label and evidence still come from the latest
+Postgres message window. The run manifest records only the boolean
+`reviewed_creative_profiles_used`, plus existing privacy flags and counts.
+
 ## Proposed Next Steps
 
 1. Add a daily creative-profile apply/review worker.
@@ -147,8 +157,8 @@ reviewed payload SHA-256 and sanitized counts/privacy flags only.
    - The daily export now covers people, topics, events, meme candidates, callback
      candidates, same-topic co-presence relationships, storyline candidates, and edges
      from the report second pass.
-   - Next, add reviewed creative-profile artifacts for cross-day memes, relationships,
-     and timelines.
+   - Next, extend reviewed creative-profile artifacts beyond person callbacks into
+     cross-day memes, relationships, and timelines.
    - Default export must continue to exclude raw messages, raw attachments, run logs,
      secrets, and internal-only profile details.
 
