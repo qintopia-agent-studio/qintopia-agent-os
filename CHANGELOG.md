@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.122](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.121...v0.2.122) (2026-08-12)
+
+
+### Bug Fixes
+
+* normalize Erhua Hermes cron schema ([0ffd6b2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0ffd6b2963c4d46878392b2ace1ff3118fcddba3))
+* normalize Erhua Hermes cron schema ([4e9b366](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4e9b3667a16262d5f8722fde9237d51ff2799add))
+
 ## [0.2.121](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.120...v0.2.121) (2026-08-11)
 
 
