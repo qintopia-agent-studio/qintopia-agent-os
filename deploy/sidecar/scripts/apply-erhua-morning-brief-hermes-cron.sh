@@ -136,6 +136,8 @@ except (UnicodeDecodeError, json.JSONDecodeError) as exc:
 
 if not isinstance(value, dict) or not isinstance(value.get("jobs"), list):
     fail("Erhua cron jobs.json must be an envelope with a jobs list")
+if "schema_version" in value and value.get("schema_version") != 1:
+    fail("Erhua cron jobs.json schema_version must be 1")
 jobs = value["jobs"]
 
 
@@ -159,6 +161,9 @@ if len(existing) > 1:
     fail("Erhua cron jobs.json contains duplicate morning brief jobs")
 
 changed = False
+if value.get("schema_version") != 1:
+    value["schema_version"] = 1
+    changed = True
 if mode == "--install":
     if existing:
         if not job_def_matches(existing[0]):

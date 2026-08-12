@@ -151,7 +151,10 @@
   to the whole qintopia-agentos state directory or whole home. Live Hermes cron
   `jobs.json` envelopes may exceed 64 KiB after multiple reviewed jobs are installed;
   apply and live-parity observation should accept the fixed 1 MiB ceiling, while
-  wrappers and bounded evidence files keep their smaller limits.
+  wrappers and bounded evidence files keep their smaller limits. Legacy live `jobs.json`
+  files may be an object with `jobs` but no `schema_version`; apply scripts should
+  normalize that envelope to `schema_version: 1`, while rejecting any explicit
+  unsupported schema version.
 - Production legacy Hermes cron retirement should use the
   `Retire Production Legacy Crons` GitHub workflow after the reviewed release containing
   the runner support is deployed. It creates a signed
