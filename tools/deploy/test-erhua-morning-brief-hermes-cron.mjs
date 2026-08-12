@@ -114,11 +114,7 @@ try {
   };
   fs.writeFileSync(
     cronFile,
-    JSON.stringify(
-      { schema_version: 1, updated_at: updatedAt, jobs: [otherJob] },
-      null,
-      2
-    ),
+    JSON.stringify({ updated_at: updatedAt, jobs: [otherJob] }, null, 2),
     "utf8"
   );
   fs.chmodSync(cronFile, 0o600);
@@ -193,6 +189,9 @@ try {
   }
 
   let cron = JSON.parse(fs.readFileSync(cronFile, "utf8"));
+  if (cron.schema_version !== 1) {
+    throw new Error("Erhua morning brief apply did not normalize schema_version");
+  }
   if (cron.updated_at !== updatedAt) {
     throw new Error("Erhua morning brief apply did not preserve updated_at");
   }
