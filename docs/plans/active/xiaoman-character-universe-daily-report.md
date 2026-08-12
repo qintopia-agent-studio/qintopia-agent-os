@@ -73,36 +73,62 @@ the durable Wiki-style bridge. These fields are derived from the latest Postgres
 window plus public-safe role labels and recurrence counts; they do not publish raw
 long-term profile text.
 
+The daily workflow now also derives a richer second-pass character layer without adding
+a new production source. `CharacterMemory` maps long-term `member_facts` counts into
+public-safe recurrence, depth, weight, and callback-seed labels. `CharacterCard` carries
+today's arc, meme seed, and topic co-presence relationship hints. The
+`character-universe` export now includes candidate `memes`, `callbacks`, and
+`relationships` alongside people, topics, events, storylines, and edges. These
+relationships are only same-topic group-chat co-presence summaries; they are not private
+identity, social, or profile relationships.
+
+The local character-universe readiness checker now guards these second-stage fields and
+the regression test that proves same-name people stay separated while meme, callback,
+and same-topic relationship candidates remain public-safe.
+
+The private `character-universe` export now also emits `creative_profile_candidates`.
+This ports the reference project's long-term people/wiki workflow one step deeper
+without opening a new publish surface: candidates carry
+`profile_kind='creative_profile'`, daily role, story function, arc, meme/callback seeds,
+review policy, and `public_surface_allowed=false`. They are not written to
+`member_profile_snapshots`; production worker metadata and completion evidence retain
+only candidate counts plus the false public-surface flag.
+
 This keeps the important invariant:
 
 - latest messages remain first-class through the existing Postgres read-through;
 - long-term DB maintenance influences ranking and recurrence labels without becoming raw
   public profile text;
 - the report gains reference-project-style human texture;
-- long-term profile migration stays behind a separate reviewed data and publication
-  boundary.
+- daily人物弧线、梗回调、同场关系 can be rendered in poster and Markdown from the latest
+  message window;
+- long-term profile application stays behind a separate reviewed data and publication
+  boundary, while daily runs already produce private review candidates.
 
 ## Proposed Next Steps
 
-1. Add a Postgres-backed `creative_profile` snapshot kind.
+1. Add a reviewed apply path for Postgres-backed `creative_profile` snapshots.
    - Use existing `qintopia_identity.member_profile_snapshots` if the schema remains
      sufficient, with `profile_kind='creative_profile'`.
    - Metadata should include `public_surface_allowed=false` by default,
      `evidence_policy=quote_map_or_message_id`, `profile_track=roast_or_public_safe`,
      and `minimum_recurrence`.
+   - Input should be the private `creative_profile_candidates` export plus owner review,
+     not raw chat archives.
 
-2. Add a daily creative-profile worker.
+2. Add a daily creative-profile apply/review worker.
    - Input: latest QiWe messages for the target group plus existing creative profile
-     snapshots.
-   - Output: candidate creative-profile deltas and a review report.
-   - Apply mode should be internal-only until owner-reviewed evidence proves it cannot
-     leak sensitive facts or turn one-off comments into permanent labels.
+     snapshots and the generated candidate export.
+   - Output: approved creative-profile deltas and a review report.
+   - Apply mode should remain internal-only until owner-reviewed evidence proves it
+     cannot leak sensitive facts or turn one-off comments into permanent labels.
 
-3. Extend the curated character-universe export.
-   - The first daily export now covers people, topics, events, storyline candidates, and
-     simple edges from the report second pass.
-   - Next, add reviewed creative-profile artifacts for memes, relationships, and
-     timelines.
+3. Extend the curated character-universe export with durable creative-profile inputs.
+   - The daily export now covers people, topics, events, meme candidates, callback
+     candidates, same-topic co-presence relationships, storyline candidates, and edges
+     from the report second pass.
+   - Next, add reviewed creative-profile artifacts for cross-day memes, relationships,
+     and timelines.
    - Default export must continue to exclude raw messages, raw attachments, run logs,
      secrets, and internal-only profile details.
 

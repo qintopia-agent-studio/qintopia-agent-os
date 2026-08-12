@@ -59,9 +59,14 @@
     "character_universe_source": "daily_case_report_second_pass",
     "raw_messages_included": false,
     "profile_fact_text_included": false,
+    "creative_profile_public_surface_allowed": false,
     "character_universe_people_count": 1,
     "character_universe_topic_count": 0,
     "character_universe_event_count": 0,
+    "character_universe_meme_count": 0,
+    "character_universe_callback_count": 1,
+    "character_universe_relationship_count": 0,
+    "character_universe_creative_profile_candidate_count": 1,
     "character_universe_storyline_candidate_count": 0,
     "character_universe_edge_count": 0
   }

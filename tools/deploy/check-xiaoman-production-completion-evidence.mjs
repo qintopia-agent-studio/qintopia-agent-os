@@ -654,9 +654,14 @@ function assertDailyCaseReportConfirmation(record) {
       "character_universe_source",
       "raw_messages_included",
       "profile_fact_text_included",
+      "creative_profile_public_surface_allowed",
       "character_universe_people_count",
       "character_universe_topic_count",
       "character_universe_event_count",
+      "character_universe_meme_count",
+      "character_universe_callback_count",
+      "character_universe_relationship_count",
+      "character_universe_creative_profile_candidate_count",
       "character_universe_storyline_candidate_count",
       "character_universe_edge_count",
     ]),
@@ -682,9 +687,14 @@ function assertDailyCaseReportConfirmation(record) {
     record.character_universe_source !== "daily_case_report_second_pass" ||
     record.raw_messages_included !== false ||
     record.profile_fact_text_included !== false ||
+    record.creative_profile_public_surface_allowed !== false ||
     !positiveInteger(record.character_universe_people_count) ||
     !safeCount(record.character_universe_topic_count) ||
     !safeCount(record.character_universe_event_count) ||
+    !safeCount(record.character_universe_meme_count) ||
+    !safeCount(record.character_universe_callback_count) ||
+    !safeCount(record.character_universe_relationship_count) ||
+    !safeCount(record.character_universe_creative_profile_candidate_count) ||
     !safeCount(record.character_universe_storyline_candidate_count) ||
     !safeCount(record.character_universe_edge_count)
   ) {
@@ -754,9 +764,14 @@ function assertDailyCaseReportConfirmationBinding(manifestRecord, observationRec
     "character_universe_source",
     "raw_messages_included",
     "profile_fact_text_included",
+    "creative_profile_public_surface_allowed",
     "character_universe_people_count",
     "character_universe_topic_count",
     "character_universe_event_count",
+    "character_universe_meme_count",
+    "character_universe_callback_count",
+    "character_universe_relationship_count",
+    "character_universe_creative_profile_candidate_count",
     "character_universe_storyline_candidate_count",
     "character_universe_edge_count",
   ];
@@ -917,6 +932,25 @@ function assertDailyCaseReportProductionObservation(file) {
     character_universe_event_count: numericField(
       workerFields,
       "xiaoman_daily_case_report_worker_character_universe_event_count"
+    ),
+    character_universe_meme_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_meme_count"
+    ),
+    character_universe_callback_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_callback_count"
+    ),
+    character_universe_relationship_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_relationship_count"
+    ),
+    creative_profile_public_surface_allowed:
+      workerFields.xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed ===
+      "true",
+    character_universe_creative_profile_candidate_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count"
     ),
     character_universe_storyline_candidate_count: numericField(
       workerFields,

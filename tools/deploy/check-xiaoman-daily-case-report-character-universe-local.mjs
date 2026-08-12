@@ -66,10 +66,35 @@ for (const [fragment, label] of [
   ["def _fetch_character_memory(", "daily workflow character memory query"],
   ["def _compute_characters(", "daily workflow character cards"],
   ["def _build_character_universe(", "daily workflow universe builder"],
+  ["def _relationship_hints(", "daily workflow same-topic relationship hints"],
+  ["def _relationship_candidates(", "daily workflow relationship render candidates"],
   ['"schema_version": "xiaoman-character-universe-v1"', "universe schema"],
   ['"source": "daily_case_report_second_pass"', "universe source"],
   ['"raw_messages_included": False', "raw message exclusion flag"],
   ['"profile_fact_text_included": False', "profile fact exclusion flag"],
+  ['"memes": memes', "universe meme candidates"],
+  ['"callbacks": callbacks', "universe callback candidates"],
+  ['"relationships": relationships', "universe relationship candidates"],
+  [
+    '"creative_profile_candidates": creative_profile_candidates',
+    "universe creative-profile candidates",
+  ],
+  [
+    '"creative_profile_candidate_policy": {',
+    "universe creative-profile candidate policy",
+  ],
+  [
+    '"writes_member_profile_snapshots": False',
+    "creative-profile candidates do not write snapshots",
+  ],
+  [
+    '"public_surface_allowed": False',
+    "creative-profile candidates are not public-surface allowed",
+  ],
+  ['relation": "co_discusses_topic"', "same-topic relationship edge"],
+  ["memory_weight_label", "public-safe memory weight label"],
+  ["meme_seed", "public-safe meme seed"],
+  ["arc_label", "daily character arc label"],
   ['"daily_report_markdown_path"', "Markdown report output path"],
   ['"character_universe_path"', "character universe output path"],
   [".character-universe.json", "private universe file output"],
@@ -89,6 +114,14 @@ for (const [fragment, label] of [
   [
     "test_character_universe_uses_curated_second_pass_nodes",
     "universe second-pass regression test",
+  ],
+  [
+    "test_character_universe_exports_public_safe_memes_relationships_and_callbacks",
+    "universe memes/relationships/callbacks regression test",
+  ],
+  [
+    'self.assertTrue(universe["creative_profile_candidates"])',
+    "creative-profile candidate regression test",
   ],
   [
     "test_render_html_mode_returns_existing_html_deliverable",
@@ -125,8 +158,21 @@ for (const [fragment, label] of [
     "worker profile fact flag binding",
   ],
   [
-    '"storyline_candidate_count": len(character_universe.get("storyline_candidates") or [])',
-    "worker storyline count",
+    '"creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or [])',
+    "worker creative-profile candidate count",
+  ],
+  [
+    '"creative_profile_public_surface_allowed": (',
+    "worker creative-profile public-surface flag",
+  ],
+  ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
+  [
+    '"callback_count": len(character_universe.get("callbacks") or [])',
+    "worker callback count",
+  ],
+  [
+    '"relationship_count": len(character_universe.get("relationships") or [])',
+    "worker relationship count",
   ],
   [
     '"$PYTHON_BIN" - "$render_report" "$upload_report" "$publish_report"',
@@ -157,6 +203,18 @@ for (const [fragment, label] of [
     'if universe.get("profile_fact_text_included") is not False:',
     "worker-run profile fact guard",
   ],
+  [
+    'if universe.get("creative_profile_public_surface_allowed") is not False:',
+    "worker-run creative-profile public-surface guard",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_creative_profile_candidate_count=',
+    "worker-run creative-profile candidate count evidence",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")',
+    "worker-run creative-profile public-surface evidence",
+  ],
 ]) {
   requireIncludes(workerRunEvidence, fragment, label);
 }
@@ -167,11 +225,11 @@ for (const [fragment, label] of [
     "runner allowlist for universe labels",
   ],
   [
-    "xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included)",
+    "xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included|creative_profile_public_surface_allowed)",
     "runner allowlist for universe privacy flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|storyline_candidate_count|edge_count)",
+    "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|meme_count|callback_count|relationship_count|creative_profile_candidate_count|storyline_candidate_count|edge_count)",
     "runner allowlist for universe counts",
   ],
 ]) {
@@ -195,6 +253,31 @@ for (const [text, label] of [
   requireIncludes(
     text,
     "xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed=false",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_character_universe_meme_count=4",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_character_universe_callback_count=4",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_character_universe_relationship_count=2",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count=4",
     label
   );
 }

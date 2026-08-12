@@ -231,6 +231,14 @@ print(json.dumps({
             "people_count": len(character_universe.get("people") or []),
             "topic_count": len(character_universe.get("topics") or []),
             "event_count": len(character_universe.get("events") or []),
+            "meme_count": len(character_universe.get("memes") or []),
+            "callback_count": len(character_universe.get("callbacks") or []),
+            "relationship_count": len(character_universe.get("relationships") or []),
+            "creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or []),
+            "creative_profile_public_surface_allowed": (
+                (character_universe.get("creative_profile_candidate_policy") or {}).get("public_surface_allowed")
+                is True
+            ),
             "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
             "edge_count": len(character_universe.get("edges") or []),
         },
@@ -289,6 +297,14 @@ print(json.dumps({
         "people_count": len(character_universe.get("people") or []),
         "topic_count": len(character_universe.get("topics") or []),
         "event_count": len(character_universe.get("events") or []),
+        "meme_count": len(character_universe.get("memes") or []),
+        "callback_count": len(character_universe.get("callbacks") or []),
+        "relationship_count": len(character_universe.get("relationships") or []),
+        "creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or []),
+        "creative_profile_public_surface_allowed": (
+            (character_universe.get("creative_profile_candidate_policy") or {}).get("public_surface_allowed")
+            is True
+        ),
         "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
         "edge_count": len(character_universe.get("edges") or []),
     },

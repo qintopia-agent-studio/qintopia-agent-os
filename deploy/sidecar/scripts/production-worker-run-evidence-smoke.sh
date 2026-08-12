@@ -191,6 +191,8 @@ if universe.get("raw_messages_included") is not False:
     raise SystemExit(3)
 if universe.get("profile_fact_text_included") is not False:
     raise SystemExit(3)
+if universe.get("creative_profile_public_surface_allowed") is not False:
+    raise SystemExit(3)
 
 def number(name: str, default: int = 0) -> int:
     value = metrics.get(name, default)
@@ -237,6 +239,11 @@ print(f"{key}_worker_character_universe_profile_fact_text_included=false")
 print(f"{key}_worker_character_universe_people_count={universe_count('people_count')}")
 print(f"{key}_worker_character_universe_topic_count={universe_count('topic_count')}")
 print(f"{key}_worker_character_universe_event_count={universe_count('event_count')}")
+print(f"{key}_worker_character_universe_meme_count={universe_count('meme_count')}")
+print(f"{key}_worker_character_universe_callback_count={universe_count('callback_count')}")
+print(f"{key}_worker_character_universe_relationship_count={universe_count('relationship_count')}")
+print(f"{key}_worker_character_universe_creative_profile_candidate_count={universe_count('creative_profile_candidate_count')}")
+print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")
 print(f"{key}_worker_character_universe_storyline_candidate_count={universe_count('storyline_candidate_count')}")
 print(f"{key}_worker_character_universe_edge_count={universe_count('edge_count')}")
 PY
