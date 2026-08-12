@@ -44,6 +44,11 @@ observation, rollback, and send boundaries still run from the immutable release.
   Markdown. It keeps people, topics, events, memes, callbacks, same-topic relationships,
   creative-profile candidates, storyline candidates, and graph edges from curated report
   content only; it does not retain raw messages or hidden profile fact text.
+- Write a `wx-cli`-style private review bundle alongside the poster: `.quote-map.json`,
+  `.wiki-bundle.json`, `.run-manifest.json`, and `.review.md`. These files add the
+  reference project's quote-map / Wiki / run-manifest / review structure while
+  preserving the latest Postgres chat-record source of truth. They are internal review
+  artifacts, not public or send-ready payloads.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
   preview and production image share the same report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
@@ -94,13 +99,14 @@ Character notes follow the reference `wx-cli` project’s useful pattern: daily 
 separates current-window behavior from long-term character memory. The displayed role is
 derived from today’s source messages; long-term Postgres profile facts only contribute
 bounded recurrence counts and a coarse role label such as `活动推进者` or `故事线雷达`.
-The workflow also emits a private `xiaoman-daily-case-report-*.character-universe.json`
-file, matching the reference project's Wiki/graph idea with a safer source policy:
-people, topics, events, storyline candidates, and edges come from the generated daily
-report layer, not from raw chat archives. It also emits `creative_profile_candidates` as
-private review material with `public_surface_allowed=false` and
-`writes_member_profile_snapshots=false`; applying those candidates to durable profiles
-remains a separate owner-reviewed boundary.
+The workflow also emits private `xiaoman-daily-case-report-*` review artifacts:
+`character-universe.json`, `quote-map.json`, `wiki-bundle.json`, `run-manifest.json`,
+and `review.md`. This matches the reference project's Wiki/graph/review idea with a
+safer source policy: people, topics, events, storyline candidates, quote anchors, and
+edges come from the generated daily report layer, not from raw chat archives. It also
+emits `creative_profile_candidates` as private review material with
+`public_surface_allowed=false` and `writes_member_profile_snapshots=false`; applying
+those candidates to durable profiles remains a separate owner-reviewed boundary.
 
 ## Running it
 
@@ -212,9 +218,14 @@ systemd timer is retained only as a rollback target after the Hermes job is disa
 - The private character-universe JSON is generated in the same `0700` output directory
   with mode `0600`. It may contain member display names and curated report excerpts, so
   it follows the same temporary production cleanup policy as Markdown and HTML.
+- The private quote-map, wiki-bundle, run-manifest, and review report are generated in
+  the same `0700` output directory with mode `0600`. They may contain curated excerpts,
+  labels, and candidate nodes, so production worker metadata may retain only their
+  presence, counts, and privacy flags.
 - Auto-publish metadata retains only safe counters and schema flags from the private
-  Markdown/universe outputs. Production evidence can prove the upgraded character
-  universe path ran, without retaining people labels, story labels, or source excerpts.
+  Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
+  character universe and private review bundle paths ran, without retaining people
+  labels, story labels, quote text, relationship labels, or source excerpts.
 - Production JPEG/database runs use fixed local runtime tools only. Database
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command

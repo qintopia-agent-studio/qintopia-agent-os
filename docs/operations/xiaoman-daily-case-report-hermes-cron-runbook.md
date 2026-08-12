@@ -224,10 +224,11 @@ sudo -n tail -n 20 \
 ```
 
 A healthy run appends one `run=ok` line plus the sanitized worker summary. New report
-runs include only safe counters and character-universe schema flags in that summary; new
-meme, callback, and same-topic relationship surfaces appear only as counts. They do not
-retain Markdown, people labels, story labels, relationship labels, or excerpts. The
-worker's own send evidence (artifact id, request state) is validated through the
+runs include only safe counters, character-universe schema flags, and private review
+bundle count/privacy flags in that summary; meme, callback, same-topic relationship,
+quote-map, and wiki-bundle surfaces appear only as counts. They do not retain Markdown,
+people labels, story labels, quote text, relationship labels, wiki nodes, or excerpts.
+The worker's own send evidence (artifact id, request state) is validated through the
 existing sanitized evidence chain, not through this log. Any group message authored by
 this job itself means the wrapper leaked stdout; disable the job immediately with the
 rollback below.

@@ -1738,6 +1738,379 @@ def _build_character_universe(
     }
 
 
+def _quote_entry(
+    index: int,
+    source_kind: str,
+    excerpt: str,
+    *,
+    speaker_label: str = "",
+    speaker_key: str = "",
+    related_people: list[str] | None = None,
+    related_topics: list[str] | None = None,
+    related_events: list[str] | None = None,
+    related_memes: list[str] | None = None,
+) -> dict[str, Any] | None:
+    cleaned = _clean_text(excerpt)
+    if not cleaned:
+        return None
+    return {
+        "key": f"quote-{index:03d}",
+        "source_kind": source_kind,
+        "speaker_label": speaker_label,
+        "speaker_key": speaker_key,
+        "excerpt": cleaned[:120] + ("..." if len(cleaned) > 120 else ""),
+        "related_people": related_people or ([] if not speaker_key else [speaker_key]),
+        "related_topics": related_topics or [],
+        "related_events": related_events or [],
+        "related_memes": related_memes or [],
+        "review_status": "candidate",
+        "public_surface_allowed": False,
+    }
+
+
+def _build_quote_map(report: ReportData) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+
+    def add(entry: dict[str, Any] | None) -> None:
+        if entry is not None:
+            entries.append(entry)
+
+    next_index = 1
+    if report.highlight:
+        add(
+            _quote_entry(
+                next_index,
+                "daily_highlight",
+                report.highlight,
+                related_topics=[_node_key(topic.keyword) for topic in report.hot_topics[:2]],
+            )
+        )
+        next_index += 1
+
+    for character in report.characters:
+        person_key = character.node_key or _node_key(character.name)
+        add(
+            _quote_entry(
+                next_index,
+                "daily_character_note",
+                character.evidence,
+                speaker_label=character.name,
+                speaker_key=person_key,
+                related_memes=[_node_key(character.meme_seed)] if character.meme_seed else [],
+            )
+        )
+        next_index += 1
+
+    for case in report.cases:
+        event_key = _node_key(case.title)
+        for bullet in case.bullets[:2]:
+            add(
+                _quote_entry(
+                    next_index,
+                    "daily_case_bullet",
+                    bullet,
+                    speaker_label=case.top_speaker,
+                    related_events=[event_key],
+                )
+            )
+            next_index += 1
+
+    return {
+        "schema_version": "xiaoman-daily-quote-map-v1",
+        "source": "daily_case_report_private_review_bundle",
+        "retained_source_policy": "private_curated_excerpts_only",
+        "raw_message_rows_included": False,
+        "profile_fact_text_included": False,
+        "curated_excerpts_included": True,
+        "public_surface_allowed": False,
+        "review_required": True,
+        "entry_count": len(entries),
+        "entries": entries,
+    }
+
+
+def _wiki_bundle_counts(bundle: dict[str, Any]) -> dict[str, int]:
+    return {
+        "people": len(bundle.get("people") or []),
+        "topics": len(bundle.get("topics") or []),
+        "events": len(bundle.get("events") or []),
+        "memes": len(bundle.get("memes") or []),
+        "relationships": len(bundle.get("relationships") or []),
+        "storylines": len(bundle.get("storylines") or []),
+        "timeline": len(bundle.get("timeline") or []),
+    }
+
+
+def _build_wiki_bundle(report: ReportData, quote_map: dict[str, Any]) -> dict[str, Any]:
+    universe = report.character_universe or {}
+    event_quote_keys: dict[str, list[str]] = {}
+    people_quote_keys: dict[str, list[str]] = {}
+    meme_quote_keys: dict[str, list[str]] = {}
+    for entry in quote_map.get("entries") or []:
+        quote_key = str(entry.get("key") or "")
+        if not quote_key:
+            continue
+        for event_key in entry.get("related_events") or []:
+            event_quote_keys.setdefault(str(event_key), []).append(quote_key)
+        for person_key in entry.get("related_people") or []:
+            people_quote_keys.setdefault(str(person_key), []).append(quote_key)
+        for meme_key in entry.get("related_memes") or []:
+            meme_quote_keys.setdefault(str(meme_key), []).append(quote_key)
+
+    people = []
+    for item in universe.get("people") or []:
+        key = str(item.get("key") or "")
+        people.append(
+            {
+                "type": "wiki_person",
+                "key": key,
+                "label": item.get("label", ""),
+                "role_label": item.get("role_label", ""),
+                "daily_arc": item.get("arc_label", ""),
+                "story_function": item.get("story_function", ""),
+                "callback_hint": item.get("callback_hint", ""),
+                "memory_weight_label": item.get("memory_weight_label", ""),
+                "quote_keys": people_quote_keys.get(key, []),
+                "status": "candidate",
+                "risk": "internal_review_required",
+            }
+        )
+
+    topics = [
+        {
+            "type": "wiki_topic",
+            "key": item.get("key", ""),
+            "label": item.get("label", ""),
+            "message_count": item.get("message_count", 0),
+            "participant_count": item.get("participant_count", 0),
+            "status": "candidate",
+            "risk": "public_safe_summary",
+        }
+        for item in universe.get("topics") or []
+    ]
+
+    events = []
+    for item in universe.get("events") or []:
+        key = str(item.get("key") or "")
+        events.append(
+            {
+                "type": "wiki_event",
+                "key": key,
+                "label": item.get("label", ""),
+                "case_no": item.get("case_no", ""),
+                "time_label": item.get("time_label", ""),
+                "summary": item.get("summary", ""),
+                "quote_keys": event_quote_keys.get(key, []),
+                "status": "candidate",
+                "risk": "internal_review_required",
+            }
+        )
+
+    memes = []
+    for item in universe.get("memes") or []:
+        key = str(item.get("key") or "")
+        memes.append(
+            {
+                "type": "wiki_meme",
+                "key": key,
+                "label": item.get("label", ""),
+                "source": item.get("source", ""),
+                "related_people": item.get("related_people", []),
+                "quote_keys": meme_quote_keys.get(key, []),
+                "status": "candidate",
+                "risk": "internal_review_required",
+            }
+        )
+
+    relationships = [
+        {
+            "type": "wiki_relationship",
+            "key": item.get("key", ""),
+            "source": item.get("source", ""),
+            "target": item.get("target", ""),
+            "relation": item.get("relation", ""),
+            "label": item.get("label", ""),
+            "topic": item.get("topic", ""),
+            "status": "candidate",
+            "risk": "public_safe_summary",
+        }
+        for item in universe.get("relationships") or []
+    ]
+
+    storylines = [
+        {
+            "type": "wiki_storyline",
+            "key": item.get("key", ""),
+            "label": item.get("label", ""),
+            "last_seen": item.get("last_seen", report.report_date),
+            "reason": item.get("reason", ""),
+            "related_event": item.get("related_event", ""),
+            "status": "candidate",
+            "risk": "internal_review_required",
+        }
+        for item in universe.get("storyline_candidates") or []
+    ]
+
+    timeline = [
+        {
+            "type": "daily_timeline_entry",
+            "key": _node_key(f"{report.report_date}-{case.case_no}"),
+            "date": report.report_date,
+            "case_no": case.case_no,
+            "label": _case_storyline_label(case),
+            "time_label": case.time_label,
+            "message_count": case.message_count,
+            "participant_count": case.participant_count,
+            "status": "candidate",
+            "risk": "internal_review_required",
+        }
+        for case in report.cases
+    ]
+
+    bundle = {
+        "schema_version": "xiaoman-daily-wiki-bundle-v1",
+        "source": "daily_case_report_private_review_bundle",
+        "retained_source_policy": "candidate_nodes_and_quote_keys_only",
+        "raw_message_rows_included": False,
+        "profile_fact_text_included": False,
+        "public_surface_allowed": False,
+        "review_required": True,
+        "people": people,
+        "topics": topics,
+        "events": events,
+        "memes": memes,
+        "relationships": relationships,
+        "storylines": storylines,
+        "timeline": timeline,
+    }
+    bundle["counts"] = _wiki_bundle_counts(bundle)
+    return bundle
+
+
+def _build_run_manifest(
+    report: ReportData,
+    quote_map: dict[str, Any],
+    wiki_bundle: dict[str, Any],
+    *,
+    source_chat_id: str | None = None,
+) -> dict[str, Any]:
+    universe = report.character_universe or {}
+    return {
+        "schema_version": "xiaoman-daily-run-manifest-v1",
+        "source": "daily_case_report",
+        "template_version": TEMPLATE_VERSION,
+        "report_date": report.report_date,
+        "time_range": report.time_range,
+        "window_start": report.window_start,
+        "window_end": report.window_end,
+        "timezone": report.timezone,
+        "source_chat_ref": _source_chat_ref(source_chat_id),
+        "inputs": {
+            "message_count": report.message_count,
+            "participant_count": report.participant_count,
+            "latest_chat_records_preserved": True,
+            "long_term_member_facts_used": any(
+                bool(character.memory_label) for character in report.characters
+            ),
+            "long_term_member_fact_text_included": False,
+        },
+        "outputs": {
+            "poster": "generated_at_runtime",
+            "daily_markdown": "private_review_file",
+            "character_universe": "private_review_json",
+            "quote_map": "private_review_json",
+            "wiki_bundle": "private_review_json",
+            "review_report": "private_review_markdown",
+        },
+        "counts": {
+            "case_count": report.case_count,
+            "character_count": report.character_count,
+            "hot_topic_count": len(report.hot_topics),
+            "quote_map_entry_count": quote_map.get("entry_count", 0),
+            "wiki_people_count": (wiki_bundle.get("counts") or {}).get("people", 0),
+            "wiki_event_count": (wiki_bundle.get("counts") or {}).get("events", 0),
+            "wiki_storyline_count": (wiki_bundle.get("counts") or {}).get("storylines", 0),
+            "creative_profile_candidate_count": len(
+                universe.get("creative_profile_candidates") or []
+            ),
+        },
+        "privacy": {
+            "public_surface_allowed": False,
+            "raw_message_rows_included": False,
+            "profile_fact_text_included": False,
+            "creative_profile_public_surface_allowed": (
+                (universe.get("creative_profile_candidate_policy") or {}).get(
+                    "public_surface_allowed"
+                )
+                is True
+            ),
+            "writes_member_profile_snapshots": False,
+        },
+        "review_required": True,
+    }
+
+
+def _render_review_report(
+    report: ReportData,
+    quote_map: dict[str, Any],
+    wiki_bundle: dict[str, Any],
+    run_manifest: dict[str, Any],
+) -> str:
+    universe = report.character_universe or {}
+    counts = wiki_bundle.get("counts") or {}
+    profile_candidates = universe.get("creative_profile_candidates") or []
+    lines = [
+        f"# 小满日报私有审核包｜{report.report_date}",
+        "",
+        "## 生成范围",
+        "",
+        f"- 时间范围：{report.time_range}",
+        f"- 最新聊天记录：保留，{report.message_count} 条消息 / {report.participant_count} 位活跃成员",
+        f"- 今日主线：{report.case_count} 条",
+        f"- 今日剧中人：{report.character_count} 位",
+        f"- 引用映射：{quote_map.get('entry_count', 0)} 条候选证据",
+        f"- Wiki 候选：people={counts.get('people', 0)} / events={counts.get('events', 0)} / memes={counts.get('memes', 0)} / relationships={counts.get('relationships', 0)} / storylines={counts.get('storylines', 0)}",
+        "",
+        "## 审核清单",
+        "",
+        "- [ ] 公开日报是否只使用群聊窗口内的当日内容和安全衍生标签",
+        "- [ ] 今日剧中人的角色是否有 quote-map 或 case bullet 支撑",
+        "- [ ] creative_profile_candidates 是否仍为 candidate_only，没有写入长期画像表",
+        "- [ ] 同名成员是否按 person_id 优先分组，缺失 person_id 才使用展示名兜底",
+        "- [ ] meme / relationship / storyline 是否只是候选，没有被当作事实发布",
+        "",
+        "## 隐私边界",
+        "",
+        f"- raw_message_rows_included={str(run_manifest['privacy']['raw_message_rows_included']).lower()}",
+        f"- profile_fact_text_included={str(run_manifest['privacy']['profile_fact_text_included']).lower()}",
+        f"- creative_profile_public_surface_allowed={str(run_manifest['privacy']['creative_profile_public_surface_allowed']).lower()}",
+        f"- writes_member_profile_snapshots={str(run_manifest['privacy']['writes_member_profile_snapshots']).lower()}",
+        "",
+        "## 可审核人物画像候选",
+        "",
+    ]
+    if profile_candidates:
+        for item in profile_candidates[:8]:
+            lines.append(
+                f"- {item.get('related_person', '')}：{item.get('candidate_role_label', '')} / "
+                f"{item.get('story_function', '')} / {item.get('daily_arc', '')} "
+                f"（evidence_policy={item.get('evidence_policy', '')}）"
+            )
+    else:
+        lines.append("- 今日没有形成可审核人物画像候选。")
+    lines.extend(
+        [
+            "",
+            "## 产物策略",
+            "",
+            "- 画报和日报 Markdown 用于人工查看。",
+            "- quote-map / wiki-bundle / run-manifest 只用于内部审核和后续人工确认。",
+            "- worker-run evidence 只能保留 presence/count/privacy flags，不能保留 quote、wiki 节点正文或人物画像文本。",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _case_storyline_label(case: CaseCard) -> str:
     label = case.title.replace("关于「", "").replace("」的讨论", "").strip()
     return label or case.title
@@ -2864,12 +3237,31 @@ def _result_json(
     html_path: Path | None = None,
     markdown_path: Path | None = None,
     universe_path: Path | None = None,
+    quote_map_path: Path | None = None,
+    wiki_bundle_path: Path | None = None,
+    run_manifest_path: Path | None = None,
+    review_report_path: Path | None = None,
+    quote_map: dict[str, Any] | None = None,
+    wiki_bundle: dict[str, Any] | None = None,
+    run_manifest: dict[str, Any] | None = None,
     output_width: int | None = None,
     source_chat_id: str | None = None,
 ) -> dict[str, Any]:
     html_exists = html_path is not None and html_path.exists()
     markdown_exists = markdown_path is not None and markdown_path.exists()
     universe_exists = universe_path is not None and universe_path.exists()
+    quote_map_exists = quote_map_path is not None and quote_map_path.exists()
+    wiki_bundle_exists = wiki_bundle_path is not None and wiki_bundle_path.exists()
+    run_manifest_exists = run_manifest_path is not None and run_manifest_path.exists()
+    review_report_exists = review_report_path is not None and review_report_path.exists()
+    quote_map = quote_map or _build_quote_map(report)
+    wiki_bundle = wiki_bundle or _build_wiki_bundle(report, quote_map)
+    run_manifest = run_manifest or _build_run_manifest(
+        report,
+        quote_map,
+        wiki_bundle,
+        source_chat_id=source_chat_id,
+    )
     artifact_candidate = (
         _artifact_candidate(image_path, image_format, report, output_width, source_chat_id)
         if image_path is not None and image_format is not None and image_path.exists()
@@ -2899,6 +3291,24 @@ def _result_json(
         "daily_report_markdown": _render_daily_markdown(report),
         "character_universe_path": str(universe_path) if universe_exists else None,
         "character_universe": report.character_universe,
+        "quote_map_path": str(quote_map_path) if quote_map_exists else None,
+        "quote_map": quote_map,
+        "wiki_bundle_path": str(wiki_bundle_path) if wiki_bundle_exists else None,
+        "wiki_bundle": wiki_bundle,
+        "run_manifest_path": str(run_manifest_path) if run_manifest_exists else None,
+        "run_manifest": run_manifest,
+        "review_report_path": str(review_report_path) if review_report_exists else None,
+        "private_review_bundle": {
+            "schema_version": "xiaoman-daily-private-review-bundle-v1",
+            "source": "wx_cli_style_daily_migration",
+            "public_surface_allowed": False,
+            "review_required": True,
+            "raw_message_rows_included": False,
+            "profile_fact_text_included": False,
+            "quote_map_entry_count": quote_map.get("entry_count", 0),
+            "wiki_counts": wiki_bundle.get("counts", {}),
+            "run_manifest_schema_version": run_manifest.get("schema_version", ""),
+        },
         "artifact_candidate": artifact_candidate,
         "operator_review_message": _operator_review_message(
             report, html_path or deliverable_path, image_path, html_exists
@@ -2936,16 +3346,39 @@ def main() -> int:
     html_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.html"
     markdown_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.md"
     universe_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.character-universe.json"
+    quote_map_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.quote-map.json"
+    wiki_bundle_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.wiki-bundle.json"
+    run_manifest_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.run-manifest.json"
+    review_report_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.review.md"
     image_path = output_dir / (
         f"xiaoman-daily-case-report-{timestamp}.{_image_extension(args.image_format)}"
     )
 
     html_content = _render_html(report, args.output_width)
+    quote_map = _build_quote_map(report)
+    wiki_bundle = _build_wiki_bundle(report, quote_map)
+    run_manifest = _build_run_manifest(report, quote_map, wiki_bundle, source_chat_id=args.chat_id)
     _write_private_text(html_path, html_content)
     _write_private_text(markdown_path, _render_daily_markdown(report))
     _write_private_text(
         universe_path,
         json.dumps(report.character_universe, ensure_ascii=False, indent=2),
+    )
+    _write_private_text(
+        quote_map_path,
+        json.dumps(quote_map, ensure_ascii=False, indent=2),
+    )
+    _write_private_text(
+        wiki_bundle_path,
+        json.dumps(wiki_bundle, ensure_ascii=False, indent=2),
+    )
+    _write_private_text(
+        run_manifest_path,
+        json.dumps(run_manifest, ensure_ascii=False, indent=2),
+    )
+    _write_private_text(
+        review_report_path,
+        _render_review_report(report, quote_map, wiki_bundle, run_manifest),
     )
 
     image_generated = False
@@ -2976,6 +3409,13 @@ def main() -> int:
             None if real_messages else html_path if html_path.exists() else None,
             markdown_path if markdown_path.exists() else None,
             universe_path if universe_path.exists() else None,
+            quote_map_path if quote_map_path.exists() else None,
+            wiki_bundle_path if wiki_bundle_path.exists() else None,
+            run_manifest_path if run_manifest_path.exists() else None,
+            review_report_path if review_report_path.exists() else None,
+            quote_map,
+            wiki_bundle,
+            run_manifest,
             args.output_width if image_generated else None,
             args.chat_id if image_generated else None,
         )
