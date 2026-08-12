@@ -15,6 +15,7 @@ on:
         options:
           - xiaoman-daily-case-report-auto-publish-backfill
           - erhua-morning-brief
+          - hermes-cron-snapshot-install
       backfill_date:
         description: YYYY-MM-DD, required only for Xiaoman daily report backfill.
         required: false
@@ -124,7 +125,7 @@ jobs:
           runtime_one_shot_target="$(require_allowed_value \
             runtime_one_shot_target \
             "$INPUT_RUNTIME_ONE_SHOT_TARGET" \
-            "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief")"
+            "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief,hermes-cron-snapshot-install")"
 
           require_single_line backfill_date "$INPUT_BACKFILL_DATE"
           require_single_line approval "$INPUT_APPROVAL"
@@ -147,6 +148,16 @@ jobs:
               fi
               if [[ "$INPUT_APPROVAL" != "approved-production-erhua-morning-brief-one-shot" ]]; then
                 echo "approval does not match Erhua morning brief one-shot." >&2
+                exit 2
+              fi
+              ;;
+            hermes-cron-snapshot-install)
+              if [[ -n "$INPUT_BACKFILL_DATE" ]]; then
+                echo "backfill_date must be empty for Hermes cron snapshot install." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-hermes-cron-snapshot" ]]; then
+                echo "approval does not match Hermes cron snapshot install." >&2
                 exit 2
               fi
               ;;

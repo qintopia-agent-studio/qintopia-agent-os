@@ -469,11 +469,17 @@
   `approved-production-erhua-morning-brief-one-shot`, or
   `xiaoman-daily-case-report-auto-publish-backfill` with
   `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
-  backfill date. This path may create real production publish/send side effects through
-  the reviewed worker boundaries, but it must not write persistent config,
-  enable/disable timers, retire cron files, accept multiple targets, or record raw
-  worker output, group ids, database URLs, tokens, Feishu payloads, QiWe payloads,
-  message content, or journal logs.
+  backfill date, or `hermes-cron-snapshot-install` with
+  `approved-production-hermes-cron-snapshot` and empty `backfill_date` when
+  `hermes-cron-snapshot` observation reports
+  `hermes_cron_snapshot_observation_error=unit_missing`. The snapshot target installs
+  only the fixed server-local snapshot timer and baseline snapshot repo, then should be
+  followed by observation with `hermes-cron-snapshot,hermes-cron-live-parity`. This path
+  may create real production publish/send side effects through the reviewed worker
+  boundaries, but it must not write persistent config, enable/disable business worker
+  timers, retire cron files, accept multiple targets, or record raw worker output, live
+  cron JSON, group ids, prompts, database URLs, tokens, Feishu payloads, QiWe payloads,
+  message content, snapshot contents, or journal logs.
 - Recurring Agent timers are moving back to Hermes cron as the source of truth (owner
   decision, 2026-08-10): live `jobs.json` under
   `/home/ubuntu/.hermes/profiles/<profile>/cron/` is conversation-editable and wins; the

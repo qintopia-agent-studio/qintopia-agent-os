@@ -131,6 +131,7 @@ allowed_observation_targets = {
 }
 allowed_runtime_one_shot_targets = {
     "erhua-morning-brief",
+    "hermes-cron-snapshot-install",
     "xiaoman-daily-case-report-auto-publish-backfill",
 }
 allowed_targets = {
@@ -336,6 +337,7 @@ if "production-runtime-one-shot" in release_scope:
     target = targets[0]
     expected_approvals = {
         "erhua-morning-brief": "approved-production-erhua-morning-brief-one-shot",
+        "hermes-cron-snapshot-install": "approved-production-hermes-cron-snapshot",
         "xiaoman-daily-case-report-auto-publish-backfill": "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
     }
     if approval != expected_approvals[target]:
@@ -1005,6 +1007,9 @@ runtime_one_shot_success_detail() {
       printf 'xiaoman_daily_case_report_backfill_date=%s; xiaoman_daily_case_report_backfill=completed' \
         "$runtime_one_shot_backfill_date"
       ;;
+    hermes-cron-snapshot-install)
+      printf 'hermes_cron_snapshot_install=completed'
+      ;;
     *)
       printf 'runtime_one_shot=completed'
       ;;
@@ -1283,6 +1288,11 @@ run_runtime_one_shot_target() {
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA="$release_sha" \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE="$runtime_one_shot_backfill_date" \
         "${script_dir}/xiaoman-daily-case-report-auto-publish-backfill.sh" >/dev/null || return $?
+      ;;
+    hermes-cron-snapshot-install)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot \
+        "${script_dir}/install-hermes-cron-snapshot-timer.sh" >/dev/null || return $?
       ;;
     *)
       echo "unsupported production runtime one-shot target: ${target}" >&2
