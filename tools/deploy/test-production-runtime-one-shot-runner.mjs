@@ -239,6 +239,15 @@ printf 'run-hermes-cron-snapshot-install\\n' >> ${JSON.stringify(oneShotLog)}
 echo "live_jobs_json=must-not-leak"
 `
   );
+  writeExecutable(
+    path.relative(tmpRoot, path.join(scriptsDir, "fail-runtime-one-shot-for-test.sh")),
+    `#!/usr/bin/env bash
+set -euo pipefail
+echo "qintopia_runtime_one_shot_safe_failure=runtime one shot fixture failed" >&2
+echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak" >&2
+exit 72
+`
+  );
 
   const env = {
     ...process.env,
@@ -359,6 +368,41 @@ echo "live_jobs_json=must-not-leak"
   }
   if (oneShotCheck.detail.includes("must-not-leak")) {
     throw new Error("snapshot install evidence leaked raw script output");
+  }
+
+  fs.copyFileSync(
+    path.join(scriptsDir, "fail-runtime-one-shot-for-test.sh"),
+    path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
+  );
+  const failedSnapshotRequestId = "deploy-20260810T000003Z-abcdef123456";
+  result = runRequest(failedSnapshotRequestId, {
+    targets: ["hermes-cron-snapshot-install"],
+    approval: "approved-production-hermes-cron-snapshot",
+  });
+  if (result.status === 0) {
+    throw new Error("failing snapshot install one-shot unexpectedly passed");
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${failedSnapshotRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "hermes-cron-snapshot-install" ||
+    detail.targets[0].status !== "failed" ||
+    detail.targets[0].detail !== "exit 72: runtime one shot fixture failed"
+  ) {
+    throw new Error(
+      `unexpected failing Hermes cron snapshot install evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("failed snapshot install evidence leaked raw script output");
   }
 
   const commandLog = fs.readFileSync(oneShotLog, "utf8");
