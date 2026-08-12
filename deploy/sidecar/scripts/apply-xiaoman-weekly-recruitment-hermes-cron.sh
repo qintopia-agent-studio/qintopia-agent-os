@@ -58,6 +58,8 @@ mode = sys.argv[6]
 JOB_NAME = "小满·周六活动招募"
 JOB_SCHEDULE_EXPR = "0 10 * * 6"
 JOB_SCRIPT = "qintopia_xiaoman_weekly_recruitment.sh"
+STATUS_INSTALLED = "weekly_recruitment_hermes_cron_installed"
+STATUS_ALREADY_INSTALLED = "weekly_recruitment_hermes_cron_already_installed"
 CHAT_ID_KEY = "WECOM_HOME_CHANNEL"
 MAX_CRON_BYTES = 1024 * 1024
 MAX_ENV_BYTES = 1024 * 1024
@@ -205,7 +207,7 @@ def load_cron() -> tuple[dict, bytes, os.stat_result]:
         fail("Hermes cron file must be JSON")
     if not isinstance(document, dict):
         fail("Hermes cron file must contain a JSON object envelope")
-    if document.get("schema_version") != 1:
+    if "schema_version" in document and document.get("schema_version") != 1:
         fail("Hermes cron file schema_version must be 1")
     jobs = document.get("jobs")
     if not isinstance(jobs, list):
@@ -287,42 +289,63 @@ def find_reviewed_job(jobs: list[dict]) -> tuple[int, dict]:
 
 document, previous_payload, entry_stat = load_cron()
 jobs = document["jobs"]
+schema_normalized = False
+if document.get("schema_version") != 1:
+    document["schema_version"] = 1
+    schema_normalized = True
 
 if mode == "--install":
-    if any(job.get("name") == JOB_NAME for job in jobs):
-        fail("Hermes cron file already declares the weekly recruitment job")
-    if any(job.get("script") == JOB_SCRIPT for job in jobs):
+    matching_name = [job for job in jobs if job.get("name") == JOB_NAME]
+    if len(matching_name) > 1:
+        fail("Hermes cron file contains duplicate weekly recruitment jobs")
+    if any(job.get("script") == JOB_SCRIPT and job.get("name") != JOB_NAME for job in jobs):
         fail("Hermes cron file already declares a job bound to the weekly recruitment script")
     chat_id = resolve_chat_id()
     wrapper_installed = install_wrapper()
-    jobs.append(
-        {
-            "id": next_job_id(jobs),
-            "name": JOB_NAME,
-            "schedule": {
-                "kind": "cron",
-                "expr": JOB_SCHEDULE_EXPR,
-                "display": JOB_SCHEDULE_EXPR,
+    if matching_name:
+        _, existing_job = find_reviewed_job(jobs)
+        if schema_normalized:
+            evidence = write_cron(document, previous_payload, entry_stat)
+        else:
+            previous_sha256 = hashlib.sha256(previous_payload).hexdigest()
+            evidence = {
+                "previous_sha256": previous_sha256,
+                "new_sha256": previous_sha256,
+                "backup_created": False,
+            }
+        status = STATUS_ALREADY_INSTALLED
+        job_enabled = existing_job.get("enabled") is True
+    else:
+        jobs.append(
+            {
+                "id": next_job_id(jobs),
+                "name": JOB_NAME,
+                "schedule": {
+                    "kind": "cron",
+                    "expr": JOB_SCHEDULE_EXPR,
+                    "display": JOB_SCHEDULE_EXPR,
+                },
+                "no_agent": True,
+                "script": JOB_SCRIPT,
+                "deliver": "origin",
+                "origin": {
+                    "platform": "wecom",
+                    "chat_id": chat_id,
+                    "chat_name": None,
+                    "thread_id": None,
+                },
+                "enabled": False,
+                "skills": [],
             },
-            "no_agent": True,
-            "script": JOB_SCRIPT,
-            "deliver": "origin",
-            "origin": {
-                "platform": "wecom",
-                "chat_id": chat_id,
-                "chat_name": None,
-                "thread_id": None,
-            },
-            "enabled": False,
-            "skills": [],
-        }
-    )
-    evidence = write_cron(document, previous_payload, entry_stat)
+        )
+        evidence = write_cron(document, previous_payload, entry_stat)
+        status = STATUS_INSTALLED
+        job_enabled = False
     report = {
         "schema_version": 1,
-        "status": "weekly_recruitment_hermes_cron_installed",
+        "status": status,
         "profile": "xiaoman",
-        "job_enabled": False,
+        "job_enabled": job_enabled,
         "wrapper_installed": wrapper_installed,
         "origin_chat_id_resolved": True,
         "job_count": len(jobs),
@@ -331,7 +354,7 @@ if mode == "--install":
 else:
     verify_installed_wrapper()
     index, job = find_reviewed_job(jobs)
-    if job.get("enabled") is True:
+    if job.get("enabled") is True and not schema_normalized:
         report = {
             "schema_version": 1,
             "status": "weekly_recruitment_hermes_cron_already_enabled",
@@ -345,11 +368,15 @@ else:
             "backup_created": False,
         }
     else:
-        jobs[index]["enabled"] = True
+        enabled_changed = job.get("enabled") is not True
+        if enabled_changed:
+            jobs[index]["enabled"] = True
         evidence = write_cron(document, previous_payload, entry_stat)
         report = {
             "schema_version": 1,
-            "status": "weekly_recruitment_hermes_cron_enabled",
+            "status": "weekly_recruitment_hermes_cron_enabled"
+            if enabled_changed
+            else "weekly_recruitment_hermes_cron_already_enabled",
             "profile": "xiaoman",
             "job_enabled": True,
             "wrapper_installed": False,
