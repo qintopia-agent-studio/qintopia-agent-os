@@ -219,6 +219,10 @@ class CharacterCard:
     relationship_topic: str = ""
     meme_seed: str = ""
     memory_weight_label: str = ""
+    evidence_anchor: str = ""
+    profile_evidence_count: int = 0
+    profile_upgrade_status: str = ""
+    profile_upgrade_reason: str = ""
 
 
 @dataclass
@@ -1364,6 +1368,47 @@ def _character_meme_seed(
     return f"今日「{role_label}」待观察"
 
 
+def _profile_evidence_count(
+    memory: CharacterMemory | None,
+    message_count: int,
+    topic_count: int,
+    relationship_hint: str,
+) -> int:
+    count = min(memory.recent_fact_count, 20) if memory else 0
+    if message_count >= 2:
+        count += 1
+    if memory and topic_count >= 2:
+        count += 1
+    if relationship_hint:
+        count += 1
+    return count
+
+
+def _profile_upgrade_status(evidence_count: int) -> str:
+    return "eligible_for_review" if evidence_count >= 2 else "daily_note_only"
+
+
+def _profile_upgrade_reason(
+    evidence_count: int,
+    memory: CharacterMemory | None,
+    message_count: int,
+    topic_count: int,
+    relationship_hint: str,
+) -> str:
+    if evidence_count < 2:
+        return "只有单日轻量信号，不能升级为长期人物画像"
+    reasons: list[str] = []
+    if memory and memory.recent_fact_count > 0:
+        reasons.append(f"近{MEMORY_LOOKBACK_DAYS}天已有 {memory.recent_fact_count} 次角色复现")
+    if message_count >= 2:
+        reasons.append(f"今日同一身份 {message_count} 条发言支撑")
+    if topic_count >= 2:
+        reasons.append(f"今日跨 {topic_count} 个公开话题出现")
+    if relationship_hint:
+        reasons.append("今日存在同场关系候选")
+    return "；".join(reasons[:3]) or "达到最小复现证据"
+
+
 def _relation_group_key(message: ReportMessage) -> str:
     if message.person_id:
         return f"person:{message.person_id}"
@@ -1481,6 +1526,13 @@ def _compute_characters(
             group_key,
             ("", "", ""),
         )
+        node_key = node_key_by_group.get(group_key, _character_node_key(group_key, name))
+        profile_evidence_count = _profile_evidence_count(
+            memory,
+            len(group),
+            topic_count,
+            relationship_hint,
+        )
         score = (
             len(group) * 3
             + role_score * 4
@@ -1499,7 +1551,7 @@ def _compute_characters(
                     evidence=evidence,
                     message_count=len(group),
                     topic_count=topic_count,
-                    node_key=node_key_by_group.get(group_key, _character_node_key(group_key, name)),
+                    node_key=node_key,
                     memory_label=memory_label,
                     story_function=_character_story_function(role_label, len(group), topic_count),
                     callback_hint=_character_callback_hint(role_label, evidence, memory_label),
@@ -1513,6 +1565,16 @@ def _compute_characters(
                         or _memory_weight_label(memory.recent_fact_count, memory.lifetime_fact_count)
                         if memory
                         else "只按今日表现呈现"
+                    ),
+                    evidence_anchor=f"daily_character_note:{node_key}",
+                    profile_evidence_count=profile_evidence_count,
+                    profile_upgrade_status=_profile_upgrade_status(profile_evidence_count),
+                    profile_upgrade_reason=_profile_upgrade_reason(
+                        profile_evidence_count,
+                        memory,
+                        len(group),
+                        topic_count,
+                        relationship_hint,
                     ),
                 ),
             )
@@ -1544,10 +1606,35 @@ def _build_character_universe(
     characters: list[CharacterCard],
     report_date: str,
 ) -> dict[str, Any]:
+    def character_key(character: CharacterCard) -> str:
+        return character.node_key or _node_key(character.name)
+
+    def character_anchor(character: CharacterCard) -> str:
+        return character.evidence_anchor or f"daily_character_note:{character_key(character)}"
+
+    def character_evidence_count(character: CharacterCard) -> int:
+        return character.profile_evidence_count or (1 if character.message_count >= 2 else 0)
+
+    def character_upgrade_status(character: CharacterCard) -> str:
+        return character.profile_upgrade_status or _profile_upgrade_status(
+            character_evidence_count(character)
+        )
+
+    def character_upgrade_reason(character: CharacterCard) -> str:
+        if character.profile_upgrade_reason:
+            return character.profile_upgrade_reason
+        return _profile_upgrade_reason(
+            character_evidence_count(character),
+            None,
+            character.message_count,
+            character.topic_count,
+            character.relationship_hint,
+        )
+
     people = [
         {
             "type": "people",
-            "key": character.node_key or _node_key(character.name),
+            "key": character_key(character),
             "label": character.name,
             "role_label": character.role_label,
             "daily_line": character.one_liner,
@@ -1561,6 +1648,9 @@ def _build_character_universe(
             "relationship_hint": character.relationship_hint,
             "meme_seed": character.meme_seed,
             "memory_weight_label": character.memory_weight_label,
+            "evidence_anchor": character_anchor(character),
+            "profile_evidence_count": character_evidence_count(character),
+            "profile_upgrade_status": character_upgrade_status(character),
             "risk": "internal",
         }
         for character in characters
@@ -1620,7 +1710,7 @@ def _build_character_universe(
                 "key": key,
                 "label": label,
                 "source": "daily_character_note",
-                "related_people": [character.node_key or _node_key(character.name)],
+                "related_people": [character_key(character)],
                 "status": "candidate",
                 "risk": "internal_review_required",
             }
@@ -1648,7 +1738,7 @@ def _build_character_universe(
             "type": "callbacks",
             "key": _node_key(f"{character.node_key}-{character.role_label}-callback"),
             "label": character.callback_hint,
-            "related_people": [character.node_key or _node_key(character.name)],
+            "related_people": [character_key(character)],
             "memory_weight_label": character.memory_weight_label,
             "status": "candidate",
             "risk": "internal_review_required",
@@ -1662,13 +1752,23 @@ def _build_character_universe(
             "key": _node_key(f"{character.node_key}-{character.role_label}-creative-profile"),
             "profile_kind": "creative_profile",
             "profile_version": "daily-character-v1",
-            "related_person": character.node_key or _node_key(character.name),
+            "related_person": character_key(character),
             "candidate_role_label": character.role_label,
             "story_function": character.story_function,
             "daily_arc": character.arc_label,
             "memory_weight_label": character.memory_weight_label,
             "meme_seed": character.meme_seed,
             "callback_hint": character.callback_hint,
+            "evidence_anchor": character_anchor(character),
+            "recurrence_evidence_count": character_evidence_count(character),
+            "minimum_recurrence_met": character_evidence_count(character) >= 2,
+            "profile_upgrade_status": character_upgrade_status(character),
+            "profile_upgrade_reason": character_upgrade_reason(character),
+            "blocked_reason": (
+                character_upgrade_reason(character)
+                if character_upgrade_status(character) == "daily_note_only"
+                else ""
+            ),
             "evidence_policy": "daily_character_note_or_quote_map",
             "minimum_recurrence": 2,
             "status": "candidate",
@@ -1678,11 +1778,11 @@ def _build_character_universe(
         for character in characters
         if character.role_label
     ]
-    selected_people_keys = {character.node_key or _node_key(character.name) for character in characters}
+    selected_people_keys = {character_key(character) for character in characters}
     relationships: list[dict[str, Any]] = []
     seen_relationships: set[tuple[str, str, str]] = set()
     for character in characters:
-        source = character.node_key or _node_key(character.name)
+        source = character_key(character)
         target = character.relationship_target_key
         topic = character.relationship_topic
         if not target or target not in selected_people_keys or source == target:
@@ -1705,12 +1805,12 @@ def _build_character_universe(
         )
     edges: list[dict[str, Any]] = []
     for character in characters:
-        character_key = character.node_key or _node_key(character.name)
+        character_key_value = character_key(character)
         for case in cases:
             if character.name == case.top_speaker or character.name in " ".join(case.bullets):
                 edges.append(
                     {
-                        "source": character_key,
+                        "source": character_key_value,
                         "target": _node_key(case.title),
                         "relation": "appears_in",
                         "evidence": case.case_no,
@@ -1720,7 +1820,7 @@ def _build_character_universe(
             if topic.keyword in character.evidence:
                 edges.append(
                     {
-                        "source": character_key,
+                        "source": character_key_value,
                         "target": _node_key(topic.keyword),
                         "relation": "mentions_topic",
                         "evidence": "daily_character_note",
@@ -1729,7 +1829,7 @@ def _build_character_universe(
         if character.meme_seed:
             edges.append(
                 {
-                    "source": character_key,
+                    "source": character_key_value,
                     "target": _node_key(character.meme_seed),
                     "relation": "seeds_callback",
                     "evidence": "daily_character_note",
@@ -1781,6 +1881,7 @@ def _quote_entry(
     related_topics: list[str] | None = None,
     related_events: list[str] | None = None,
     related_memes: list[str] | None = None,
+    source_anchor: str = "",
 ) -> dict[str, Any] | None:
     cleaned = _clean_text(excerpt)
     if not cleaned:
@@ -1795,6 +1896,7 @@ def _quote_entry(
         "related_topics": related_topics or [],
         "related_events": related_events or [],
         "related_memes": related_memes or [],
+        "source_anchor": source_anchor,
         "review_status": "candidate",
         "public_surface_allowed": False,
     }
@@ -1829,6 +1931,7 @@ def _build_quote_map(report: ReportData) -> dict[str, Any]:
                 speaker_label=character.name,
                 speaker_key=person_key,
                 related_memes=[_node_key(character.meme_seed)] if character.meme_seed else [],
+                source_anchor=character.evidence_anchor,
             )
         )
         next_index += 1
@@ -1902,6 +2005,8 @@ def _build_wiki_bundle(report: ReportData, quote_map: dict[str, Any]) -> dict[st
                 "story_function": item.get("story_function", ""),
                 "callback_hint": item.get("callback_hint", ""),
                 "memory_weight_label": item.get("memory_weight_label", ""),
+                "evidence_anchor": item.get("evidence_anchor", ""),
+                "profile_upgrade_status": item.get("profile_upgrade_status", ""),
                 "quote_keys": people_quote_keys.get(key, []),
                 "status": "candidate",
                 "risk": "internal_review_required",
@@ -2107,6 +2212,7 @@ def _render_review_report(
         "",
         "- [ ] 公开日报是否只使用群聊窗口内的当日内容和安全衍生标签",
         "- [ ] 今日剧中人的角色是否有 quote-map 或 case bullet 支撑",
+        "- [ ] eligible_for_review 是否满足最小复现证据；daily_note_only 不得写入长期画像",
         "- [ ] creative_profile_candidates 是否仍为 candidate_only，没有写入长期画像表",
         "- [ ] 同名成员是否按 person_id 优先分组，缺失 person_id 才使用展示名兜底",
         "- [ ] meme / relationship / storyline 是否只是候选，没有被当作事实发布",
@@ -2126,7 +2232,9 @@ def _render_review_report(
             lines.append(
                 f"- {item.get('related_person', '')}：{item.get('candidate_role_label', '')} / "
                 f"{item.get('story_function', '')} / {item.get('daily_arc', '')} "
-                f"（evidence_policy={item.get('evidence_policy', '')}）"
+                f"（status={item.get('profile_upgrade_status', '')}; "
+                f"evidence_count={item.get('recurrence_evidence_count', 0)}; "
+                f"anchor={item.get('evidence_anchor', '')}）"
             )
     else:
         lines.append("- 今日没有形成可审核人物画像候选。")
@@ -2696,7 +2804,8 @@ def _render_daily_markdown(report: ReportData) -> str:
         for item in universe["creative_profile_candidates"][:5]:
             lines.append(
                 f"- {item['candidate_role_label']} / {item['story_function']}："
-                f"{item['daily_arc']}（{item['evidence_policy']}）"
+                f"{item['daily_arc']}（{item['profile_upgrade_status']}；"
+                f"evidence_count={item['recurrence_evidence_count']}；{item['evidence_policy']}）"
             )
         lines.append("")
     lines.extend(

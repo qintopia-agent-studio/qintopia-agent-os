@@ -575,8 +575,49 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(characters[0].memory_weight_label, "近90天稳定复现 · 长期线索可用")
         self.assertIn("可作为「活动推进者」连续出场回调", characters[0].meme_seed)
         self.assertIn("稳定复现", characters[0].arc_label)
+        self.assertEqual(characters[0].profile_upgrade_status, "eligible_for_review")
+        self.assertGreaterEqual(characters[0].profile_evidence_count, 2)
+        self.assertIn("daily_character_note:", characters[0].evidence_anchor)
         self.assertNotIn("fact_text", characters[0].memory_label)
         self.assertNotIn("fact_text", characters[0].memory_weight_label)
+
+    def test_character_profile_candidate_keeps_single_day_signal_as_daily_note(self) -> None:
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动报名我来提醒大家。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id="11111111-1111-1111-1111-111111111111",
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动表单同步一下。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id="11111111-1111-1111-1111-111111111111",
+            ),
+        ]
+
+        characters = daily_case_report._compute_characters(messages)
+        universe = daily_case_report._build_character_universe(
+            [],
+            [],
+            characters,
+            "2026年08月08日",
+        )
+        candidate = universe["creative_profile_candidates"][0]
+
+        self.assertEqual(characters[0].profile_upgrade_status, "daily_note_only")
+        self.assertEqual(candidate["profile_upgrade_status"], "daily_note_only")
+        self.assertFalse(candidate["minimum_recurrence_met"])
+        self.assertEqual(candidate["recurrence_evidence_count"], 1)
+        self.assertIn("不能升级为长期人物画像", candidate["blocked_reason"])
+        self.assertFalse(candidate["public_surface_allowed"])
 
     def test_character_cards_do_not_merge_same_display_name_people(self) -> None:
         first_person_id = "11111111-1111-1111-1111-111111111111"
@@ -795,6 +836,17 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertFalse(
             universe["creative_profile_candidates"][0]["public_surface_allowed"]
         )
+        self.assertEqual(
+            universe["creative_profile_candidates"][0]["evidence_anchor"],
+            "daily_character_note:小雨",
+        )
+        self.assertEqual(
+            universe["creative_profile_candidates"][0]["profile_upgrade_status"],
+            "daily_note_only",
+        )
+        self.assertFalse(
+            universe["creative_profile_candidates"][0]["minimum_recurrence_met"]
+        )
         self.assertEqual(universe["topics"][0]["label"], "活动报名")
         self.assertEqual(universe["events"][0]["case_no"], "CASE 01")
         self.assertEqual(universe["storyline_candidates"][0]["label"], "活动讨论")
@@ -883,6 +935,12 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(universe["callbacks"])
         self.assertTrue(universe["relationships"])
         self.assertTrue(universe["creative_profile_candidates"])
+        self.assertTrue(
+            any(
+                candidate["profile_upgrade_status"] == "eligible_for_review"
+                for candidate in universe["creative_profile_candidates"]
+            )
+        )
         self.assertTrue(any(edge["relation"] == "co_discusses_topic" for edge in universe["edges"]))
         self.assertIn("同场关系", daily_case_report._render_html(report, 750))
         markdown = daily_case_report._render_daily_markdown(report)
@@ -993,6 +1051,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertFalse(run_manifest["privacy"]["profile_fact_text_included"])
         self.assertFalse(run_manifest["privacy"]["creative_profile_public_surface_allowed"])
         self.assertIn("审核清单", review_report)
+        self.assertIn("eligible_for_review", review_report)
+        self.assertIn("evidence_count=", review_report)
         self.assertIn("worker-run evidence 只能保留 presence/count/privacy flags", review_report)
         serialized = json.dumps(
             {

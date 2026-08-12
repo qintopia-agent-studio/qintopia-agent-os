@@ -195,6 +195,10 @@ const runtimeOneShotBackfillDate = argValue(
   "--runtime-one-shot-backfill-date",
   process.env.DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE || ""
 );
+const runtimeOneShotPayloadSha256 = argValue(
+  "--runtime-one-shot-payload-sha256",
+  process.env.DEPLOY_RUNTIME_ONE_SHOT_PAYLOAD_SHA256 || ""
+);
 const runtimeOneShotApproval = argValue(
   "--runtime-one-shot-approval",
   process.env.DEPLOY_RUNTIME_ONE_SHOT_APPROVAL || ""
@@ -273,6 +277,9 @@ if (runtimeOneShotTargets.length > 0) {
   };
   if (runtimeOneShotBackfillDate) {
     request.runtime_one_shot.backfill_date = runtimeOneShotBackfillDate;
+  }
+  if (runtimeOneShotPayloadSha256) {
+    request.runtime_one_shot.payload_sha256 = runtimeOneShotPayloadSha256;
   }
 }
 

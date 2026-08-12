@@ -90,7 +90,10 @@ The private `character-universe` export now also emits `creative_profile_candida
 This ports the reference project's long-term people/wiki workflow one step deeper
 without opening a new publish surface: candidates carry
 `profile_kind='creative_profile'`, daily role, story function, arc, meme/callback seeds,
-review policy, and `public_surface_allowed=false`. They are not written to
+review policy, and `public_surface_allowed=false`. Each candidate now also carries a
+safe `daily_character_note:<node-key>` evidence anchor, recurrence evidence count,
+minimum-recurrence gate, upgrade status (`eligible_for_review` vs `daily_note_only`),
+and a blocked reason when the signal is only a same-day note. They are not written to
 `member_profile_snapshots`; production worker metadata and completion evidence retain
 only candidate counts plus the false public-surface flag.
 
@@ -109,27 +112,38 @@ This keeps the important invariant:
 - daily人物弧线、梗回调、同场关系 can be rendered in poster and Markdown from the latest
   message window;
 - long-term profile application stays behind a separate reviewed data and publication
-  boundary, while daily runs already produce private review candidates.
+  boundary, while daily runs already produce anchored private review candidates and
+  block one-off notes from being treated as stable profile traits.
+
+The workflow now has a narrow reviewed apply path for Postgres-backed `creative_profile`
+snapshots: `workflows/xiaoman-daily-case-report/apply_creative_profile_candidates.py`.
+It uses `qintopia_identity.member_profile_snapshots` with
+`profile_kind='creative_profile'` and
+`profile_version='xiaoman-daily-creative-profile-v1'`. It accepts only an owner-reviewed
+payload with copied `eligible_for_review` candidates and reviewed `person_id` UUID
+mappings. It rejects `daily_note_only`, weak recurrence, guessed display-name
+identities, `public_surface_allowed=true`, unsupported fields, raw/private markers, and
+missing apply approval. Its report keeps sanitized counts and privacy flags only.
+
+The production trigger is the fixed `production-runtime-one-shot` target
+`xiaoman-creative-profile-candidates-apply`. The GitHub workflow accepts only
+`release_sha`, the fixed target, the approval phrase, and a 64-hex payload SHA-256. The
+deploy runner reads the reviewed payload only from
+`/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates/reviewed-payload.json`;
+it must not accept payload JSON, payload paths, person ids, display names, candidate
+text, or raw profile fields from workflow inputs. Production evidence may retain the
+reviewed payload SHA-256 and sanitized counts/privacy flags only.
 
 ## Proposed Next Steps
 
-1. Add a reviewed apply path for Postgres-backed `creative_profile` snapshots.
-   - Use existing `qintopia_identity.member_profile_snapshots` if the schema remains
-     sufficient, with `profile_kind='creative_profile'`.
-   - Metadata should include `public_surface_allowed=false` by default,
-     `evidence_policy=quote_map_or_message_id`, `profile_track=roast_or_public_safe`,
-     and `minimum_recurrence`.
-   - Input should be the private `creative_profile_candidates` export plus owner review,
-     not raw chat archives.
-
-2. Add a daily creative-profile apply/review worker.
+1. Add a daily creative-profile apply/review worker.
    - Input: latest QiWe messages for the target group plus existing creative profile
      snapshots and the generated candidate export.
    - Output: approved creative-profile deltas and a review report.
    - Apply mode should remain internal-only until owner-reviewed evidence proves it
      cannot leak sensitive facts or turn one-off comments into permanent labels.
 
-3. Extend the curated character-universe export with durable creative-profile inputs.
+2. Extend the curated character-universe export with durable creative-profile inputs.
    - The daily export now covers people, topics, events, meme candidates, callback
      candidates, same-topic co-presence relationships, storyline candidates, and edges
      from the report second pass.
@@ -138,7 +152,7 @@ This keeps the important invariant:
    - Default export must continue to exclude raw messages, raw attachments, run logs,
      secrets, and internal-only profile details.
 
-4. Add owner-reviewed expressive labels for richer cross-day callbacks.
+3. Add owner-reviewed expressive labels for richer cross-day callbacks.
    - The current poster and Markdown now have the narrative slots, but rich roast
      labels, relationship tension, and cross-day jokes still need an explicit
      publish-safe field before they appear in group-bound auto-published posters.

@@ -107,8 +107,11 @@ and `review.md`. This matches the reference project's Wiki/graph/review idea wit
 safer source policy: people, topics, events, storyline candidates, quote anchors, and
 edges come from the generated daily report layer, not from raw chat archives. It also
 emits `creative_profile_candidates` as private review material with
-`public_surface_allowed=false` and `writes_member_profile_snapshots=false`; applying
-those candidates to durable profiles remains a separate owner-reviewed boundary.
+`public_surface_allowed=false`, safe evidence anchors, recurrence evidence counts, and
+`profile_upgrade_status`. `daily_note_only` candidates remain daily notes. Only
+`eligible_for_review` candidates may be copied into the separate reviewed payload for
+`apply_creative_profile_candidates.py`, where an owner-reviewed `person_id` mapping is
+required before any durable `creative_profile` snapshot can be written.
 
 ## Running it
 
@@ -170,6 +173,40 @@ media upload values. The Hermes cron wrapper is
 `runtime/hermes/scripts/qintopia_xiaoman_daily_case_report.sh`, with the reviewed
 declaration at `runtime/hermes/cron/xiaoman/daily-case-report.job.json`. The retired
 systemd timer is retained only as a rollback target after the Hermes job is disabled.
+
+### Reviewed creative-profile apply
+
+`apply_creative_profile_candidates.py` is the narrow apply path for owner-approved
+long-term character profiles. It does not read raw chat archives or infer identity from
+display names. The input must be a reviewed JSON payload that copies only
+`eligible_for_review` candidates and supplies a reviewed `person_id` UUID for each one.
+Dry-run validation:
+
+```bash
+python workflows/xiaoman-daily-case-report/apply_creative_profile_candidates.py \
+  --payload-json reviewed-creative-profile-payload.json
+```
+
+Database apply additionally requires:
+
+```bash
+python workflows/xiaoman-daily-case-report/apply_creative_profile_candidates.py \
+  --payload-json reviewed-creative-profile-payload.json \
+  --apply \
+  --approval approved-production-xiaoman-creative-profile-candidates
+```
+
+The apply report retains only sanitized counts and privacy flags. It must not print
+person ids, database URLs, raw messages, or profile fact text.
+
+Production apply is intentionally a fixed runtime one-shot, not an ad-hoc script upload.
+Use `Run Production Runtime One-Shot` with target
+`xiaoman-creative-profile-candidates-apply`, approval
+`approved-production-xiaoman-creative-profile-candidates`, and the SHA-256 of the fixed
+server-local reviewed payload at
+`/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates/reviewed-payload.json`.
+The workflow must not accept payload JSON, payload paths, names, person ids, or
+candidate text.
 
 ## Acceptance Scenarios
 
@@ -255,5 +292,14 @@ systemd timer is retained only as a rollback target after the Hermes job is disa
 - `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
   validates the character-universe generation, private-output boundary, worker metadata,
   production observation allowlist, and runbook coverage needed before release.
+- Creative-profile apply boundary test:
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
+  ```
+
+  validates the reviewed creative-profile apply boundary.
+
 - `python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html`
   validates the template generation path without image rendering dependencies.

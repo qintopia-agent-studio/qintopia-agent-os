@@ -46,6 +46,13 @@
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
 - Xiaoman daily case-report character-universe local readiness check:
   `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
+- Xiaoman daily case-report creative-profile apply boundary test:
+
+  ```bash
+  PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
+  ```
+
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - Local PR quick tier: `pnpm check:pr:quick`
@@ -473,7 +480,9 @@
   `approved-production-erhua-morning-brief-one-shot`, or
   `xiaoman-daily-case-report-auto-publish-backfill` with
   `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
-  backfill date, or `hermes-cron-snapshot-install` with
+  backfill date, or `xiaoman-creative-profile-candidates-apply` with
+  `approved-production-xiaoman-creative-profile-candidates` and the 64-hex SHA-256 of
+  the fixed server-local reviewed payload, or `hermes-cron-snapshot-install` with
   `approved-production-hermes-cron-snapshot` and empty `backfill_date` when
   `hermes-cron-snapshot` observation reports
   `hermes_cron_snapshot_observation_error=unit_missing`. The snapshot target installs
@@ -482,8 +491,9 @@
   may create real production publish/send side effects through the reviewed worker
   boundaries, but it must not write persistent config, enable/disable business worker
   timers, retire cron files, accept multiple targets, or record raw worker output, live
-  cron JSON, group ids, prompts, database URLs, tokens, Feishu payloads, QiWe payloads,
-  message content, snapshot contents, or journal logs.
+  cron JSON, group ids, prompts, database URLs, tokens, person ids, reviewed profile
+  payload content, Feishu payloads, QiWe payloads, message content, snapshot contents,
+  or journal logs.
 - Recurring Agent timers are moving back to Hermes cron as the source of truth (owner
   decision, 2026-08-10): live `jobs.json` under
   `/home/ubuntu/.hermes/profiles/<profile>/cron/` is conversation-editable and wins; the
@@ -1326,6 +1336,22 @@ Use `rg` and `rg --files` for search.
   artifacts. Production worker logs and send-ready metadata may retain only safe
   counters and schema flags; never retain Markdown body, raw universe nodes, member
   labels, story labels, or source excerpts.
+- Xiaoman daily case-report creative-profile candidates may be applied only through the
+  reviewed candidate path. The daily export must keep `person_id` out of
+  `creative_profile_candidates`; a separate owner-reviewed payload supplies the exact
+  person UUID mapping and may include only `eligible_for_review` candidates. The
+  production wrapper reads only the fixed
+  `/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates/reviewed-payload.json`,
+  requires its approved SHA-256 and
+  `approved-production-xiaoman-creative-profile-candidates`, and may be triggered only
+  by the fixed `production-runtime-one-shot` target
+  `xiaoman-creative-profile-candidates-apply`. The workflow accepts only the release
+  SHA, fixed target, approval phrase, and payload SHA-256; it must not accept payload
+  JSON, payload paths, names, person ids, or candidate text. The production result may
+  report only sanitized counts/privacy flags plus the reviewed payload SHA-256. Never
+  infer identity from display name, apply `daily_note_only`, print person ids, retain
+  candidate text in production evidence, or accept arbitrary payload paths from workflow
+  inputs.
 - The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
   may be built only by manual artifact workflow dispatch or
   `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`

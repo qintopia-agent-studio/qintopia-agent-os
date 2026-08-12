@@ -133,6 +133,7 @@ allowed_runtime_one_shot_targets = {
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
     "xiaoman-daily-case-report-auto-publish-backfill",
+    "xiaoman-creative-profile-candidates-apply",
 }
 allowed_targets = {
     "qintopia-system-services",
@@ -339,6 +340,7 @@ if "production-runtime-one-shot" in release_scope:
         "erhua-morning-brief": "approved-production-erhua-morning-brief-one-shot",
         "hermes-cron-snapshot-install": "approved-production-hermes-cron-snapshot",
         "xiaoman-daily-case-report-auto-publish-backfill": "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+        "xiaoman-creative-profile-candidates-apply": "approved-production-xiaoman-creative-profile-candidates",
     }
     if approval != expected_approvals[target]:
         fail("runtime_one_shot.approval does not match the fixed target approval")
@@ -348,6 +350,12 @@ if "production-runtime-one-shot" in release_scope:
             fail("runtime_one_shot.backfill_date is required for Xiaoman daily report backfill")
     elif backfill_date is not None:
         fail("runtime_one_shot.backfill_date is only allowed for Xiaoman daily report backfill")
+    payload_sha256 = runtime_one_shot.get("payload_sha256")
+    if target == "xiaoman-creative-profile-candidates-apply":
+        if not isinstance(payload_sha256, str) or not re.fullmatch(r"^[0-9a-f]{64}$", payload_sha256):
+            fail("runtime_one_shot.payload_sha256 is required for Xiaoman creative-profile candidates apply")
+    elif payload_sha256 is not None:
+        fail("runtime_one_shot.payload_sha256 is only allowed for Xiaoman creative-profile candidates apply")
     if data.get("profile_dry_run_request_id") is not None:
         fail("production-runtime-one-shot must not set profile_dry_run_request_id")
 elif data.get("runtime_one_shot") is not None:
@@ -433,6 +441,7 @@ hermes_cron_apply_targets="$(json_get hermes_cron_apply.targets)"
 hermes_cron_apply_mode="$(json_get hermes_cron_apply.mode)"
 runtime_one_shot_targets="$(json_get runtime_one_shot.targets)"
 runtime_one_shot_backfill_date="$(json_get runtime_one_shot.backfill_date)"
+runtime_one_shot_payload_sha256="$(json_get runtime_one_shot.payload_sha256)"
 runtime_one_shot_approval="$(json_get runtime_one_shot.approval)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
@@ -1028,6 +1037,10 @@ runtime_one_shot_success_detail() {
       printf 'xiaoman_daily_case_report_backfill_date=%s; xiaoman_daily_case_report_backfill=completed' \
         "$runtime_one_shot_backfill_date"
       ;;
+    xiaoman-creative-profile-candidates-apply)
+      printf 'xiaoman_creative_profile_candidates_apply=completed; payload_sha256=%s' \
+        "$runtime_one_shot_payload_sha256"
+      ;;
     hermes-cron-snapshot-install)
       printf 'hermes_cron_snapshot_install=completed'
       ;;
@@ -1317,6 +1330,12 @@ run_runtime_one_shot_target() {
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
         QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot \
         "${script_dir}/install-hermes-cron-snapshot-timer.sh" >/dev/null || return $?
+      ;;
+    xiaoman-creative-profile-candidates-apply)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_APPLY=approved-production-xiaoman-creative-profile-candidates \
+        QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_PAYLOAD_SHA256="$runtime_one_shot_payload_sha256" \
+        "${script_dir}/apply-xiaoman-creative-profile-candidates-production.sh" >/dev/null || return $?
       ;;
     *)
       echo "unsupported production runtime one-shot target: ${target}" >&2

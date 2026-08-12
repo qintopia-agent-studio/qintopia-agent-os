@@ -69,6 +69,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
   "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py",
+  "deploy/sidecar/scripts/apply-xiaoman-creative-profile-candidates-production.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
