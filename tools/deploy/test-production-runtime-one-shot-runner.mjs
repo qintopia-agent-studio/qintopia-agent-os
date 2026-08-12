@@ -225,6 +225,20 @@ printf 'run-daily-backfill:%s\\n' "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFIL
 echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak"
 `
   );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_HERMES_CRON_SNAPSHOT:-}" != "approved-production-hermes-cron-snapshot" ]]; then
+  exit 71
+fi
+printf 'run-hermes-cron-snapshot-install\\n' >> ${JSON.stringify(oneShotLog)}
+echo "live_jobs_json=must-not-leak"
+`
+  );
 
   const env = {
     ...process.env,
@@ -314,19 +328,53 @@ echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak"
     throw new Error(`unexpected Erhua one-shot evidence ${oneShotCheck.detail}`);
   }
 
+  const snapshotRequestId = "deploy-20260810T000002Z-abcdef123456";
+  result = runRequest(snapshotRequestId, {
+    targets: ["hermes-cron-snapshot-install"],
+    approval: "approved-production-hermes-cron-snapshot",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `Hermes cron snapshot install one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(path.join(stateDir, "results", `${snapshotRequestId}.json`), "utf8")
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error("Hermes cron snapshot install check was not recorded as passed");
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "hermes-cron-snapshot-install" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !== "hermes_cron_snapshot_install=completed"
+  ) {
+    throw new Error(
+      `unexpected Hermes cron snapshot install evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("snapshot install evidence leaked raw script output");
+  }
+
   const commandLog = fs.readFileSync(oneShotLog, "utf8");
   for (const expected of [
     "observe-daily:enabled",
     "run-daily-backfill:2026-08-10",
     "observe-erhua:enabled",
     "run-erhua-one-shot",
+    "run-hermes-cron-snapshot-install",
   ]) {
     if (!commandLog.includes(expected)) {
       throw new Error(`missing one-shot command log entry: ${expected}`);
     }
   }
 
-  const invalidRequest = runRequest("deploy-20260810T000002Z-abcdef123456", {
+  const invalidRequest = runRequest("deploy-20260810T000003Z-abcdef123456", {
     targets: ["xiaoman-daily-case-report-auto-publish-backfill"],
     approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
   });
