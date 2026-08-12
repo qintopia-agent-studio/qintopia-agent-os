@@ -46,11 +46,11 @@ collection assumptions, not to the content model.
 
 ## Landed Steps
 
-`workflows/xiaoman-daily-case-report/daily_case_report.py` now emits a `今日人物群像`
-section. It uses the current report window's discussion messages for displayed behavior
-and can read sanitized role recurrence counts from `qintopia_identity.member_facts`. It
-does not display `member_facts.fact_text`, `person_interaction_summaries.summary`, or
-hidden `member_profile_snapshots` content.
+`workflows/xiaoman-daily-case-report/daily_case_report.py` now emits public-safe
+`今日剧中人` / `人物出场表` surfaces. They use the current report window's discussion
+messages for displayed behavior and can read sanitized role recurrence counts from
+`qintopia_identity.member_facts`. They do not display `member_facts.fact_text`,
+`person_interaction_summaries.summary`, or hidden `member_profile_snapshots` content.
 
 The same workflow now writes a private Markdown日报 next to the poster render. This
 ports the reference project's "poster plus text daily report" shape while keeping the
@@ -65,6 +65,13 @@ The production auto-publish worker now forwards only safe counters and schema fl
 that private universe into send-ready metadata. This gives production observation a way
 to prove the upgraded character-universe path executed, without retaining raw nodes,
 member labels, story labels, or report excerpts.
+
+The visible poster and private Markdown日报 now use the reference project's narrative
+shape instead of the old scoreboard copy. The report opens with `今日主线`, renders
+`人物出场表` before evidence quotes, promotes `梗和回调候选`, and keeps `故事线候选` as
+the durable Wiki-style bridge. These fields are derived from the latest Postgres message
+window plus public-safe role labels and recurrence counts; they do not publish raw
+long-term profile text.
 
 This keeps the important invariant:
 
@@ -99,10 +106,9 @@ This keeps the important invariant:
    - Default export must continue to exclude raw messages, raw attachments, run logs,
      secrets, and internal-only profile details.
 
-4. Upgrade poster and日报 copy.
-   - The current poster can already show today’s character notes plus bounded recurrence
-     labels.
-   - Rich roast labels, relationship tension, and cross-day jokes still need an explicit
+4. Add owner-reviewed expressive labels for richer cross-day callbacks.
+   - The current poster and Markdown now have the narrative slots, but rich roast
+     labels, relationship tension, and cross-day jokes still need an explicit
      publish-safe field before they appear in group-bound auto-published posters.
 
 ## Boundaries
