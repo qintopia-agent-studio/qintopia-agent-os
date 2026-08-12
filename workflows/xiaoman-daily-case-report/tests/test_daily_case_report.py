@@ -962,7 +962,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("COACH'S TIMEOUT", rendered)
         self.assertNotIn("群聊热榜", rendered)
 
-    def test_render_html_keeps_hotlist_secondary_to_battle_report_sections(self) -> None:
+    def test_render_html_uses_character_daily_story_structure(self) -> None:
         report = daily_case_report.ReportData(
             group_name="group",
             report_title="群聊战报",
@@ -1014,19 +1014,32 @@ class DailyCaseReportTest(unittest.TestCase):
 
         rendered = daily_case_report._render_html(report, 750)
 
-        self.assertIn("XIAOMAN COMMUNITY SCOREBOARD", rendered)
+        self.assertIn("XIAOMAN CHARACTER DAILY", rendered)
+        self.assertIn("小满群聊日报", rendered)
+        self.assertIn("今日主线", rendered)
+        self.assertIn("人物出场表", rendered)
+        self.assertIn("梗和回调候选", rendered)
+        self.assertIn("故事线候选", rendered)
+        self.assertIn("发言出场榜", rendered)
+        self.assertNotIn("XIAOMAN COMMUNITY SCOREBOARD", rendered)
+        self.assertNotIn("群聊热榜", rendered)
+        self.assertNotIn("今日局势", rendered)
+        self.assertNotIn("今日 MVP", rendered)
         self.assertIn("background: #ffd92e", rendered)
-        self.assertNotIn("DAILY COMMUNITY REPORT", rendered)
-        self.assertLess(rendered.index("24H 活跃节奏"), rendered.index("今日高亮"))
-        self.assertLess(rendered.index("今日高亮"), rendered.index("群聊热榜"))
-        self.assertLess(rendered.index("群聊热榜"), rendered.index("今日人物群像"))
-        self.assertLess(rendered.index("今日人物群像"), rendered.index("今日局势"))
-        self.assertLess(rendered.index("今日局势"), rendered.index("今日 MVP"))
+        self.assertLess(rendered.index("今日主线"), rendered.index("24H 活跃节奏"))
+        self.assertLess(rendered.index("24H 活跃节奏"), rendered.index("人物出场表"))
+        self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
+        self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
+        self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("故事线候选"), rendered.index("发言出场榜"))
 
         markdown = daily_case_report._render_daily_markdown(report)
-        self.assertIn("## 今日人物群像", markdown)
-        self.assertIn("成员｜活动推进者", markdown)
-        self.assertIn("本日报由小满根据最新群聊窗口自动整理", markdown)
+        self.assertIn("# 小满群聊日报｜2026-08-08｜讨论主题", markdown)
+        self.assertIn("## 今日剧中人", markdown)
+        self.assertIn("**成员（活动推进者）**", markdown)
+        self.assertIn("## 梗和回调候选", markdown)
+        self.assertIn("raw_messages_included=false", markdown)
+        self.assertIn("profile_fact_text_included=false", markdown)
 
     def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -1248,7 +1261,8 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertIn("people", universe)
             self.assertIn("events", universe)
             self.assertIn("storyline_candidates", universe)
-            self.assertIn("## 今日人物群像", result["daily_report_markdown"])
+            self.assertIn("## 今日剧中人", result["daily_report_markdown"])
+            self.assertIn("## 梗和回调候选", result["daily_report_markdown"])
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertNotIn("回复「发」", result["operator_review_message"])
@@ -1296,7 +1310,7 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertEqual(artifact["mime_type"], "image/jpeg")
             self.assertEqual(artifact["filename"], "daily-report.jpg")
             self.assertEqual(artifact["byte_size"], len(b"fixture-jpeg-bytes"))
-            self.assertEqual(artifact["template_version"], "xiaoman-daily-case-report-v2")
+            self.assertEqual(artifact["template_version"], "xiaoman-daily-case-report-v3")
             self.assertEqual(artifact["render"]["image_format"], "jpeg")
             self.assertEqual(artifact["render"]["width"], 750)
             self.assertEqual(artifact["render"]["jpeg_quality"], 92)

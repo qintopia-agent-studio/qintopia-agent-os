@@ -2,7 +2,7 @@
 """Xiaoman daily community case-file report generator.
 
 Reads the last 24 hours of QiWe group messages from the Qintopia message store,
-aggregates them into a playful "群聊案件档案" (group chat case file), renders a
+aggregates them into a character-driven daily report, renders a
 JPEG poster by default, and prints a local generation report. It does not send by
 itself: automatic publishing must be connected through the reviewed AgentOS artifact
 and QiWe image-send boundary.
@@ -32,7 +32,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 DEFAULT_GROUP_NAME = "秦托邦的小伙伴（新）"
-DEFAULT_REPORT_TITLE = "群聊战报"
+DEFAULT_REPORT_TITLE = "小满群聊日报"
 CHAT_ID_ENV = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OUTPUT_WIDTH = 750
@@ -51,7 +51,7 @@ DEFAULT_HOT_TOPIC_MIN_CHARS = 3
 DEFAULT_HOT_TOPIC_MAX_CHARS = 8
 DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
-TEMPLATE_VERSION = "xiaoman-daily-case-report-v2"
+TEMPLATE_VERSION = "xiaoman-daily-case-report-v3"
 MEMORY_LOOKBACK_DAYS = 90
 
 STOP_WORDS: set[str] = {
@@ -211,6 +211,8 @@ class CharacterCard:
     topic_count: int
     node_key: str = ""
     memory_label: str = ""
+    story_function: str = ""
+    callback_hint: str = ""
 
 
 @dataclass
@@ -1229,6 +1231,31 @@ def _character_evidence(messages: list[ReportMessage]) -> str:
     return best[:58] + ("..." if len(best) > 58 else "")
 
 
+def _character_story_function(role_label: str, message_count: int, topic_count: int) -> str:
+    role_functions = {
+        "活动推进者": "推进剧情",
+        "资料投喂员": "递道具",
+        "问题发射台": "抛冲突",
+        "现场解法师": "给解法",
+        "气氛承包人": "接气口",
+        "在场感选手": "稳住场",
+    }
+    function = role_functions.get(role_label, "补场面")
+    if message_count >= 8:
+        return f"{function} · 高频出场"
+    if topic_count >= 4:
+        return f"{function} · 多线串联"
+    return function
+
+
+def _character_callback_hint(role_label: str, evidence: str, memory_label: str) -> str:
+    if memory_label:
+        return f"今天不是孤例，可以回看「{role_label}」的长期复现"
+    if evidence:
+        return f"如果后续继续出现，可沉淀为「{role_label}」回调"
+    return f"今日暂记为「{role_label}」出场"
+
+
 def _compute_characters(
     messages: list[ReportMessage],
     memory_by_person: dict[str, CharacterMemory] | None = None,
@@ -1275,6 +1302,7 @@ def _compute_characters(
                 f"近{MEMORY_LOOKBACK_DAYS}天 {memory.recent_fact_count} 次角色复现"
                 f" · 长期偏「{memory.dominant_role_label}」"
             )
+        evidence = _character_evidence(group)
         score = (
             len(group) * 3
             + role_score * 4
@@ -1290,11 +1318,13 @@ def _compute_characters(
                     name=name,
                     role_label=role_label,
                     one_liner=one_liner,
-                    evidence=_character_evidence(group),
+                    evidence=evidence,
                     message_count=len(group),
                     topic_count=topic_count,
                     node_key=_character_node_key(group_key, name),
                     memory_label=memory_label,
+                    story_function=_character_story_function(role_label, len(group), topic_count),
+                    callback_hint=_character_callback_hint(role_label, evidence, memory_label),
                 ),
             )
         )
@@ -1336,6 +1366,8 @@ def _build_character_universe(
             "message_count": character.message_count,
             "topic_count": character.topic_count,
             "memory_label": character.memory_label,
+            "story_function": character.story_function,
+            "callback_hint": character.callback_hint,
             "risk": "internal",
         }
         for character in characters
@@ -1414,6 +1446,52 @@ def _build_character_universe(
         "storyline_candidates": storyline_candidates,
         "edges": edges,
     }
+
+
+def _case_storyline_label(case: CaseCard) -> str:
+    label = case.title.replace("关于「", "").replace("」的讨论", "").strip()
+    return label or case.title
+
+
+def _main_storyline_label(report: ReportData) -> str:
+    if report.cases:
+        return _case_storyline_label(report.cases[0])
+    if report.hot_topics:
+        return report.hot_topics[0].keyword
+    if report.characters:
+        return f"{report.characters[0].name}的今日出场"
+    return "今天群里先把日常续上"
+
+
+def _daily_opening_line(report: ReportData) -> str:
+    storyline = _main_storyline_label(report)
+    if report.message_count <= 0:
+        return "今天暂时没有形成可沉淀的群聊主线，日报保留空窗记录。"
+    return (
+        f"今天的主线是「{storyline}」：{report.message_count} 条消息、"
+        f"{report.participant_count} 位活跃成员，把信息、提问和现场反应压成一页可回看的群聊切片。"
+    )
+
+
+def _meme_callback_candidates(report: ReportData, limit: int = 5) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for topic in report.hot_topics:
+        label = topic.keyword.strip()
+        if label and label not in seen:
+            candidates.append(f"「{label}」：{topic.message_count} 条消息，{topic.participant_count} 人参与")
+            seen.add(label)
+    for character in report.characters:
+        label = character.role_label.strip()
+        if label and label not in seen:
+            candidates.append(f"「{label}」：{character.callback_hint}")
+            seen.add(label)
+    for case in report.cases:
+        label = _case_storyline_label(case)
+        if label and label not in seen:
+            candidates.append(f"「{label}」：{case.summary}")
+            seen.add(label)
+    return candidates[:limit]
 
 
 def _extract_highlight(messages: list[ReportMessage]) -> str | None:
@@ -1593,6 +1671,9 @@ def _render_html(report: ReportData, width: int) -> str:
     )
     peak_x = peak_idx * (chart_width // 24) + (chart_width // 48)
     peak_svg = f'<text x="{peak_x}" y="12" font-size="10" fill="#f25a18" font-weight="700" text-anchor="middle">{peak_count}</text>'
+    main_storyline = _main_storyline_label(report)
+    opening_line = _daily_opening_line(report)
+    callback_candidates = _meme_callback_candidates(report)
 
     stats_html = "\n".join(
         f"""
@@ -1602,10 +1683,10 @@ def _render_html(report: ReportData, width: int) -> str:
         <div class="stat-caption">{caption}</div>
       </div>"""
         for label, value, caption in (
-            ("CHAT", report.message_count, "消息"),
-            ("PLAYERS", report.participant_count, "有效活跃"),
-            ("TOPICS", report.case_count, "话题"),
-            ("MVP", report.suspect_count, "上榜"),
+            ("消息", report.message_count, "当日素材"),
+            ("出场", report.participant_count, "活跃成员"),
+            ("主线", report.case_count, "可归档"),
+            ("人物", report.character_count, "群像卡"),
         )
     )
 
@@ -1616,7 +1697,7 @@ def _render_html(report: ReportData, width: int) -> str:
           <span class="case-number">{html.escape(case.case_no.replace("CASE ", ""))}</span>
           <span class="case-time">{html.escape(case.time_label)}</span>
         </div>
-        <h3>{html.escape(case.title)}</h3>
+        <h3>{html.escape(_case_storyline_label(case))}</h3>
         <p class="case-summary">{html.escape(case.summary)}</p>
         <ul class="case-notes">{"".join(f"<li>{html.escape(bullet)}</li>" for bullet in case.bullets[:3])}</ul>
       </article>"""
@@ -1624,8 +1705,8 @@ def _render_html(report: ReportData, width: int) -> str:
     )
     cases_html = f"""
   <section class="section cases-section">
-    <div class="section-kicker">PLAY BY PLAY</div>
-    <h2>今日局势</h2>
+    <div class="section-kicker">STORYLINE FILES</div>
+    <h2>故事线候选</h2>
     <div class="cases">{case_cards}</div>
   </section>""" if case_cards else ""
 
@@ -1643,8 +1724,8 @@ def _render_html(report: ReportData, width: int) -> str:
     )
     mvp_html = f"""
   <section class="section mvp-section">
-    <div class="section-kicker">STARTING FIVE</div>
-    <h2>今日 MVP</h2>
+    <div class="section-kicker">VOICE INDEX</div>
+    <h2>发言出场榜</h2>
     <div class="mvp-grid">{suspects_html}</div>
   </section>""" if suspects_html else ""
 
@@ -1652,19 +1733,19 @@ def _render_html(report: ReportData, width: int) -> str:
     if report.highlight:
         highlight_html = f"""
   <section class="highlight">
-    <div class="highlight-kicker">TODAY'S SIGNAL</div>
-    <div class="highlight-title">今日高亮</div>
+    <div class="highlight-kicker">QUOTE ANCHOR</div>
+    <div class="highlight-title">今日台词</div>
     <p>“{html.escape(report.highlight)}”</p>
   </section>"""
 
-    hot_topics_html = ""
-    if report.hot_topics:
-        hot_topics_html = f"""
+    callbacks_html = ""
+    if callback_candidates:
+        callbacks_html = f"""
   <section class="hotlist">
-    <div class="hotlist-heading"><span>HOT TOPICS</span><h2>群聊热榜</h2></div>
+    <div class="hotlist-heading"><span>MEME MAP</span><h2>梗和回调候选</h2></div>
     <div class="hotlist-grid">{"".join(
-        f'''<div class="hot-topic"><span class="hot-rank">{topic.rank}</span><strong>{html.escape(topic.keyword)}</strong><small>{topic.message_count} 条 · {topic.participant_count} 人</small></div>'''
-        for topic in report.hot_topics
+        f'''<div class="hot-topic"><span class="hot-rank">{index}</span><strong>{html.escape(candidate.split("：", 1)[0])}</strong><small>{html.escape(candidate.split("：", 1)[1] if "：" in candidate else candidate)}</small></div>'''
+        for index, candidate in enumerate(callback_candidates, start=1)
     )}</div>
   </section>"""
 
@@ -1672,9 +1753,9 @@ def _render_html(report: ReportData, width: int) -> str:
     if report.characters:
         characters_html = f"""
   <section class="characters">
-    <div class="characters-heading"><span>CHARACTER NOTES</span><h2>今日人物群像</h2></div>
+    <div class="characters-heading"><span>CAST NOTES</span><h2>人物出场表</h2></div>
     <div class="character-grid">{"".join(
-        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)}</strong><p>{html.escape(character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{character.message_count} 条 · {character.topic_count} 个话题触点{(" · " + html.escape(character.memory_label)) if character.memory_label else ""}</small></div></article>'''
+        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)} · {html.escape(character.story_function)}</strong><p>{html.escape(character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{html.escape(character.callback_hint)}{(" · " + html.escape(character.memory_label)) if character.memory_label else ""}</small></div></article>'''
         for character in report.characters
     )}</div>
   </section>"""
@@ -1685,14 +1766,16 @@ def _render_html(report: ReportData, width: int) -> str:
 <meta charset="utf-8">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: #d9d6ce; color: #111111; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }}
-  .scoreboard {{ width: {width}px; margin: 18px auto; background: #fff8df; border: 9px solid #111111; }}
+  body {{ background: #ddd8ce; color: #111111; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }}
+  .daily-paper {{ width: {width}px; margin: 18px auto; background: #fff8df; border: 9px solid #111111; }}
   .topline {{ min-height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: #111111; color: #ffd92e; font-size: 11px; font-weight: 800; }}
-  .hero {{ position: relative; min-height: 152px; padding: 22px 144px 20px 24px; background: #ffd92e; border-bottom: 4px solid #111111; }}
+  .hero {{ position: relative; min-height: 196px; padding: 22px 154px 20px 24px; background: #ffd92e; border-bottom: 4px solid #111111; }}
   .hero-group {{ font-size: 25px; font-weight: 800; line-height: 1.25; }}
   .hero-title {{ margin-top: 7px; font-size: 42px; font-weight: 900; line-height: 1; }}
-  .hero-time {{ margin-top: 16px; padding-top: 6px; border-top: 4px solid #111111; font-size: 11px; }}
-  .hero-badge {{ position: absolute; right: 24px; top: 24px; display: grid; width: 96px; height: 96px; place-items: center; border: 4px solid #111111; border-radius: 18px; background: #88d7ff; font-size: 27px; font-weight: 900; }}
+  .hero-mainline {{ margin-top: 14px; font-size: 18px; font-weight: 900; line-height: 1.45; }}
+  .hero-opening {{ margin-top: 8px; color: #2b2b2b; font-size: 13px; font-weight: 700; line-height: 1.55; }}
+  .hero-time {{ margin-top: 12px; padding-top: 6px; border-top: 4px solid #111111; font-size: 11px; }}
+  .hero-badge {{ position: absolute; right: 24px; top: 24px; display: grid; width: 106px; height: 106px; place-items: center; border: 4px solid #111111; border-radius: 12px; background: #88d7ff; font-size: 21px; font-weight: 900; text-align: center; line-height: 1.1; }}
   .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); background: #111111; color: #fff8df; }}
   .stat {{ min-height: 96px; padding: 17px 20px; border-right: 2px solid #3d3d3d; }}
   .stat:last-child {{ border-right: 0; }}
@@ -1713,10 +1796,10 @@ def _render_html(report: ReportData, width: int) -> str:
   .hotlist-heading span {{ color: #f25a18; }}
   .hotlist-heading h2 {{ font-size: 20px; font-weight: 900; }}
   .hotlist-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }}
-  .hot-topic {{ display: grid; grid-template-columns: 25px 1fr auto; align-items: center; gap: 7px; min-height: 40px; padding: 6px 8px; border: 2px solid #111111; background: #fff0a6; }}
+  .hot-topic {{ display: grid; grid-template-columns: 25px 94px 1fr; align-items: center; gap: 7px; min-height: 48px; padding: 6px 8px; border: 2px solid #111111; background: #fff0a6; }}
   .hot-rank {{ display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 11px; font-weight: 900; }}
   .hot-topic strong {{ min-width: 0; font-size: 14px; }}
-  .hot-topic small {{ color: #555555; font-size: 10px; white-space: nowrap; }}
+  .hot-topic small {{ color: #555555; font-size: 10px; line-height: 1.35; }}
   .characters {{ margin: 22px 24px 0; padding: 18px 16px 16px; border: 4px solid #111111; background: #ffffff; }}
   .characters-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }}
   .characters-heading span {{ color: #f25a18; font-size: 11px; font-weight: 800; }}
@@ -1753,71 +1836,73 @@ def _render_html(report: ReportData, width: int) -> str:
 </style>
 </head>
 <body>
-<main class="scoreboard">
-  <div class="topline"><span>XIAOMAN COMMUNITY SCOREBOARD</span><span>{html.escape(report.report_date)}</span></div>
+<main class="daily-paper">
+  <div class="topline"><span>XIAOMAN CHARACTER DAILY</span><span>{html.escape(report.report_date)}</span></div>
   <header class="hero">
     <div class="hero-group">{html.escape(report.group_name)}</div>
-    <div class="hero-title">{html.escape(report.report_title)}</div>
+    <div class="hero-title">小满群聊日报</div>
+    <div class="hero-mainline">今日主线：{html.escape(main_storyline)}</div>
+    <div class="hero-opening">{html.escape(opening_line)}</div>
     <div class="hero-time">{html.escape(report.time_range)} · {report.member_count} 名成员</div>
-    <div class="hero-badge">XM</div>
+    <div class="hero-badge">人物<br>主线</div>
   </header>
   <section class="stats">{stats_html}</section>
   <section class="timeline">
     <div class="timeline-head"><h2>24H 活跃节奏</h2><div class="peak">峰值 {peak_count} 条 / {peak_idx:02d}:00</div></div>
     <svg viewBox="0 0 {chart_width} 106" aria-label="24小时活跃节奏">{timeline_svg}{peak_svg}{timeline_labels}</svg>
   </section>
-  {highlight_html}
-  {hot_topics_html}
   {characters_html}
+  {highlight_html}
+  {callbacks_html}
   {cases_html}
   {mvp_html}
-  <footer class="footer">本报告由小满自动整理群聊生成 · AgentOS 自动发布版</footer>
+  <footer class="footer">本报告由小满根据最新群聊窗口自动整理 · 长期画像只以公开安全的角色复现计数参与</footer>
 </main>
 </body>
 </html>"""
 
 
 def _render_daily_markdown(report: ReportData) -> str:
+    main_storyline = _main_storyline_label(report)
+    callback_candidates = _meme_callback_candidates(report)
     lines = [
-        f"# {report.group_name}｜{report.report_title}",
+        f"# 小满群聊日报｜{report.report_date}｜{main_storyline}",
+        "",
+        _daily_opening_line(report),
         "",
         f"- 日期：{report.report_date}",
         f"- 时间范围：{report.time_range}",
         f"- 消息：{report.message_count} 条",
         f"- 活跃：{report.participant_count} 人",
-        f"- 话题：{report.case_count} 个",
-        f"- 人物群像：{report.character_count} 位",
+        f"- 可归档主线：{report.case_count} 条",
+        f"- 今日剧中人：{report.character_count} 位",
         "",
     ]
     if report.highlight:
-        lines.extend(["## 今日高亮", "", f"> {report.highlight}", ""])
-    if report.hot_topics:
-        lines.extend(["## 群聊热榜", ""])
-        for topic in report.hot_topics:
-            lines.append(
-                f"- {topic.rank}. {topic.keyword}：{topic.message_count} 条，{topic.participant_count} 人参与"
-            )
-        lines.append("")
+        lines.extend(["## 今日台词", "", f"> {report.highlight}", ""])
     if report.characters:
-        lines.extend(["## 今日人物群像", ""])
+        lines.extend(["## 今日剧中人", ""])
         for character in report.characters:
             memory = f"（{character.memory_label}）" if character.memory_label else ""
             lines.extend(
                 [
-                    f"### {character.rank}. {character.name}｜{character.role_label}",
-                    "",
-                    f"{character.one_liner}{memory}",
-                    "",
+                    f"- **{character.name}（{character.role_label}）**："
+                    f"{character.story_function}。{character.one_liner}。"
+                    f"{character.callback_hint}{memory}",
                     f"> {character.evidence}",
                     "",
                 ]
             )
+    if callback_candidates:
+        lines.extend(["## 梗和回调候选", ""])
+        lines.extend(f"- {candidate}" for candidate in callback_candidates)
+        lines.append("")
     if report.cases:
-        lines.extend(["## 今日局势", ""])
+        lines.extend(["## 今日主线", ""])
         for case in report.cases:
             lines.extend(
                 [
-                    f"### {case.case_no}｜{case.title}",
+                    f"### {case.case_no}｜{_case_storyline_label(case)}",
                     "",
                     f"- 时间：{case.time_label}",
                     f"- 规模：{case.summary}",
@@ -1828,7 +1913,7 @@ def _render_daily_markdown(report: ReportData) -> str:
             lines.extend(f"- {bullet}" for bullet in case.bullets[:3])
             lines.append("")
     if report.suspects:
-        lines.extend(["## 今日 MVP", ""])
+        lines.extend(["## 发言出场榜", ""])
         for suspect in report.suspects:
             lines.append(
                 f"- {suspect.rank}. {suspect.name}：{suspect.message_count} 条 / {suspect.word_count} 字"
@@ -1840,7 +1925,15 @@ def _render_daily_markdown(report: ReportData) -> str:
         for item in universe["storyline_candidates"][:5]:
             lines.append(f"- [[{item['label']}]]：{item['reason']}")
         lines.append("")
-    lines.append("本日报由小满根据最新群聊窗口自动整理；长期画像只以角色复现计数参与，不展示内部画像原文。")
+    lines.extend(
+        [
+            "## 公开边界",
+            "",
+            "- 本日报由小满根据最新群聊窗口自动整理。",
+            "- 长期画像只以角色复现计数参与，不展示内部画像原文。",
+            "- raw_messages_included=false；profile_fact_text_included=false。",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1961,6 +2054,9 @@ def _render_image_with_pillow(
     cream = "#fff8df"
     pale_yellow = "#fff0a6"
     blue = "#88d7ff"
+    main_storyline = _main_storyline_label(report)
+    opening_line = _daily_opening_line(report)
+    callback_candidates = _meme_callback_candidates(report)
 
     def text_right(x: int, y: int, text: str, font: Any, fill: str) -> None:
         box = draw.textbbox((0, 0), text, font=font)
@@ -1974,28 +2070,47 @@ def _render_image_with_pillow(
 
     y = outer
     draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
-    draw.text((padding, y + 12 * scale), "XIAOMAN COMMUNITY SCOREBOARD", font=tiny_font, fill=yellow)
+    draw.text((padding, y + 12 * scale), "XIAOMAN CHARACTER DAILY", font=tiny_font, fill=yellow)
     text_right(canvas_width - padding, y + 12 * scale, report.report_date, tiny_font, yellow)
     y += 42 * scale
 
     hero_top = y
-    hero_height = 150 * scale
+    hero_height = 206 * scale
     draw.rectangle((outer, hero_top, canvas_width - outer, hero_top + hero_height), fill=yellow, outline=ink, width=3 * scale)
     draw.text((padding, hero_top + 20 * scale), report.group_name, font=hero_font, fill=ink)
-    draw.text((padding, hero_top + 60 * scale), report.report_title, font=title_font, fill=ink)
-    draw.rectangle((padding, hero_top + 126 * scale, canvas_width - padding - 116 * scale, hero_top + 130 * scale), fill=ink)
-    draw.text((padding, hero_top + 134 * scale), report.time_range, font=tiny_font, fill=ink)
-    badge_box = (canvas_width - padding - 96 * scale, hero_top + 24 * scale, canvas_width - padding, hero_top + 120 * scale)
-    draw.rounded_rectangle(badge_box, radius=18 * scale, fill=blue, outline=ink, width=3 * scale)
-    draw.ellipse((badge_box[0] + 18 * scale, badge_box[1] + 18 * scale, badge_box[2] - 18 * scale, badge_box[3] - 18 * scale), fill=cream, outline=ink, width=3 * scale)
-    draw.text((badge_box[0] + 30 * scale, badge_box[1] + 34 * scale), "XM", font=hero_font, fill=ink)
+    draw.text((padding, hero_top + 60 * scale), "小满群聊日报", font=title_font, fill=ink)
+    _draw_wrapped_text(
+        draw,
+        (padding, hero_top + 112 * scale),
+        f"今日主线：{main_storyline}",
+        body_font,
+        ink,
+        content_width - 132 * scale,
+        max_lines=1,
+    )
+    _draw_wrapped_text(
+        draw,
+        (padding, hero_top + 142 * scale),
+        opening_line,
+        small_font,
+        "#2b2b2b",
+        content_width - 132 * scale,
+        max_lines=2,
+        line_gap=2 * scale,
+    )
+    draw.rectangle((padding, hero_top + 184 * scale, canvas_width - padding - 126 * scale, hero_top + 188 * scale), fill=ink)
+    draw.text((padding, hero_top + 192 * scale), report.time_range, font=tiny_font, fill=ink)
+    badge_box = (canvas_width - padding - 106 * scale, hero_top + 24 * scale, canvas_width - padding, hero_top + 130 * scale)
+    draw.rounded_rectangle(badge_box, radius=12 * scale, fill=blue, outline=ink, width=3 * scale)
+    draw.text((badge_box[0] + 22 * scale, badge_box[1] + 30 * scale), "人物", font=hero_font, fill=ink)
+    draw.text((badge_box[0] + 22 * scale, badge_box[1] + 66 * scale), "主线", font=hero_font, fill=ink)
     y = hero_top + hero_height
 
     stats = [
-        ("CHAT", report.message_count, "消息"),
-        ("PLAYERS", report.participant_count, "有效活跃"),
-        ("TOPICS", report.case_count, "话题"),
-        ("MVP", report.suspect_count, "上榜"),
+        ("消息", report.message_count, "当日素材"),
+        ("出场", report.participant_count, "活跃成员"),
+        ("主线", report.case_count, "可归档"),
+        ("人物", report.character_count, "群像卡"),
     ]
     stat_height = 96 * scale
     stat_width = (canvas_width - outer * 2) // 4
@@ -2032,8 +2147,8 @@ def _render_image_with_pillow(
         highlight_top = y
         highlight_height = 138 * scale
         draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
-        draw.text((padding, highlight_top + 22 * scale), "TODAY'S SIGNAL", font=tiny_font, fill=yellow)
-        draw.text((padding, highlight_top + 46 * scale), "今日高亮", font=section_font, fill=cream)
+        draw.text((padding, highlight_top + 22 * scale), "QUOTE ANCHOR", font=tiny_font, fill=yellow)
+        draw.text((padding, highlight_top + 46 * scale), "今日台词", font=section_font, fill=cream)
         _draw_wrapped_text(
             draw,
             (padding + 180 * scale, highlight_top + 30 * scale),
@@ -2045,24 +2160,34 @@ def _render_image_with_pillow(
         )
         y += highlight_height + 38 * scale
 
-    if report.hot_topics:
+    if callback_candidates:
         hotlist_top = y
-        hotlist_rows = (len(report.hot_topics) + 1) // 2
+        hotlist_rows = (len(callback_candidates) + 1) // 2
         hotlist_height = (54 + 50 * hotlist_rows) * scale
         draw.rectangle((outer, hotlist_top, canvas_width - outer, hotlist_top + hotlist_height), fill=cream, outline=ink, width=3 * scale)
-        draw.text((padding, hotlist_top + 14 * scale), "HOT TOPICS", font=tiny_font, fill=orange)
-        draw.text((padding + 102 * scale, hotlist_top + 10 * scale), "群聊热榜", font=body_font, fill=ink)
+        draw.text((padding, hotlist_top + 14 * scale), "MEME MAP", font=tiny_font, fill=orange)
+        draw.text((padding + 102 * scale, hotlist_top + 10 * scale), "梗和回调候选", font=body_font, fill=ink)
         topic_width = (content_width - gutter) // 2
-        for index, topic in enumerate(report.hot_topics):
+        for index, candidate in enumerate(callback_candidates):
+            label, _, detail = candidate.partition("：")
             column = index % 2
             row = index // 2
             x = padding + column * (topic_width + gutter)
             row_top = hotlist_top + (44 + row * 46) * scale
             draw.rectangle((x, row_top, x + topic_width, row_top + 34 * scale), fill=pale_yellow, outline=ink, width=2 * scale)
             draw.ellipse((x + 8 * scale, row_top + 7 * scale, x + 30 * scale, row_top + 29 * scale), fill=yellow, outline=ink, width=2 * scale)
-            draw.text((x + 14 * scale, row_top + 10 * scale), str(topic.rank), font=tiny_font, fill=ink)
-            draw.text((x + 40 * scale, row_top + 8 * scale), topic.keyword, font=small_font, fill=ink)
-            text_right(x + topic_width - 10 * scale, row_top + 10 * scale, f"{topic.message_count} 条 · {topic.participant_count} 人", tiny_font, ink)
+            draw.text((x + 14 * scale, row_top + 10 * scale), str(index + 1), font=tiny_font, fill=ink)
+            draw.text((x + 40 * scale, row_top + 8 * scale), label[:8], font=small_font, fill=ink)
+            _draw_wrapped_text(
+                draw,
+                (x + 120 * scale, row_top + 8 * scale),
+                detail,
+                tiny_font,
+                "#555555",
+                topic_width - 130 * scale,
+                max_lines=1,
+                line_gap=0,
+            )
         y = hotlist_top + hotlist_height + 38 * scale
 
     if report.characters:
@@ -2070,8 +2195,8 @@ def _render_image_with_pillow(
         character_rows = (len(report.characters) + 1) // 2
         character_height = (58 + 138 * character_rows) * scale
         draw.rectangle((outer, character_top, canvas_width - outer, character_top + character_height), fill="#ffffff", outline=ink, width=3 * scale)
-        draw.text((padding, character_top + 16 * scale), "CHARACTER NOTES", font=tiny_font, fill=orange)
-        draw.text((padding + 132 * scale, character_top + 12 * scale), "今日人物群像", font=body_font, fill=ink)
+        draw.text((padding, character_top + 16 * scale), "CAST NOTES", font=tiny_font, fill=orange)
+        draw.text((padding + 112 * scale, character_top + 12 * scale), "人物出场表", font=body_font, fill=ink)
         card_width = (content_width - gutter) // 2
         card_height = 116 * scale
         for index, character in enumerate(report.characters):
@@ -2084,7 +2209,7 @@ def _render_image_with_pillow(
             draw.text((x + 12 * scale, card_y + 42 * scale), str(character.rank), font=tiny_font, fill=ink)
             copy_x = x + 46 * scale
             draw.text((copy_x, card_y + 10 * scale), character.name, font=body_font, fill=ink)
-            draw.text((copy_x, card_y + 34 * scale), character.role_label, font=tiny_font, fill=orange)
+            draw.text((copy_x, card_y + 34 * scale), f"{character.role_label} · {character.story_function}", font=tiny_font, fill=orange)
             _draw_wrapped_text(
                 draw,
                 (copy_x, card_y + 54 * scale),
@@ -2115,7 +2240,7 @@ def _render_image_with_pillow(
                 )
         y = character_top + character_height + 38 * scale
 
-    y = section_label(y, "PLAY BY PLAY", "今日局势")
+    y = section_label(y, "STORYLINE FILES", "故事线候选")
     cases = report.cases[:DEFAULT_CASE_LIMIT]
     if not cases:
         draw.rectangle((padding, y, padding + content_width, y + 92 * scale), fill="#ffffff", outline=ink, width=3 * scale)
@@ -2136,7 +2261,7 @@ def _render_image_with_pillow(
             title_y = _draw_wrapped_text(
                 draw,
                 (x + 18 * scale, card_y + 72 * scale),
-                case.title.replace("关于「", "").replace("」的讨论", ""),
+                _case_storyline_label(case),
                 card_title_font,
                 ink,
                 card_width - 36 * scale,
@@ -2167,7 +2292,7 @@ def _render_image_with_pillow(
             )
         y += ((len(cases) + 1) // 2) * (card_height + gutter) + 18 * scale
 
-    y = section_label(y, "STARTING FIVE", "今日 MVP")
+    y = section_label(y, "VOICE INDEX", "发言出场榜")
     if not report.suspects:
         draw.text((padding, y), "暂无发言榜。", font=body_font, fill="#555555")
         y += 54 * scale
@@ -2185,7 +2310,7 @@ def _render_image_with_pillow(
         y += ((min(len(report.suspects), DEFAULT_SUSPECT_LIMIT) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
 
     draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
-    draw.text((padding, y + 14 * scale), "本报告由小满自动整理群聊生成 · AgentOS 自动发布版", font=tiny_font, fill=yellow)
+    draw.text((padding, y + 14 * scale), "本报告由小满根据最新群聊窗口自动整理 · 长期画像仅以角色复现计数参与", font=tiny_font, fill=yellow)
     y += 42 * scale + outer
 
     cropped = image.crop((0, 0, canvas_width, min(y, image.height)))
@@ -2316,15 +2441,16 @@ def _operator_review_message(
     include_html: bool = False,
 ) -> str:
     lines = [
-        f"【{report.group_name}｜{report.report_title}】",
-        f"档案日期：{report.report_date}（{report.time_range}）",
-        f"消息 {report.message_count} 条 / 活跃 {report.participant_count} 人 / 案件 {report.case_count} 起 / 人物 {report.character_count} 位 / 嫌疑人 {report.suspect_count} 名",
+        f"【{report.group_name}｜小满群聊日报】",
+        f"日报日期：{report.report_date}（{report.time_range}）",
+        f"消息 {report.message_count} 条 / 活跃 {report.participant_count} 人 / 主线 {report.case_count} 条 / 剧中人 {report.character_count} 位 / 发言榜 {report.suspect_count} 名",
+        f"今日主线：{_main_storyline_label(report)}",
         "",
     ]
     for case in report.cases:
-        lines.append(f"• {case.case_no}：{case.title}（{case.summary}）")
+        lines.append(f"• 主线 {case.case_no.replace('CASE ', '')}：{_case_storyline_label(case)}（{case.summary}）")
     for character in report.characters:
-        lines.append(f"• 人物 {character.rank}：{character.name}｜{character.role_label}")
+        lines.append(f"• 剧中人 {character.rank}：{character.name}｜{character.role_label}｜{character.story_function}")
     lines.append("")
     if image_path:
         lines.append(f"图片文件：{image_path}")
