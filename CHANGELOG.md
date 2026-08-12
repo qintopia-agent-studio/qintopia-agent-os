@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.121](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.120...v0.2.121) (2026-08-11)
+
+
+### Features
+
+* upgrade xiaoman daily character universe ([3fcde09](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3fcde09890e542ea805005af1b8a72537b2a875a))
+
+
+### Bug Fixes
+
+* accept larger Hermes cron live parity payloads ([9500019](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/950001991449b730a1e2bef87a097e360e153280))
+* accept larger Hermes cron live parity payloads ([3c7e578](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3c7e5783665cdc6fe69533d9445a0d49d4560778))
+
 ## [0.2.120](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.119...v0.2.120) (2026-08-11)
 
 
