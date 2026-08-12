@@ -174,6 +174,7 @@ candidate = rendered.get("artifact_candidate") or {}
 window = candidate.get("report_window") or {}
 content_metrics = candidate.get("content_metrics") or {}
 character_universe = rendered.get("character_universe") or {}
+private_review_bundle = rendered.get("private_review_bundle") or {}
 artifact_uri = uploaded.get("artifact_uri")
 if not artifact_uri:
     raise SystemExit("media upload did not return artifact_uri")
@@ -242,6 +243,16 @@ print(json.dumps({
             "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
             "edge_count": len(character_universe.get("edges") or []),
         },
+        "private_review_bundle": {
+            "schema_version": private_review_bundle.get("schema_version", ""),
+            "source": private_review_bundle.get("source", ""),
+            "public_surface_allowed": private_review_bundle.get("public_surface_allowed") is True,
+            "review_required": private_review_bundle.get("review_required") is True,
+            "raw_message_rows_included": private_review_bundle.get("raw_message_rows_included") is True,
+            "profile_fact_text_included": private_review_bundle.get("profile_fact_text_included") is True,
+            "quote_map_entry_count": private_review_bundle.get("quote_map_entry_count", 0),
+            "wiki_counts": private_review_bundle.get("wiki_counts") or {},
+        },
     },
 }, ensure_ascii=False))
 PY
@@ -265,6 +276,7 @@ with open(sys.argv[3], encoding="utf-8") as fh:
 candidate = rendered.get("artifact_candidate") or {}
 content_metrics = candidate.get("content_metrics") or {}
 character_universe = rendered.get("character_universe") or {}
+private_review_bundle = rendered.get("private_review_bundle") or {}
 
 print(json.dumps({
     "success": publish.get("success") is True,
@@ -307,6 +319,16 @@ print(json.dumps({
         ),
         "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
         "edge_count": len(character_universe.get("edges") or []),
+    },
+    "private_review_bundle": {
+        "schema_version": private_review_bundle.get("schema_version", ""),
+        "source": private_review_bundle.get("source", ""),
+        "public_surface_allowed": private_review_bundle.get("public_surface_allowed") is True,
+        "review_required": private_review_bundle.get("review_required") is True,
+        "raw_message_rows_included": private_review_bundle.get("raw_message_rows_included") is True,
+        "profile_fact_text_included": private_review_bundle.get("profile_fact_text_included") is True,
+        "quote_map_entry_count": private_review_bundle.get("quote_map_entry_count", 0),
+        "wiki_counts": private_review_bundle.get("wiki_counts") or {},
     },
 }, ensure_ascii=False, indent=2))
 PY

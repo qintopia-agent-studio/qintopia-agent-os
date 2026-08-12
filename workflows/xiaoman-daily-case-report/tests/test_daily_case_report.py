@@ -894,6 +894,118 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn(second_person_id, serialized)
         self.assertNotIn("raw profile fact text", serialized)
 
+    def test_private_review_bundle_exports_quote_map_wiki_and_run_manifest(self) -> None:
+        person_id = "11111111-1111-1111-1111-111111111111"
+        case = daily_case_report.CaseCard(
+            case_no="CASE 01",
+            title="活动讨论",
+            time_label="10:00-11:00",
+            summary="3 条消息，2 人参与",
+            bullets=["活动报名节奏已经确认", "明天提醒一次"],
+            message_count=3,
+            participant_count=2,
+            color_bg="#fff0a6",
+            color_text="#111111",
+            top_speaker="小雨",
+        )
+        topic = daily_case_report.HotTopic(
+            rank=1,
+            keyword="活动报名",
+            message_count=3,
+            participant_count=2,
+        )
+        character = daily_case_report.CharacterCard(
+            rank=1,
+            name="小雨",
+            role_label="活动推进者",
+            one_liner="把松散聊天推成下一步行动",
+            evidence="活动报名节奏已经确认",
+            message_count=2,
+            topic_count=1,
+            node_key="person-safe-key",
+            memory_label="近90天 7 次角色复现 · 长期偏「活动推进者」",
+            story_function="推进剧情",
+            callback_hint="今天不是孤例，可以回看「活动推进者」的长期复现",
+            arc_label="长期线索可用，今日再次露出「活动推进者」信号",
+            meme_seed="可作为「活动推进者」连续出场回调",
+            memory_weight_label="近90天稳定复现 · 长期线索可用",
+        )
+        universe = daily_case_report._build_character_universe(
+            [case],
+            [topic],
+            [character],
+            "2026年08月08日",
+        )
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="case file",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=2,
+            message_count=3,
+            participant_count=2,
+            case_count=1,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[case],
+            suspects=[],
+            highlight="活动报名节奏已经确认，明天提醒一次",
+            hot_topics=[topic],
+            character_count=1,
+            characters=[character],
+            character_universe=universe,
+            window_start="2026-08-08T00:00:00+08:00",
+            window_end="2026-08-09T00:00:00+08:00",
+        )
+
+        quote_map = daily_case_report._build_quote_map(report)
+        wiki_bundle = daily_case_report._build_wiki_bundle(report, quote_map)
+        run_manifest = daily_case_report._build_run_manifest(
+            report,
+            quote_map,
+            wiki_bundle,
+            source_chat_id="chat-1",
+        )
+        review_report = daily_case_report._render_review_report(
+            report,
+            quote_map,
+            wiki_bundle,
+            run_manifest,
+        )
+
+        self.assertEqual(quote_map["schema_version"], "xiaoman-daily-quote-map-v1")
+        self.assertGreaterEqual(quote_map["entry_count"], 3)
+        self.assertFalse(quote_map["raw_message_rows_included"])
+        self.assertFalse(quote_map["profile_fact_text_included"])
+        self.assertFalse(quote_map["public_surface_allowed"])
+        self.assertTrue(
+            any(entry["source_kind"] == "daily_character_note" for entry in quote_map["entries"])
+        )
+        self.assertEqual(wiki_bundle["schema_version"], "xiaoman-daily-wiki-bundle-v1")
+        self.assertEqual(wiki_bundle["counts"]["people"], 1)
+        self.assertEqual(wiki_bundle["counts"]["events"], 1)
+        self.assertEqual(wiki_bundle["counts"]["storylines"], 1)
+        self.assertFalse(wiki_bundle["public_surface_allowed"])
+        self.assertEqual(run_manifest["schema_version"], "xiaoman-daily-run-manifest-v1")
+        self.assertTrue(run_manifest["inputs"]["latest_chat_records_preserved"])
+        self.assertTrue(run_manifest["inputs"]["long_term_member_facts_used"])
+        self.assertFalse(run_manifest["inputs"]["long_term_member_fact_text_included"])
+        self.assertFalse(run_manifest["privacy"]["profile_fact_text_included"])
+        self.assertFalse(run_manifest["privacy"]["creative_profile_public_surface_allowed"])
+        self.assertIn("审核清单", review_report)
+        self.assertIn("worker-run evidence 只能保留 presence/count/privacy flags", review_report)
+        serialized = json.dumps(
+            {
+                "quote_map": quote_map,
+                "wiki_bundle": wiki_bundle,
+                "run_manifest": run_manifest,
+                "review_report": review_report,
+            },
+            ensure_ascii=False,
+        )
+        self.assertNotIn(person_id, serialized)
+        self.assertNotIn("raw profile fact text", serialized)
+
     def test_missing_highlight_is_omitted_instead_of_synthesized(self) -> None:
         self.assertIsNone(
             daily_case_report._extract_highlight([
@@ -1373,13 +1485,32 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertIsNone(result["artifact_candidate"])
             self.assertTrue(Path(result["daily_report_markdown_path"]).is_file())
             self.assertTrue(Path(result["character_universe_path"]).is_file())
+            self.assertTrue(Path(result["quote_map_path"]).is_file())
+            self.assertTrue(Path(result["wiki_bundle_path"]).is_file())
+            self.assertTrue(Path(result["run_manifest_path"]).is_file())
+            self.assertTrue(Path(result["review_report_path"]).is_file())
             universe = json.loads(Path(result["character_universe_path"]).read_text(encoding="utf-8"))
             self.assertEqual(universe, result["character_universe"])
+            quote_map = json.loads(Path(result["quote_map_path"]).read_text(encoding="utf-8"))
+            wiki_bundle = json.loads(Path(result["wiki_bundle_path"]).read_text(encoding="utf-8"))
+            run_manifest = json.loads(Path(result["run_manifest_path"]).read_text(encoding="utf-8"))
+            self.assertEqual(quote_map, result["quote_map"])
+            self.assertEqual(wiki_bundle, result["wiki_bundle"])
+            self.assertEqual(run_manifest, result["run_manifest"])
             self.assertFalse(universe["raw_messages_included"])
             self.assertFalse(universe["profile_fact_text_included"])
+            self.assertFalse(quote_map["raw_message_rows_included"])
+            self.assertFalse(quote_map["profile_fact_text_included"])
+            self.assertFalse(wiki_bundle["public_surface_allowed"])
+            self.assertFalse(run_manifest["privacy"]["profile_fact_text_included"])
+            self.assertFalse(run_manifest["inputs"]["long_term_member_facts_used"])
+            self.assertFalse(result["private_review_bundle"]["public_surface_allowed"])
+            self.assertTrue(result["private_review_bundle"]["review_required"])
+            self.assertGreater(result["private_review_bundle"]["quote_map_entry_count"], 0)
             self.assertIn("people", universe)
             self.assertIn("events", universe)
             self.assertIn("storyline_candidates", universe)
+            self.assertIn("timeline", wiki_bundle)
             self.assertIn("## 今日剧中人", result["daily_report_markdown"])
             self.assertIn("## 梗和回调候选", result["daily_report_markdown"])
             self.assertFalse(result["requires_human_confirmation"])
@@ -1484,7 +1615,16 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertIsNone(result["png_path"])
             self.assertTrue(Path(result["daily_report_markdown_path"]).is_file())
             self.assertTrue(Path(result["character_universe_path"]).is_file())
+            self.assertTrue(Path(result["quote_map_path"]).is_file())
+            self.assertTrue(Path(result["wiki_bundle_path"]).is_file())
+            self.assertTrue(Path(result["run_manifest_path"]).is_file())
+            self.assertTrue(Path(result["review_report_path"]).is_file())
             self.assertFalse(result["character_universe"]["raw_messages_included"])
+            self.assertFalse(result["quote_map"]["public_surface_allowed"])
+            self.assertFalse(result["wiki_bundle"]["public_surface_allowed"])
+            self.assertFalse(result["run_manifest"]["privacy"]["profile_fact_text_included"])
+            self.assertFalse(result["run_manifest"]["inputs"]["long_term_member_facts_used"])
+            self.assertTrue(result["private_review_bundle"]["review_required"])
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertEqual(result["artifact_candidate"]["workflow_type"], "daily_case_report")

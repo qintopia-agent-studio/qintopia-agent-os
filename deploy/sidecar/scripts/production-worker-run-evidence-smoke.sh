@@ -185,6 +185,7 @@ if data.get("worker") != "xiaoman-daily-case-report-auto-publish-worker":
 
 metrics = data.get("content_metrics")
 universe = data.get("character_universe")
+review_bundle = data.get("private_review_bundle")
 if not isinstance(metrics, dict) or not isinstance(universe, dict):
     raise SystemExit(2)
 if universe.get("raw_messages_included") is not False:
@@ -193,6 +194,17 @@ if universe.get("profile_fact_text_included") is not False:
     raise SystemExit(3)
 if universe.get("creative_profile_public_surface_allowed") is not False:
     raise SystemExit(3)
+if review_bundle is not None:
+    if not isinstance(review_bundle, dict):
+        raise SystemExit(2)
+    if review_bundle.get("public_surface_allowed") is not False:
+        raise SystemExit(3)
+    if review_bundle.get("review_required") is not True:
+        raise SystemExit(3)
+    if review_bundle.get("raw_message_rows_included") is not False:
+        raise SystemExit(3)
+    if review_bundle.get("profile_fact_text_included") is not False:
+        raise SystemExit(3)
 
 def number(name: str, default: int = 0) -> int:
     value = metrics.get(name, default)
@@ -226,6 +238,37 @@ def safe_label(name: str) -> str:
         raise SystemExit(2)
     return value
 
+def review_bundle_count(name: str) -> int:
+    if not isinstance(review_bundle, dict):
+        return 0
+    value = review_bundle.get(name, 0)
+    if isinstance(value, bool):
+        raise SystemExit(2)
+    try:
+        parsed = int(value)
+    except Exception:
+        raise SystemExit(2)
+    if parsed < 0 or parsed > 100000:
+        raise SystemExit(2)
+    return parsed
+
+def wiki_count(name: str) -> int:
+    if not isinstance(review_bundle, dict):
+        return 0
+    counts = review_bundle.get("wiki_counts") or {}
+    if not isinstance(counts, dict):
+        raise SystemExit(2)
+    value = counts.get(name, 0)
+    if isinstance(value, bool):
+        raise SystemExit(2)
+    try:
+        parsed = int(value)
+    except Exception:
+        raise SystemExit(2)
+    if parsed < 0 or parsed > 100000:
+        raise SystemExit(2)
+    return parsed
+
 print(f"{key}_worker_summary_present=true")
 print(f"{key}_worker_message_count={number('message_count')}")
 print(f"{key}_worker_participant_count={number('participant_count')}")
@@ -246,6 +289,14 @@ print(f"{key}_worker_character_universe_creative_profile_candidate_count={univer
 print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")
 print(f"{key}_worker_character_universe_storyline_candidate_count={universe_count('storyline_candidate_count')}")
 print(f"{key}_worker_character_universe_edge_count={universe_count('edge_count')}")
+print(f"{key}_worker_private_review_bundle_public_surface_allowed=false")
+print(f"{key}_worker_private_review_bundle_review_required=true")
+print(f"{key}_worker_private_review_bundle_raw_message_rows_included=false")
+print(f"{key}_worker_private_review_bundle_profile_fact_text_included=false")
+print(f"{key}_worker_private_review_bundle_quote_map_entry_count={review_bundle_count('quote_map_entry_count')}")
+print(f"{key}_worker_private_review_bundle_wiki_people_count={wiki_count('people')}")
+print(f"{key}_worker_private_review_bundle_wiki_event_count={wiki_count('events')}")
+print(f"{key}_worker_private_review_bundle_wiki_storyline_count={wiki_count('storylines')}")
 PY
 )"; then
     fail_evidence "daily_case_report_summary_invalid"
