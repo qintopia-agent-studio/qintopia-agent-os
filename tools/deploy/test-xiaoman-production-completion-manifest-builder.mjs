@@ -87,12 +87,14 @@ try {
     character_universe_source: "daily_case_report_second_pass",
     raw_messages_included: false,
     profile_fact_text_included: false,
+    creative_profile_public_surface_allowed: false,
     character_universe_people_count: 4,
     character_universe_topic_count: 3,
     character_universe_event_count: 6,
     character_universe_meme_count: 4,
     character_universe_callback_count: 4,
     character_universe_relationship_count: 2,
+    character_universe_creative_profile_candidate_count: 4,
     character_universe_storyline_candidate_count: 5,
     character_universe_edge_count: 7,
   });
@@ -519,7 +521,7 @@ function dailyCaseReportObservationResult(overrides = {}) {
         target: "xiaoman-daily-case-report-worker-run",
         status: "passed",
         detail:
-          "xiaoman_daily_case_report_worker_run_result=success; xiaoman_daily_case_report_worker_run_epoch=1786320660; xiaoman_daily_case_report_worker_summary_present=true; xiaoman_daily_case_report_worker_message_count=118; xiaoman_daily_case_report_worker_participant_count=24; xiaoman_daily_case_report_worker_case_count=6; xiaoman_daily_case_report_worker_character_count=4; xiaoman_daily_case_report_worker_hot_topic_count=3; xiaoman_daily_case_report_worker_character_universe_schema_version=xiaoman-character-universe-v1; xiaoman_daily_case_report_worker_character_universe_source=daily_case_report_second_pass; xiaoman_daily_case_report_worker_character_universe_raw_messages_included=false; xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false; xiaoman_daily_case_report_worker_character_universe_people_count=4; xiaoman_daily_case_report_worker_character_universe_topic_count=3; xiaoman_daily_case_report_worker_character_universe_event_count=6; xiaoman_daily_case_report_worker_character_universe_meme_count=4; xiaoman_daily_case_report_worker_character_universe_callback_count=4; xiaoman_daily_case_report_worker_character_universe_relationship_count=2; xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5; xiaoman_daily_case_report_worker_character_universe_edge_count=7",
+          "xiaoman_daily_case_report_worker_run_result=success; xiaoman_daily_case_report_worker_run_epoch=1786320660; xiaoman_daily_case_report_worker_summary_present=true; xiaoman_daily_case_report_worker_message_count=118; xiaoman_daily_case_report_worker_participant_count=24; xiaoman_daily_case_report_worker_case_count=6; xiaoman_daily_case_report_worker_character_count=4; xiaoman_daily_case_report_worker_hot_topic_count=3; xiaoman_daily_case_report_worker_character_universe_schema_version=xiaoman-character-universe-v1; xiaoman_daily_case_report_worker_character_universe_source=daily_case_report_second_pass; xiaoman_daily_case_report_worker_character_universe_raw_messages_included=false; xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included=false; xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed=false; xiaoman_daily_case_report_worker_character_universe_people_count=4; xiaoman_daily_case_report_worker_character_universe_topic_count=3; xiaoman_daily_case_report_worker_character_universe_event_count=6; xiaoman_daily_case_report_worker_character_universe_meme_count=4; xiaoman_daily_case_report_worker_character_universe_callback_count=4; xiaoman_daily_case_report_worker_character_universe_relationship_count=2; xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count=4; xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5; xiaoman_daily_case_report_worker_character_universe_edge_count=7",
         recorded_at: "2026-08-11T00:10:03Z",
       },
     ],

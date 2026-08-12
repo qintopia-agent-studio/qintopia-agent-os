@@ -1624,6 +1624,28 @@ def _build_character_universe(
         for character in characters
         if character.callback_hint
     ]
+    creative_profile_candidates = [
+        {
+            "type": "creative_profile_candidates",
+            "key": _node_key(f"{character.node_key}-{character.role_label}-creative-profile"),
+            "profile_kind": "creative_profile",
+            "profile_version": "daily-character-v1",
+            "related_person": character.node_key or _node_key(character.name),
+            "candidate_role_label": character.role_label,
+            "story_function": character.story_function,
+            "daily_arc": character.arc_label,
+            "memory_weight_label": character.memory_weight_label,
+            "meme_seed": character.meme_seed,
+            "callback_hint": character.callback_hint,
+            "evidence_policy": "daily_character_note_or_quote_map",
+            "minimum_recurrence": 2,
+            "status": "candidate",
+            "public_surface_allowed": False,
+            "risk": "internal_review_required",
+        }
+        for character in characters
+        if character.role_label
+    ]
     selected_people_keys = {character.node_key or _node_key(character.name) for character in characters}
     relationships: list[dict[str, Any]] = []
     seen_relationships: set[tuple[str, str, str]] = set()
@@ -1702,6 +1724,15 @@ def _build_character_universe(
         "memes": memes,
         "callbacks": callbacks,
         "relationships": relationships,
+        "creative_profile_candidates": creative_profile_candidates,
+        "creative_profile_candidate_policy": {
+            "profile_kind": "creative_profile",
+            "apply_mode": "candidate_only",
+            "writes_member_profile_snapshots": False,
+            "public_surface_allowed": False,
+            "evidence_policy": "daily_character_note_or_quote_map",
+            "review_required": True,
+        },
         "storyline_candidates": storyline_candidates,
         "edges": edges,
     }
@@ -2255,12 +2286,21 @@ def _render_daily_markdown(report: ReportData) -> str:
         for item in universe["storyline_candidates"][:5]:
             lines.append(f"- [[{item['label']}]]：{item['reason']}")
         lines.append("")
+    if universe.get("creative_profile_candidates"):
+        lines.extend(["## 可审核人物画像候选", ""])
+        for item in universe["creative_profile_candidates"][:5]:
+            lines.append(
+                f"- {item['candidate_role_label']} / {item['story_function']}："
+                f"{item['daily_arc']}（{item['evidence_policy']}）"
+            )
+        lines.append("")
     lines.extend(
         [
             "## 公开边界",
             "",
             "- 本日报由小满根据最新群聊窗口自动整理。",
             "- 长期画像只以角色复现计数参与，不展示内部画像原文。",
+            "- creative_profile_candidates 仅供内部审核，不写入长期画像表，不允许直接公开展示。",
             "- raw_messages_included=false；profile_fact_text_included=false。",
         ]
     )

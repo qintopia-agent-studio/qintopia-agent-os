@@ -75,6 +75,22 @@ for (const [fragment, label] of [
   ['"memes": memes', "universe meme candidates"],
   ['"callbacks": callbacks', "universe callback candidates"],
   ['"relationships": relationships', "universe relationship candidates"],
+  [
+    '"creative_profile_candidates": creative_profile_candidates',
+    "universe creative-profile candidates",
+  ],
+  [
+    '"creative_profile_candidate_policy": {',
+    "universe creative-profile candidate policy",
+  ],
+  [
+    '"writes_member_profile_snapshots": False',
+    "creative-profile candidates do not write snapshots",
+  ],
+  [
+    '"public_surface_allowed": False',
+    "creative-profile candidates are not public-surface allowed",
+  ],
   ['relation": "co_discusses_topic"', "same-topic relationship edge"],
   ["memory_weight_label", "public-safe memory weight label"],
   ["meme_seed", "public-safe meme seed"],
@@ -102,6 +118,10 @@ for (const [fragment, label] of [
   [
     "test_character_universe_exports_public_safe_memes_relationships_and_callbacks",
     "universe memes/relationships/callbacks regression test",
+  ],
+  [
+    'self.assertTrue(universe["creative_profile_candidates"])',
+    "creative-profile candidate regression test",
   ],
   [
     "test_render_html_mode_returns_existing_html_deliverable",
@@ -136,6 +156,14 @@ for (const [fragment, label] of [
   [
     '"profile_fact_text_included": character_universe.get("profile_fact_text_included") is True',
     "worker profile fact flag binding",
+  ],
+  [
+    '"creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or [])',
+    "worker creative-profile candidate count",
+  ],
+  [
+    '"creative_profile_public_surface_allowed": (',
+    "worker creative-profile public-surface flag",
   ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [
@@ -175,6 +203,18 @@ for (const [fragment, label] of [
     'if universe.get("profile_fact_text_included") is not False:',
     "worker-run profile fact guard",
   ],
+  [
+    'if universe.get("creative_profile_public_surface_allowed") is not False:',
+    "worker-run creative-profile public-surface guard",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_creative_profile_candidate_count=',
+    "worker-run creative-profile candidate count evidence",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")',
+    "worker-run creative-profile public-surface evidence",
+  ],
 ]) {
   requireIncludes(workerRunEvidence, fragment, label);
 }
@@ -185,11 +225,11 @@ for (const [fragment, label] of [
     "runner allowlist for universe labels",
   ],
   [
-    "xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included)",
+    "xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included|creative_profile_public_surface_allowed)",
     "runner allowlist for universe privacy flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|meme_count|callback_count|relationship_count|storyline_candidate_count|edge_count)",
+    "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|meme_count|callback_count|relationship_count|creative_profile_candidate_count|storyline_candidate_count|edge_count)",
     "runner allowlist for universe counts",
   ],
 ]) {
@@ -217,6 +257,11 @@ for (const [text, label] of [
   );
   requireIncludes(
     text,
+    "xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed=false",
+    label
+  );
+  requireIncludes(
+    text,
     "xiaoman_daily_case_report_worker_character_universe_meme_count=4",
     label
   );
@@ -228,6 +273,11 @@ for (const [text, label] of [
   requireIncludes(
     text,
     "xiaoman_daily_case_report_worker_character_universe_relationship_count=2",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count=4",
     label
   );
 }

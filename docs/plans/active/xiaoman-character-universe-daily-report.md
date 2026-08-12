@@ -86,6 +86,14 @@ The local character-universe readiness checker now guards these second-stage fie
 the regression test that proves same-name people stay separated while meme, callback,
 and same-topic relationship candidates remain public-safe.
 
+The private `character-universe` export now also emits `creative_profile_candidates`.
+This ports the reference project's long-term people/wiki workflow one step deeper
+without opening a new publish surface: candidates carry
+`profile_kind='creative_profile'`, daily role, story function, arc, meme/callback seeds,
+review policy, and `public_surface_allowed=false`. They are not written to
+`member_profile_snapshots`; production worker metadata and completion evidence retain
+only candidate counts plus the false public-surface flag.
+
 This keeps the important invariant:
 
 - latest messages remain first-class through the existing Postgres read-through;
@@ -94,24 +102,26 @@ This keeps the important invariant:
 - the report gains reference-project-style human texture;
 - daily人物弧线、梗回调、同场关系 can be rendered in poster and Markdown from the latest
   message window;
-- long-term profile migration stays behind a separate reviewed data and publication
-  boundary.
+- long-term profile application stays behind a separate reviewed data and publication
+  boundary, while daily runs already produce private review candidates.
 
 ## Proposed Next Steps
 
-1. Add a Postgres-backed `creative_profile` snapshot kind.
+1. Add a reviewed apply path for Postgres-backed `creative_profile` snapshots.
    - Use existing `qintopia_identity.member_profile_snapshots` if the schema remains
      sufficient, with `profile_kind='creative_profile'`.
    - Metadata should include `public_surface_allowed=false` by default,
      `evidence_policy=quote_map_or_message_id`, `profile_track=roast_or_public_safe`,
      and `minimum_recurrence`.
+   - Input should be the private `creative_profile_candidates` export plus owner review,
+     not raw chat archives.
 
-2. Add a daily creative-profile worker.
+2. Add a daily creative-profile apply/review worker.
    - Input: latest QiWe messages for the target group plus existing creative profile
-     snapshots.
-   - Output: candidate creative-profile deltas and a review report.
-   - Apply mode should be internal-only until owner-reviewed evidence proves it cannot
-     leak sensitive facts or turn one-off comments into permanent labels.
+     snapshots and the generated candidate export.
+   - Output: approved creative-profile deltas and a review report.
+   - Apply mode should remain internal-only until owner-reviewed evidence proves it
+     cannot leak sensitive facts or turn one-off comments into permanent labels.
 
 3. Extend the curated character-universe export with durable creative-profile inputs.
    - The daily export now covers people, topics, events, meme candidates, callback

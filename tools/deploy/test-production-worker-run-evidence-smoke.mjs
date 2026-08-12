@@ -141,6 +141,8 @@ writeFile(
           meme_count: 4,
           callback_count: 4,
           relationship_count: 2,
+          creative_profile_candidate_count: 4,
+          creative_profile_public_surface_allowed: false,
           storyline_candidate_count: 5,
           edge_count: 7,
         },
@@ -175,6 +177,12 @@ check(
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_character_universe_relationship_count=2"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count=4"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed=false"
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5"

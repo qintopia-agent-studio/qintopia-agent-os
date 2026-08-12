@@ -1,6 +1,6 @@
-# Workflow: Xiaoman Daily Community Scoreboard Report
+# Workflow: Xiaoman Daily Character Universe Report
 
-`workflows/xiaoman-daily-case-report` generates a playful daily community scoreboard
+`workflows/xiaoman-daily-case-report` generates a character-driven daily community
 poster for Xiaoman community groups. The production recurrence is a Xiaoman Hermes cron
 job that reads the latest rolling 24 hours of QiWe group messages, calls the
 release-managed worker to render a JPEG poster, and publishes it automatically to the
@@ -27,7 +27,7 @@ observation, rollback, and send boundaries still run from the immutable release.
   or synthetic fallback commentary.
 - Aggregate message count, active participant count, hourly timeline, and topical case
   cards.
-- Add a `今日人物群像` section from the same latest message window. When production
+- Add a `今日剧中人` section from the same latest message window. When production
   read-through is active, the ranking may use sanitized long-term role recurrence counts
   from `qintopia_identity.member_facts`, but it never displays `fact_text` or hidden
   profile snapshot content.
@@ -35,23 +35,23 @@ observation, rollback, and send boundaries still run from the immutable release.
   Chinese phrases, together with the matching message and participant counts. A phrase
   must occur in at least two distinct source messages; omit the hotlist when the report
   window has no qualifying keyword.
-- Keep the battle-report body intact: headline metrics, 24H activity, source-message
-  highlight, "今日人物群像", "今日局势" case cards, and "今日 MVP" remain the primary
-  sections. The compact hotlist appears after the highlight and before the character
-  notes as a supplement.
+- Keep the character-universe body intact: headline metrics, 今日主线, source-message
+  highlight, 人物出场表, hot topics, 梗和回调候选, 同场关系, and story cards remain the
+  primary sections.
 - Write a private Markdown daily report alongside the poster so downstream operators can
   review a text日报, not only the image artifact.
 - Write a private `.character-universe.json` second-pass export alongside the poster and
-  Markdown. It keeps people, topics, events, storyline candidates, and graph edges from
-  curated report content only; it does not retain raw messages or hidden profile fact
-  text.
-- Render a mobile-friendly JPEG poster from the black-and-yellow community-scoreboard
-  template. The HTML preview and production image share the same battle-report layout.
+  Markdown. It keeps people, topics, events, memes, callbacks, same-topic relationships,
+  creative-profile candidates, storyline candidates, and graph edges from curated report
+  content only; it does not retain raw messages or hidden profile fact text.
+- Render a mobile-friendly JPEG poster from the character-daily template. The HTML
+  preview and production image share the same report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
   downstream sendable artifact boundary.
 - Bind safe production metadata for the new report shape: content counts,
-  character-universe schema/source, and node counts only. Do not persist Markdown body,
-  raw character-universe nodes, member names, or excerpts in send-ready metadata.
+  character-universe schema/source, candidate counts, and privacy flags only. Do not
+  persist Markdown body, raw character-universe nodes, member names, or excerpts in
+  send-ready metadata.
 - Publish once per daily window to the reviewed QiWe target group after production
   activation.
 - Never send from a local image path, a conversation-created cron, or an unreviewed
@@ -97,7 +97,10 @@ bounded recurrence counts and a coarse role label such as `活动推进者` or `
 The workflow also emits a private `xiaoman-daily-case-report-*.character-universe.json`
 file, matching the reference project's Wiki/graph idea with a safer source policy:
 people, topics, events, storyline candidates, and edges come from the generated daily
-report layer, not from raw chat archives.
+report layer, not from raw chat archives. It also emits `creative_profile_candidates` as
+private review material with `public_surface_allowed=false` and
+`writes_member_profile_snapshots=false`; applying those candidates to durable profiles
+remains a separate owner-reviewed boundary.
 
 ## Running it
 

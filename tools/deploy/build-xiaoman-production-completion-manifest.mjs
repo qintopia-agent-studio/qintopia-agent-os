@@ -601,6 +601,9 @@ function extractDailyCaseReportObservation(file) {
     profile_fact_text_included:
       workerFields.xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included ===
       "true",
+    creative_profile_public_surface_allowed:
+      workerFields.xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed ===
+      "true",
     character_universe_people_count: numericField(
       workerFields,
       "xiaoman_daily_case_report_worker_character_universe_people_count"
@@ -624,6 +627,10 @@ function extractDailyCaseReportObservation(file) {
     character_universe_relationship_count: numericField(
       workerFields,
       "xiaoman_daily_case_report_worker_character_universe_relationship_count"
+    ),
+    character_universe_creative_profile_candidate_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count"
     ),
     character_universe_storyline_candidate_count: numericField(
       workerFields,
@@ -659,11 +666,13 @@ function assertDailyCaseReportObservation(record, options) {
     record.character_universe_source !== "daily_case_report_second_pass" ||
     record.raw_messages_included !== false ||
     record.profile_fact_text_included !== false ||
+    record.creative_profile_public_surface_allowed !== false ||
     !safeCount(record.character_universe_topic_count) ||
     !safeCount(record.character_universe_event_count) ||
     !safeCount(record.character_universe_meme_count) ||
     !safeCount(record.character_universe_callback_count) ||
     !safeCount(record.character_universe_relationship_count) ||
+    !safeCount(record.character_universe_creative_profile_candidate_count) ||
     !safeCount(record.character_universe_storyline_candidate_count) ||
     !safeCount(record.character_universe_edge_count)
   ) {

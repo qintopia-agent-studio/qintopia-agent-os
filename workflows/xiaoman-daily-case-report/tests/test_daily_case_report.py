@@ -778,6 +778,23 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertFalse(universe["raw_messages_included"])
         self.assertFalse(universe["profile_fact_text_included"])
         self.assertEqual(universe["people"][0]["label"], "小雨")
+        self.assertEqual(
+            universe["creative_profile_candidate_policy"]["profile_kind"],
+            "creative_profile",
+        )
+        self.assertFalse(
+            universe["creative_profile_candidate_policy"]["writes_member_profile_snapshots"]
+        )
+        self.assertFalse(
+            universe["creative_profile_candidate_policy"]["public_surface_allowed"]
+        )
+        self.assertEqual(
+            universe["creative_profile_candidates"][0]["profile_kind"],
+            "creative_profile",
+        )
+        self.assertFalse(
+            universe["creative_profile_candidates"][0]["public_surface_allowed"]
+        )
         self.assertEqual(universe["topics"][0]["label"], "活动报名")
         self.assertEqual(universe["events"][0]["case_no"], "CASE 01")
         self.assertEqual(universe["storyline_candidates"][0]["label"], "活动讨论")
@@ -865,10 +882,12 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(universe["memes"])
         self.assertTrue(universe["callbacks"])
         self.assertTrue(universe["relationships"])
+        self.assertTrue(universe["creative_profile_candidates"])
         self.assertTrue(any(edge["relation"] == "co_discusses_topic" for edge in universe["edges"]))
         self.assertIn("同场关系", daily_case_report._render_html(report, 750))
         markdown = daily_case_report._render_daily_markdown(report)
         self.assertIn("## 同场关系", markdown)
+        self.assertIn("## 可审核人物画像候选", markdown)
         self.assertIn("公开话题", markdown)
         serialized = json.dumps(universe, ensure_ascii=False)
         self.assertNotIn(first_person_id, serialized)
