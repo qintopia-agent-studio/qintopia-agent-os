@@ -13,6 +13,7 @@ runner accepts exactly one target per request:
 
 - `xiaoman-daily-case-report-auto-publish-backfill`
 - `erhua-morning-brief`
+- `hermes-cron-snapshot-install`
 
 The request must target the current production release SHA, must use
 `restart_targets=["qintopia-system-services"]`, and must set both `dry_run=false` and
@@ -59,15 +60,36 @@ approval=approved-production-erhua-morning-brief-one-shot
 This may create a reviewed text activity announcement and send it through the reviewed
 QiWe text-send boundary when the persistent production gates are enabled.
 
+### Hermes Cron Snapshot Install
+
+Use when `hermes-cron-snapshot` production observation reports
+`hermes_cron_snapshot_observation_error=unit_missing` after the reviewed Release has
+been deployed. This installs the fixed server-local snapshot timer and creates the
+baseline local git snapshot.
+
+Workflow inputs:
+
+```text
+release_sha=<current-production-release-sha>
+runtime_one_shot_target=hermes-cron-snapshot-install
+backfill_date=
+approval=approved-production-hermes-cron-snapshot
+```
+
+This writes only the fixed Hermes snapshot systemd user units and the server-local
+snapshot repo. It must not print live cron JSON, group ids, prompts, env values, raw
+script output, or raw logs. Verify with `Observe Production Runtime` using
+`observation_targets=hermes-cron-snapshot,hermes-cron-live-parity`.
+
 ## Non-Goals
 
 This workflow must not:
 
 - write persistent production config;
-- enable, disable, or roll back timers;
+- enable, disable, or roll back business worker timers;
 - retire legacy Hermes cron files;
 - accept arbitrary commands, service names, dates for Erhua, or multiple targets;
-- run if the target timer is not already observed as enabled.
+- run business workers if the target timer is not already observed as enabled.
 
 Use `Activate Production Timers` for timer activation, `Retire Production Legacy Crons`
 for legacy cron retirement, and target-specific rollback workflows or scripts for
