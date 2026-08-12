@@ -154,6 +154,11 @@ try {
     retired_at: "2026-08-10T00:00:00Z",
     jobs: [],
   });
+  const legacyEnvelope = () => {
+    const envelope = emptyEnvelope();
+    delete envelope.schema_version;
+    return envelope;
+  };
 
   const run = (args, extraEnv = {}) =>
     spawnSync("bash", [applyScript, ...args], {
@@ -208,7 +213,9 @@ try {
     "apply mutated state without owner approval"
   );
 
-  // Install into the retired empty envelope.
+  // Install into a legacy envelope that is missing schema_version.
+  writeCron(legacyEnvelope());
+  baselineSha = sha256(fs.readFileSync(cronFile));
   result = runApproved(["--install"]);
   check(result.status === 0, `install failed\n${result.stdout}\n${result.stderr}`);
   forbidLeak(result, "install");
@@ -260,16 +267,36 @@ try {
     "install backup did not preserve the previous cron bytes"
   );
 
-  // A second install must refuse the duplicate name instead of appending twice.
+  // A second install refreshes the reviewed wrapper and must not append twice.
   baselineSha = sha256(fs.readFileSync(cronFile));
+  fs.writeFileSync(installedWrapper, "#!/usr/bin/env bash\necho old-wrapper\n", "utf8");
+  fs.chmodSync(installedWrapper, 0o700);
   result = runApproved(["--install"]);
-  check(result.status !== 0, "install accepted a duplicate weekly recruitment job");
   check(
-    result.stderr.includes("already declares the weekly recruitment job") &&
-      sha256(fs.readFileSync(cronFile)) === baselineSha &&
-      listBackups(cronDir).length === 1,
-    "duplicate install mutated the cron file"
+    result.status === 0,
+    `repeat install failed\n${result.stdout}\n${result.stderr}`
   );
+  check(
+    result.stdout.includes(
+      '"status":"weekly_recruitment_hermes_cron_already_installed"'
+    ) &&
+      result.stdout.includes('"wrapper_installed":true') &&
+      sha256(fs.readFileSync(cronFile)) === baselineSha &&
+      listBackups(cronDir).length === 1 &&
+      fs.readFileSync(installedWrapper, "utf8") ===
+        fs.readFileSync(releaseWrapper, "utf8"),
+    "repeat install mutated the cron file or failed to refresh the wrapper"
+  );
+
+  const invalidSchema = emptyEnvelope();
+  invalidSchema.schema_version = 2;
+  writeCron(invalidSchema);
+  result = runApproved(["--install"]);
+  check(
+    result.status !== 0 && result.stderr.includes("schema_version must be 1"),
+    "install accepted an unsupported explicit schema_version"
+  );
+  writeCron(cron);
 
   // --enable flips only the reviewed job and preserves daemon runtime fields.
   const other = runningJob();

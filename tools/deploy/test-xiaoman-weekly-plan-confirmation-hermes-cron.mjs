@@ -119,11 +119,7 @@ try {
     last_status: "ok",
     repeat: { times: null, completed: 1 },
   };
-  fs.writeFileSync(
-    cronFile,
-    JSON.stringify({ schema_version: 1, jobs: [otherJob] }, null, 2),
-    "utf8"
-  );
+  fs.writeFileSync(cronFile, JSON.stringify({ jobs: [otherJob] }, null, 2), "utf8");
   fs.chmodSync(cronFile, 0o600);
 
   const applySource = fs
@@ -207,6 +203,9 @@ try {
   }
 
   let cron = JSON.parse(fs.readFileSync(cronFile, "utf8"));
+  if (cron.schema_version !== 1) {
+    throw new Error("weekly plan confirmation apply did not normalize schema_version");
+  }
   const installedJob = cron.jobs.find((job) => job.name === "小满·周日活动计划确认");
   if (!installedJob || installedJob.enabled !== false) {
     throw new Error("weekly plan confirmation install did not insert a disabled job");
@@ -239,6 +238,18 @@ try {
   ) {
     throw new Error("idempotent install mutated cron state");
   }
+
+  const invalidSchema = { ...cron, schema_version: 2 };
+  fs.writeFileSync(cronFile, JSON.stringify(invalidSchema, null, 2), "utf8");
+  fs.chmodSync(cronFile, 0o600);
+  result = run("--install", {
+    QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON: approval,
+  });
+  if (result.status === 0 || !result.stderr.includes("schema_version must be 1")) {
+    throw new Error("weekly plan confirmation accepted unsupported schema_version");
+  }
+  fs.writeFileSync(cronFile, JSON.stringify(cron, null, 2), "utf8");
+  fs.chmodSync(cronFile, 0o600);
 
   result = run("--enable", {
     QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON: approval,
