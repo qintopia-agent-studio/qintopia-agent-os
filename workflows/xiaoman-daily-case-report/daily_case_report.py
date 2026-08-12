@@ -914,10 +914,12 @@ def _keyword_scores(messages: list[ReportMessage]) -> Counter:
 
 def _hot_topics(
     messages: list[ReportMessage],
+    cases: list[CaseCard] | None = None,
     limit: int = DEFAULT_HOT_TOPIC_LIMIT,
 ) -> list[HotTopic]:
     grouped: dict[str, list[ReportMessage]] = {}
     repeated_phrases: dict[str, list[ReportMessage]] = {}
+    case_topic_stats: dict[str, tuple[int, int]] = {}
     for message in messages:
         for token in set(_tokenize(message.text)):
             if _is_clean_topic(token) and len(token) >= DEFAULT_HOT_TOPIC_MIN_CHARS:
@@ -933,30 +935,56 @@ def _hot_topics(
             existing_ids = {message.id for message in existing}
             existing.extend(message for message in group if message.id not in existing_ids)
 
+    for case in cases or []:
+        topic = _case_storyline_label(case)
+        if (
+            case.message_count >= DEFAULT_HOT_TOPIC_MIN_MESSAGES
+            and _is_clean_topic(topic)
+            and not _is_time_bucket_topic(topic)
+        ):
+            current_message_count, current_participant_count = case_topic_stats.get(topic, (0, 0))
+            case_topic_stats[topic] = (
+                max(current_message_count, case.message_count),
+                max(current_participant_count, case.participant_count),
+            )
+
     ranked = sorted(
         (
-            (keyword, group)
-            for keyword, group in grouped.items()
-            if len(group) >= DEFAULT_HOT_TOPIC_MIN_MESSAGES
+            (
+                keyword,
+                max(len(grouped.get(keyword, [])), case_topic_stats.get(keyword, (0, 0))[0]),
+                max(
+                    len(
+                        {
+                            message.sender_id or message.sender_name
+                            for message in grouped.get(keyword, [])
+                        }
+                    ),
+                    case_topic_stats.get(keyword, (0, 0))[1],
+                ),
+            )
+            for keyword in set(grouped) | set(case_topic_stats)
+            if max(len(grouped.get(keyword, [])), case_topic_stats.get(keyword, (0, 0))[0])
+            >= DEFAULT_HOT_TOPIC_MIN_MESSAGES
         ),
         key=lambda item: (
-            -(len(item[0]) * len(item[1])),
-            -len(item[1]),
-            -len({message.sender_id or message.sender_name for message in item[1]}),
+            -(len(item[0]) * item[1]),
+            -item[1],
+            -item[2],
             -len(item[0]),
             item[0],
         ),
     )
     topics: list[HotTopic] = []
-    for keyword, group in ranked:
+    for keyword, message_count, participant_count in ranked:
         if any(keyword in topic.keyword or topic.keyword in keyword for topic in topics):
             continue
         topics.append(
             HotTopic(
                 rank=len(topics) + 1,
                 keyword=keyword,
-                message_count=len(group),
-                participant_count=len({message.sender_id or message.sender_name for message in group}),
+                message_count=message_count,
+                participant_count=participant_count,
             )
         )
         if len(topics) == limit:
@@ -999,6 +1027,10 @@ def _is_clean_topic(kw: str) -> bool:
     if not any("\u4e00" <= c <= "\u9fa5" for c in kw):
         return False
     return True
+
+
+def _is_time_bucket_topic(topic: str) -> bool:
+    return bool(re.match(r"^(早场|午后|晚场|夜场)(?:[ ·][^ ]+)?\s*\d{2}:00", topic))
 
 
 def _time_bucket_title(hour: int, messages: list[ReportMessage]) -> str:
@@ -2259,7 +2291,7 @@ def _build_report(args: argparse.Namespace) -> ReportData:
     discussion_messages = _discussion_messages(messages)
     unique_senders = {m.sender_id for m in discussion_messages}
     cases = _cluster_cases(discussion_messages)
-    hot_topics = _hot_topics(discussion_messages)
+    hot_topics = _hot_topics(discussion_messages, cases)
     suspects = _compute_suspects(discussion_messages)
     character_memory = {}
     if not args.dry_run and not args.fixture:

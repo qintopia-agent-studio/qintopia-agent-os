@@ -94,6 +94,12 @@ review policy, and `public_surface_allowed=false`. They are not written to
 `member_profile_snapshots`; production worker metadata and completion evidence retain
 only candidate counts plus the false public-surface flag.
 
+The Wiki topic layer now uses generated case storyline titles as candidate topics when
+the titles are real discussion labels. Generic time-bucket fallback cards such as
+`早场 10:00 时段` stay out of `wiki/topics`. This keeps the reference project's
+people/topics/events/memes/storylines shape present even when token repetition alone is
+too weak to surface meaningful hot topics.
+
 This keeps the important invariant:
 
 - latest messages remain first-class through the existing Postgres read-through;

@@ -70,6 +70,7 @@ for (const [fragment, label] of [
   ["def _build_wiki_bundle(", "daily workflow wx-cli-style wiki bundle"],
   ["def _build_run_manifest(", "daily workflow wx-cli-style run manifest"],
   ["def _render_review_report(", "daily workflow wx-cli-style review report"],
+  ["def _is_time_bucket_topic(", "daily workflow excludes time-bucket wiki topics"],
   ["def _relationship_hints(", "daily workflow same-topic relationship hints"],
   ["def _relationship_candidates(", "daily workflow relationship render candidates"],
   ['"schema_version": "xiaoman-character-universe-v1"', "universe schema"],
@@ -150,6 +151,10 @@ for (const [fragment, label] of [
   [
     "test_character_universe_exports_public_safe_memes_relationships_and_callbacks",
     "universe memes/relationships/callbacks regression test",
+  ],
+  [
+    "test_hot_topics_include_case_storylines_as_wiki_topics",
+    "case-storyline wiki topic regression test",
   ],
   [
     "test_private_review_bundle_exports_quote_map_wiki_and_run_manifest",
