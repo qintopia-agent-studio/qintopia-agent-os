@@ -1069,6 +1069,19 @@ class DailyCaseReportTest(unittest.TestCase):
 
         self.assertFalse(any("群里" in topic.keyword for topic in topics))
 
+    def test_hot_topics_include_case_storylines_as_wiki_topics(self) -> None:
+        messages = daily_case_report._sample_messages(
+            datetime(2026, 8, 8, tzinfo=timezone.utc)
+        )
+        cases = daily_case_report._cluster_cases(messages)
+
+        topics = daily_case_report._hot_topics(messages, cases)
+        topic_names = {topic.keyword for topic in topics}
+
+        self.assertIn("资源分享", topic_names)
+        self.assertIn("技术求助", topic_names)
+        self.assertFalse(any(topic.keyword.startswith("早场") for topic in topics))
+
     def test_weak_colon_sentence_does_not_capture_later_messages(self) -> None:
         messages = [
             daily_case_report.ReportMessage(

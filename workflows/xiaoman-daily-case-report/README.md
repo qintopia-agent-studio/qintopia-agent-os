@@ -89,11 +89,13 @@ identity, callback correlation, and send evidence stay in Postgres.
 Topic clustering is heuristic by default: explicit colon markers are honored only when
 they look like real thread labels such as topics, recaps, shares, asks, or activity
 discussion markers; weak chatty colon sentences are treated as normal messages. Messages
-are otherwise grouped around top keywords extracted from discussion-quality text.
-Promotional payment/copy-token redirects remain counted in raw activity totals, but they
-are not allowed to become the daily highlight, topic cards, or MVP entries. This keeps
-the workflow deterministic and free of LLM costs. A future iteration can add an optional
-LLM-based case title step behind an explicit flag.
+are otherwise grouped around top keywords extracted from discussion-quality text. Case
+storyline titles are also promoted into the private Wiki topic layer when they are real
+topics; generic time-bucket fillers such as `早场 10:00 时段` are excluded from Wiki
+topics. Promotional payment/copy-token redirects remain counted in raw activity totals,
+but they are not allowed to become the daily highlight, topic cards, or MVP entries.
+This keeps the workflow deterministic and free of LLM costs. A future iteration can add
+an optional LLM-based case title step behind an explicit flag.
 
 Character notes follow the reference `wx-cli` project’s useful pattern: daily output
 separates current-window behavior from long-term character memory. The displayed role is
