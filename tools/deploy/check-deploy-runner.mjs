@@ -1534,6 +1534,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
   for (const expectedTarget of [
     "xiaoman-daily-case-report-auto-publish-backfill",
     "erhua-morning-brief",
+    "hermes-cron-snapshot-install",
   ]) {
     if (!targetOptions.includes(expectedTarget)) {
       addError(
@@ -1568,9 +1569,10 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "require_allowed_value()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief",
+    "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief,hermes-cron-snapshot-install",
     "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
     "approved-production-erhua-morning-brief-one-shot",
+    "approved-production-hermes-cron-snapshot",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-runtime-one-shot",
     "DEPLOY_RESTART_TARGETS: qintopia-system-services",

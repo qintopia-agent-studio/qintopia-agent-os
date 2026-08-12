@@ -220,6 +220,7 @@
           "items": {
             "enum": [
               "erhua-morning-brief",
+              "hermes-cron-snapshot-install",
               "xiaoman-daily-case-report-auto-publish-backfill"
             ]
           }
@@ -230,6 +231,7 @@
         },
         "approval": {
           "enum": [
+            "approved-production-hermes-cron-snapshot",
             "approved-production-erhua-morning-brief-one-shot",
             "approved-production-xiaoman-daily-case-report-auto-publish-backfill"
           ]
@@ -271,6 +273,25 @@
             "properties": {
               "approval": {
                 "const": "approved-production-erhua-morning-brief-one-shot"
+              }
+            },
+            "not": { "required": ["backfill_date"] }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": { "const": "hermes-cron-snapshot-install" }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "properties": {
+              "approval": {
+                "const": "approved-production-hermes-cron-snapshot"
               }
             },
             "not": { "required": ["backfill_date"] }
