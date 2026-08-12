@@ -42,15 +42,15 @@ Branch: `codex/xiaoman-hermes-cron-idempotent-install`
 Commands run:
 
 ```text
-node tools/deploy/test-xiaoman-daily-case-report-hermes-cron.mjs
-node tools/deploy/test-xiaoman-weekly-recruitment-hermes-cron.mjs
-node tools/deploy/test-xiaoman-weekly-preview-hermes-cron.mjs
-node tools/deploy/test-xiaoman-weekly-plan-confirmation-hermes-cron.mjs
-node tools/deploy/check-deploy-contracts.mjs
-node tools/deploy/check-deploy-runner.mjs
-bash -n deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh
-node_modules/.bin/prettier --check tools/deploy/test-xiaoman-daily-case-report-hermes-cron.mjs tools/deploy/test-xiaoman-weekly-recruitment-hermes-cron.mjs tools/deploy/test-xiaoman-weekly-plan-confirmation-hermes-cron.mjs tools/deploy/test-xiaoman-weekly-preview-hermes-cron.mjs docs/reports/2026-08-12-hermes-cron-schema-normalization-pr-body.md docs/reports/2026-08-12-hermes-cron-normalization-rollout-notes.md
-git diff --check
+rtk node tools/deploy/test-xiaoman-daily-case-report-hermes-cron.mjs
+rtk node tools/deploy/test-xiaoman-weekly-recruitment-hermes-cron.mjs
+rtk node tools/deploy/test-xiaoman-weekly-preview-hermes-cron.mjs
+rtk node tools/deploy/test-xiaoman-weekly-plan-confirmation-hermes-cron.mjs
+rtk node tools/deploy/check-deploy-contracts.mjs
+rtk node tools/deploy/check-deploy-runner.mjs
+rtk bash -n deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh deploy/sidecar/scripts/apply-xiaoman-weekly-preview-hermes-cron.sh
+rtk node_modules/.bin/prettier --check tools/deploy/test-xiaoman-daily-case-report-hermes-cron.mjs tools/deploy/test-xiaoman-weekly-recruitment-hermes-cron.mjs tools/deploy/test-xiaoman-weekly-plan-confirmation-hermes-cron.mjs tools/deploy/test-xiaoman-weekly-preview-hermes-cron.mjs docs/reports/2026-08-12-hermes-cron-schema-normalization-pr-body.md docs/reports/2026-08-12-hermes-cron-normalization-rollout-notes.md
+rtk git diff --check
 ```
 
 ## Production Boundary
