@@ -221,7 +221,8 @@
             "enum": [
               "erhua-morning-brief",
               "hermes-cron-snapshot-install",
-              "xiaoman-daily-case-report-auto-publish-backfill"
+              "xiaoman-daily-case-report-auto-publish-backfill",
+              "xiaoman-creative-profile-candidates-apply"
             ]
           }
         },
@@ -229,11 +230,16 @@
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
         },
+        "payload_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
         "approval": {
           "enum": [
             "approved-production-hermes-cron-snapshot",
             "approved-production-erhua-morning-brief-one-shot",
-            "approved-production-xiaoman-daily-case-report-auto-publish-backfill"
+            "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+            "approved-production-xiaoman-creative-profile-candidates"
           ]
         }
       },
@@ -256,7 +262,8 @@
               "approval": {
                 "const": "approved-production-xiaoman-daily-case-report-auto-publish-backfill"
               }
-            }
+            },
+            "not": { "required": ["payload_sha256"] }
           }
         },
         {
@@ -275,7 +282,12 @@
                 "const": "approved-production-erhua-morning-brief-one-shot"
               }
             },
-            "not": { "required": ["backfill_date"] }
+            "not": {
+              "anyOf": [
+                { "required": ["backfill_date"] },
+                { "required": ["payload_sha256"] }
+              ]
+            }
           }
         },
         {
@@ -292,6 +304,33 @@
             "properties": {
               "approval": {
                 "const": "approved-production-hermes-cron-snapshot"
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["backfill_date"] },
+                { "required": ["payload_sha256"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": {
+                  "const": "xiaoman-creative-profile-candidates-apply"
+                }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "required": ["payload_sha256"],
+            "properties": {
+              "approval": {
+                "const": "approved-production-xiaoman-creative-profile-candidates"
               }
             },
             "not": { "required": ["backfill_date"] }

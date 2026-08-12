@@ -15,6 +15,8 @@ const tmpRoot = fs.mkdtempSync(
 const signingKey = "test-signing-key";
 const keyId = "production";
 const sha = "113ce49141b06fc44edcee42026aee0a614ac027";
+const creativeProfilePayloadSha256 =
+  "9c2b0ff0d2a29d00f817cad596804e460ffb48eaf4a440604e5f81ef92b59b7a";
 
 const writeExecutable = (relativePath, content) => {
   const filePath = path.join(tmpRoot, relativePath);
@@ -240,6 +242,27 @@ echo "live_jobs_json=must-not-leak"
 `
   );
   writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "apply-xiaoman-creative-profile-candidates-production.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_APPLY:-}" != "approved-production-xiaoman-creative-profile-candidates" ]]; then
+  exit 81
+fi
+if [[ "\${QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_PAYLOAD_SHA256:-}" != ${JSON.stringify(
+      creativeProfilePayloadSha256
+    )} ]]; then
+  exit 82
+fi
+printf 'run-creative-profile-apply:%s\\n' "\${QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_PAYLOAD_SHA256}" >> ${JSON.stringify(
+      oneShotLog
+    )}
+echo "person_id=must-not-leak"
+`
+  );
+  writeExecutable(
     path.relative(tmpRoot, path.join(scriptsDir, "fail-runtime-one-shot-for-test.sh")),
     `#!/usr/bin/env bash
 set -euo pipefail
@@ -370,11 +393,51 @@ exit 72
     throw new Error("snapshot install evidence leaked raw script output");
   }
 
+  const creativeProfileRequestId = "deploy-20260810T000003Z-abcdef123456";
+  result = runRequest(creativeProfileRequestId, {
+    targets: ["xiaoman-creative-profile-candidates-apply"],
+    approval: "approved-production-xiaoman-creative-profile-candidates",
+    payload_sha256: creativeProfilePayloadSha256,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `creative-profile candidates apply one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${creativeProfileRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error(
+      "creative-profile candidates apply check was not recorded as passed"
+    );
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "xiaoman-creative-profile-candidates-apply" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !==
+      `xiaoman_creative_profile_candidates_apply=completed; payload_sha256=${creativeProfilePayloadSha256}`
+  ) {
+    throw new Error(
+      `unexpected creative-profile candidates apply evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("creative-profile apply evidence leaked raw script output");
+  }
+
   fs.copyFileSync(
     path.join(scriptsDir, "fail-runtime-one-shot-for-test.sh"),
     path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
   );
-  const failedSnapshotRequestId = "deploy-20260810T000003Z-abcdef123456";
+  const failedSnapshotRequestId = "deploy-20260810T000004Z-abcdef123456";
   result = runRequest(failedSnapshotRequestId, {
     targets: ["hermes-cron-snapshot-install"],
     approval: "approved-production-hermes-cron-snapshot",
@@ -418,7 +481,7 @@ exit 72
     }
   }
 
-  const invalidRequest = runRequest("deploy-20260810T000003Z-abcdef123456", {
+  const invalidRequest = runRequest("deploy-20260810T000005Z-abcdef123456", {
     targets: ["xiaoman-daily-case-report-auto-publish-backfill"],
     approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
   });
@@ -428,6 +491,26 @@ exit 72
   if (!invalidRequest.stderr.includes("runtime_one_shot.backfill_date")) {
     throw new Error(
       `runtime one-shot date rejection was not explicit\n${invalidRequest.stderr}`
+    );
+  }
+
+  const invalidCreativeProfileRequest = runRequest(
+    "deploy-20260810T000006Z-abcdef123456",
+    {
+      targets: ["xiaoman-creative-profile-candidates-apply"],
+      approval: "approved-production-xiaoman-creative-profile-candidates",
+    }
+  );
+  if (invalidCreativeProfileRequest.status === 0) {
+    throw new Error(
+      "runtime one-shot accepted Xiaoman creative-profile apply without payload SHA-256"
+    );
+  }
+  if (
+    !invalidCreativeProfileRequest.stderr.includes("runtime_one_shot.payload_sha256")
+  ) {
+    throw new Error(
+      `runtime one-shot payload hash rejection was not explicit\n${invalidCreativeProfileRequest.stderr}`
     );
   }
 

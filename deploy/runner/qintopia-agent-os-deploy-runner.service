@@ -16,4 +16,4 @@ ExecStart=/home/ubuntu/qintopia-agent-os-releases/current/deploy/runner/poll-dep
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/.hermes/profiles/erhua /home/ubuntu/.hermes/profiles/xiaoman/cron /home/ubuntu/.hermes/scripts /home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot /home/ubuntu/qintopia-agent-os-releases /var/lib/qintopia-agent-os-deploy /tmp
+ReadWritePaths=/home/ubuntu/.hermes/profiles/erhua /home/ubuntu/.hermes/profiles/xiaoman/cron /home/ubuntu/.hermes/scripts /home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot /home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates /home/ubuntu/qintopia-agent-os-releases /var/lib/qintopia-agent-os-deploy /tmp

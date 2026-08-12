@@ -35,6 +35,12 @@ const workflow = requireFile(
 const workflowTests = requireFile(
   "workflows/xiaoman-daily-case-report/tests/test_daily_case_report.py"
 );
+const applyCreativeProfiles = requireFile(
+  "workflows/xiaoman-daily-case-report/apply_creative_profile_candidates.py"
+);
+const applyCreativeProfilesTests = requireFile(
+  "workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py"
+);
 const worker = requireFile(
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 );
@@ -89,6 +95,26 @@ for (const [fragment, label] of [
     "universe creative-profile candidate policy",
   ],
   [
+    '"evidence_anchor": character_anchor(character)',
+    "creative-profile candidates carry safe evidence anchors",
+  ],
+  [
+    '"recurrence_evidence_count": character_evidence_count(character)',
+    "creative-profile candidates carry recurrence evidence count",
+  ],
+  [
+    '"minimum_recurrence_met": character_evidence_count(character) >= 2',
+    "creative-profile candidates expose minimum recurrence gate",
+  ],
+  [
+    '"profile_upgrade_status": character_upgrade_status(character)',
+    "creative-profile candidates expose upgrade status",
+  ],
+  [
+    '"blocked_reason": (',
+    "creative-profile candidates preserve daily-note block reason",
+  ],
+  [
     '"writes_member_profile_snapshots": False',
     "creative-profile candidates do not write snapshots",
   ],
@@ -141,6 +167,41 @@ for (const [fragment, label] of [
 
 for (const [fragment, label] of [
   [
+    'APPLY_APPROVAL = "approved-production-xiaoman-creative-profile-candidates"',
+    "creative-profile apply approval phrase",
+  ],
+  ['PROFILE_KIND = "creative_profile"', "creative-profile apply kind"],
+  [
+    'PROFILE_VERSION = "xiaoman-daily-creative-profile-v1"',
+    "creative-profile apply version",
+  ],
+  [
+    'item.get("profile_upgrade_status") != "eligible_for_review"',
+    "creative-profile apply rejects non-eligible candidates",
+  ],
+  [
+    'item.get("minimum_recurrence_met") is not True',
+    "creative-profile apply requires minimum recurrence",
+  ],
+  [
+    'item.get("public_surface_allowed") is not False',
+    "creative-profile apply keeps public surface false",
+  ],
+  [
+    'person_ids_included": False',
+    "creative-profile apply sanitized report excludes person ids",
+  ],
+  ["member_facts_fact_text", "creative-profile apply do-not-disclose fact text"],
+  [
+    "exact owner approval is required for apply",
+    "creative-profile apply fails closed without approval",
+  ],
+]) {
+  requireIncludes(applyCreativeProfiles, fragment, label);
+}
+
+for (const [fragment, label] of [
+  [
     "test_build_report_keeps_latest_messages_when_character_memory_fails",
     "character memory failure regression test",
   ],
@@ -163,6 +224,22 @@ for (const [fragment, label] of [
   [
     'self.assertTrue(universe["creative_profile_candidates"])',
     "creative-profile candidate regression test",
+  ],
+  [
+    "test_character_profile_candidate_keeps_single_day_signal_as_daily_note",
+    "creative-profile daily-note-only regression test",
+  ],
+  [
+    'candidate["profile_upgrade_status"], "daily_note_only"',
+    "creative-profile upgrade gate assertion",
+  ],
+  [
+    'self.assertFalse(candidate["minimum_recurrence_met"])',
+    "creative-profile minimum recurrence assertion",
+  ],
+  [
+    'self.assertIn("不能升级为长期人物画像", candidate["blocked_reason"])',
+    "creative-profile blocked reason assertion",
   ],
   [
     "test_render_html_mode_returns_existing_html_deliverable",
@@ -194,6 +271,31 @@ for (const [fragment, label] of [
   ],
 ]) {
   requireIncludes(workflowTests, fragment, label);
+}
+
+for (const [fragment, label] of [
+  [
+    "test_daily_note_only_candidate_is_rejected_for_apply_payload",
+    "creative-profile apply rejects daily notes",
+  ],
+  [
+    "test_payload_requires_reviewed_person_id_not_display_name_guessing",
+    "creative-profile apply requires reviewed person id",
+  ],
+  [
+    "test_apply_uses_fixed_psql_stdin_and_does_not_echo_database_url",
+    "creative-profile apply psql boundary test",
+  ],
+  [
+    "test_main_dry_run_reports_sanitized_counts_only",
+    "creative-profile apply sanitized report test",
+  ],
+  [
+    "test_main_apply_requires_exact_owner_approval_before_database_url",
+    "creative-profile apply approval test",
+  ],
+]) {
+  requireIncludes(applyCreativeProfilesTests, fragment, label);
 }
 
 for (const [fragment, label] of [

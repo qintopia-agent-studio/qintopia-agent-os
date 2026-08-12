@@ -3145,6 +3145,8 @@ const xiaomanDailyCaseReportWorkerPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh";
 const xiaomanDailyCaseReportConfigApplyPath =
   "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py";
+const xiaomanCreativeProfileCandidatesApplyPath =
+  "deploy/sidecar/scripts/apply-xiaoman-creative-profile-candidates-production.sh";
 const xiaomanDailyCaseReportObservationPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh";
 const xiaomanDailyCaseReportBackfillPath =
@@ -3155,6 +3157,7 @@ const xiaomanDailyCaseReportRollbackPath =
   "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh";
 for (const scriptPath of [
   xiaomanDailyCaseReportConfigApplyPath,
+  xiaomanCreativeProfileCandidatesApplyPath,
   xiaomanDailyCaseReportWorkerPath,
   xiaomanDailyCaseReportBackfillPath,
   xiaomanDailyCaseReportObservationPath,
@@ -3196,6 +3199,38 @@ if (exists(xiaomanDailyCaseReportConfigApplyPath)) {
     "QINTOPIA_SIDECAR_ENV_FILE",
   ]) {
     forbidFragment(xiaomanDailyCaseReportConfigApplyPath, configApply, fragment);
+  }
+}
+if (exists(xiaomanCreativeProfileCandidatesApplyPath)) {
+  const applyCreativeProfiles = readText(xiaomanCreativeProfileCandidatesApplyPath);
+  for (const fragment of [
+    'APPROVAL="approved-production-xiaoman-creative-profile-candidates"',
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'PAYLOAD_FILE="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates/reviewed-payload.json"',
+    "QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_PAYLOAD_SHA256",
+    "reviewed payload SHA-256 mismatch",
+    "workflows/xiaoman-daily-case-report/apply_creative_profile_candidates.py",
+    '--approval "$APPROVAL"',
+  ]) {
+    requireFragment(
+      xiaomanCreativeProfileCandidatesApplyPath,
+      applyCreativeProfiles,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "eval ",
+    "curl ",
+    "ssh ",
+    "QINTOPIA_XIAOMAN_CREATIVE_PROFILE_CANDIDATES_PAYLOAD_FILE",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+  ]) {
+    forbidFragment(
+      xiaomanCreativeProfileCandidatesApplyPath,
+      applyCreativeProfiles,
+      fragment
+    );
   }
 }
 if (exists(xiaomanDailyCaseReportWorkerPath)) {

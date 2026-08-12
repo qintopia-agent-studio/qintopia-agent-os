@@ -92,6 +92,7 @@ const requiredFiles = [
   "tools/deploy/test-production-hermes-cron-apply-runner.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-production-runtime-one-shot-runner.mjs",
+  "tools/deploy/test-xiaoman-creative-profile-candidates-production-apply.mjs",
   "tools/deploy/test-hermes-cron-snapshot-install.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
@@ -243,6 +244,31 @@ if (exists(".release-please-manifest.json")) {
   }
 } else {
   addError(".release-please-manifest.json: missing Release Please manifest");
+}
+
+if (exists("docs/operations/production-runtime-one-shot-runbook.md")) {
+  const oneShotRunbook = readText(
+    "docs/operations/production-runtime-one-shot-runbook.md"
+  );
+  for (const fragment of [
+    "Production Runtime One-Shot Runbook",
+    "`xiaoman-daily-case-report-auto-publish-backfill`",
+    "`xiaoman-creative-profile-candidates-apply`",
+    "`erhua-morning-brief`",
+    "`hermes-cron-snapshot-install`",
+    "payload_sha256=<64-hex-sha256-of-fixed-reviewed-payload>",
+    "approved-production-xiaoman-creative-profile-candidates",
+    "/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates/reviewed-payload.json",
+    "must not accept payload JSON",
+    "person ids",
+    "reviewed profile payload content",
+  ]) {
+    if (!oneShotRunbook.includes(fragment)) {
+      addError(
+        `docs/operations/production-runtime-one-shot-runbook.md: missing ${fragment}`
+      );
+    }
+  }
 }
 
 const ajv = new Ajv2020({ allErrors: true });
@@ -610,6 +636,22 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       )}`
     );
   }
+  const productionCreativeProfileOneShotRequest = {
+    ...productionRuntimeOneShotRequest,
+    runtime_one_shot: {
+      targets: ["xiaoman-creative-profile-candidates-apply"],
+      payload_sha256:
+        "9c2b0ff0d2a29d00f817cad596804e460ffb48eaf4a440604e5f81ef92b59b7a",
+      approval: "approved-production-xiaoman-creative-profile-candidates",
+    },
+  };
+  if (!validateRequest(productionCreativeProfileOneShotRequest)) {
+    addError(
+      `deploy request schema must accept fixed Xiaoman creative-profile one-shot requests ${JSON.stringify(
+        validateRequest.errors
+      )}`
+    );
+  }
   for (const badRequest of [
     {
       ...sampleRequest,
@@ -652,6 +694,42 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
         targets: ["erhua-morning-brief"],
         backfill_date: "2026-08-10",
         approval: "approved-production-erhua-morning-brief-one-shot",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["xiaoman-daily-case-report-auto-publish-backfill"],
+        backfill_date: "2026-08-10",
+        payload_sha256:
+          "9c2b0ff0d2a29d00f817cad596804e460ffb48eaf4a440604e5f81ef92b59b7a",
+        approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["xiaoman-creative-profile-candidates-apply"],
+        approval: "approved-production-xiaoman-creative-profile-candidates",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["xiaoman-creative-profile-candidates-apply"],
+        backfill_date: "2026-08-10",
+        payload_sha256:
+          "9c2b0ff0d2a29d00f817cad596804e460ffb48eaf4a440604e5f81ef92b59b7a",
+        approval: "approved-production-xiaoman-creative-profile-candidates",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["xiaoman-creative-profile-candidates-apply"],
+        payload_sha256:
+          "9c2b0ff0d2a29d00f817cad596804e460ffb48eaf4a440604e5f81ef92b59b7a",
+        approval: "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
       },
     },
     {
@@ -1494,6 +1572,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
   const job = workflow?.jobs?.["request-runtime-one-shot"];
   const targetInput = workflow?.on?.workflow_dispatch?.inputs?.runtime_one_shot_target;
   const releaseShaInput = workflow?.on?.workflow_dispatch?.inputs?.release_sha;
+  const payloadSha256Input = workflow?.on?.workflow_dispatch?.inputs?.payload_sha256;
   const approvalInput = workflow?.on?.workflow_dispatch?.inputs?.approval;
 
   if (!workflow?.on?.workflow_dispatch) {
@@ -1526,6 +1605,11 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
       ".github/workflows/run-production-runtime-one-shot.yml: approval must be a required string input"
     );
   }
+  if (payloadSha256Input?.required !== false || payloadSha256Input?.type !== "string") {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: payload_sha256 must be an optional string input"
+    );
+  }
   if (targetInput?.default !== "xiaoman-daily-case-report-auto-publish-backfill") {
     addError(
       ".github/workflows/run-production-runtime-one-shot.yml: default target must stay limited to Xiaoman daily report backfill"
@@ -1534,6 +1618,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
   const targetOptions = targetInput?.options || [];
   for (const expectedTarget of [
     "xiaoman-daily-case-report-auto-publish-backfill",
+    "xiaoman-creative-profile-candidates-apply",
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
   ]) {
@@ -1570,10 +1655,12 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "require_allowed_value()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "xiaoman-daily-case-report-auto-publish-backfill,erhua-morning-brief,hermes-cron-snapshot-install",
+    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install",
     "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    "approved-production-xiaoman-creative-profile-candidates",
     "approved-production-erhua-morning-brief-one-shot",
     "approved-production-hermes-cron-snapshot",
+    "payload_sha256 must be a lowercase 64-character SHA-256 for Xiaoman creative-profile candidates apply.",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-runtime-one-shot",
     "DEPLOY_RESTART_TARGETS: qintopia-system-services",
@@ -1581,6 +1668,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     'DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"',
     "DEPLOY_RUNTIME_ONE_SHOT_TARGETS",
     "DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE",
+    "DEPLOY_RUNTIME_ONE_SHOT_PAYLOAD_SHA256",
     "DEPLOY_RUNTIME_ONE_SHOT_APPROVAL",
     "DEPLOY_REQUEST_SIGNING_KEY",
     "DEPLOY_REQUEST_SIGNING_KEY_ID: production",
@@ -1883,6 +1971,7 @@ for (const fragment of [
   "request.hermes_cron_apply",
   "DEPLOY_RUNTIME_ONE_SHOT_TARGETS",
   "DEPLOY_RUNTIME_ONE_SHOT_BACKFILL_DATE",
+  "DEPLOY_RUNTIME_ONE_SHOT_PAYLOAD_SHA256",
   "DEPLOY_RUNTIME_ONE_SHOT_APPROVAL",
   "request.runtime_one_shot",
   "requireSha",
@@ -1989,6 +2078,8 @@ const runnerReadWritePaths = runnerServiceText
 const qintopiaAgentosStatePath = "/home/ubuntu/.local/state/qintopia-agentos";
 const hermesCronSnapshotPath =
   "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot";
+const xiaomanCreativeProfileCandidatesPath =
+  "/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates";
 for (const bypassFixture of [
   "/home/ubuntu/.local/state/qintopia-agentos/",
   "/home/ubuntu/.local/state//qintopia-agentos/.",
@@ -2042,6 +2133,14 @@ if (
 if (runnerServiceText && !runnerReadWritePaths.includes(hermesCronSnapshotPath)) {
   addError(
     "deploy runner service must explicitly allow fixed Hermes cron snapshot writes"
+  );
+}
+if (
+  runnerServiceText &&
+  !runnerReadWritePaths.includes(xiaomanCreativeProfileCandidatesPath)
+) {
+  addError(
+    "deploy runner service must explicitly allow fixed Xiaoman creative-profile candidate payload access"
   );
 }
 if (
@@ -2314,6 +2413,13 @@ try {
   execFileSync("node", ["tools/deploy/test-production-runtime-one-shot-runner.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync(
+    "node",
+    ["tools/deploy/test-xiaoman-creative-profile-candidates-production-apply.mjs"],
+    {
+      cwd: repoRoot,
+    }
+  );
   execFileSync("node", ["tools/deploy/test-hermes-cron-snapshot-install.mjs"], {
     cwd: repoRoot,
   });

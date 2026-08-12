@@ -12,6 +12,7 @@ The workflow creates a signed `production-runtime-one-shot` deploy-runner reques
 runner accepts exactly one target per request:
 
 - `xiaoman-daily-case-report-auto-publish-backfill`
+- `xiaoman-creative-profile-candidates-apply`
 - `erhua-morning-brief`
 - `hermes-cron-snapshot-install`
 
@@ -22,7 +23,8 @@ The request must target the current production release SHA, must use
 The runner first observes that the corresponding release-managed timer is enabled. It
 then runs only the fixed release-local script for that target and records sanitized
 result evidence. The result must not include worker raw output, raw message content,
-group ids, database URLs, tokens, Feishu payloads, QiWe payloads, or journal logs.
+group ids, person ids, database URLs, tokens, Feishu payloads, QiWe payloads, reviewed
+profile payload content, or journal logs.
 
 ## Fixed Targets
 
@@ -42,6 +44,32 @@ approval=approved-production-xiaoman-daily-case-report-auto-publish-backfill
 
 This may create/update production artifacts and group message requests through the
 reviewed daily case-report and QiWe image-send boundaries.
+
+### Xiaoman Creative Profile Candidates Apply
+
+Use only after the daily case-report private review bundle has produced
+`eligible_for_review` candidates and an owner has prepared the separate reviewed payload
+on the production host at the fixed path:
+
+```text
+/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates/reviewed-payload.json
+```
+
+Workflow inputs:
+
+```text
+release_sha=<current-production-release-sha>
+runtime_one_shot_target=xiaoman-creative-profile-candidates-apply
+backfill_date=
+payload_sha256=<64-hex-sha256-of-fixed-reviewed-payload>
+approval=approved-production-xiaoman-creative-profile-candidates
+```
+
+This may write reviewed `creative_profile` snapshots to
+`qintopia_identity.member_profile_snapshots`. The workflow must not accept payload JSON,
+payload paths, display names, person ids, candidate text, raw messages, or profile fact
+text, and must not retain reviewed profile payload content. Production evidence may
+retain only sanitized counts/privacy flags and the reviewed payload SHA-256.
 
 ### Erhua Morning Brief
 
@@ -88,7 +116,8 @@ This workflow must not:
 - write persistent production config;
 - enable, disable, or roll back business worker timers;
 - retire legacy Hermes cron files;
-- accept arbitrary commands, service names, dates for Erhua, or multiple targets;
+- accept arbitrary commands, service names, payload paths, payload JSON, dates for
+  Erhua, or multiple targets;
 - run business workers if the target timer is not already observed as enabled.
 
 Use `Activate Production Timers` for timer activation, `Retire Production Legacy Crons`
