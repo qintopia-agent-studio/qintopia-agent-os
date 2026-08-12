@@ -45,6 +45,11 @@ systemctl_user() {
     "$SYSTEMCTL" --user "$@"
 }
 
+run_baseline_sync() {
+  QINTOPIA_HERMES_CRON_SNAPSHOT="approved-production-hermes-cron-snapshot" \
+    "$SYNC_SCRIPT" >/dev/null 2>&1
+}
+
 umask 077
 mkdir -p "$UNIT_DIR"
 chown "$UBUNTU_UID:$UBUNTU_GID" "$UNIT_DIR"
@@ -78,6 +83,6 @@ systemctl_user daemon-reload || fail "user systemd daemon-reload failed"
 systemctl_user enable --now hermes-cron-snapshot.timer >/dev/null ||
   fail "user timer enable failed"
 
-QINTOPIA_HERMES_CRON_SNAPSHOT="approved-production-hermes-cron-snapshot" "$SYNC_SCRIPT"
+run_baseline_sync || fail "baseline snapshot sync failed"
 
 echo "hermes-cron-snapshot timer installed and baseline snapshot created"
