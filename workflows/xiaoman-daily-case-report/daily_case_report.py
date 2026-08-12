@@ -213,6 +213,12 @@ class CharacterCard:
     memory_label: str = ""
     story_function: str = ""
     callback_hint: str = ""
+    arc_label: str = ""
+    relationship_hint: str = ""
+    relationship_target_key: str = ""
+    relationship_topic: str = ""
+    meme_seed: str = ""
+    memory_weight_label: str = ""
 
 
 @dataclass
@@ -221,6 +227,10 @@ class CharacterMemory:
     recent_fact_count: int
     lifetime_fact_count: int
     dominant_role_label: str
+    recurrence_label: str = ""
+    depth_label: str = ""
+    memory_weight_label: str = ""
+    callback_seed: str = ""
 
 
 @dataclass
@@ -760,8 +770,46 @@ def _character_memory_from_rows(rows: Any) -> dict[str, CharacterMemory]:
             recent_fact_count=int(recent_count or 0),
             lifetime_fact_count=int(lifetime_count or 0),
             dominant_role_label=role_label,
+            recurrence_label=_memory_recurrence_label(int(recent_count or 0)),
+            depth_label=_memory_depth_label(int(lifetime_count or 0)),
+            memory_weight_label=_memory_weight_label(int(recent_count or 0), int(lifetime_count or 0)),
+            callback_seed=_memory_callback_seed(role_label, int(recent_count or 0)),
         )
     return memory
+
+
+def _memory_recurrence_label(recent_count: int) -> str:
+    if recent_count >= 10:
+        return "近90天高频复现"
+    if recent_count >= 4:
+        return "近90天稳定复现"
+    if recent_count >= 1:
+        return "近90天偶发复现"
+    return "今日新鲜出场"
+
+
+def _memory_depth_label(lifetime_count: int) -> str:
+    if lifetime_count >= 24:
+        return "长期角色锚点"
+    if lifetime_count >= 8:
+        return "长期线索可用"
+    if lifetime_count >= 1:
+        return "历史线索较轻"
+    return "暂无长期画像"
+
+
+def _memory_weight_label(recent_count: int, lifetime_count: int) -> str:
+    if lifetime_count <= 0:
+        return "只按今日表现呈现"
+    return f"{_memory_recurrence_label(recent_count)} · {_memory_depth_label(lifetime_count)}"
+
+
+def _memory_callback_seed(role_label: str, recent_count: int) -> str:
+    if recent_count >= 4:
+        return f"可作为「{role_label}」连续出场回调"
+    if recent_count >= 1:
+        return f"保留为「{role_label}」轻量回看点"
+    return f"先记今日「{role_label}」一笔"
 
 
 def _uses_real_messages(args: argparse.Namespace) -> bool:
@@ -1256,6 +1304,87 @@ def _character_callback_hint(role_label: str, evidence: str, memory_label: str) 
     return f"今日暂记为「{role_label}」出场"
 
 
+def _character_arc_label(role_label: str, memory: CharacterMemory | None, message_count: int) -> str:
+    if memory and memory.recent_fact_count >= 4:
+        recurrence_label = memory.recurrence_label or _memory_recurrence_label(memory.recent_fact_count)
+        return f"{recurrence_label}，今天继续以「{role_label}」推进"
+    if memory and memory.lifetime_fact_count > 0:
+        depth_label = memory.depth_label or _memory_depth_label(memory.lifetime_fact_count)
+        return f"{depth_label}，今日再次露出「{role_label}」信号"
+    if message_count >= 5:
+        return f"今日高频出场，先形成「{role_label}」日线"
+    return f"今日新鲜出场，暂记「{role_label}」"
+
+
+def _character_meme_seed(
+    role_label: str,
+    topic_count: int,
+    evidence: str,
+    memory: CharacterMemory | None,
+) -> str:
+    if memory:
+        return memory.callback_seed or _memory_callback_seed(role_label, memory.recent_fact_count)
+    if topic_count >= 3:
+        return f"多话题串场的「{role_label}」"
+    token = next((token for token in _tokenize(evidence) if _is_clean_topic(token)), "")
+    if token:
+        return f"围绕「{token}」的「{role_label}」"
+    return f"今日「{role_label}」待观察"
+
+
+def _relation_group_key(message: ReportMessage) -> str:
+    if message.person_id:
+        return f"person:{message.person_id}"
+    name = (message.sender_name or "").strip()
+    return f"name:{name}" if name and name != "匿名" else ""
+
+
+def _relationship_hints(
+    messages: list[ReportMessage],
+    character_keys: set[str],
+    node_key_by_group: dict[str, str],
+    name_by_group: dict[str, str],
+) -> dict[str, tuple[str, str, str]]:
+    topic_groups: dict[str, dict[str, int]] = {}
+    for message in messages:
+        group_key = _relation_group_key(message)
+        if not group_key or group_key not in character_keys:
+            continue
+        for token in set(_tokenize(message.text)):
+            if _is_clean_topic(token):
+                topic_groups.setdefault(token, {}).setdefault(group_key, 0)
+                topic_groups[token][group_key] += 1
+
+    candidates: dict[str, list[tuple[int, str, str, str]]] = {}
+    for topic, counts in topic_groups.items():
+        if len(counts) < 2:
+            continue
+        ranked = sorted(counts.items(), key=lambda item: (-item[1], name_by_group.get(item[0], "")))
+        for group_key, count in ranked:
+            for peer_key, peer_count in ranked:
+                if peer_key == group_key:
+                    continue
+                peer_name = name_by_group.get(peer_key, "群友")
+                peer_node_key = node_key_by_group.get(peer_key, _node_key(peer_name))
+                score = count + peer_count + len(topic)
+                candidates.setdefault(group_key, []).append(
+                    (
+                        score,
+                        f"和{peer_name}围绕「{topic}」同场接力",
+                        peer_node_key,
+                        topic,
+                    )
+                )
+                break
+
+    hints: dict[str, tuple[str, str, str]] = {}
+    for group_key, group_candidates in candidates.items():
+        group_candidates.sort(key=lambda item: (-item[0], item[1]))
+        _score, label, peer_node_key, topic = group_candidates[0]
+        hints[group_key] = (label, peer_node_key, topic)
+    return hints
+
+
 def _compute_characters(
     messages: list[ReportMessage],
     memory_by_person: dict[str, CharacterMemory] | None = None,
@@ -1275,12 +1404,25 @@ def _compute_characters(
             group_key = f"name:{name}"
         grouped.setdefault(group_key, []).append(message)
 
-    ranked: list[tuple[float, CharacterCard]] = []
+    name_by_group: dict[str, str] = {}
+    node_key_by_group: dict[str, str] = {}
     for group_key, group in grouped.items():
         names = Counter((message.sender_name or "").strip() for message in group)
         names.pop("", None)
         names.pop("匿名", None)
         name = names.most_common(1)[0][0] if names else "群友"
+        name_by_group[group_key] = name
+        node_key_by_group[group_key] = _character_node_key(group_key, name)
+    relationship_hints = _relationship_hints(
+        messages,
+        set(grouped),
+        node_key_by_group,
+        name_by_group,
+    )
+
+    ranked: list[tuple[float, CharacterCard]] = []
+    for group_key, group in grouped.items():
+        name = name_by_group.get(group_key, "群友")
         role_label, one_liner, role_score = _character_role(group)
         topic_count = len(
             {
@@ -1303,6 +1445,10 @@ def _compute_characters(
                 f" · 长期偏「{memory.dominant_role_label}」"
             )
         evidence = _character_evidence(group)
+        relationship_hint, relationship_target_key, relationship_topic = relationship_hints.get(
+            group_key,
+            ("", "", ""),
+        )
         score = (
             len(group) * 3
             + role_score * 4
@@ -1321,10 +1467,21 @@ def _compute_characters(
                     evidence=evidence,
                     message_count=len(group),
                     topic_count=topic_count,
-                    node_key=_character_node_key(group_key, name),
+                    node_key=node_key_by_group.get(group_key, _character_node_key(group_key, name)),
                     memory_label=memory_label,
                     story_function=_character_story_function(role_label, len(group), topic_count),
                     callback_hint=_character_callback_hint(role_label, evidence, memory_label),
+                    arc_label=_character_arc_label(role_label, memory, len(group)),
+                    relationship_hint=relationship_hint,
+                    relationship_target_key=relationship_target_key,
+                    relationship_topic=relationship_topic,
+                    meme_seed=_character_meme_seed(role_label, topic_count, evidence, memory),
+                    memory_weight_label=(
+                        memory.memory_weight_label
+                        or _memory_weight_label(memory.recent_fact_count, memory.lifetime_fact_count)
+                        if memory
+                        else "只按今日表现呈现"
+                    ),
                 ),
             )
         )
@@ -1368,6 +1525,10 @@ def _build_character_universe(
             "memory_label": character.memory_label,
             "story_function": character.story_function,
             "callback_hint": character.callback_hint,
+            "arc_label": character.arc_label,
+            "relationship_hint": character.relationship_hint,
+            "meme_seed": character.meme_seed,
+            "memory_weight_label": character.memory_weight_label,
             "risk": "internal",
         }
         for character in characters
@@ -1411,6 +1572,83 @@ def _build_character_universe(
         for case in cases
         if case.message_count >= DEFAULT_MIN_CASE_MESSAGES
     ]
+    memes: list[dict[str, Any]] = []
+    seen_meme_keys: set[str] = set()
+    for character in characters:
+        label = character.meme_seed.strip()
+        if not label:
+            continue
+        key = _node_key(label)
+        if key in seen_meme_keys:
+            continue
+        seen_meme_keys.add(key)
+        memes.append(
+            {
+                "type": "memes",
+                "key": key,
+                "label": label,
+                "source": "daily_character_note",
+                "related_people": [character.node_key or _node_key(character.name)],
+                "status": "candidate",
+                "risk": "internal_review_required",
+            }
+        )
+    for topic in hot_topics:
+        label = f"「{topic.keyword}」今日高频回调"
+        key = _node_key(label)
+        if key in seen_meme_keys:
+            continue
+        seen_meme_keys.add(key)
+        memes.append(
+            {
+                "type": "memes",
+                "key": key,
+                "label": label,
+                "source": "daily_hot_topic",
+                "message_count": topic.message_count,
+                "participant_count": topic.participant_count,
+                "status": "candidate",
+                "risk": "internal_review_required",
+            }
+        )
+    callbacks = [
+        {
+            "type": "callbacks",
+            "key": _node_key(f"{character.node_key}-{character.role_label}-callback"),
+            "label": character.callback_hint,
+            "related_people": [character.node_key or _node_key(character.name)],
+            "memory_weight_label": character.memory_weight_label,
+            "status": "candidate",
+            "risk": "internal_review_required",
+        }
+        for character in characters
+        if character.callback_hint
+    ]
+    selected_people_keys = {character.node_key or _node_key(character.name) for character in characters}
+    relationships: list[dict[str, Any]] = []
+    seen_relationships: set[tuple[str, str, str]] = set()
+    for character in characters:
+        source = character.node_key or _node_key(character.name)
+        target = character.relationship_target_key
+        topic = character.relationship_topic
+        if not target or target not in selected_people_keys or source == target:
+            continue
+        relation_key = tuple(sorted((source, target)) + [topic])
+        if relation_key in seen_relationships:
+            continue
+        seen_relationships.add(relation_key)
+        relationships.append(
+            {
+                "type": "relationships",
+                "key": _node_key("-".join(relation_key)),
+                "source": source,
+                "target": target,
+                "relation": "co_discusses_topic",
+                "label": character.relationship_hint,
+                "topic": topic,
+                "risk": "public_safe_summary",
+            }
+        )
     edges: list[dict[str, Any]] = []
     for character in characters:
         character_key = character.node_key or _node_key(character.name)
@@ -1434,6 +1672,24 @@ def _build_character_universe(
                         "evidence": "daily_character_note",
                     }
                 )
+        if character.meme_seed:
+            edges.append(
+                {
+                    "source": character_key,
+                    "target": _node_key(character.meme_seed),
+                    "relation": "seeds_callback",
+                    "evidence": "daily_character_note",
+                }
+            )
+    for relationship in relationships:
+        edges.append(
+            {
+                "source": relationship["source"],
+                "target": relationship["target"],
+                "relation": relationship["relation"],
+                "evidence": relationship["topic"],
+            }
+        )
     return {
         "schema_version": "xiaoman-character-universe-v1",
         "source": "daily_case_report_second_pass",
@@ -1443,6 +1699,9 @@ def _build_character_universe(
         "people": people,
         "topics": topics,
         "events": events,
+        "memes": memes,
+        "callbacks": callbacks,
+        "relationships": relationships,
         "storyline_candidates": storyline_candidates,
         "edges": edges,
     }
@@ -1454,12 +1713,20 @@ def _case_storyline_label(case: CaseCard) -> str:
 
 
 def _main_storyline_label(report: ReportData) -> str:
-    if report.cases:
-        return _case_storyline_label(report.cases[0])
+    lead = _case_storyline_label(report.cases[0]) if report.cases else ""
+    top_character = report.characters[0] if report.characters else None
+    if lead and top_character and top_character.relationship_hint:
+        return f"{lead}，{top_character.name}{top_character.relationship_hint}"
+    if lead and top_character:
+        return f"{lead}，{top_character.name}以「{top_character.role_label}」出场"
+    if lead:
+        return lead
+    if report.hot_topics and top_character:
+        return f"{report.hot_topics[0].keyword}，{top_character.name}接住今日话题"
     if report.hot_topics:
         return report.hot_topics[0].keyword
-    if report.characters:
-        return f"{report.characters[0].name}的今日出场"
+    if top_character:
+        return f"{top_character.name}的今日出场"
     return "今天群里先把日常续上"
 
 
@@ -1467,9 +1734,16 @@ def _daily_opening_line(report: ReportData) -> str:
     storyline = _main_storyline_label(report)
     if report.message_count <= 0:
         return "今天暂时没有形成可沉淀的群聊主线，日报保留空窗记录。"
+    cast_line = ""
+    if report.characters:
+        cast = "、".join(
+            f"{character.name}（{character.role_label}）" for character in report.characters[:3]
+        )
+        cast_line = f" 核心出场是 {cast}。"
     return (
         f"今天的主线是「{storyline}」：{report.message_count} 条消息、"
         f"{report.participant_count} 位活跃成员，把信息、提问和现场反应压成一页可回看的群聊切片。"
+        f"{cast_line}"
     )
 
 
@@ -1482,9 +1756,12 @@ def _meme_callback_candidates(report: ReportData, limit: int = 5) -> list[str]:
             candidates.append(f"「{label}」：{topic.message_count} 条消息，{topic.participant_count} 人参与")
             seen.add(label)
     for character in report.characters:
-        label = character.role_label.strip()
+        label = character.meme_seed.strip() or character.role_label.strip()
         if label and label not in seen:
-            candidates.append(f"「{label}」：{character.callback_hint}")
+            detail = character.callback_hint
+            if character.relationship_hint:
+                detail = f"{detail}；{character.relationship_hint}"
+            candidates.append(f"「{label}」：{detail}")
             seen.add(label)
     for case in report.cases:
         label = _case_storyline_label(case)
@@ -1492,6 +1769,31 @@ def _meme_callback_candidates(report: ReportData, limit: int = 5) -> list[str]:
             candidates.append(f"「{label}」：{case.summary}")
             seen.add(label)
     return candidates[:limit]
+
+
+def _relationship_candidates(report: ReportData, limit: int = 4) -> list[str]:
+    relationships = (report.character_universe or {}).get("relationships") or []
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for relationship in relationships:
+        label = str(relationship.get("label") or "").strip()
+        topic = str(relationship.get("topic") or "").strip()
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        candidates.append(f"{label}（公开话题：{topic or '未标注'}）")
+        if len(candidates) >= limit:
+            break
+    if candidates:
+        return candidates
+    for character in report.characters:
+        label = character.relationship_hint.strip()
+        if label and label not in seen:
+            seen.add(label)
+            candidates.append(f"{label}（公开话题：{character.relationship_topic or '未标注'}）")
+            if len(candidates) >= limit:
+                break
+    return candidates
 
 
 def _extract_highlight(messages: list[ReportMessage]) -> str | None:
@@ -1674,6 +1976,7 @@ def _render_html(report: ReportData, width: int) -> str:
     main_storyline = _main_storyline_label(report)
     opening_line = _daily_opening_line(report)
     callback_candidates = _meme_callback_candidates(report)
+    relationship_candidates = _relationship_candidates(report)
 
     stats_html = "\n".join(
         f"""
@@ -1749,13 +2052,24 @@ def _render_html(report: ReportData, width: int) -> str:
     )}</div>
   </section>"""
 
+    relationships_html = ""
+    if relationship_candidates:
+        relationships_html = f"""
+  <section class="relationships">
+    <div class="relationships-heading"><span>ENSEMBLE LINKS</span><h2>同场关系</h2></div>
+    <div class="relationship-list">{"".join(
+        f'''<div class="relationship-row"><span>{index}</span><p>{html.escape(candidate)}</p></div>'''
+        for index, candidate in enumerate(relationship_candidates, start=1)
+    )}</div>
+  </section>"""
+
     characters_html = ""
     if report.characters:
         characters_html = f"""
   <section class="characters">
     <div class="characters-heading"><span>CAST NOTES</span><h2>人物出场表</h2></div>
     <div class="character-grid">{"".join(
-        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)} · {html.escape(character.story_function)}</strong><p>{html.escape(character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{html.escape(character.callback_hint)}{(" · " + html.escape(character.memory_label)) if character.memory_label else ""}</small></div></article>'''
+        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)} · {html.escape(character.story_function)}</strong><p>{html.escape(character.arc_label or character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{html.escape(character.callback_hint)}{(" · " + html.escape(character.relationship_hint)) if character.relationship_hint else ""}{(" · " + html.escape(character.memory_weight_label)) if character.memory_weight_label else ""}</small></div></article>'''
         for character in report.characters
     )}</div>
   </section>"""
@@ -1800,6 +2114,14 @@ def _render_html(report: ReportData, width: int) -> str:
   .hot-rank {{ display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 11px; font-weight: 900; }}
   .hot-topic strong {{ min-width: 0; font-size: 14px; }}
   .hot-topic small {{ color: #555555; font-size: 10px; line-height: 1.35; }}
+  .relationships {{ margin: 20px 24px 0; padding: 14px 16px 16px; border: 4px solid #111111; background: #88d7ff; }}
+  .relationships-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }}
+  .relationships-heading span {{ color: #111111; font-size: 11px; font-weight: 800; }}
+  .relationships-heading h2 {{ font-size: 20px; font-weight: 900; }}
+  .relationship-list {{ display: grid; gap: 8px; }}
+  .relationship-row {{ display: grid; grid-template-columns: 28px 1fr; align-items: center; min-height: 42px; border: 2px solid #111111; background: #ffffff; }}
+  .relationship-row span {{ display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; background: #ffd92e; font-size: 11px; font-weight: 900; }}
+  .relationship-row p {{ padding: 8px 10px; font-size: 12px; font-weight: 700; line-height: 1.45; }}
   .characters {{ margin: 22px 24px 0; padding: 18px 16px 16px; border: 4px solid #111111; background: #ffffff; }}
   .characters-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }}
   .characters-heading span {{ color: #f25a18; font-size: 11px; font-weight: 800; }}
@@ -1854,6 +2176,7 @@ def _render_html(report: ReportData, width: int) -> str:
   {characters_html}
   {highlight_html}
   {callbacks_html}
+  {relationships_html}
   {cases_html}
   {mvp_html}
   <footer class="footer">本报告由小满根据最新群聊窗口自动整理 · 长期画像只以公开安全的角色复现计数参与</footer>
@@ -1865,6 +2188,7 @@ def _render_html(report: ReportData, width: int) -> str:
 def _render_daily_markdown(report: ReportData) -> str:
     main_storyline = _main_storyline_label(report)
     callback_candidates = _meme_callback_candidates(report)
+    relationship_candidates = _relationship_candidates(report)
     lines = [
         f"# 小满群聊日报｜{report.report_date}｜{main_storyline}",
         "",
@@ -1887,15 +2211,21 @@ def _render_daily_markdown(report: ReportData) -> str:
             lines.extend(
                 [
                     f"- **{character.name}（{character.role_label}）**："
-                    f"{character.story_function}。{character.one_liner}。"
+                    f"{character.story_function}。{character.arc_label or character.one_liner}。"
                     f"{character.callback_hint}{memory}",
                     f"> {character.evidence}",
                     "",
                 ]
             )
+            if character.relationship_hint:
+                lines.extend([f"  同场接力：{character.relationship_hint}", ""])
     if callback_candidates:
         lines.extend(["## 梗和回调候选", ""])
         lines.extend(f"- {candidate}" for candidate in callback_candidates)
+        lines.append("")
+    if relationship_candidates:
+        lines.extend(["## 同场关系", ""])
+        lines.extend(f"- {candidate}" for candidate in relationship_candidates)
         lines.append("")
     if report.cases:
         lines.extend(["## 今日主线", ""])
@@ -2190,6 +2520,30 @@ def _render_image_with_pillow(
             )
         y = hotlist_top + hotlist_height + 38 * scale
 
+    if relationship_candidates:
+        relationship_top = y
+        relationship_height = (54 + 42 * len(relationship_candidates)) * scale
+        draw.rectangle((outer, relationship_top, canvas_width - outer, relationship_top + relationship_height), fill=blue, outline=ink, width=3 * scale)
+        draw.text((padding, relationship_top + 14 * scale), "ENSEMBLE LINKS", font=tiny_font, fill=ink)
+        draw.text((padding + 132 * scale, relationship_top + 10 * scale), "同场关系", font=body_font, fill=ink)
+        row_width = content_width
+        for index, candidate in enumerate(relationship_candidates):
+            row_top = relationship_top + (44 + index * 38) * scale
+            draw.rectangle((padding, row_top, padding + row_width, row_top + 30 * scale), fill="#ffffff", outline=ink, width=2 * scale)
+            draw.rectangle((padding, row_top, padding + 28 * scale, row_top + 30 * scale), fill=yellow, outline=ink, width=2 * scale)
+            draw.text((padding + 10 * scale, row_top + 8 * scale), str(index + 1), font=tiny_font, fill=ink)
+            _draw_wrapped_text(
+                draw,
+                (padding + 40 * scale, row_top + 7 * scale),
+                candidate,
+                tiny_font,
+                ink,
+                row_width - 52 * scale,
+                max_lines=1,
+                line_gap=0,
+            )
+        y = relationship_top + relationship_height + 38 * scale
+
     if report.characters:
         character_top = y
         character_rows = (len(report.characters) + 1) // 2
@@ -2213,7 +2567,7 @@ def _render_image_with_pillow(
             _draw_wrapped_text(
                 draw,
                 (copy_x, card_y + 54 * scale),
-                f"{character.one_liner}｜{character.evidence}",
+                f"{character.arc_label or character.one_liner}｜{character.evidence}",
                 tiny_font,
                 ink,
                 card_width - 58 * scale,

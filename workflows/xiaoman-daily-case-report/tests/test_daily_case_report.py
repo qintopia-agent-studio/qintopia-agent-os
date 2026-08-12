@@ -572,7 +572,11 @@ class DailyCaseReportTest(unittest.TestCase):
         characters = daily_case_report._compute_characters(messages, memory)
 
         self.assertEqual(characters[0].memory_label, "近90天 7 次角色复现 · 长期偏「活动推进者」")
+        self.assertEqual(characters[0].memory_weight_label, "近90天稳定复现 · 长期线索可用")
+        self.assertIn("可作为「活动推进者」连续出场回调", characters[0].meme_seed)
+        self.assertIn("稳定复现", characters[0].arc_label)
         self.assertNotIn("fact_text", characters[0].memory_label)
+        self.assertNotIn("fact_text", characters[0].memory_weight_label)
 
     def test_character_cards_do_not_merge_same_display_name_people(self) -> None:
         first_person_id = "11111111-1111-1111-1111-111111111111"
@@ -653,6 +657,14 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(
             memory["11111111-1111-1111-1111-111111111111"].dominant_role_label,
             "故事线雷达",
+        )
+        self.assertEqual(
+            memory["11111111-1111-1111-1111-111111111111"].memory_weight_label,
+            "近90天偶发复现 · 长期线索可用",
+        )
+        self.assertIn(
+            "轻量回看点",
+            memory["11111111-1111-1111-1111-111111111111"].callback_seed,
         )
 
     def test_build_report_keeps_latest_messages_when_character_memory_fails(self) -> None:
@@ -774,6 +786,94 @@ class DailyCaseReportTest(unittest.TestCase):
         markdown = daily_case_report._render_daily_markdown(report)
         self.assertIn("## 可沉淀故事线", markdown)
         self.assertIn("[[活动讨论]]：3 条消息，2 人参与", markdown)
+
+    def test_character_universe_exports_public_safe_memes_relationships_and_callbacks(self) -> None:
+        first_person_id = "11111111-1111-1111-1111-111111111111"
+        second_person_id = "22222222-2222-2222-2222-222222222222"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动报名我来提醒，活动报名表今晚同步。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=first_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动问题收集也放到报名表里。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=first_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m3",
+                sender_id="u2",
+                sender_name="阿杰",
+                text="活动报名我看到了，我补一个 RWA 问题。",
+                sent_at=datetime(2026, 8, 8, 9, 6, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=second_person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m4",
+                sender_id="u2",
+                sender_name="阿杰",
+                text="报名问题可以先按活动主题分组。",
+                sent_at=datetime(2026, 8, 8, 9, 7, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=second_person_id,
+            ),
+        ]
+        memory = {
+            first_person_id: daily_case_report.CharacterMemory(
+                person_id=first_person_id,
+                recent_fact_count=8,
+                lifetime_fact_count=20,
+                dominant_role_label="活动推进者",
+                recurrence_label="近90天稳定复现",
+                depth_label="长期线索可用",
+                memory_weight_label="近90天稳定复现 · 长期线索可用",
+                callback_seed="可作为「活动推进者」连续出场回调",
+            )
+        }
+
+        characters = daily_case_report._compute_characters(messages, memory)
+        universe = daily_case_report._build_character_universe([], [], characters, "2026年08月08日")
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="case file",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=2,
+            message_count=4,
+            participant_count=2,
+            case_count=0,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[],
+            suspects=[],
+            highlight=None,
+            character_count=len(characters),
+            characters=characters,
+            character_universe=universe,
+        )
+
+        self.assertTrue(universe["memes"])
+        self.assertTrue(universe["callbacks"])
+        self.assertTrue(universe["relationships"])
+        self.assertTrue(any(edge["relation"] == "co_discusses_topic" for edge in universe["edges"]))
+        self.assertIn("同场关系", daily_case_report._render_html(report, 750))
+        markdown = daily_case_report._render_daily_markdown(report)
+        self.assertIn("## 同场关系", markdown)
+        self.assertIn("公开话题", markdown)
+        serialized = json.dumps(universe, ensure_ascii=False)
+        self.assertNotIn(first_person_id, serialized)
+        self.assertNotIn(second_person_id, serialized)
+        self.assertNotIn("raw profile fact text", serialized)
 
     def test_missing_highlight_is_omitted_instead_of_synthesized(self) -> None:
         self.assertIsNone(

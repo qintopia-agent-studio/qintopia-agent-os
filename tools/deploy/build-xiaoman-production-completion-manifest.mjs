@@ -613,6 +613,18 @@ function extractDailyCaseReportObservation(file) {
       workerFields,
       "xiaoman_daily_case_report_worker_character_universe_event_count"
     ),
+    character_universe_meme_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_meme_count"
+    ),
+    character_universe_callback_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_callback_count"
+    ),
+    character_universe_relationship_count: numericField(
+      workerFields,
+      "xiaoman_daily_case_report_worker_character_universe_relationship_count"
+    ),
     character_universe_storyline_candidate_count: numericField(
       workerFields,
       "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count"
@@ -649,6 +661,9 @@ function assertDailyCaseReportObservation(record, options) {
     record.profile_fact_text_included !== false ||
     !safeCount(record.character_universe_topic_count) ||
     !safeCount(record.character_universe_event_count) ||
+    !safeCount(record.character_universe_meme_count) ||
+    !safeCount(record.character_universe_callback_count) ||
+    !safeCount(record.character_universe_relationship_count) ||
     !safeCount(record.character_universe_storyline_candidate_count) ||
     !safeCount(record.character_universe_edge_count)
   ) {

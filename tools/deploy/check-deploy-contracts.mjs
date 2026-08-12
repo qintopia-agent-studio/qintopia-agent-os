@@ -6446,6 +6446,9 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
     "raw_messages_included",
     "profile_fact_text_included",
     "character_universe_people_count",
+    "character_universe_meme_count",
+    "character_universe_callback_count",
+    "character_universe_relationship_count",
   ]) {
     requireFragment(
       xiaomanProductionCompletionEvidenceTemplatePath,
