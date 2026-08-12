@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.127](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.126...v0.2.127) (2026-08-12)
+
+
+### Bug Fixes
+
+* sanitize Hermes snapshot baseline sync failures ([c28afd5](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c28afd578e0196ec676b718ef0fc4bb1367d3d19))
+
 ## [0.2.126](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.125...v0.2.126) (2026-08-12)
 
 
