@@ -128,6 +128,10 @@
   owner/modes back to `/home/ubuntu` ownership with `0700` directories and `0600` files.
   Root deploy-runner Git operations should run as the fixed ubuntu user rather than
   broadening Git trust or writing to a parent repository.
+- Deploy-runner production one-shots run from the root service boundary. If a one-shot
+  needs ubuntu user systemd, use fixed `/usr/sbin/runuser -u ubuntu` with
+  `XDG_RUNTIME_DIR=/run/user/<ubuntu-uid>` and the matching user bus address; direct
+  root `systemctl --user` cannot prove the ubuntu user timer boundary.
 - Production Hermes cron live apply should use the `Apply Production Hermes Crons`
   GitHub workflow after the reviewed release containing the runner support is deployed.
   It creates a signed `production-hermes-cron-apply` deploy-runner request and accepts
