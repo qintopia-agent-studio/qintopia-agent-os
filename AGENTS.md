@@ -67,8 +67,13 @@
   to coerce to `true`.
 - Xiaoman daily case-report JPEG rendering must stay storyline/character-first in both
   HTML screenshot and Pillow fallback paths. Keep `人物出场表`, `今日台词`,
-  `梗和回调候选`, `同场关系`, and `故事线候选` before `24H 活跃节奏` / `发言出场榜` so
-  production hosts without Playwright do not regress to a statistics-first poster.
+  `梗和回调候选`, `同场关系`, `地点 / 本地生活线索`, `待解决问题`, and `故事线候选`
+  before `24H 活跃节奏` / `发言出场榜` so production hosts without Playwright do not
+  regress to a statistics-first poster. The production auto-publish worker must call the
+  renderer with `--json-summary-only`; it may consume only `character_universe_summary`,
+  `public_output_style`, private-review counts, artifact identity, and paths. Do not
+  parse or forward full `daily_report_markdown`, full `character_universe`, quote-map,
+  wiki, draft, run-manifest, or operator-review text in the send chain.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash

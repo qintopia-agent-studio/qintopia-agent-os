@@ -498,6 +498,7 @@ print(f"{key}_worker_private_review_bundle_quote_map_entry_count={review_bundle_
 print(f"{key}_worker_private_review_bundle_wiki_people_count={wiki_count('people')}")
 print(f"{key}_worker_private_review_bundle_wiki_event_count={wiki_count('events')}")
 print(f"{key}_worker_private_review_bundle_wiki_storyline_count={wiki_count('storylines')}")
+print(f"{key}_worker_private_review_bundle_draft_ordinary_digest_local_life_note_count={draft_count('ordinary_digest_local_life_note_count')}")
 print(f"{key}_worker_private_review_bundle_draft_roast_profile_candidate_count={draft_count('roast_profile_candidate_count')}")
 print(f"{key}_worker_private_review_bundle_draft_storyline_timeline_count={draft_count('storyline_timeline_count')}")
 print(f"{key}_worker_private_review_bundle_draft_lookback_callback_count={draft_count('lookback_callback_count')}")

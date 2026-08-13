@@ -1252,6 +1252,8 @@ class DailyCaseReportTest(unittest.TestCase):
             ordinary_digest["main_topics"][0]["media_notes"]["raw_message_payload_read"]
         )
         self.assertEqual(ordinary_digest["people_notes"][0]["role_label"], "活动推进者")
+        self.assertGreaterEqual(len(ordinary_digest["local_life_notes"]), 1)
+        self.assertEqual(ordinary_digest["local_life_notes"][0]["source"], "CASE 01")
         self.assertTrue(ordinary_digest["risk_items"])
         self.assertGreaterEqual(len(ordinary_digest["candidate_public_topics"]), 1)
         self.assertIn("主要话题", ordinary_digest["section_keys"])
@@ -1262,6 +1264,10 @@ class DailyCaseReportTest(unittest.TestCase):
         )
         self.assertGreaterEqual(
             draft_bundle["counts"]["ordinary_digest_people_note_count"],
+            1,
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_local_life_note_count"],
             1,
         )
         self.assertGreaterEqual(
@@ -1541,7 +1547,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 title="讨论主题",
                 time_label="10:00-11:00",
                 summary="2 条消息，2 人参与",
-                bullets=["原始群消息"],
+                bullets=["社区活动安排已经确认", "有没有人明天提醒一次？"],
                 message_count=2,
                 participant_count=2,
                 color_bg="#fff0a6",
@@ -1580,7 +1586,10 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("小满群聊日报", rendered)
         self.assertIn("今日主线", rendered)
         self.assertIn("人物出场表", rendered)
+        self.assertIn("DAILY WORKSHOP INDEX", rendered)
         self.assertIn("梗和回调候选", rendered)
+        self.assertIn("地点 / 本地生活线索", rendered)
+        self.assertIn("待解决问题", rendered)
         self.assertIn("故事线候选", rendered)
         self.assertIn("发言出场榜", rendered)
         self.assertNotIn("XIAOMAN COMMUNITY SCOREBOARD", rendered)
@@ -1589,9 +1598,13 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("今日 MVP", rendered)
         self.assertIn("background: #ffd92e", rendered)
         self.assertLess(rendered.index("今日主线"), rendered.index("人物出场表"))
+        self.assertLess(rendered.index("DAILY WORKSHOP INDEX"), rendered.index("人物出场表"))
         self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
         self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
         self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("地点 / 本地生活线索"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("待解决问题"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("故事线候选"), rendered.index("当日素材"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("发言出场榜"))
 
@@ -1602,6 +1615,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("## 今日剧中人", markdown)
         self.assertIn("**成员（活动推进者）**", markdown)
         self.assertIn("## 梗和回调候选", markdown)
+        self.assertIn("## 地点 / 本地生活线索", markdown)
+        self.assertIn("## 待解决问题", markdown)
         self.assertIn("## 候选公众号选题", markdown)
         self.assertIn("raw_messages_included=false", markdown)
         self.assertIn("profile_fact_text_included=false", markdown)
@@ -1806,7 +1821,7 @@ class DailyCaseReportTest(unittest.TestCase):
                             title="讨论主题",
                             time_label="10:00-11:00",
                             summary="3 条消息，2 人参与",
-                            bullets=["活动安排已经确认", "明天提醒一次"],
+                            bullets=["活动安排已经确认", "有没有人明天提醒一次？"],
                             message_count=3,
                             participant_count=2,
                             color_bg="#fff0a6",
@@ -1870,11 +1885,15 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("人物出场表", rendered)
         self.assertIn("今日台词", rendered)
         self.assertIn("梗和回调候选", rendered)
+        self.assertIn("地点 / 本地生活线索", rendered)
+        self.assertIn("待解决问题", rendered)
         self.assertIn("故事线候选", rendered)
         self.assertIn("24H 活跃节奏", rendered)
         self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
         self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
         self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("地点 / 本地生活线索"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("待解决问题"), rendered.index("故事线候选"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
 
     def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:
@@ -2067,6 +2086,19 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertFalse(style["public_surface_contains_private_draft"])
             self.assertIn("## 今日剧中人", result["daily_report_markdown"])
             self.assertIn("## 梗和回调候选", result["daily_report_markdown"])
+            summary = daily_case_report._summary_result_json(result)
+            self.assertIn("character_universe_summary", summary)
+            self.assertEqual(
+                summary["character_universe_summary"]["people_count"],
+                len(result["character_universe"]["people"]),
+            )
+            self.assertNotIn("daily_report_markdown", summary)
+            self.assertNotIn("operator_review_message", summary)
+            self.assertNotIn("character_universe", summary)
+            self.assertNotIn("quote_map", summary)
+            self.assertNotIn("wiki_bundle", summary)
+            self.assertNotIn("draft_bundle", summary)
+            self.assertNotIn("run_manifest", summary)
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertNotIn("回复「发」", result["operator_review_message"])
@@ -2175,6 +2207,11 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(Path(result["run_manifest_path"]).is_file())
             self.assertTrue(Path(result["review_report_path"]).is_file())
             self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())
+            self.assertIn("character_universe_summary", result)
+            self.assertEqual(
+                result["character_universe_summary"]["people_count"],
+                len(result["character_universe"]["people"]),
+            )
             self.assertFalse(result["character_universe"]["raw_messages_included"])
             self.assertFalse(result["quote_map"]["public_surface_allowed"])
             self.assertFalse(result["wiki_bundle"]["public_surface_allowed"])
@@ -2196,6 +2233,57 @@ class DailyCaseReportTest(unittest.TestCase):
                 "2026-08-08T00:00:00+08:00",
             )
             self.assertNotIn("回复「发」", result["operator_review_message"])
+
+    def test_main_summary_json_omits_private_rendered_bodies_for_auto_publish(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = argparse.Namespace(
+                dry_run=True,
+                fixture=None,
+                keep_html=False,
+                render="image",
+                output_dir=tmpdir,
+                output_width=750,
+                image_format="jpeg",
+                json=True,
+                json_summary_only=True,
+                chat_id="chat-1",
+                date="2026-08-08",
+                timezone="Asia/Shanghai",
+                group_name="group",
+                report_title="case file",
+            )
+            old_parse_args = daily_case_report._parse_args
+            old_render_image = daily_case_report._render_image
+
+            def fake_render_image(_html_path, output_path, _width, image_format, *_args):
+                self.assertEqual(image_format, "jpeg")
+                Path(output_path).write_bytes(b"main-fixture-jpeg")
+
+            daily_case_report._parse_args = lambda: args
+            daily_case_report._render_image = fake_render_image
+            try:
+                stdout = io.StringIO()
+                with contextlib.redirect_stdout(stdout):
+                    code = daily_case_report.main()
+            finally:
+                daily_case_report._parse_args = old_parse_args
+                daily_case_report._render_image = old_render_image
+
+            self.assertEqual(code, 0)
+            result = json.loads(stdout.getvalue())
+            self.assertTrue(result["success"])
+            self.assertEqual(result["image_mime_type"], "image/jpeg")
+            self.assertIn("character_universe_summary", result)
+            self.assertGreater(result["character_universe_summary"]["people_count"], 0)
+            self.assertFalse(result["character_universe_summary"]["raw_messages_included"])
+            self.assertFalse(result["private_review_bundle"]["raw_message_payload_read"])
+            self.assertNotIn("daily_report_markdown", result)
+            self.assertNotIn("operator_review_message", result)
+            self.assertNotIn("character_universe", result)
+            self.assertNotIn("quote_map", result)
+            self.assertNotIn("wiki_bundle", result)
+            self.assertNotIn("draft_bundle", result)
+            self.assertNotIn("run_manifest", result)
 
 
 if __name__ == "__main__":

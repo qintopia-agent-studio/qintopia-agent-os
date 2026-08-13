@@ -45,7 +45,11 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             worker,
         )
         self.assertIn(
-            'character_universe = rendered.get("character_universe") or {}',
+            "--json-summary-only",
+            worker,
+        )
+        self.assertIn(
+            'character_universe = rendered.get("character_universe_summary") or {}',
             worker,
         )
         self.assertIn(
@@ -65,7 +69,7 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             worker,
         )
         self.assertIn(
-            '"storyline_candidate_count": len(character_universe.get("storyline_candidates") or [])',
+            '"storyline_candidate_count": character_universe.get("storyline_candidate_count", 0)',
             worker,
         )
         self.assertIn(
@@ -77,7 +81,15 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             worker,
         )
         self.assertNotIn(
+            '"daily_report_markdown":',
+            worker,
+        )
+        self.assertNotIn(
             '"people": character_universe.get("people")',
+            worker,
+        )
+        self.assertNotIn(
+            'len(character_universe.get("people") or [])',
             worker,
         )
 
