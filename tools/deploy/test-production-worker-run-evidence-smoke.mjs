@@ -386,11 +386,69 @@ writeFile(
   ].join("\n")
 );
 result = run("erhua-morning-brief-worker-run");
-expectStatus(result, 0, "Erhua success log");
+expectStatus(result, 1, "Erhua success requires summary");
+expectNoLeak(result, "Erhua success requires summary");
+check(
+  result.stdout.trim() === "erhua_morning_brief_worker_run_error=summary_invalid",
+  `Erhua missing summary emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/erhua-morning-brief/hermes-cron.log",
+  [
+    "raw worker output with postgres://secret@example.invalid/qintopia",
+    "2026-08-10T01:30:00Z erhua-morning-brief run=ok",
+    JSON.stringify(
+      {
+        success: true,
+        worker: "erhua-morning-brief-worker",
+        brief_date: "2026-08-10",
+        activity_publishable_count: 1,
+        sunday_no_publishable_activity_followup: false,
+        ai_news_item_count: 5,
+        artifact_created: true,
+        artifact_id: "group-id-fixture",
+        work_item_id: "secret-token",
+        requires_human_confirmation: true,
+        external_send_executed: false,
+        send_request_created: false,
+      },
+      null,
+      2
+    ),
+    JSON.stringify(
+      {
+        success: true,
+        worker: "erhua-morning-brief-auto-publish",
+        qiwe_text_send_action_status: "text_send_executed",
+        work_item_id: "group-id-fixture",
+        external_send_executed: true,
+      },
+      null,
+      2
+    ),
+    "",
+  ].join("\n")
+);
+result = run("erhua-morning-brief-worker-run");
+expectStatus(result, 0, "Erhua success summary");
 expectNoLeak(result, "Erhua success log");
 check(
   result.stdout.includes("erhua_morning_brief_worker_run_result=success") &&
-    result.stdout.includes("erhua_morning_brief_worker_run_epoch=1786325400"),
+    result.stdout.includes("erhua_morning_brief_worker_run_epoch=1786325400") &&
+    result.stdout.includes("erhua_morning_brief_worker_summary_present=true") &&
+    result.stdout.includes("erhua_morning_brief_worker_artifact_created=true") &&
+    result.stdout.includes("erhua_morning_brief_worker_activity_publishable_count=1") &&
+    result.stdout.includes("erhua_morning_brief_worker_ai_news_item_count=5") &&
+    result.stdout.includes(
+      "erhua_morning_brief_worker_sunday_no_publishable_activity_followup=false"
+    ) &&
+    result.stdout.includes(
+      "erhua_morning_brief_worker_auto_publish_summary_present=true"
+    ) &&
+    result.stdout.includes(
+      "erhua_morning_brief_worker_auto_publish_external_send_executed=true"
+    ),
   `Erhua success emitted unexpected evidence\n${result.stdout}`
 );
 

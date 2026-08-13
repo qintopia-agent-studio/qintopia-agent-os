@@ -99,6 +99,14 @@ target checks, through the fixed release-local
   exists and keeps the reviewed draft invariants (`requires_human_confirmation=true`,
   `external_send_executed=false`, `safe_for_member_chat=false`) plus a valid
   `date`/`week_start`.
+- For `erhua-morning-brief-worker-run`, the latest success segment must include the
+  worker's sanitized JSON summary. The observation verifies the text artifact was
+  created, the chat-facing content still requires confirmation at the artifact stage,
+  and, when the auto-publish summary is present, the QiWe text-send worker reports
+  `external_send_executed=true`. It records only bounded counts and booleans such as
+  `activity_publishable_count`, `ai_news_item_count`, and
+  `auto_publish_external_send_executed`; it never prints the morning brief text,
+  artifact ids, work item ids, group ids, or raw worker output.
 - For `xiaoman-daily-case-report-worker-run`, a new worker summary is optional for
   backward-compatible observation. When present, it is parsed only for safe counters and
   character-universe schema flags, and the observation fails if the summary claims
@@ -106,7 +114,9 @@ target checks, through the fixed release-local
 
 Successful evidence records only sanitized fields such as
 `erhua_morning_brief_worker_run_result=success`,
-`erhua_morning_brief_worker_run_epoch=<unix>`, and for weekly targets
+`erhua_morning_brief_worker_run_epoch=<unix>`,
+`erhua_morning_brief_worker_artifact_created=true`,
+`erhua_morning_brief_worker_ai_news_item_count=<count>`, and, for weekly targets
 `xiaoman_weekly_preview_worker_summary_present=true` and
 `xiaoman_weekly_preview_worker_summary_date=<YYYY-MM-DD>`. For the daily case report,
 new runs may also record `xiaoman_daily_case_report_worker_character_count=<count>` and
