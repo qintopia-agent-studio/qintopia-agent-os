@@ -654,6 +654,8 @@ function assertDailyCaseReportConfirmation(record) {
       "character_universe_source",
       "raw_messages_included",
       "profile_fact_text_included",
+      "raw_message_payload_read",
+      "attachment_public_surface_allowed",
       "creative_profile_public_surface_allowed",
       "character_universe_people_count",
       "character_universe_topic_count",
@@ -687,6 +689,8 @@ function assertDailyCaseReportConfirmation(record) {
     record.character_universe_source !== "daily_case_report_second_pass" ||
     record.raw_messages_included !== false ||
     record.profile_fact_text_included !== false ||
+    record.raw_message_payload_read !== false ||
+    record.attachment_public_surface_allowed !== false ||
     record.creative_profile_public_surface_allowed !== false ||
     !positiveInteger(record.character_universe_people_count) ||
     !safeCount(record.character_universe_topic_count) ||
@@ -873,6 +877,10 @@ function assertDailyCaseReportProductionObservation(file) {
     workerFields.xiaoman_daily_case_report_worker_character_universe_raw_messages_included !==
       "false" ||
     workerFields.xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included !==
+      "false" ||
+    workerFields.xiaoman_daily_case_report_worker_private_review_bundle_raw_message_payload_read !==
+      "false" ||
+    workerFields.xiaoman_daily_case_report_worker_private_review_bundle_attachment_public_surface_allowed !==
       "false"
   ) {
     fail(
@@ -921,6 +929,8 @@ function assertDailyCaseReportProductionObservation(file) {
       workerFields.xiaoman_daily_case_report_worker_character_universe_source ?? "",
     raw_messages_included: false,
     profile_fact_text_included: false,
+    raw_message_payload_read: false,
+    attachment_public_surface_allowed: false,
     character_universe_people_count: numericField(
       workerFields,
       "xiaoman_daily_case_report_worker_character_universe_people_count"

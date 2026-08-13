@@ -358,6 +358,10 @@ if review_bundle is not None:
         raise SystemExit(3)
     if review_bundle.get("profile_fact_text_included") is not False:
         raise SystemExit(3)
+    if review_bundle.get("raw_message_payload_read") is not False:
+        raise SystemExit(3)
+    if review_bundle.get("attachment_public_surface_allowed") is not False:
+        raise SystemExit(3)
 
 def number(name: str, default: int = 0) -> int:
     value = metrics.get(name, default)
@@ -488,6 +492,8 @@ print(f"{key}_worker_private_review_bundle_public_surface_allowed=false")
 print(f"{key}_worker_private_review_bundle_review_required=true")
 print(f"{key}_worker_private_review_bundle_raw_message_rows_included=false")
 print(f"{key}_worker_private_review_bundle_profile_fact_text_included=false")
+print(f"{key}_worker_private_review_bundle_raw_message_payload_read=false")
+print(f"{key}_worker_private_review_bundle_attachment_public_surface_allowed=false")
 print(f"{key}_worker_private_review_bundle_quote_map_entry_count={review_bundle_count('quote_map_entry_count')}")
 print(f"{key}_worker_private_review_bundle_wiki_people_count={wiki_count('people')}")
 print(f"{key}_worker_private_review_bundle_wiki_event_count={wiki_count('events')}")

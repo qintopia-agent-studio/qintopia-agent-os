@@ -599,6 +599,14 @@ for (const [fragment, label] of [
     "worker draft counts only",
   ],
   [
+    '"raw_message_payload_read": private_review_bundle.get("raw_message_payload_read") is True',
+    "worker raw message payload flag only",
+  ],
+  [
+    '"attachment_public_surface_allowed": private_review_bundle.get("attachment_public_surface_allowed") is True',
+    "worker attachment public-surface flag only",
+  ],
+  [
     '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is False',
     "worker private draft public-surface flag only",
   ],
@@ -663,6 +671,14 @@ for (const [fragment, label] of [
   [
     'print(f"{key}_worker_private_review_bundle_quote_map_entry_count=',
     "worker-run quote-map count evidence",
+  ],
+  [
+    'print(f"{key}_worker_private_review_bundle_raw_message_payload_read=false")',
+    "worker-run raw message payload evidence",
+  ],
+  [
+    'print(f"{key}_worker_private_review_bundle_attachment_public_surface_allowed=false")',
+    "worker-run attachment public-surface evidence",
   ],
   [
     'print(f"{key}_worker_private_review_bundle_wiki_people_count=',
@@ -754,7 +770,7 @@ for (const [fragment, label] of [
     "runner allowlist for public output style false flag",
   ],
   [
-    "xiaoman_daily_case_report_worker_private_review_bundle_(?:public_surface_allowed|raw_message_rows_included|profile_fact_text_included)",
+    "xiaoman_daily_case_report_worker_private_review_bundle_(?:public_surface_allowed|raw_message_rows_included|profile_fact_text_included|raw_message_payload_read|attachment_public_surface_allowed)",
     "runner allowlist for private review bundle privacy flags",
   ],
   [
@@ -792,6 +808,16 @@ for (const [text, label] of [
   requireIncludes(
     text,
     "xiaoman_daily_case_report_worker_private_review_bundle_public_surface_allowed=false",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_private_review_bundle_raw_message_payload_read=false",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_private_review_bundle_attachment_public_surface_allowed=false",
     label
   );
   requireIncludes(

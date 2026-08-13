@@ -4300,6 +4300,14 @@ def _result_json(
             "review_required": True,
             "raw_message_rows_included": False,
             "profile_fact_text_included": False,
+            "raw_message_payload_read": (run_manifest.get("privacy") or {}).get(
+                "raw_message_payload_read"
+            )
+            is True,
+            "attachment_public_surface_allowed": (run_manifest.get("privacy") or {}).get(
+                "attachment_public_surface_allowed"
+            )
+            is True,
             "quote_map_entry_count": quote_map.get("entry_count", 0),
             "wiki_counts": wiki_bundle.get("counts", {}),
             "draft_counts": draft_bundle.get("counts", {}),
