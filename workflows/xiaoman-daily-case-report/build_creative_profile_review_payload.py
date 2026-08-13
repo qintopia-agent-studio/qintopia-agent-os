@@ -159,6 +159,7 @@ def _build_payload(
     reviewed_by: str,
     reviewed_at: str,
     include_rejected: bool,
+    allow_empty: bool = False,
 ) -> dict[str, Any]:
     if universe.get("schema_version") != CHARACTER_UNIVERSE_SCHEMA:
         raise PayloadBuildError("character universe schema is invalid")
@@ -180,7 +181,7 @@ def _build_payload(
         draft = _draft_from_candidate(item, index, include_rejected=include_rejected)
         if draft is not None:
             drafts.append(draft)
-    if not drafts:
+    if not drafts and not allow_empty:
         raise PayloadBuildError("no eligible creative profile candidates found")
 
     return {

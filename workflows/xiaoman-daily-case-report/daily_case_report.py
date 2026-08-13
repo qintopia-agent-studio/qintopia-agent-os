@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import importlib.util
 import json
 import os
 import re
@@ -53,6 +54,7 @@ DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
 TEMPLATE_VERSION = "xiaoman-daily-case-report-v3"
 MEMORY_LOOKBACK_DAYS = 90
+REVIEW_DRAFT_REVIEWED_BY = "xiaoman-daily-case-report-review-draft"
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -1048,6 +1050,39 @@ def _write_private_text(path: Path, content: str) -> None:
         handle.write(content)
     tmp_path.replace(path)
     os.chmod(path, 0o600)
+
+
+def _build_creative_profile_review_payload_draft(
+    character_universe: dict[str, Any],
+    reviewed_at: str,
+) -> dict[str, Any]:
+    if not character_universe:
+        character_universe = {
+            "schema_version": "xiaoman-character-universe-v1",
+            "raw_messages_included": False,
+            "profile_fact_text_included": False,
+            "creative_profile_candidate_policy": {
+                "public_surface_allowed": False,
+            },
+            "creative_profile_candidates": [],
+        }
+    helper_path = Path(__file__).resolve().with_name("build_creative_profile_review_payload.py")
+    spec = importlib.util.spec_from_file_location(
+        "xiaoman_daily_case_report_build_creative_profile_review_payload",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("creative profile review payload builder is unavailable")
+    helper = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = helper
+    spec.loader.exec_module(helper)
+    return helper._build_payload(
+        character_universe,
+        reviewed_by=REVIEW_DRAFT_REVIEWED_BY,
+        reviewed_at=reviewed_at,
+        include_rejected=True,
+        allow_empty=True,
+    )
 
 
 def _clean_text(text: str) -> str:
@@ -3625,9 +3660,11 @@ def _result_json(
     wiki_bundle_path: Path | None = None,
     run_manifest_path: Path | None = None,
     review_report_path: Path | None = None,
+    creative_profile_review_payload_path: Path | None = None,
     quote_map: dict[str, Any] | None = None,
     wiki_bundle: dict[str, Any] | None = None,
     run_manifest: dict[str, Any] | None = None,
+    creative_profile_review_payload: dict[str, Any] | None = None,
     output_width: int | None = None,
     source_chat_id: str | None = None,
 ) -> dict[str, Any]:
@@ -3638,6 +3675,10 @@ def _result_json(
     wiki_bundle_exists = wiki_bundle_path is not None and wiki_bundle_path.exists()
     run_manifest_exists = run_manifest_path is not None and run_manifest_path.exists()
     review_report_exists = review_report_path is not None and review_report_path.exists()
+    creative_profile_review_payload_exists = (
+        creative_profile_review_payload_path is not None
+        and creative_profile_review_payload_path.exists()
+    )
     quote_map = quote_map or _build_quote_map(report)
     wiki_bundle = wiki_bundle or _build_wiki_bundle(report, quote_map)
     run_manifest = run_manifest or _build_run_manifest(
@@ -3646,6 +3687,7 @@ def _result_json(
         wiki_bundle,
         source_chat_id=source_chat_id,
     )
+    creative_profile_review_payload = creative_profile_review_payload or {}
     artifact_candidate = (
         _artifact_candidate(image_path, image_format, report, output_width, source_chat_id)
         if image_path is not None and image_format is not None and image_path.exists()
@@ -3682,6 +3724,11 @@ def _result_json(
         "run_manifest_path": str(run_manifest_path) if run_manifest_exists else None,
         "run_manifest": run_manifest,
         "review_report_path": str(review_report_path) if review_report_exists else None,
+        "creative_profile_review_payload_path": (
+            str(creative_profile_review_payload_path)
+            if creative_profile_review_payload_exists
+            else None
+        ),
         "private_review_bundle": {
             "schema_version": "xiaoman-daily-private-review-bundle-v1",
             "source": "wx_cli_style_daily_migration",
@@ -3692,6 +3739,41 @@ def _result_json(
             "quote_map_entry_count": quote_map.get("entry_count", 0),
             "wiki_counts": wiki_bundle.get("counts", {}),
             "run_manifest_schema_version": run_manifest.get("schema_version", ""),
+            "creative_profile_review_payload": {
+                "schema_version": creative_profile_review_payload.get("schema_version"),
+                "source": creative_profile_review_payload.get("source", ""),
+                "candidate_count": len(creative_profile_review_payload.get("candidates") or []),
+                "pending_review_count": sum(
+                    1
+                    for candidate in creative_profile_review_payload.get("candidates") or []
+                    if candidate.get("review_decision") == "pending_review"
+                ),
+                "approved_candidate_count": sum(
+                    1
+                    for candidate in creative_profile_review_payload.get("candidates") or []
+                    if candidate.get("review_decision") == "approved"
+                ),
+                "person_id_required": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("person_id_required")
+                is True,
+                "display_name_binding_allowed": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("display_name_binding_allowed")
+                is True,
+                "public_surface_allowed": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("public_surface_allowed")
+                is True,
+                "raw_messages_included": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("raw_messages_included")
+                is True,
+                "profile_fact_text_included": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("profile_fact_text_included")
+                is True,
+            },
         },
         "artifact_candidate": artifact_candidate,
         "operator_review_message": _operator_review_message(
@@ -3734,6 +3816,10 @@ def main() -> int:
     wiki_bundle_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.wiki-bundle.json"
     run_manifest_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.run-manifest.json"
     review_report_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.review.md"
+    creative_profile_review_payload_path = (
+        output_dir
+        / f"xiaoman-daily-case-report-{timestamp}.creative-profile-review-payload.draft.json"
+    )
     image_path = output_dir / (
         f"xiaoman-daily-case-report-{timestamp}.{_image_extension(args.image_format)}"
     )
@@ -3742,6 +3828,12 @@ def main() -> int:
     quote_map = _build_quote_map(report)
     wiki_bundle = _build_wiki_bundle(report, quote_map)
     run_manifest = _build_run_manifest(report, quote_map, wiki_bundle, source_chat_id=args.chat_id)
+    creative_profile_review_payload = _build_creative_profile_review_payload_draft(
+        report.character_universe,
+        datetime.now(_report_timezone(getattr(args, "timezone", DEFAULT_TIMEZONE)))
+        .replace(microsecond=0)
+        .isoformat(),
+    )
     _write_private_text(html_path, html_content)
     _write_private_text(markdown_path, _render_daily_markdown(report))
     _write_private_text(
@@ -3763,6 +3855,10 @@ def main() -> int:
     _write_private_text(
         review_report_path,
         _render_review_report(report, quote_map, wiki_bundle, run_manifest),
+    )
+    _write_private_text(
+        creative_profile_review_payload_path,
+        json.dumps(creative_profile_review_payload, ensure_ascii=False, indent=2, sort_keys=True),
     )
 
     image_generated = False
@@ -3797,9 +3893,13 @@ def main() -> int:
             wiki_bundle_path if wiki_bundle_path.exists() else None,
             run_manifest_path if run_manifest_path.exists() else None,
             review_report_path if review_report_path.exists() else None,
+            creative_profile_review_payload_path
+            if creative_profile_review_payload_path.exists()
+            else None,
             quote_map,
             wiki_bundle,
             run_manifest,
+            creative_profile_review_payload,
             args.output_width if image_generated else None,
             args.chat_id if image_generated else None,
         )

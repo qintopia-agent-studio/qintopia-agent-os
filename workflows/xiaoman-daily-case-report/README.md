@@ -45,10 +45,11 @@ observation, rollback, and send boundaries still run from the immutable release.
   creative-profile candidates, storyline candidates, and graph edges from curated report
   content only; it does not retain raw messages or hidden profile fact text.
 - Write a `wx-cli`-style private review bundle alongside the poster: `.quote-map.json`,
-  `.wiki-bundle.json`, `.run-manifest.json`, and `.review.md`. These files add the
-  reference project's quote-map / Wiki / run-manifest / review structure while
-  preserving the latest Postgres chat-record source of truth. They are internal review
-  artifacts, not public or send-ready payloads.
+  `.wiki-bundle.json`, `.run-manifest.json`, `.review.md`, and
+  `.creative-profile-review-payload.draft.json`. These files add the reference project's
+  quote-map / Wiki / run-manifest / review structure while preserving the latest
+  Postgres chat-record source of truth. They are internal review artifacts, not public
+  or send-ready payloads.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
   preview and production image share the same report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
@@ -277,6 +278,10 @@ candidate text.
 - The private character-universe JSON is generated in the same `0700` output directory
   with mode `0600`. It may contain member display names and curated report excerpts, so
   it follows the same temporary production cleanup policy as Markdown and HTML.
+- The private creative-profile review-payload draft is generated in the same `0700`
+  output directory with mode `0600`. It may contain candidate role labels and evidence
+  anchors, but every eligible candidate remains `pending_review` with blank `person_id`;
+  production metadata may retain only candidate counts and privacy flags.
 - Reviewed `creative_profile` reuse is a read-only style/memory input for the daily
   report. The query is keyed by reviewed `person_id`, active
   `profile_kind='creative_profile'`, and

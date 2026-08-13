@@ -1679,14 +1679,30 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(Path(result["wiki_bundle_path"]).is_file())
             self.assertTrue(Path(result["run_manifest_path"]).is_file())
             self.assertTrue(Path(result["review_report_path"]).is_file())
+            self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())
             universe = json.loads(Path(result["character_universe_path"]).read_text(encoding="utf-8"))
             self.assertEqual(universe, result["character_universe"])
             quote_map = json.loads(Path(result["quote_map_path"]).read_text(encoding="utf-8"))
             wiki_bundle = json.loads(Path(result["wiki_bundle_path"]).read_text(encoding="utf-8"))
             run_manifest = json.loads(Path(result["run_manifest_path"]).read_text(encoding="utf-8"))
+            review_payload = json.loads(
+                Path(result["creative_profile_review_payload_path"]).read_text(encoding="utf-8")
+            )
             self.assertEqual(quote_map, result["quote_map"])
             self.assertEqual(wiki_bundle, result["wiki_bundle"])
             self.assertEqual(run_manifest, result["run_manifest"])
+            self.assertEqual(review_payload["source"], "xiaoman-daily-creative-profile-review-v1")
+            self.assertTrue(review_payload["review_notes"]["person_id_required"])
+            self.assertFalse(review_payload["review_notes"]["display_name_binding_allowed"])
+            self.assertTrue(
+                all(candidate["person_id"] == "" for candidate in review_payload["candidates"])
+            )
+            self.assertTrue(
+                any(
+                    candidate["review_decision"] == "pending_review"
+                    for candidate in review_payload["candidates"]
+                )
+            )
             self.assertFalse(universe["raw_messages_included"])
             self.assertFalse(universe["profile_fact_text_included"])
             self.assertFalse(quote_map["raw_message_rows_included"])
@@ -1697,6 +1713,27 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertFalse(result["private_review_bundle"]["public_surface_allowed"])
             self.assertTrue(result["private_review_bundle"]["review_required"])
             self.assertGreater(result["private_review_bundle"]["quote_map_entry_count"], 0)
+            self.assertEqual(
+                result["private_review_bundle"]["creative_profile_review_payload"]["candidate_count"],
+                len(review_payload["candidates"]),
+            )
+            self.assertGreater(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "pending_review_count"
+                ],
+                0,
+            )
+            self.assertEqual(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "approved_candidate_count"
+                ],
+                0,
+            )
+            self.assertFalse(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "display_name_binding_allowed"
+                ]
+            )
             self.assertIn("people", universe)
             self.assertIn("events", universe)
             self.assertIn("storyline_candidates", universe)
@@ -1809,12 +1846,19 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(Path(result["wiki_bundle_path"]).is_file())
             self.assertTrue(Path(result["run_manifest_path"]).is_file())
             self.assertTrue(Path(result["review_report_path"]).is_file())
+            self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())
             self.assertFalse(result["character_universe"]["raw_messages_included"])
             self.assertFalse(result["quote_map"]["public_surface_allowed"])
             self.assertFalse(result["wiki_bundle"]["public_surface_allowed"])
             self.assertFalse(result["run_manifest"]["privacy"]["profile_fact_text_included"])
             self.assertFalse(result["run_manifest"]["inputs"]["long_term_member_facts_used"])
             self.assertTrue(result["private_review_bundle"]["review_required"])
+            self.assertEqual(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "approved_candidate_count"
+                ],
+                0,
+            )
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertEqual(result["artifact_candidate"]["workflow_type"], "daily_case_report")

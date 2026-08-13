@@ -156,12 +156,20 @@ for (const [fragment, label] of [
   ['"wiki_bundle_path"', "wiki bundle output path"],
   ['"run_manifest_path"', "run manifest output path"],
   ['"review_report_path"', "review report output path"],
+  [
+    '"creative_profile_review_payload_path"',
+    "creative-profile review payload output path",
+  ],
   ['"private_review_bundle"', "private review bundle summary"],
   [".character-universe.json", "private universe file output"],
   [".quote-map.json", "private quote-map file output"],
   [".wiki-bundle.json", "private wiki-bundle file output"],
   [".run-manifest.json", "private run-manifest file output"],
   [".review.md", "private review report file output"],
+  [
+    ".creative-profile-review-payload.draft.json",
+    "private creative-profile review payload draft file output",
+  ],
   ['"schema_version": "xiaoman-daily-quote-map-v1"', "quote-map schema"],
   ['"schema_version": "xiaoman-daily-wiki-bundle-v1"', "wiki-bundle schema"],
   ['"schema_version": "xiaoman-daily-run-manifest-v1"', "run-manifest schema"],
@@ -176,6 +184,18 @@ for (const [fragment, label] of [
   [
     '"reviewed_creative_profiles_used": any(',
     "run manifest proves reviewed creative profiles were reused",
+  ],
+  [
+    '"approved_candidate_count": sum(',
+    "private review bundle counts approved creative-profile candidates only",
+  ],
+  [
+    '"pending_review_count": sum(',
+    "private review bundle counts pending creative-profile candidates only",
+  ],
+  [
+    '"display_name_binding_allowed": (',
+    "private review bundle reports display-name binding flag only",
   ],
   [
     '"public_surface_allowed": False',
@@ -356,6 +376,18 @@ for (const [fragment, label] of [
   [
     'self.assertTrue(Path(result["review_report_path"]).is_file())',
     "review report output file assertion",
+  ],
+  [
+    'self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())',
+    "creative-profile review payload output file assertion",
+  ],
+  [
+    'candidate["review_decision"] == "pending_review"',
+    "creative-profile review payload remains pending by default",
+  ],
+  [
+    '"approved_candidate_count"',
+    "private review bundle approved candidate count assertion",
   ],
 ]) {
   requireIncludes(workflowTests, fragment, label);
