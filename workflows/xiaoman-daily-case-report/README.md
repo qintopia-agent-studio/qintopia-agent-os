@@ -42,8 +42,9 @@ observation, rollback, and send boundaries still run from the immutable release.
   review a text日报, not only the image artifact.
 - Write a private `.character-universe.json` second-pass export alongside the poster and
   Markdown. It keeps people, topics, events, memes, callbacks, same-topic relationships,
-  creative-profile candidates, storyline candidates, and graph edges from curated report
-  content only; it does not retain raw messages or hidden profile fact text.
+  creative-profile candidates, creative-universe candidates, storyline candidates, and
+  graph edges from curated report content only; it does not retain raw messages or
+  hidden profile fact text.
 - Write a `wx-cli`-style private review bundle alongside the poster: `.quote-map.json`,
   `.wiki-bundle.json`, `.draft-bundle.json`, `.run-manifest.json`, `.review.md`, and
   `.creative-profile-review-payload.draft.json`. These files add the reference project's
@@ -117,7 +118,16 @@ daily report layer, not from raw chat archives. It also emits
 `profile_upgrade_status`. `daily_note_only` candidates remain daily notes. Only
 `eligible_for_review` candidates may be copied into the separate reviewed payload for
 `apply_creative_profile_candidates.py`, where an owner-reviewed `person_id` mapping is
-required before any durable `creative_profile` snapshot can be written.
+required before any durable `creative_profile` snapshot can be written. The same export
+emits `creative_universe_candidates` for cross-day memes, relationship labels, and
+timeline threads. These are candidate-only review assets with
+`public_surface_allowed=false` and `writes_member_profile_snapshots=false`; production
+metadata may retain only their counts and privacy flags. Owner-reviewed expressive
+labels use a stricter field-level boundary: the daily report may generate
+`expressive_label_candidates`, but public Markdown/poster copy can reuse only labels
+already reviewed into `safe_reply_hints.public_expressive_labels` with
+`public_surface_allowed=true` and `review_status=reviewed|approved`. Unreviewed roast
+labels, relationship tension, or cross-day jokes remain private review candidates.
 
 ## Running it
 
@@ -298,8 +308,10 @@ candidate text.
   character universe and private review bundle paths ran, without retaining people
   labels, story labels, quote text, relationship labels, or source excerpts.
 - The visible Markdown/poster output also emits a fixed `public_output_style` contract
-  so production evidence can prove the character-daily, storyline-first, roast-review,
-  and private-draft boundaries without retaining rendered copy or candidate text.
+  so production evidence can prove the character-daily, storyline-first, image-first,
+  PDF-non-default, roast-review, and private-draft boundaries without retaining rendered
+  copy or candidate text. Group-facing delivery defaults to JPEG/image; any future PDF
+  output is for internal archive or review, not the default send artifact.
 - Production JPEG/database runs use fixed local runtime tools only. Database
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command

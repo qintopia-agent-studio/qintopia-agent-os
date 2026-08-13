@@ -33,6 +33,7 @@ tags:
   - daily-report
   - community
   - image
+  - wx-cli-style
 next_actions:
   - Keep production JPEG/database runs on the reviewed fixed runtime tools; do not
     hand-install Python packages or browsers on servers.

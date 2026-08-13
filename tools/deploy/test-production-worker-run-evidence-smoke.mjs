@@ -141,8 +141,13 @@ writeFile(
           meme_count: 4,
           callback_count: 4,
           relationship_count: 2,
+          expressive_label_candidate_count: 3,
+          reviewed_public_expressive_label_count: 1,
+          unreviewed_expressive_labels_public_surface_allowed: false,
           creative_profile_candidate_count: 4,
           creative_profile_public_surface_allowed: false,
+          creative_universe_candidate_count: 6,
+          creative_universe_public_surface_allowed: false,
           storyline_candidate_count: 5,
           edge_count: 7,
         },
@@ -153,6 +158,9 @@ writeFile(
           cast_notes_enabled: true,
           meme_callback_section_enabled: true,
           relationship_section_enabled: true,
+          owner_reviewed_expressive_labels_only: true,
+          image_first_delivery: true,
+          pdf_default_delivery: false,
           roast_review_boundary: true,
           private_draft_only: true,
           public_surface_contains_private_draft: false,
@@ -209,10 +217,25 @@ check(
       "xiaoman_daily_case_report_worker_character_universe_relationship_count=2"
     ) &&
     result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_expressive_label_candidate_count=3"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_reviewed_public_expressive_label_count=1"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_unreviewed_expressive_labels_public_surface_allowed=false"
+    ) &&
+    result.stdout.includes(
       "xiaoman_daily_case_report_worker_character_universe_creative_profile_candidate_count=4"
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed=false"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_creative_universe_candidate_count=6"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_character_universe_creative_universe_public_surface_allowed=false"
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5"
@@ -234,6 +257,15 @@ check(
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_public_output_style_relationship_section_enabled=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_owner_reviewed_expressive_labels_only=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_image_first_delivery=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_pdf_default_delivery=false"
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_public_output_style_roast_review_boundary=true"
