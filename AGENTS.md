@@ -54,7 +54,10 @@
   `public_output_style` schema/boolean contract proving the character-daily layout,
   storyline-first output, image-first group delivery, PDF-non-default delivery, roast
   review boundary, and private-draft boundary. Never retain rendered Markdown, labels,
-  quotes, relationship text, or candidate draft text as style evidence.
+  quotes, relationship text, or candidate draft text as style evidence. Worker metadata
+  must preserve negative boundaries as negative booleans: `pdf_default_delivery=false`
+  and `public_surface_contains_private_draft=false` are success evidence, not failures
+  to coerce to `true`.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash

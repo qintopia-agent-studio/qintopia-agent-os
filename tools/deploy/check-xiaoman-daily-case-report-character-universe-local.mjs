@@ -568,7 +568,7 @@ for (const [fragment, label] of [
     "worker draft counts only",
   ],
   [
-    '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True',
+    '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is False',
     "worker private draft public-surface flag only",
   ],
   [
@@ -576,8 +576,8 @@ for (const [fragment, label] of [
     "worker image-first delivery flag",
   ],
   [
-    '"pdf_default_delivery": public_output_style.get("pdf_default_delivery") is True',
-    "worker PDF default delivery flag only",
+    '"pdf_default_delivery": public_output_style.get("pdf_default_delivery") is False',
+    "worker PDF non-default delivery flag only",
   ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [
