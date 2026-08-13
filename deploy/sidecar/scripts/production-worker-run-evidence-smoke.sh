@@ -186,13 +186,32 @@ if data.get("worker") != "xiaoman-daily-case-report-auto-publish-worker":
 metrics = data.get("content_metrics")
 universe = data.get("character_universe")
 review_bundle = data.get("private_review_bundle")
+public_output_style = data.get("public_output_style")
 if not isinstance(metrics, dict) or not isinstance(universe, dict):
+    raise SystemExit(2)
+if not isinstance(public_output_style, dict):
     raise SystemExit(2)
 if universe.get("raw_messages_included") is not False:
     raise SystemExit(3)
 if universe.get("profile_fact_text_included") is not False:
     raise SystemExit(3)
 if universe.get("creative_profile_public_surface_allowed") is not False:
+    raise SystemExit(3)
+if public_output_style.get("character_daily_layout") is not True:
+    raise SystemExit(3)
+if public_output_style.get("storyline_first") is not True:
+    raise SystemExit(3)
+if public_output_style.get("cast_notes_enabled") is not True:
+    raise SystemExit(3)
+if public_output_style.get("meme_callback_section_enabled") is not True:
+    raise SystemExit(3)
+if public_output_style.get("relationship_section_enabled") is not True:
+    raise SystemExit(3)
+if public_output_style.get("roast_review_boundary") is not True:
+    raise SystemExit(3)
+if public_output_style.get("private_draft_only") is not True:
+    raise SystemExit(3)
+if public_output_style.get("public_surface_contains_private_draft") is not False:
     raise SystemExit(3)
 if review_bundle is not None:
     if not isinstance(review_bundle, dict):
@@ -232,6 +251,14 @@ def universe_count(name: str) -> int:
 
 def safe_label(name: str) -> str:
     value = universe.get(name, "")
+    if not isinstance(value, str):
+        raise SystemExit(2)
+    if value and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", value):
+        raise SystemExit(2)
+    return value
+
+def safe_style_label(name: str) -> str:
+    value = public_output_style.get(name, "")
     if not isinstance(value, str):
         raise SystemExit(2)
     if value and not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", value):
@@ -306,6 +333,15 @@ print(f"{key}_worker_character_universe_creative_profile_candidate_count={univer
 print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")
 print(f"{key}_worker_character_universe_storyline_candidate_count={universe_count('storyline_candidate_count')}")
 print(f"{key}_worker_character_universe_edge_count={universe_count('edge_count')}")
+print(f"{key}_worker_public_output_style_schema_version={safe_style_label('schema_version')}")
+print(f"{key}_worker_public_output_style_character_daily_layout=true")
+print(f"{key}_worker_public_output_style_storyline_first=true")
+print(f"{key}_worker_public_output_style_cast_notes_enabled=true")
+print(f"{key}_worker_public_output_style_meme_callback_section_enabled=true")
+print(f"{key}_worker_public_output_style_relationship_section_enabled=true")
+print(f"{key}_worker_public_output_style_roast_review_boundary=true")
+print(f"{key}_worker_public_output_style_private_draft_only=true")
+print(f"{key}_worker_public_output_style_public_surface_contains_private_draft=false")
 print(f"{key}_worker_private_review_bundle_public_surface_allowed=false")
 print(f"{key}_worker_private_review_bundle_review_required=true")
 print(f"{key}_worker_private_review_bundle_raw_message_rows_included=false")

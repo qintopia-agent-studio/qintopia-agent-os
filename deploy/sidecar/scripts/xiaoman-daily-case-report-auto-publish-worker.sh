@@ -175,6 +175,7 @@ window = candidate.get("report_window") or {}
 content_metrics = candidate.get("content_metrics") or {}
 character_universe = rendered.get("character_universe") or {}
 private_review_bundle = rendered.get("private_review_bundle") or {}
+public_output_style = rendered.get("public_output_style") or {}
 artifact_uri = uploaded.get("artifact_uri")
 if not artifact_uri:
     raise SystemExit("media upload did not return artifact_uri")
@@ -242,6 +243,17 @@ print(json.dumps({
             ),
             "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
             "edge_count": len(character_universe.get("edges") or []),
+        },
+        "public_output_style": {
+            "schema_version": public_output_style.get("schema_version", ""),
+            "character_daily_layout": public_output_style.get("character_daily_layout") is True,
+            "storyline_first": public_output_style.get("storyline_first") is True,
+            "cast_notes_enabled": public_output_style.get("cast_notes_enabled") is True,
+            "meme_callback_section_enabled": public_output_style.get("meme_callback_section_enabled") is True,
+            "relationship_section_enabled": public_output_style.get("relationship_section_enabled") is True,
+            "roast_review_boundary": public_output_style.get("roast_review_boundary") is True,
+            "private_draft_only": public_output_style.get("private_draft_only") is True,
+            "public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True,
         },
         "private_review_bundle": {
             "schema_version": private_review_bundle.get("schema_version", ""),

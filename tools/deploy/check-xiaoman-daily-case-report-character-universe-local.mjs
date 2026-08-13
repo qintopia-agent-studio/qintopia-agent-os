@@ -152,6 +152,16 @@ for (const [fragment, label] of [
   ["meme_seed", "public-safe meme seed"],
   ["arc_label", "daily character arc label"],
   ['"daily_report_markdown_path"', "Markdown report output path"],
+  ['"public_output_style"', "public output style summary"],
+  [
+    '"schema_version": "xiaoman-daily-public-output-style-v1"',
+    "public output style schema",
+  ],
+  ['"roast_review_boundary": True', "public output style roast boundary"],
+  [
+    '"public_surface_contains_private_draft": False',
+    "public output style blocks private draft surface",
+  ],
   ['"character_universe_path"', "character universe output path"],
   ['"quote_map_path"', "quote map output path"],
   ['"wiki_bundle_path"', "wiki bundle output path"],
@@ -474,7 +484,12 @@ for (const [fragment, label] of [
     'private_review_bundle = rendered.get("private_review_bundle") or {}',
     "worker private review bundle safe summary read",
   ],
+  [
+    'public_output_style = rendered.get("public_output_style") or {}',
+    "worker public output style safe summary read",
+  ],
   ['"character_universe": {', "worker safe universe metadata"],
+  ['"public_output_style": {', "worker safe public output style metadata"],
   ['"private_review_bundle": {', "worker safe private review bundle metadata"],
   [
     '"raw_messages_included": character_universe.get("raw_messages_included") is True',
@@ -503,6 +518,10 @@ for (const [fragment, label] of [
   [
     '"draft_counts": private_review_bundle.get("draft_counts") or {}',
     "worker draft counts only",
+  ],
+  [
+    '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True',
+    "worker private draft public-surface flag only",
   ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [
@@ -567,6 +586,22 @@ for (const [fragment, label] of [
     "worker-run draft roast candidate count evidence",
   ],
   [
+    'print(f"{key}_worker_public_output_style_schema_version=',
+    "worker-run public output style schema evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_character_daily_layout=true")',
+    "worker-run character-daily style evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_roast_review_boundary=true")',
+    "worker-run roast boundary style evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_public_surface_contains_private_draft=false")',
+    "worker-run private-draft surface style evidence",
+  ],
+  [
     'print(f"{key}_worker_character_universe_creative_profile_candidate_count=',
     "worker-run creative-profile candidate count evidence",
   ],
@@ -590,6 +625,18 @@ for (const [fragment, label] of [
   [
     "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|meme_count|callback_count|relationship_count|creative_profile_candidate_count|storyline_candidate_count|edge_count)",
     "runner allowlist for universe counts",
+  ],
+  [
+    "xiaoman_daily_case_report_worker_public_output_style_schema_version",
+    "runner allowlist for public output style schema",
+  ],
+  [
+    "xiaoman_daily_case_report_worker_public_output_style_(?:character_daily_layout|storyline_first|cast_notes_enabled|meme_callback_section_enabled|relationship_section_enabled|roast_review_boundary|private_draft_only)",
+    "runner allowlist for public output style true flags",
+  ],
+  [
+    "xiaoman_daily_case_report_worker_public_output_style_public_surface_contains_private_draft",
+    "runner allowlist for public output style false flag",
   ],
   [
     "xiaoman_daily_case_report_worker_private_review_bundle_(?:public_surface_allowed|raw_message_rows_included|profile_fact_text_included)",

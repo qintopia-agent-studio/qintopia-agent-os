@@ -2627,6 +2627,21 @@ def _build_run_manifest(
     }
 
 
+def _public_output_style_contract() -> dict[str, Any]:
+    return {
+        "schema_version": "xiaoman-daily-public-output-style-v1",
+        "source": "wx_cli_style_daily_migration",
+        "character_daily_layout": True,
+        "storyline_first": True,
+        "cast_notes_enabled": True,
+        "meme_callback_section_enabled": True,
+        "relationship_section_enabled": True,
+        "roast_review_boundary": True,
+        "private_draft_only": True,
+        "public_surface_contains_private_draft": False,
+    }
+
+
 def _render_review_report(
     report: ReportData,
     quote_map: dict[str, Any],
@@ -3894,6 +3909,7 @@ def _result_json(
         "html_path": str(html_path) if html_exists else None,
         "daily_report_markdown_path": str(markdown_path) if markdown_exists else None,
         "daily_report_markdown": _render_daily_markdown(report),
+        "public_output_style": _public_output_style_contract(),
         "character_universe_path": str(universe_path) if universe_exists else None,
         "character_universe": report.character_universe,
         "quote_map_path": str(quote_map_path) if quote_map_exists else None,

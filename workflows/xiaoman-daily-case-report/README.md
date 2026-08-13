@@ -297,6 +297,9 @@ candidate text.
   Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
   character universe and private review bundle paths ran, without retaining people
   labels, story labels, quote text, relationship labels, or source excerpts.
+- The visible Markdown/poster output also emits a fixed `public_output_style` contract
+  so production evidence can prove the character-daily, storyline-first, roast-review,
+  and private-draft boundaries without retaining rendered copy or candidate text.
 - Production JPEG/database runs use fixed local runtime tools only. Database
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command

@@ -50,6 +50,11 @@
   may contain ordinary digest, light-roast, public-draft, storyline timeline, and
   7/14/30-day lookback callback candidates, so production evidence may retain only
   `draft_counts` plus privacy flags, never the candidate text.
+- Xiaoman daily case-report production evidence may retain only the fixed
+  `public_output_style` schema/boolean contract proving the character-daily layout,
+  storyline-first output, roast review boundary, and private-draft boundary. Never
+  retain rendered Markdown, labels, quotes, relationship text, or candidate draft text
+  as style evidence.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash

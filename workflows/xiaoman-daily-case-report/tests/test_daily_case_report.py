@@ -1489,6 +1489,13 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("## 梗和回调候选", markdown)
         self.assertIn("raw_messages_included=false", markdown)
         self.assertIn("profile_fact_text_included=false", markdown)
+        style = daily_case_report._public_output_style_contract()
+        self.assertEqual(style["schema_version"], "xiaoman-daily-public-output-style-v1")
+        self.assertTrue(style["character_daily_layout"])
+        self.assertTrue(style["storyline_first"])
+        self.assertTrue(style["roast_review_boundary"])
+        self.assertTrue(style["private_draft_only"])
+        self.assertFalse(style["public_surface_contains_private_draft"])
 
     def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -1785,6 +1792,16 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertIn("events", universe)
             self.assertIn("storyline_candidates", universe)
             self.assertIn("timeline", wiki_bundle)
+            style = result["public_output_style"]
+            self.assertEqual(style["schema_version"], "xiaoman-daily-public-output-style-v1")
+            self.assertTrue(style["character_daily_layout"])
+            self.assertTrue(style["storyline_first"])
+            self.assertTrue(style["cast_notes_enabled"])
+            self.assertTrue(style["meme_callback_section_enabled"])
+            self.assertTrue(style["relationship_section_enabled"])
+            self.assertTrue(style["roast_review_boundary"])
+            self.assertTrue(style["private_draft_only"])
+            self.assertFalse(style["public_surface_contains_private_draft"])
             self.assertIn("## 今日剧中人", result["daily_report_markdown"])
             self.assertIn("## 梗和回调候选", result["daily_report_markdown"])
             self.assertFalse(result["requires_human_confirmation"])
