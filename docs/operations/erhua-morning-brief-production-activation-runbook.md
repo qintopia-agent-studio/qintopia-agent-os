@@ -119,7 +119,7 @@ QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=disabled \
 If Erhua legacy cron observation finds runtime cron declarations, do not activate the
 new timer until those declarations are retired through a reviewed Erhua path. For the
 observed Erhua legacy cron state with SHA-256
-`59edf8abc1602a10a5ffb83120c631395d8c486df66343bfd1591a94da30412c`, retire it only
+`f55862d5289224a089d32dea712baf6fcb6a6ff1fbeb7da0cbe6131aacb3cef9`, retire it only
 through the promoted release-local script:
 
 ```bash
