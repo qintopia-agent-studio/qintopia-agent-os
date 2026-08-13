@@ -127,7 +127,8 @@ publish_report="${tmp_dir}/publish.json"
   "${report_date_args[@]}" \
   --chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID" \
   --output-dir "$tmp_dir" \
-  --json >"$render_report"
+  --json \
+  --json-summary-only >"$render_report"
 
 upload_payload="$("$PYTHON_BIN" - "$render_report" <<'PY'
 import json
@@ -173,10 +174,9 @@ with open(sys.argv[2], encoding="utf-8") as fh:
 candidate = rendered.get("artifact_candidate") or {}
 window = candidate.get("report_window") or {}
 content_metrics = candidate.get("content_metrics") or {}
-character_universe = rendered.get("character_universe") or {}
+character_universe = rendered.get("character_universe_summary") or {}
 private_review_bundle = rendered.get("private_review_bundle") or {}
 public_output_style = rendered.get("public_output_style") or {}
-creative_universe_candidates = character_universe.get("creative_universe_candidates") or {}
 artifact_uri = uploaded.get("artifact_uri")
 if not artifact_uri:
     raise SystemExit("media upload did not return artifact_uri")
@@ -231,32 +231,21 @@ print(json.dumps({
             "retained_source_policy": character_universe.get("retained_source_policy", ""),
             "raw_messages_included": character_universe.get("raw_messages_included") is True,
             "profile_fact_text_included": character_universe.get("profile_fact_text_included") is True,
-            "people_count": len(character_universe.get("people") or []),
-            "topic_count": len(character_universe.get("topics") or []),
-            "event_count": len(character_universe.get("events") or []),
-            "meme_count": len(character_universe.get("memes") or []),
-            "callback_count": len(character_universe.get("callbacks") or []),
-            "relationship_count": len(character_universe.get("relationships") or []),
-            "expressive_label_candidate_count": len(character_universe.get("expressive_label_candidates") or []),
-            "reviewed_public_expressive_label_count": sum(
-                1
-                for item in character_universe.get("expressive_label_candidates") or []
-                if item.get("public_surface_allowed") is True
-                and item.get("review_status") == "reviewed"
-            ),
-            "creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or []),
-            "creative_profile_public_surface_allowed": (
-                (character_universe.get("creative_profile_candidate_policy") or {}).get("public_surface_allowed")
-                is True
-            ),
-            "creative_universe_candidate_count": int(creative_universe_candidates.get("candidate_count") or 0),
-            "creative_universe_public_surface_allowed": creative_universe_candidates.get("public_surface_allowed") is True,
-            "unreviewed_expressive_labels_public_surface_allowed": any(
-                item.get("public_surface_allowed") is True and item.get("review_status") != "reviewed"
-                for item in character_universe.get("expressive_label_candidates") or []
-            ),
-            "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
-            "edge_count": len(character_universe.get("edges") or []),
+            "people_count": character_universe.get("people_count", 0),
+            "topic_count": character_universe.get("topic_count", 0),
+            "event_count": character_universe.get("event_count", 0),
+            "meme_count": character_universe.get("meme_count", 0),
+            "callback_count": character_universe.get("callback_count", 0),
+            "relationship_count": character_universe.get("relationship_count", 0),
+            "expressive_label_candidate_count": character_universe.get("expressive_label_candidate_count", 0),
+            "reviewed_public_expressive_label_count": character_universe.get("reviewed_public_expressive_label_count", 0),
+            "creative_profile_candidate_count": character_universe.get("creative_profile_candidate_count", 0),
+            "creative_profile_public_surface_allowed": character_universe.get("creative_profile_public_surface_allowed") is True,
+            "creative_universe_candidate_count": character_universe.get("creative_universe_candidate_count", 0),
+            "creative_universe_public_surface_allowed": character_universe.get("creative_universe_public_surface_allowed") is True,
+            "unreviewed_expressive_labels_public_surface_allowed": character_universe.get("unreviewed_expressive_labels_public_surface_allowed") is True,
+            "storyline_candidate_count": character_universe.get("storyline_candidate_count", 0),
+            "edge_count": character_universe.get("edge_count", 0),
         },
         "public_output_style": {
             "schema_version": public_output_style.get("schema_version", ""),
@@ -307,7 +296,7 @@ with open(sys.argv[3], encoding="utf-8") as fh:
 
 candidate = rendered.get("artifact_candidate") or {}
 content_metrics = candidate.get("content_metrics") or {}
-character_universe = rendered.get("character_universe") or {}
+character_universe = rendered.get("character_universe_summary") or {}
 private_review_bundle = rendered.get("private_review_bundle") or {}
 
 print(json.dumps({
@@ -338,19 +327,16 @@ print(json.dumps({
         "retained_source_policy": character_universe.get("retained_source_policy", ""),
         "raw_messages_included": character_universe.get("raw_messages_included") is True,
         "profile_fact_text_included": character_universe.get("profile_fact_text_included") is True,
-        "people_count": len(character_universe.get("people") or []),
-        "topic_count": len(character_universe.get("topics") or []),
-        "event_count": len(character_universe.get("events") or []),
-        "meme_count": len(character_universe.get("memes") or []),
-        "callback_count": len(character_universe.get("callbacks") or []),
-        "relationship_count": len(character_universe.get("relationships") or []),
-        "creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or []),
-        "creative_profile_public_surface_allowed": (
-            (character_universe.get("creative_profile_candidate_policy") or {}).get("public_surface_allowed")
-            is True
-        ),
-        "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
-        "edge_count": len(character_universe.get("edges") or []),
+        "people_count": character_universe.get("people_count", 0),
+        "topic_count": character_universe.get("topic_count", 0),
+        "event_count": character_universe.get("event_count", 0),
+        "meme_count": character_universe.get("meme_count", 0),
+        "callback_count": character_universe.get("callback_count", 0),
+        "relationship_count": character_universe.get("relationship_count", 0),
+        "creative_profile_candidate_count": character_universe.get("creative_profile_candidate_count", 0),
+        "creative_profile_public_surface_allowed": character_universe.get("creative_profile_public_surface_allowed") is True,
+        "storyline_candidate_count": character_universe.get("storyline_candidate_count", 0),
+        "edge_count": character_universe.get("edge_count", 0),
     },
     "private_review_bundle": {
         "schema_version": private_review_bundle.get("schema_version", ""),

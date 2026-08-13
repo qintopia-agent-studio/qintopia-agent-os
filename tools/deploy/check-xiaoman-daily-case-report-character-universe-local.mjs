@@ -535,9 +535,10 @@ for (const [fragment, label] of [
     'content_metrics = candidate.get("content_metrics") or {}',
     "worker content metrics",
   ],
+  ["--json-summary-only", "worker renders summary-only JSON for auto-publish"],
   [
-    'character_universe = rendered.get("character_universe") or {}',
-    "worker universe read",
+    'character_universe = rendered.get("character_universe_summary") or {}',
+    "worker universe summary read",
   ],
   [
     'private_review_bundle = rendered.get("private_review_bundle") or {}',
@@ -559,31 +560,31 @@ for (const [fragment, label] of [
     "worker profile fact flag binding",
   ],
   [
-    '"creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or [])',
+    '"creative_profile_candidate_count": character_universe.get("creative_profile_candidate_count", 0)',
     "worker creative-profile candidate count",
   ],
   [
-    '"creative_profile_public_surface_allowed": (',
+    '"creative_profile_public_surface_allowed": character_universe.get("creative_profile_public_surface_allowed") is True',
     "worker creative-profile public-surface flag",
   ],
   [
-    '"creative_universe_candidate_count": int(creative_universe_candidates.get("candidate_count") or 0)',
+    '"creative_universe_candidate_count": character_universe.get("creative_universe_candidate_count", 0)',
     "worker creative-universe candidate count only",
   ],
   [
-    '"creative_universe_public_surface_allowed": creative_universe_candidates.get("public_surface_allowed") is True',
+    '"creative_universe_public_surface_allowed": character_universe.get("creative_universe_public_surface_allowed") is True',
     "worker creative-universe public-surface flag only",
   ],
   [
-    '"expressive_label_candidate_count": len(character_universe.get("expressive_label_candidates") or [])',
+    '"expressive_label_candidate_count": character_universe.get("expressive_label_candidate_count", 0)',
     "worker expressive label candidate count only",
   ],
   [
-    '"reviewed_public_expressive_label_count": sum(',
+    '"reviewed_public_expressive_label_count": character_universe.get("reviewed_public_expressive_label_count", 0)',
     "worker reviewed public expressive label count only",
   ],
   [
-    '"unreviewed_expressive_labels_public_surface_allowed": any(',
+    '"unreviewed_expressive_labels_public_surface_allowed": character_universe.get("unreviewed_expressive_labels_public_surface_allowed") is True',
     "worker unreviewed expressive public-surface flag only",
   ],
   [
@@ -618,13 +619,13 @@ for (const [fragment, label] of [
     '"pdf_default_delivery": public_output_style.get("pdf_default_delivery") is False',
     "worker PDF non-default delivery flag only",
   ],
-  ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
+  ['"meme_count": character_universe.get("meme_count", 0)', "worker meme count"],
   [
-    '"callback_count": len(character_universe.get("callbacks") or [])',
+    '"callback_count": character_universe.get("callback_count", 0)',
     "worker callback count",
   ],
   [
-    '"relationship_count": len(character_universe.get("relationships") or [])',
+    '"relationship_count": character_universe.get("relationship_count", 0)',
     "worker relationship count",
   ],
   [
@@ -852,7 +853,12 @@ for (const [fragment, label] of [
     '"daily_report_markdown": rendered.get("daily_report_markdown")',
     "worker test markdown retention guard",
   ],
+  ['"daily_report_markdown":', "worker test markdown key guard"],
   ['"people": character_universe.get("people")', "worker test raw universe node guard"],
+  [
+    'len(character_universe.get("people") or [])',
+    "worker test universe node count guard",
+  ],
 ]) {
   requireIncludes(backfillWorkerTest, fragment, label);
   requireNotIncludes(worker, fragment, "worker retained payload");

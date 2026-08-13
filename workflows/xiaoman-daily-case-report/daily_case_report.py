@@ -332,6 +332,11 @@ def _parse_args() -> argparse.Namespace:
         help="Print full JSON instead of just the operator review message.",
     )
     parser.add_argument(
+        "--json-summary-only",
+        action="store_true",
+        help="With --json, omit private rendered bodies and keep only paths, counts, and flags.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Generate from fixture or empty stub; do not read the database.",
@@ -2962,6 +2967,90 @@ def _public_output_style_contract() -> dict[str, Any]:
     }
 
 
+def _character_universe_summary(universe: dict[str, Any]) -> dict[str, Any]:
+    creative_universe_candidates = universe.get("creative_universe_candidates") or {}
+    expressive_label_candidates = universe.get("expressive_label_candidates") or []
+    return {
+        "schema_version": universe.get("schema_version", ""),
+        "source": universe.get("source", ""),
+        "retained_source_policy": universe.get("retained_source_policy", ""),
+        "raw_messages_included": universe.get("raw_messages_included") is True,
+        "profile_fact_text_included": universe.get("profile_fact_text_included") is True,
+        "people_count": len(universe.get("people") or []),
+        "topic_count": len(universe.get("topics") or []),
+        "event_count": len(universe.get("events") or []),
+        "meme_count": len(universe.get("memes") or []),
+        "callback_count": len(universe.get("callbacks") or []),
+        "relationship_count": len(universe.get("relationships") or []),
+        "expressive_label_candidate_count": len(expressive_label_candidates),
+        "reviewed_public_expressive_label_count": sum(
+            1
+            for item in expressive_label_candidates
+            if item.get("public_surface_allowed") is True
+            and item.get("review_status") == "reviewed"
+        ),
+        "creative_profile_candidate_count": len(
+            universe.get("creative_profile_candidates") or []
+        ),
+        "creative_profile_public_surface_allowed": (
+            (universe.get("creative_profile_candidate_policy") or {}).get(
+                "public_surface_allowed"
+            )
+            is True
+        ),
+        "creative_universe_candidate_count": int(
+            creative_universe_candidates.get("candidate_count") or 0
+        ),
+        "creative_universe_public_surface_allowed": (
+            creative_universe_candidates.get("public_surface_allowed") is True
+        ),
+        "unreviewed_expressive_labels_public_surface_allowed": any(
+            item.get("public_surface_allowed") is True
+            and item.get("review_status") != "reviewed"
+            for item in expressive_label_candidates
+        ),
+        "storyline_candidate_count": len(universe.get("storyline_candidates") or []),
+        "edge_count": len(universe.get("edges") or []),
+    }
+
+
+def _summary_result_json(result: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = {
+        "success",
+        "skill",
+        "external_send_executed",
+        "requires_human_confirmation",
+        "auto_publish_ready",
+        "group_name",
+        "report_date",
+        "time_range",
+        "message_count",
+        "participant_count",
+        "case_count",
+        "character_count",
+        "suspect_count",
+        "deliverable_path",
+        "image_path",
+        "image_format",
+        "image_mime_type",
+        "png_path",
+        "html_path",
+        "daily_report_markdown_path",
+        "character_universe_path",
+        "quote_map_path",
+        "wiki_bundle_path",
+        "draft_bundle_path",
+        "run_manifest_path",
+        "review_report_path",
+        "creative_profile_review_payload_path",
+        "public_output_style",
+        "character_universe_summary",
+        "private_review_bundle",
+        "artifact_candidate",
+    }
+    return {key: value for key, value in result.items() if key in allowed_keys}
+
+
 def _render_review_report(
     report: ReportData,
     quote_map: dict[str, Any],
@@ -3316,6 +3405,21 @@ def _render_html(report: ReportData, width: int) -> str:
     callback_candidates = _meme_callback_candidates(report)
     relationship_candidates = _relationship_candidates(report)
 
+    story_index_html = "\n".join(
+        f"""
+      <div class="story-index-item">
+        <span>{index:02d}</span>
+        <strong>{html.escape(_case_storyline_label(case))}</strong>
+        <small>{html.escape(case.summary)}</small>
+      </div>"""
+        for index, case in enumerate(report.cases[:4], start=1)
+    )
+    story_index_section = f"""
+  <section class="story-index">
+    <div class="story-index-heading"><span>DAILY WORKSHOP INDEX</span><strong>{report.message_count} 条素材 / {report.participant_count} 位出场 / {report.case_count} 条主线 / {report.character_count} 张人物卡</strong></div>
+    <div class="story-index-grid">{story_index_html}</div>
+  </section>""" if story_index_html else ""
+
     stats_html = "\n".join(
         f"""
       <div class="stat">
@@ -3428,12 +3532,22 @@ def _render_html(report: ReportData, width: int) -> str:
   .hero-opening {{ margin-top: 8px; color: #2b2b2b; font-size: 13px; font-weight: 700; line-height: 1.55; }}
   .hero-time {{ margin-top: 12px; padding-top: 6px; border-top: 4px solid #111111; font-size: 11px; }}
   .hero-badge {{ position: absolute; right: 24px; top: 24px; display: grid; width: 106px; height: 106px; place-items: center; border: 4px solid #111111; border-radius: 12px; background: #88d7ff; font-size: 21px; font-weight: 900; text-align: center; line-height: 1.1; }}
-  .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); background: #111111; color: #fff8df; }}
-  .stat {{ min-height: 96px; padding: 17px 20px; border-right: 2px solid #3d3d3d; }}
+  .story-index {{ padding: 16px 24px 18px; background: #111111; color: #fff8df; }}
+  .story-index-heading {{ display: flex; align-items: baseline; justify-content: space-between; gap: 18px; margin-bottom: 11px; }}
+  .story-index-heading span {{ color: #ffd92e; font-size: 11px; font-weight: 900; }}
+  .story-index-heading strong {{ color: #fff0a6; font-size: 12px; font-weight: 800; text-align: right; }}
+  .story-index-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }}
+  .story-index-item {{ display: grid; grid-template-columns: 32px 1fr; gap: 8px; min-height: 54px; padding: 8px; border: 2px solid #fff8df; background: #1c1c1c; }}
+  .story-index-item span {{ display: grid; width: 28px; height: 28px; place-items: center; border: 2px solid #ffd92e; border-radius: 50%; color: #ffd92e; font-size: 11px; font-weight: 900; }}
+  .story-index-item strong {{ min-width: 0; font-size: 13px; font-weight: 900; line-height: 1.25; }}
+  .story-index-item small {{ grid-column: 2; color: #c9c9c9; font-size: 10px; line-height: 1.35; }}
+  .stats {{ display: grid; grid-template-columns: repeat(4, 1fr); margin: 22px 24px 0; border: 3px solid #111111; background: #ffffff; color: #111111; }}
+  .stat {{ min-height: 70px; padding: 13px 16px; border-right: 2px solid #111111; }}
   .stat:last-child {{ border-right: 0; }}
   .stat-label, .section-kicker, .highlight-kicker, .hotlist-heading span {{ color: #ffd92e; font-size: 11px; font-weight: 800; }}
-  .stat-value {{ margin-top: 5px; font-size: 34px; font-weight: 900; line-height: 1; }}
-  .stat-caption {{ margin-top: 5px; color: #c9c9c9; font-size: 11px; }}
+  .stat .stat-label {{ color: #f25a18; }}
+  .stat-value {{ margin-top: 4px; font-size: 26px; font-weight: 900; line-height: 1; }}
+  .stat-caption {{ margin-top: 4px; color: #555555; font-size: 10px; }}
   .timeline {{ margin: 22px 24px 0; padding: 18px 18px 12px; border: 4px solid #111111; background: #fff0a6; }}
   .timeline-head {{ display: flex; align-items: baseline; justify-content: space-between; }}
   .timeline h2, .section h2 {{ font-size: 26px; font-weight: 900; line-height: 1.1; }}
@@ -3506,12 +3620,13 @@ def _render_html(report: ReportData, width: int) -> str:
     <div class="hero-time">{html.escape(report.time_range)} · {report.member_count} 名成员</div>
     <div class="hero-badge">人物<br>主线</div>
   </header>
-  <section class="stats">{stats_html}</section>
+  {story_index_section}
   {characters_html}
   {highlight_html}
   {callbacks_html}
   {relationships_html}
   {cases_html}
+  <section class="stats">{stats_html}</section>
   <section class="timeline">
     <div class="timeline-head"><h2>24H 活跃节奏</h2><div class="peak">峰值 {peak_count} 条 / {peak_idx:02d}:00</div></div>
     <svg viewBox="0 0 {chart_width} 106" aria-label="24小时活跃节奏">{timeline_svg}{peak_svg}{timeline_labels}</svg>
@@ -3818,23 +3933,43 @@ def _render_image_with_pillow(
     draw.text((badge_box[0] + 22 * scale, badge_box[1] + 66 * scale), "主线", font=hero_font, fill=ink)
     y = hero_top + hero_height
 
-    stats = [
-        ("消息", report.message_count, "当日素材"),
-        ("出场", report.participant_count, "活跃成员"),
-        ("主线", report.case_count, "可归档"),
-        ("人物", report.character_count, "群像卡"),
-    ]
-    stat_height = 96 * scale
-    stat_width = (canvas_width - outer * 2) // 4
-    draw.rectangle((outer, y, canvas_width - outer, y + stat_height), fill=ink)
-    for index, (label, value, caption) in enumerate(stats):
-        x = outer + index * stat_width
-        if index:
-            draw.line((x, y + 12 * scale, x, y + stat_height - 12 * scale), fill="#3a3a3a", width=2 * scale)
-        draw.text((x + 22 * scale, y + 16 * scale), label, font=tiny_font, fill=yellow)
-        draw.text((x + 22 * scale, y + 38 * scale), str(value), font=stat_font, fill=cream)
-        draw.text((x + 88 * scale, y + 56 * scale), caption, font=tiny_font, fill="#d8d8d8")
-    y += stat_height
+    story_index_cases = report.cases[:4]
+    if story_index_cases:
+        story_index_top = y
+        story_index_height = 136 * scale
+        draw.rectangle((outer, story_index_top, canvas_width - outer, story_index_top + story_index_height), fill=ink)
+        draw.text((padding, story_index_top + 16 * scale), "DAILY WORKSHOP INDEX", font=tiny_font, fill=yellow)
+        text_right(
+            canvas_width - padding,
+            story_index_top + 16 * scale,
+            (
+                f"{report.message_count} 条素材 / {report.participant_count} 位出场 / "
+                f"{report.case_count} 条主线 / {report.character_count} 张人物卡"
+            ),
+            tiny_font,
+            pale_yellow,
+        )
+        index_card_width = (content_width - gutter) // 2
+        for index, case in enumerate(story_index_cases):
+            column = index % 2
+            row = index // 2
+            x = padding + column * (index_card_width + gutter)
+            row_top = story_index_top + (44 + row * 42) * scale
+            draw.rectangle(
+                (x, row_top, x + index_card_width, row_top + 34 * scale),
+                fill="#1c1c1c",
+                outline=cream,
+                width=2 * scale,
+            )
+            draw.ellipse(
+                (x + 8 * scale, row_top + 6 * scale, x + 30 * scale, row_top + 28 * scale),
+                outline=yellow,
+                width=2 * scale,
+            )
+            draw.text((x + 12 * scale, row_top + 9 * scale), f"{index + 1:02d}", font=tiny_font, fill=yellow)
+            draw.text((x + 40 * scale, row_top + 6 * scale), _case_storyline_label(case)[:10], font=small_font, fill=cream)
+            text_right(x + index_card_width - 10 * scale, row_top + 10 * scale, case.summary, tiny_font, "#c9c9c9")
+        y = story_index_top + story_index_height
 
     if report.characters:
         character_top = y
@@ -4013,6 +4148,24 @@ def _render_image_with_pillow(
                 line_gap=3 * scale,
             )
         y += ((len(cases) + 1) // 2) * (card_height + gutter) + 18 * scale
+
+    stats = [
+        ("消息", report.message_count, "当日素材"),
+        ("出场", report.participant_count, "活跃成员"),
+        ("主线", report.case_count, "可归档"),
+        ("人物", report.character_count, "群像卡"),
+    ]
+    stat_height = 70 * scale
+    stat_width = content_width // 4
+    draw.rectangle((padding, y, padding + content_width, y + stat_height), fill="#ffffff", outline=ink, width=3 * scale)
+    for index, (label, value, caption) in enumerate(stats):
+        x = padding + index * stat_width
+        if index:
+            draw.line((x, y, x, y + stat_height), fill=ink, width=2 * scale)
+        draw.text((x + 16 * scale, y + 11 * scale), label, font=tiny_font, fill=orange)
+        draw.text((x + 16 * scale, y + 31 * scale), str(value), font=section_font, fill=ink)
+        draw.text((x + 76 * scale, y + 38 * scale), caption, font=tiny_font, fill="#555555")
+    y += stat_height + 24 * scale
 
     timeline_top = y
     timeline_height = 145 * scale
@@ -4279,6 +4432,7 @@ def _result_json(
         "public_output_style": _public_output_style_contract(),
         "character_universe_path": str(universe_path) if universe_exists else None,
         "character_universe": report.character_universe,
+        "character_universe_summary": _character_universe_summary(report.character_universe),
         "quote_map_path": str(quote_map_path) if quote_map_exists else None,
         "quote_map": quote_map,
         "wiki_bundle_path": str(wiki_bundle_path) if wiki_bundle_exists else None,
@@ -4492,7 +4646,12 @@ def main() -> int:
         )
 
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            output = (
+                _summary_result_json(result)
+                if getattr(args, "json_summary_only", False)
+                else result
+            )
+            print(json.dumps(output, ensure_ascii=False, indent=2))
         else:
             print(result["operator_review_message"])
         return 0

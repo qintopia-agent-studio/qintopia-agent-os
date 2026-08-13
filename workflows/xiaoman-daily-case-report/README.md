@@ -323,6 +323,11 @@ candidate text.
   Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
   character universe and private review bundle paths ran, without retaining people
   labels, story labels, quote text, relationship labels, or source excerpts.
+- The auto-publish worker invokes `daily_case_report.py --json --json-summary-only`.
+  That JSON contains paths, artifact identity, `public_output_style`,
+  `character_universe_summary`, and review-bundle counts/flags only; it deliberately
+  omits full Markdown, full character-universe nodes, quote-map, wiki-bundle,
+  draft-bundle, run-manifest, and operator-review text from the send chain.
 - The visible Markdown/poster output also emits a fixed `public_output_style` contract
   so production evidence can prove the character-daily, storyline-first, image-first,
   PDF-non-default, roast-review, and private-draft boundaries without retaining rendered
