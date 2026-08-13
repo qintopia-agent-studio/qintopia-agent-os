@@ -1,10 +1,30 @@
-# Xiaoman Daily Case-Report — Systemd Design Draft
+# Xiaoman Daily Case-Report — Retired Systemd Design Draft
 
-Updated: 2026-08-08
+Updated: 2026-08-13
 
-This document records the reviewed design for promoting
-`workflows/xiaoman-daily-case-report` from a merged, `status: draft` workflow package
-into a live, release-managed **daily** timer.
+This document is a retained historical draft. It describes the older release-managed
+systemd timer idea for `workflows/xiaoman-daily-case-report`, but the current Xiaoman
+daily report direction is the wx-cli-style, image-first workflow documented in
+`workflows/xiaoman-daily-case-report/README.md`.
+
+Do not use this document as the current activation path. The current production path is
+Hermes cron plus the reviewed image upload / auto-publish / QiWe send-ready chain. The
+group-facing deliverable is an image; PDF, if added later, is only an archive or private
+review artifact.
+
+The current script keeps these production constraints:
+
+- It generates storyline-first daily drafts plus a private `.draft-bundle.json`.
+- It groups character sketches by stable `sender_person_id` before display name.
+- It may retain only sanitized `draft_counts`, `privacy_flags`, and
+  `public_output_style` as evidence.
+- It must not retain rendered Markdown, quote text, relationship text, private labels,
+  raw messages, person ids, chat ids, or media URIs as production evidence.
+- It uses `/usr/bin/psql` as the database fallback when Python `psycopg` is unavailable.
+- It uses the local Pillow renderer as the production-safe image fallback; do not
+  install Playwright browsers or Python packages on the production host at runtime.
+
+The older notes below remain for context only.
 
 It is **not** the owner-approved activation path. Do not copy unit files to the host,
 enable timers, edit production parameters, or remove legacy schedules from this
@@ -41,10 +61,10 @@ Out of scope (deferred, unchanged by this design draft):
    fix) must be merged to `master` so the release checkout contains
    `workflows/xiaoman-daily-case-report/daily_case_report.py`.
 2. **Live-read gate.** Confirm the message-store read-through works on the live host for
-   the target group (`chat_id=10859791146538059`, 秦托邦的小伙伴（新）). The script
-   fails closed (non-zero exit) if
-   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1` is unset or the database
-   URL is missing.
+   the reviewed Xiaoman QiWe group id supplied from server-local configuration. Do not
+   paste, retain, or commit the real `chat_id`. The script fails closed (non-zero exit)
+   if `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1` is unset or the
+   database URL is missing.
 3. **Deploy implementation gate.** A follow-up deploy/runner change must add the unit
    templates, render/install/rollback logic, and contract checks before production
    activation.
@@ -81,7 +101,7 @@ sidecar subcommands).
 
 ```ini
 [Unit]
-Description=Run Xiaoman daily community case-file report (deterministic draft)
+Description=Retired Xiaoman daily report systemd draft (do not activate)
 
 [Timer]
 # OWNER DECISION: daily generation time. 07:45 covers the previous day via rolling window.
@@ -97,7 +117,7 @@ WantedBy=timers.target
 
 ```ini
 [Unit]
-Description=Xiaoman Daily Community Case-File Report (deterministic draft)
+Description=Retired Xiaoman Daily Report Systemd Draft (do not activate)
 After=network-online.target
 Wants=network-online.target
 
@@ -132,9 +152,9 @@ Before this timer can be activated, a follow-up reviewed deploy/runner change mu
   `tools/deploy/check-deploy-contracts.mjs`.
 - Use the fixed systemd boundary already required by production deploy scripts.
 - Render `ExecStart=` with an absolute, reviewed production interpreter path from the
-  immutable release environment. The preflight must prove the interpreter identity and
-  required Python packages for this workflow, including `psycopg`, Playwright, Chromium,
-  and text-processing dependencies used by the script.
+  immutable release environment if this retired path is ever audited again. The current
+  production-safe renderer is Pillow; do not require Playwright or Chromium on the
+  production host.
 - Remove or disable any legacy conversation-created schedule only inside reviewed
   deploy/runner logic, with rollback that restores the previous reviewed state.
 - Emit sanitized activation evidence only; do not print secrets, member-level raw chat

@@ -13,6 +13,7 @@ const workflows = [
   "workflows/erhua-consultation",
   "workflows/erhua-morning-brief",
   "workflows/xiaoman-activity-signal",
+  "workflows/xiaoman-daily-case-report",
   "workflows/visual-asset-request",
   "workflows/silaoshi-daily-ops",
 ];

@@ -41,6 +41,12 @@
 - Markdown lint: `pnpm lint:md`
 - Xiaoman production evidence chain local repository verification:
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
+- Xiaoman daily case-report character-universe local readiness check:
+  `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs` This
+  proves the wx-cli-style image-first daily layout, private `.draft-bundle.json`,
+  stable-identity character sketches, sanitized `draft_counts`/`privacy_flags`/
+  `public_output_style`, and Pillow/psql fallback contracts. It does not prove
+  production DB read-through, media upload, QiWe delivery, or live Hermes cron success.
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - Local PR quick tier: `pnpm check:pr:quick`

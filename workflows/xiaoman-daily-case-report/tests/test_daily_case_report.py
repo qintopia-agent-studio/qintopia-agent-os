@@ -130,6 +130,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 sys.modules["psycopg"] = old_psycopg
 
         self.assertIn("COALESCE(m.sent_at, m.received_at) AS report_time", captured["sql"])
+        self.assertIn("m.sender_person_id::text AS sender_person_id", captured["sql"])
         self.assertIn("m.message_kind = 'text'", captured["sql"])
         self.assertIn("NULLIF(BTRIM(m.text), '') IS NOT NULL", captured["sql"])
         self.assertEqual(messages[0].sent_at, report_time)
@@ -356,6 +357,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("@import", rendered)
         self.assertNotIn("https://", rendered)
         self.assertNotIn("http://", rendered)
+        self.assertIn("WX-CLI STYLE DAILY", rendered)
 
     def test_render_png_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -426,6 +428,108 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("/reports/preview.html", str(captured["url"]))
         self.assertNotIn("file://reports", str(captured["url"]))
 
+    def test_render_png_falls_back_to_pillow_when_playwright_missing(self) -> None:
+        calls: dict[str, object] = {}
+
+        class FakeFont:
+            pass
+
+        class FakeImage:
+            height = 16000
+
+            @classmethod
+            def new(cls, mode, size, color):
+                calls["new"] = (mode, size, color)
+                return cls()
+
+            def paste(self, *_args):
+                pass
+
+            def crop(self, box):
+                calls["crop"] = box
+                return self
+
+            def save(self, path, format):
+                calls["save"] = (path, format)
+                Path(path).write_bytes(b"fake-png")
+
+        class FakeDraw:
+            def __init__(self, _image):
+                pass
+
+            def textbbox(self, _pos, text, font=None):
+                return (0, 0, len(str(text)) * 8, 18)
+
+            def rectangle(self, *_args, **_kwargs):
+                pass
+
+            def text(self, *_args, **_kwargs):
+                pass
+
+        fake_pil = types.ModuleType("PIL")
+        fake_image_module = types.ModuleType("PIL.Image")
+        fake_image_draw = types.ModuleType("PIL.ImageDraw")
+        fake_image_font = types.ModuleType("PIL.ImageFont")
+        fake_image_module.new = FakeImage.new
+        fake_image_draw.Draw = lambda image: FakeDraw(image)
+        fake_image_font.truetype = lambda path, size: FakeFont()
+        fake_image_font.load_default = lambda: FakeFont()
+
+        old_playwright = sys.modules.get("playwright")
+        old_sync_api = sys.modules.get("playwright.sync_api")
+        old_pil = sys.modules.get("PIL")
+        old_image = sys.modules.get("PIL.Image")
+        old_draw = sys.modules.get("PIL.ImageDraw")
+        old_font = sys.modules.get("PIL.ImageFont")
+        sys.modules.pop("playwright", None)
+        sys.modules.pop("playwright.sync_api", None)
+        sys.modules["PIL"] = fake_pil
+        sys.modules["PIL.Image"] = fake_image_module
+        sys.modules["PIL.ImageDraw"] = fake_image_draw
+        sys.modules["PIL.ImageFont"] = fake_image_font
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="daily",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=1,
+            message_count=1,
+            participant_count=1,
+            case_count=0,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[],
+            suspects=[],
+            quote="done",
+            highlight="done",
+            headline="图片优先",
+            subtitle="没有浏览器也要能走 Pillow 兜底",
+            opening="",
+            characters=[],
+            quotes=[],
+            tomorrow_clues=["继续观察"],
+        )
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                output_path = Path(tmpdir) / "report.png"
+                daily_case_report._render_png(Path("missing.html"), output_path, 750, report)
+                self.assertEqual(output_path.read_bytes(), b"fake-png")
+        finally:
+            for name, old in [
+                ("playwright", old_playwright),
+                ("playwright.sync_api", old_sync_api),
+                ("PIL", old_pil),
+                ("PIL.Image", old_image),
+                ("PIL.ImageDraw", old_draw),
+                ("PIL.ImageFont", old_font),
+            ]:
+                if old is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = old
+
+        self.assertEqual(calls["save"][1], "PNG")
+
     def test_render_html_mode_returns_existing_html_deliverable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             env = os.environ.copy()
@@ -455,7 +559,96 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(deliverable_path.is_file())
             self.assertEqual(result["html_path"], str(deliverable_path))
             self.assertIsNone(result["png_path"])
+            self.assertTrue(Path(result["draft_bundle_path"]).is_file())
+            self.assertTrue(result["public_output_style"]["image_first_delivery"])
+            self.assertFalse(result["public_output_style"]["pdf_default_delivery"])
+            self.assertTrue(result["public_output_style"]["storyline_first_output"])
+            self.assertTrue(result["privacy_flags"]["stable_identity_grouping"])
             self.assertIn(str(deliverable_path), result["operator_review_message"])
+
+    def test_character_sketches_group_by_person_id_before_display_name(self) -> None:
+        person_a = "00000000-0000-0000-0000-0000000000aa"
+        person_b = "00000000-0000-0000-0000-0000000000bb"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_person_id=person_a,
+                sender_name="同名",
+                text="活动接龙：我来发起今晚讨论",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u2",
+                sender_person_id=person_b,
+                sender_name="同名",
+                text="资源分享：我补一个完全不同的话题",
+                sent_at=datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc),
+                message_kind="text",
+            ),
+        ]
+        memory = {
+            person_a: [
+                daily_case_report.CreativeMemorySignal(
+                    person_id=person_a,
+                    label="活动发起人",
+                    fact_type="creative_profile",
+                    count=3,
+                    last_seen="2026-08-07",
+                    public_safe=True,
+                )
+            ],
+            person_b: [
+                daily_case_report.CreativeMemorySignal(
+                    person_id=person_b,
+                    label="资料投喂者",
+                    fact_type="creative_profile",
+                    count=5,
+                    last_seen="2026-08-07",
+                    public_safe=True,
+                )
+            ],
+        }
+
+        sketches = daily_case_report._compute_characters(messages, memory)
+
+        self.assertEqual(len(sketches), 2)
+        self.assertEqual({item.message_count for item in sketches}, {1})
+        self.assertTrue(any("活动发起人" in item.memory_line for item in sketches))
+        self.assertTrue(any("资料投喂者" in item.memory_line for item in sketches))
+
+    def test_private_memory_stays_out_of_public_image_line(self) -> None:
+        person_id = "00000000-0000-0000-0000-0000000000cc"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_person_id=person_id,
+                sender_name="成员",
+                text="今天我来补一个活动复盘",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+            )
+        ]
+        memory = {
+            person_id: [
+                daily_case_report.CreativeMemorySignal(
+                    person_id=person_id,
+                    label="不可公开标签",
+                    fact_type="creative_profile",
+                    count=7,
+                    last_seen="2026-08-07",
+                    public_safe=False,
+                )
+            ]
+        }
+
+        sketch = daily_case_report._compute_characters(messages, memory)[0]
+
+        self.assertIn("私有人物画像候选 7 条", sketch.memory_line)
+        self.assertNotIn("不可公开标签", sketch.memory_line)
 
 
 if __name__ == "__main__":
