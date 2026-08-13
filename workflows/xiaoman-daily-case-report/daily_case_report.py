@@ -2427,6 +2427,13 @@ def _ordinary_digest_topic_cards(report: ReportData) -> list[dict[str, Any]]:
                 "message_count": case.message_count,
                 "summary": case.summary,
                 "anchors": case.bullets[:3],
+                "message_ids": [],
+                "attachment_pointers": [],
+                "media_links": [],
+                "media_notes": {
+                    "status": "omitted_no_reviewed_attachment_source",
+                    "raw_message_payload_read": False,
+                },
                 "top_speaker": case.top_speaker,
                 "status": "candidate",
             }
@@ -2441,6 +2448,13 @@ def _ordinary_digest_topic_cards(report: ReportData) -> list[dict[str, Any]]:
                 "message_count": topic.message_count,
                 "summary": f"{topic.message_count} 条消息，{topic.participant_count} 人参与",
                 "anchors": [],
+                "message_ids": [],
+                "attachment_pointers": [],
+                "media_links": [],
+                "media_notes": {
+                    "status": "omitted_no_reviewed_attachment_source",
+                    "raw_message_payload_read": False,
+                },
                 "top_speaker": "",
                 "status": "candidate",
             }
@@ -2857,6 +2871,17 @@ def _build_run_manifest(
             "draft_bundle": "private_review_json",
             "review_report": "private_review_markdown",
         },
+        "reference_workshop_steps": {
+            "attachment_index": "omitted_no_reviewed_attachment_source",
+            "media_prepare": "omitted_no_reviewed_attachment_source",
+            "media_notes": "omitted_no_reviewed_attachment_source",
+            "media_link_check": "omitted_no_reviewed_attachment_source",
+            "weather_context": "omitted_no_reviewed_weather_source",
+            "history_profiles": "reviewed_creative_profiles_or_member_fact_counts_only",
+            "traceability": "quote_map_and_private_manifest_only",
+            "raw_message_payload_read": False,
+            "attachment_public_surface_allowed": False,
+        },
         "counts": {
             "case_count": report.case_count,
             "character_count": report.character_count,
@@ -2912,6 +2937,8 @@ def _build_run_manifest(
                 for item in universe.get("expressive_label_candidates") or []
             ),
             "writes_member_profile_snapshots": False,
+            "raw_message_payload_read": False,
+            "attachment_public_surface_allowed": False,
         },
         "review_required": True,
     }
@@ -2973,6 +3000,7 @@ def _render_review_report(
         "- [ ] 同名成员是否按 person_id 优先分组，缺失 person_id 才使用展示名兜底",
         "- [ ] meme / relationship / storyline 是否只是候选，没有被当作事实发布",
         "- [ ] roast/public draft 是否仍为 owner-review 候选，没有进入自动公开发送面",
+        "- [ ] 附件/图片素材步骤是否仍为 omitted，未读取 raw payload 或猜测图片内容",
         "",
         "## 隐私边界",
         "",
@@ -2982,6 +3010,8 @@ def _render_review_report(
         f"- creative_universe_public_surface_allowed={str(run_manifest['privacy']['creative_universe_public_surface_allowed']).lower()}",
         f"- unreviewed_expressive_labels_public_surface_allowed={str(run_manifest['privacy']['unreviewed_expressive_labels_public_surface_allowed']).lower()}",
         f"- writes_member_profile_snapshots={str(run_manifest['privacy']['writes_member_profile_snapshots']).lower()}",
+        f"- raw_message_payload_read={str(run_manifest['privacy']['raw_message_payload_read']).lower()}",
+        f"- attachment_public_surface_allowed={str(run_manifest['privacy']['attachment_public_surface_allowed']).lower()}",
         "",
         "## 可审核人物画像候选",
         "",

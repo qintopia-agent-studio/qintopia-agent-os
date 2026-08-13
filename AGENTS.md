@@ -53,6 +53,10 @@
   topics, people notes, local-life notes, open questions, risk items, and public-topic
   candidates. Production evidence may retain only `draft_counts` plus privacy flags,
   never the candidate text.
+- Xiaoman daily case-report reference-project attachment/media slots must stay explicit
+  empty review fields until a reviewed attachment source exists. Do not read
+  `messages.raw`, attachment tokens, filenames, media URLs, or image payloads for daily
+  digest/poster content.
 - Xiaoman daily case-report production evidence may retain only the fixed
   `public_output_style` schema/boolean contract proving the character-daily layout,
   storyline-first output, image-first group delivery, PDF-non-default delivery, roast

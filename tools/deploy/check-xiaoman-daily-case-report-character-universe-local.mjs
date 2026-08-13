@@ -238,6 +238,14 @@ for (const [fragment, label] of [
     "ordinary digest one-sentence summary",
   ],
   ['"main_topics": ordinary_topic_cards', "ordinary digest topic cards"],
+  ['"message_ids": []', "ordinary digest message-id slot intentionally empty"],
+  ['"attachment_pointers": []', "ordinary digest attachment slot intentionally empty"],
+  ['"media_links": []', "ordinary digest media-link slot intentionally empty"],
+  [
+    '"omitted_no_reviewed_attachment_source"',
+    "ordinary digest attachment/media steps are explicitly omitted",
+  ],
+  ['"raw_message_payload_read": False', "raw message payload is not read for media"],
   ['"people_notes": ordinary_people_notes', "ordinary digest people notes"],
   ['"local_life_notes": [', "ordinary digest local-life notes"],
   ['"open_questions": ordinary_open_questions', "ordinary digest open questions"],
@@ -254,6 +262,11 @@ for (const [fragment, label] of [
   [
     '"reviewed_creative_profiles_used": any(',
     "run manifest proves reviewed creative profiles were reused",
+  ],
+  ['"reference_workshop_steps": {', "run manifest records wx-cli workshop step parity"],
+  [
+    '"attachment_public_surface_allowed": False',
+    "run manifest blocks attachment public surface",
   ],
   [
     '"approved_candidate_count": sum(',

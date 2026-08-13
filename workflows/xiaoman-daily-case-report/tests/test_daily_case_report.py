@@ -1241,6 +1241,16 @@ class DailyCaseReportTest(unittest.TestCase):
         )
         self.assertTrue(ordinary_digest["one_sentence_summary"])
         self.assertEqual(ordinary_digest["main_topics"][0]["title"], "活动讨论")
+        self.assertEqual(ordinary_digest["main_topics"][0]["message_ids"], [])
+        self.assertEqual(ordinary_digest["main_topics"][0]["attachment_pointers"], [])
+        self.assertEqual(ordinary_digest["main_topics"][0]["media_links"], [])
+        self.assertEqual(
+            ordinary_digest["main_topics"][0]["media_notes"]["status"],
+            "omitted_no_reviewed_attachment_source",
+        )
+        self.assertFalse(
+            ordinary_digest["main_topics"][0]["media_notes"]["raw_message_payload_read"]
+        )
         self.assertEqual(ordinary_digest["people_notes"][0]["role_label"], "活动推进者")
         self.assertTrue(ordinary_digest["risk_items"])
         self.assertGreaterEqual(len(ordinary_digest["candidate_public_topics"]), 1)
@@ -1270,6 +1280,18 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(run_manifest["inputs"]["latest_chat_records_preserved"])
         self.assertTrue(run_manifest["inputs"]["long_term_member_facts_used"])
         self.assertFalse(run_manifest["inputs"]["long_term_member_fact_text_included"])
+        self.assertEqual(
+            run_manifest["reference_workshop_steps"]["attachment_index"],
+            "omitted_no_reviewed_attachment_source",
+        )
+        self.assertEqual(
+            run_manifest["reference_workshop_steps"]["media_prepare"],
+            "omitted_no_reviewed_attachment_source",
+        )
+        self.assertFalse(run_manifest["reference_workshop_steps"]["raw_message_payload_read"])
+        self.assertFalse(
+            run_manifest["reference_workshop_steps"]["attachment_public_surface_allowed"]
+        )
         self.assertGreaterEqual(run_manifest["counts"]["creative_universe_candidate_count"], 1)
         self.assertGreaterEqual(run_manifest["counts"]["expressive_label_candidate_count"], 1)
         self.assertFalse(run_manifest["privacy"]["profile_fact_text_included"])
@@ -1278,11 +1300,16 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertFalse(
             run_manifest["privacy"]["unreviewed_expressive_labels_public_surface_allowed"]
         )
+        self.assertFalse(run_manifest["privacy"]["raw_message_payload_read"])
+        self.assertFalse(run_manifest["privacy"]["attachment_public_surface_allowed"])
         self.assertIn("审核清单", review_report)
         self.assertIn("eligible_for_review", review_report)
         self.assertIn("创作资产候选", review_report)
         self.assertIn("creative_universe_public_surface_allowed=false", review_report)
         self.assertIn("unreviewed_expressive_labels_public_surface_allowed=false", review_report)
+        self.assertIn("raw_message_payload_read=false", review_report)
+        self.assertIn("attachment_public_surface_allowed=false", review_report)
+        self.assertIn("未读取 raw payload", review_report)
         self.assertIn("evidence_count=", review_report)
         self.assertIn("worker-run evidence 只能保留 presence/count/privacy flags", review_report)
         serialized = json.dumps(
