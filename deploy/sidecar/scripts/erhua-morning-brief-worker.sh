@@ -137,6 +137,7 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --execute-artifact-create \
   --apply-artifact-create \
   --publish-plan \
+  --allow-news-unavailable \
   --json >"$report_json"
 
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" - "$report_json" <<'PY'
