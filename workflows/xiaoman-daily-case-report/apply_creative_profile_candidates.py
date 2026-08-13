@@ -184,6 +184,7 @@ def _validate_payload(value: dict[str, Any]) -> list[ReviewedCandidate]:
         "reviewed_by",
         "reviewed_at",
         "candidates",
+        "review_notes",
     }
     if set(value) - allowed:
         raise ApplyError("payload contains unsupported fields")
@@ -195,6 +196,7 @@ def _validate_payload(value: dict[str, Any]) -> list[ReviewedCandidate]:
         raise ApplyError("character universe schema is invalid")
     _safe_text(value.get("reviewed_by"), "reviewed_by")
     _safe_text(value.get("reviewed_at"), "reviewed_at")
+    _validate_review_notes(value.get("review_notes"))
     raw_candidates = value.get("candidates")
     if not isinstance(raw_candidates, list) or not raw_candidates:
         raise ApplyError("candidates must be a non-empty array")
@@ -212,6 +214,41 @@ def _validate_payload(value: dict[str, Any]) -> list[ReviewedCandidate]:
     if not candidates:
         raise ApplyError("payload has no approved candidates to apply")
     return candidates
+
+
+def _validate_review_notes(value: Any) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise ApplyError("review_notes must be an object")
+    allowed = {
+        "person_id_required",
+        "person_id_policy",
+        "display_name_binding_allowed",
+        "daily_note_only_default",
+        "eligible_for_review_default",
+        "apply_requires_owner_approved",
+        "public_surface_allowed",
+        "raw_messages_included",
+        "profile_fact_text_included",
+    }
+    if set(value) - allowed:
+        raise ApplyError("review_notes contains unsupported fields")
+    if value.get("person_id_required") is not True:
+        raise ApplyError("review_notes must require person_id")
+    if value.get("display_name_binding_allowed") is not False:
+        raise ApplyError("review_notes must block display-name binding")
+    if value.get("public_surface_allowed") is not False:
+        raise ApplyError("review_notes public surface must remain false")
+    if value.get("raw_messages_included") is not False:
+        raise ApplyError("review_notes raw message flag must remain false")
+    if value.get("profile_fact_text_included") is not False:
+        raise ApplyError("review_notes profile fact flag must remain false")
+    if value.get("apply_requires_owner_approved") is not True:
+        raise ApplyError("review_notes must require owner approval before apply")
+    _safe_text(value.get("person_id_policy"), "review_notes person_id_policy")
+    _safe_text(value.get("daily_note_only_default"), "review_notes daily_note_only_default")
+    _safe_text(value.get("eligible_for_review_default"), "review_notes eligible_for_review_default")
 
 
 def _summary(candidate: ReviewedCandidate) -> str:

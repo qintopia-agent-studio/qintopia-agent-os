@@ -50,6 +50,7 @@
 
   ```bash
   PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    workflows/xiaoman-daily-case-report/tests/test_build_creative_profile_review_payload.py \
     workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
   ```
 

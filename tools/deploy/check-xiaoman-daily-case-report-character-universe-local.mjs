@@ -41,6 +41,12 @@ const applyCreativeProfiles = requireFile(
 const applyCreativeProfilesTests = requireFile(
   "workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py"
 );
+const buildCreativeProfilePayload = requireFile(
+  "workflows/xiaoman-daily-case-report/build_creative_profile_review_payload.py"
+);
+const buildCreativeProfilePayloadTests = requireFile(
+  "workflows/xiaoman-daily-case-report/tests/test_build_creative_profile_review_payload.py"
+);
 const worker = requireFile(
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 );
@@ -217,6 +223,15 @@ for (const [fragment, label] of [
     'person_ids_included": False',
     "creative-profile apply sanitized report excludes person ids",
   ],
+  ["def _validate_review_notes(", "creative-profile apply validates review notes"],
+  [
+    "review_notes must block display-name binding",
+    "creative-profile apply blocks display-name review-note drift",
+  ],
+  [
+    "review_notes must require owner approval before apply",
+    "creative-profile apply requires owner-approved review notes",
+  ],
   ["member_facts_fact_text", "creative-profile apply do-not-disclose fact text"],
   [
     "exact owner approval is required for apply",
@@ -224,6 +239,45 @@ for (const [fragment, label] of [
   ],
 ]) {
   requireIncludes(applyCreativeProfiles, fragment, label);
+}
+
+for (const [fragment, label] of [
+  [
+    'PAYLOAD_SOURCE = "xiaoman-daily-creative-profile-review-v1"',
+    "creative-profile payload source",
+  ],
+  [
+    'CHARACTER_UNIVERSE_SCHEMA = "xiaoman-character-universe-v1"',
+    "creative-profile payload universe schema binding",
+  ],
+  [
+    '"person_id_required": True',
+    "creative-profile payload requires reviewed person id",
+  ],
+  [
+    '"display_name_binding_allowed": False',
+    "creative-profile payload blocks display-name identity binding",
+  ],
+  [
+    '"eligible_for_review_default": "pending_review"',
+    "creative-profile payload keeps eligible candidates pending owner review",
+  ],
+  [
+    '"apply_requires_owner_approved": True',
+    "creative-profile payload requires owner approved before apply",
+  ],
+  ['person_id=""', "creative-profile payload leaves person id blank for owner review"],
+  [
+    '"pending_review" if status == "eligible_for_review" and minimum_recurrence_met else "rejected"',
+    "creative-profile payload gates review draft on recurrence",
+  ],
+  ['"raw_messages_included": False', "creative-profile payload excludes raw messages"],
+  [
+    '"profile_fact_text_included": False',
+    "creative-profile payload excludes profile fact text",
+  ],
+]) {
+  requireIncludes(buildCreativeProfilePayload, fragment, label);
 }
 
 for (const [fragment, label] of [
@@ -317,6 +371,14 @@ for (const [fragment, label] of [
     "creative-profile apply requires reviewed person id",
   ],
   [
+    "test_payload_requires_owner_to_change_pending_review_to_approved",
+    "creative-profile apply rejects pending-review drafts",
+  ],
+  [
+    "test_review_notes_must_keep_identity_and_privacy_boundaries",
+    "creative-profile apply review-notes privacy regression test",
+  ],
+  [
     "test_apply_uses_fixed_psql_stdin_and_does_not_echo_database_url",
     "creative-profile apply psql boundary test",
   ],
@@ -330,6 +392,27 @@ for (const [fragment, label] of [
   ],
 ]) {
   requireIncludes(applyCreativeProfilesTests, fragment, label);
+}
+
+for (const [fragment, label] of [
+  [
+    "test_build_payload_defaults_to_review_draft_without_person_id",
+    "creative-profile payload draft regression test",
+  ],
+  [
+    "test_daily_note_only_candidates_are_omitted_by_default",
+    "creative-profile payload omits daily notes by default",
+  ],
+  [
+    "test_include_rejected_keeps_daily_notes_for_review_but_not_apply",
+    "creative-profile payload rejected-review regression test",
+  ],
+  [
+    "test_raw_or_private_markers_are_rejected",
+    "creative-profile payload raw/private marker guard test",
+  ],
+]) {
+  requireIncludes(buildCreativeProfilePayloadTests, fragment, label);
 }
 
 for (const [fragment, label] of [

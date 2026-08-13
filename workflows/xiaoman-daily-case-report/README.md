@@ -185,6 +185,21 @@ systemd timer is retained only as a rollback target after the Hermes job is disa
 long-term character profiles. It does not read raw chat archives or infer identity from
 display names. The input must be a reviewed JSON payload that copies only
 `eligible_for_review` candidates and supplies a reviewed `person_id` UUID for each one.
+Use `build_creative_profile_review_payload.py` to turn a daily
+`.character-universe.json` file into an owner-review draft. The draft intentionally
+leaves `person_id` blank, marks eligible candidates as `pending_review`, and marks
+`daily_note_only` candidates as rejected unless `--include-rejected` is used for review
+context; the owner must bind stable UUIDs and explicitly change accepted candidates to
+`approved` before the payload can pass the apply validator.
+
+Review draft generation:
+
+```bash
+python workflows/xiaoman-daily-case-report/build_creative_profile_review_payload.py \
+  --character-universe-json xiaoman-daily-case-report.character-universe.json \
+  --reviewed-by owner-review > reviewed-creative-profile-payload.draft.json
+```
+
 Dry-run validation:
 
 ```bash
@@ -307,10 +322,11 @@ candidate text.
 
   ```bash
   PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    workflows/xiaoman-daily-case-report/tests/test_build_creative_profile_review_payload.py \
     workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
   ```
 
-  validates the reviewed creative-profile apply boundary.
+  validates the review-payload draft and reviewed creative-profile apply boundaries.
 
 - `python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html`
   validates the template generation path without image rendering dependencies.

@@ -144,16 +144,20 @@ and callback hint, while today's role label and evidence still come from the lat
 Postgres message window. The run manifest records only the boolean
 `reviewed_creative_profiles_used`, plus existing privacy flags and counts.
 
+The workflow now also includes
+`workflows/xiaoman-daily-case-report/build_creative_profile_review_payload.py`, a
+review-payload draft builder for the generated `creative_profile_candidates`. It reads a
+private `.character-universe.json` export, keeps only `eligible_for_review` candidates
+by default, leaves `person_id` blank for owner-reviewed stable UUID binding, and writes
+eligible entries as `pending_review` rather than `approved`. The owner must explicitly
+approve accepted candidates before apply. Raw/private markers are rejected, and
+`daily_note_only` candidates remain rejected review context unless explicitly included
+with `--include-rejected`; they still cannot pass
+`apply_creative_profile_candidates.py`.
+
 ## Proposed Next Steps
 
-1. Add a daily creative-profile apply/review worker.
-   - Input: latest QiWe messages for the target group plus existing creative profile
-     snapshots and the generated candidate export.
-   - Output: approved creative-profile deltas and a review report.
-   - Apply mode should remain internal-only until owner-reviewed evidence proves it
-     cannot leak sensitive facts or turn one-off comments into permanent labels.
-
-2. Extend the curated character-universe export with durable creative-profile inputs.
+1. Extend the curated character-universe export with durable creative-profile inputs.
    - The daily export now covers people, topics, events, meme candidates, callback
      candidates, same-topic co-presence relationships, storyline candidates, and edges
      from the report second pass.
@@ -162,7 +166,7 @@ Postgres message window. The run manifest records only the boolean
    - Default export must continue to exclude raw messages, raw attachments, run logs,
      secrets, and internal-only profile details.
 
-3. Add owner-reviewed expressive labels for richer cross-day callbacks.
+2. Add owner-reviewed expressive labels for richer cross-day callbacks.
    - The current poster and Markdown now have the narrative slots, but rich roast
      labels, relationship tension, and cross-day jokes still need an explicit
      publish-safe field before they appear in group-bound auto-published posters.
