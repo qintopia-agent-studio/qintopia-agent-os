@@ -647,7 +647,13 @@ class DailyCaseReportTest(unittest.TestCase):
         )
         quote_map = daily_case_report._build_quote_map(report)
         wiki_bundle = daily_case_report._build_wiki_bundle(report, quote_map)
-        run_manifest = daily_case_report._build_run_manifest(report, quote_map, wiki_bundle)
+        draft_bundle = daily_case_report._build_draft_bundle(report, quote_map, wiki_bundle)
+        run_manifest = daily_case_report._build_run_manifest(
+            report,
+            quote_map,
+            wiki_bundle,
+            draft_bundle,
+        )
 
         self.assertEqual(characters[0].role_label, "活动推进者")
         self.assertEqual(characters[0].story_function, "把活动线串成连续剧")
@@ -658,6 +664,16 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertFalse(characters[0].member_fact_memory_used)
         self.assertTrue(run_manifest["inputs"]["reviewed_creative_profiles_used"])
         self.assertFalse(run_manifest["inputs"]["long_term_member_facts_used"])
+        self.assertEqual(draft_bundle["schema_version"], "xiaoman-daily-draft-bundle-v1")
+        self.assertEqual(
+            draft_bundle["roast_digest"]["status"],
+            "candidate_requires_owner_review",
+        )
+        self.assertTrue(draft_bundle["storyline_memory"]["lookback_callbacks"])
+        self.assertGreater(
+            run_manifest["counts"]["draft_lookback_callback_count"],
+            0,
+        )
         self.assertEqual(universe["people"][0]["creative_profile_status"], "active_reviewed")
         self.assertNotIn(person_id, json.dumps(universe, ensure_ascii=False))
         self.assertNotIn("profile_text", json.dumps(universe, ensure_ascii=False))
@@ -1135,16 +1151,19 @@ class DailyCaseReportTest(unittest.TestCase):
 
         quote_map = daily_case_report._build_quote_map(report)
         wiki_bundle = daily_case_report._build_wiki_bundle(report, quote_map)
+        draft_bundle = daily_case_report._build_draft_bundle(report, quote_map, wiki_bundle)
         run_manifest = daily_case_report._build_run_manifest(
             report,
             quote_map,
             wiki_bundle,
+            draft_bundle,
             source_chat_id="chat-1",
         )
         review_report = daily_case_report._render_review_report(
             report,
             quote_map,
             wiki_bundle,
+            draft_bundle,
             run_manifest,
         )
 
@@ -1157,6 +1176,15 @@ class DailyCaseReportTest(unittest.TestCase):
             any(entry["source_kind"] == "daily_character_note" for entry in quote_map["entries"])
         )
         self.assertEqual(wiki_bundle["schema_version"], "xiaoman-daily-wiki-bundle-v1")
+        self.assertEqual(draft_bundle["schema_version"], "xiaoman-daily-draft-bundle-v1")
+        self.assertEqual(
+            draft_bundle["roast_digest"]["status"],
+            "candidate_requires_owner_review",
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["lookback_callback_count"],
+            1,
+        )
         self.assertEqual(wiki_bundle["counts"]["people"], 1)
         self.assertEqual(wiki_bundle["counts"]["events"], 1)
         self.assertEqual(wiki_bundle["counts"]["storylines"], 1)
@@ -1461,6 +1489,13 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("## 梗和回调候选", markdown)
         self.assertIn("raw_messages_included=false", markdown)
         self.assertIn("profile_fact_text_included=false", markdown)
+        style = daily_case_report._public_output_style_contract()
+        self.assertEqual(style["schema_version"], "xiaoman-daily-public-output-style-v1")
+        self.assertTrue(style["character_daily_layout"])
+        self.assertTrue(style["storyline_first"])
+        self.assertTrue(style["roast_review_boundary"])
+        self.assertTrue(style["private_draft_only"])
+        self.assertFalse(style["public_surface_contains_private_draft"])
 
     def test_render_image_uses_absolute_file_uri_for_relative_html_path(self) -> None:
         captured: dict[str, object] = {}
@@ -1677,16 +1712,45 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(Path(result["character_universe_path"]).is_file())
             self.assertTrue(Path(result["quote_map_path"]).is_file())
             self.assertTrue(Path(result["wiki_bundle_path"]).is_file())
+            self.assertTrue(Path(result["draft_bundle_path"]).is_file())
             self.assertTrue(Path(result["run_manifest_path"]).is_file())
             self.assertTrue(Path(result["review_report_path"]).is_file())
+            self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())
             universe = json.loads(Path(result["character_universe_path"]).read_text(encoding="utf-8"))
             self.assertEqual(universe, result["character_universe"])
             quote_map = json.loads(Path(result["quote_map_path"]).read_text(encoding="utf-8"))
             wiki_bundle = json.loads(Path(result["wiki_bundle_path"]).read_text(encoding="utf-8"))
+            draft_bundle = json.loads(Path(result["draft_bundle_path"]).read_text(encoding="utf-8"))
             run_manifest = json.loads(Path(result["run_manifest_path"]).read_text(encoding="utf-8"))
+            review_payload = json.loads(
+                Path(result["creative_profile_review_payload_path"]).read_text(encoding="utf-8")
+            )
             self.assertEqual(quote_map, result["quote_map"])
             self.assertEqual(wiki_bundle, result["wiki_bundle"])
+            self.assertEqual(draft_bundle, result["draft_bundle"])
             self.assertEqual(run_manifest, result["run_manifest"])
+            self.assertEqual(draft_bundle["schema_version"], "xiaoman-daily-draft-bundle-v1")
+            self.assertFalse(draft_bundle["public_surface_allowed"])
+            self.assertFalse(draft_bundle["raw_message_rows_included"])
+            self.assertFalse(draft_bundle["profile_fact_text_included"])
+            self.assertEqual(
+                draft_bundle["roast_digest"]["status"],
+                "candidate_requires_owner_review",
+            )
+            self.assertIn("public_draft", draft_bundle)
+            self.assertIn("lookback_callbacks", draft_bundle["storyline_memory"])
+            self.assertEqual(review_payload["source"], "xiaoman-daily-creative-profile-review-v1")
+            self.assertTrue(review_payload["review_notes"]["person_id_required"])
+            self.assertFalse(review_payload["review_notes"]["display_name_binding_allowed"])
+            self.assertTrue(
+                all(candidate["person_id"] == "" for candidate in review_payload["candidates"])
+            )
+            self.assertTrue(
+                any(
+                    candidate["review_decision"] == "pending_review"
+                    for candidate in review_payload["candidates"]
+                )
+            )
             self.assertFalse(universe["raw_messages_included"])
             self.assertFalse(universe["profile_fact_text_included"])
             self.assertFalse(quote_map["raw_message_rows_included"])
@@ -1697,10 +1761,47 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertFalse(result["private_review_bundle"]["public_surface_allowed"])
             self.assertTrue(result["private_review_bundle"]["review_required"])
             self.assertGreater(result["private_review_bundle"]["quote_map_entry_count"], 0)
+            self.assertGreater(
+                result["private_review_bundle"]["draft_counts"][
+                    "roast_profile_candidate_count"
+                ],
+                0,
+            )
+            self.assertEqual(
+                result["private_review_bundle"]["creative_profile_review_payload"]["candidate_count"],
+                len(review_payload["candidates"]),
+            )
+            self.assertGreater(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "pending_review_count"
+                ],
+                0,
+            )
+            self.assertEqual(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "approved_candidate_count"
+                ],
+                0,
+            )
+            self.assertFalse(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "display_name_binding_allowed"
+                ]
+            )
             self.assertIn("people", universe)
             self.assertIn("events", universe)
             self.assertIn("storyline_candidates", universe)
             self.assertIn("timeline", wiki_bundle)
+            style = result["public_output_style"]
+            self.assertEqual(style["schema_version"], "xiaoman-daily-public-output-style-v1")
+            self.assertTrue(style["character_daily_layout"])
+            self.assertTrue(style["storyline_first"])
+            self.assertTrue(style["cast_notes_enabled"])
+            self.assertTrue(style["meme_callback_section_enabled"])
+            self.assertTrue(style["relationship_section_enabled"])
+            self.assertTrue(style["roast_review_boundary"])
+            self.assertTrue(style["private_draft_only"])
+            self.assertFalse(style["public_surface_contains_private_draft"])
             self.assertIn("## 今日剧中人", result["daily_report_markdown"])
             self.assertIn("## 梗和回调候选", result["daily_report_markdown"])
             self.assertFalse(result["requires_human_confirmation"])
@@ -1807,14 +1908,22 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(Path(result["character_universe_path"]).is_file())
             self.assertTrue(Path(result["quote_map_path"]).is_file())
             self.assertTrue(Path(result["wiki_bundle_path"]).is_file())
+            self.assertTrue(Path(result["draft_bundle_path"]).is_file())
             self.assertTrue(Path(result["run_manifest_path"]).is_file())
             self.assertTrue(Path(result["review_report_path"]).is_file())
+            self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())
             self.assertFalse(result["character_universe"]["raw_messages_included"])
             self.assertFalse(result["quote_map"]["public_surface_allowed"])
             self.assertFalse(result["wiki_bundle"]["public_surface_allowed"])
             self.assertFalse(result["run_manifest"]["privacy"]["profile_fact_text_included"])
             self.assertFalse(result["run_manifest"]["inputs"]["long_term_member_facts_used"])
             self.assertTrue(result["private_review_bundle"]["review_required"])
+            self.assertEqual(
+                result["private_review_bundle"]["creative_profile_review_payload"][
+                    "approved_candidate_count"
+                ],
+                0,
+            )
             self.assertFalse(result["requires_human_confirmation"])
             self.assertFalse(result["auto_publish_ready"])
             self.assertEqual(result["artifact_candidate"]["workflow_type"], "daily_case_report")

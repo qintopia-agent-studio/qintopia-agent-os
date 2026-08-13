@@ -45,10 +45,11 @@ observation, rollback, and send boundaries still run from the immutable release.
   creative-profile candidates, storyline candidates, and graph edges from curated report
   content only; it does not retain raw messages or hidden profile fact text.
 - Write a `wx-cli`-style private review bundle alongside the poster: `.quote-map.json`,
-  `.wiki-bundle.json`, `.run-manifest.json`, and `.review.md`. These files add the
-  reference project's quote-map / Wiki / run-manifest / review structure while
-  preserving the latest Postgres chat-record source of truth. They are internal review
-  artifacts, not public or send-ready payloads.
+  `.wiki-bundle.json`, `.draft-bundle.json`, `.run-manifest.json`, `.review.md`, and
+  `.creative-profile-review-payload.draft.json`. These files add the reference project's
+  quote-map / Wiki / draft / run-manifest / review structure while preserving the latest
+  Postgres chat-record source of truth. They are internal review artifacts, not public
+  or send-ready payloads.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
   preview and production image share the same report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
@@ -185,6 +186,21 @@ systemd timer is retained only as a rollback target after the Hermes job is disa
 long-term character profiles. It does not read raw chat archives or infer identity from
 display names. The input must be a reviewed JSON payload that copies only
 `eligible_for_review` candidates and supplies a reviewed `person_id` UUID for each one.
+Use `build_creative_profile_review_payload.py` to turn a daily
+`.character-universe.json` file into an owner-review draft. The draft intentionally
+leaves `person_id` blank, marks eligible candidates as `pending_review`, and marks
+`daily_note_only` candidates as rejected unless `--include-rejected` is used for review
+context; the owner must bind stable UUIDs and explicitly change accepted candidates to
+`approved` before the payload can pass the apply validator.
+
+Review draft generation:
+
+```bash
+python workflows/xiaoman-daily-case-report/build_creative_profile_review_payload.py \
+  --character-universe-json xiaoman-daily-case-report.character-universe.json \
+  --reviewed-by owner-review > reviewed-creative-profile-payload.draft.json
+```
+
 Dry-run validation:
 
 ```bash
@@ -262,20 +278,28 @@ candidate text.
 - The private character-universe JSON is generated in the same `0700` output directory
   with mode `0600`. It may contain member display names and curated report excerpts, so
   it follows the same temporary production cleanup policy as Markdown and HTML.
+- The private creative-profile review-payload draft is generated in the same `0700`
+  output directory with mode `0600`. It may contain candidate role labels and evidence
+  anchors, but every eligible candidate remains `pending_review` with blank `person_id`;
+  production metadata may retain only candidate counts and privacy flags.
 - Reviewed `creative_profile` reuse is a read-only style/memory input for the daily
   report. The query is keyed by reviewed `person_id`, active
   `profile_kind='creative_profile'`, and
   `profile_version='xiaoman-daily-creative-profile-v1'`; it reads only
   `safe_reply_hints` / `communication_style` and fails soft so latest message reporting
   remains available when the profile layer is unavailable.
-- The private quote-map, wiki-bundle, run-manifest, and review report are generated in
-  the same `0700` output directory with mode `0600`. They may contain curated excerpts,
-  labels, and candidate nodes, so production worker metadata may retain only their
-  presence, counts, and privacy flags.
+- The private quote-map, wiki-bundle, draft-bundle, run-manifest, and review report are
+  generated in the same `0700` output directory with mode `0600`. They may contain
+  curated excerpts, labels, candidate nodes, light-roast material, public-draft title
+  candidates, and lookback callbacks, so production worker metadata may retain only
+  their presence, counts, and privacy flags.
 - Auto-publish metadata retains only safe counters and schema flags from the private
   Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
   character universe and private review bundle paths ran, without retaining people
   labels, story labels, quote text, relationship labels, or source excerpts.
+- The visible Markdown/poster output also emits a fixed `public_output_style` contract
+  so production evidence can prove the character-daily, storyline-first, roast-review,
+  and private-draft boundaries without retaining rendered copy or candidate text.
 - Production JPEG/database runs use fixed local runtime tools only. Database
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command
@@ -307,10 +331,11 @@ candidate text.
 
   ```bash
   PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    workflows/xiaoman-daily-case-report/tests/test_build_creative_profile_review_payload.py \
     workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
   ```
 
-  validates the reviewed creative-profile apply boundary.
+  validates the review-payload draft and reviewed creative-profile apply boundaries.
 
 - `python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html`
   validates the template generation path without image rendering dependencies.

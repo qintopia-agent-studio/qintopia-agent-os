@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import html
+import importlib.util
 import json
 import os
 import re
@@ -53,6 +54,7 @@ DEFAULT_IMAGE_FORMAT = "jpeg"
 DEFAULT_JPEG_QUALITY = 92
 TEMPLATE_VERSION = "xiaoman-daily-case-report-v3"
 MEMORY_LOOKBACK_DAYS = 90
+REVIEW_DRAFT_REVIEWED_BY = "xiaoman-daily-case-report-review-draft"
 
 STOP_WORDS: set[str] = {
     "这个", "那个", "然后", "就是", "什么", "怎么", "还是", "可以", "今天",
@@ -1048,6 +1050,39 @@ def _write_private_text(path: Path, content: str) -> None:
         handle.write(content)
     tmp_path.replace(path)
     os.chmod(path, 0o600)
+
+
+def _build_creative_profile_review_payload_draft(
+    character_universe: dict[str, Any],
+    reviewed_at: str,
+) -> dict[str, Any]:
+    if not character_universe:
+        character_universe = {
+            "schema_version": "xiaoman-character-universe-v1",
+            "raw_messages_included": False,
+            "profile_fact_text_included": False,
+            "creative_profile_candidate_policy": {
+                "public_surface_allowed": False,
+            },
+            "creative_profile_candidates": [],
+        }
+    helper_path = Path(__file__).resolve().with_name("build_creative_profile_review_payload.py")
+    spec = importlib.util.spec_from_file_location(
+        "xiaoman_daily_case_report_build_creative_profile_review_payload",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("creative profile review payload builder is unavailable")
+    helper = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = helper
+    spec.loader.exec_module(helper)
+    return helper._build_payload(
+        character_universe,
+        reviewed_by=REVIEW_DRAFT_REVIEWED_BY,
+        reviewed_at=reviewed_at,
+        include_rejected=True,
+        allow_empty=True,
+    )
 
 
 def _clean_text(text: str) -> str:
@@ -2208,6 +2243,159 @@ def _wiki_bundle_counts(bundle: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _lookback_callback_candidates(report: ReportData) -> list[dict[str, Any]]:
+    callbacks: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for character in report.characters:
+        seed = (character.meme_seed or character.callback_hint or character.role_label).strip()
+        if not seed:
+            continue
+        for days in (7, 14, 30):
+            key = _node_key(f"{character.node_key or character.name}-{seed}-{days}d")
+            if key in seen:
+                continue
+            seen.add(key)
+            callbacks.append(
+                {
+                    "key": key,
+                    "lookback_days": days,
+                    "label": f"{character.name}的「{seed}」{days}天回看候选",
+                    "related_person": character.node_key or _node_key(character.name),
+                    "trigger": character.callback_hint or character.arc_label,
+                    "status": "candidate",
+                    "risk": "internal_review_required",
+                }
+            )
+            if len(callbacks) >= 9:
+                return callbacks
+    for case in report.cases:
+        label = _case_storyline_label(case)
+        if not label:
+            continue
+        key = _node_key(f"{label}-7d-lookback")
+        if key in seen:
+            continue
+        seen.add(key)
+        callbacks.append(
+            {
+                "key": key,
+                "lookback_days": 7,
+                "label": f"「{label}」7天回看候选",
+                "related_event": _node_key(case.title),
+                "trigger": case.summary,
+                "status": "candidate",
+                "risk": "internal_review_required",
+            }
+        )
+    return callbacks
+
+
+def _build_draft_bundle(
+    report: ReportData,
+    quote_map: dict[str, Any],
+    wiki_bundle: dict[str, Any],
+) -> dict[str, Any]:
+    quote_keys = [str(entry.get("key") or "") for entry in quote_map.get("entries") or []]
+    quote_keys = [key for key in quote_keys if key]
+    main_storyline = _main_storyline_label(report)
+    callback_candidates = _meme_callback_candidates(report)
+    relationship_candidates = _relationship_candidates(report)
+    character_cards = [
+        {
+            "person_key": character.node_key or _node_key(character.name),
+            "display_label": character.name,
+            "role_label": character.role_label,
+            "story_function": character.story_function,
+            "daily_arc": character.arc_label,
+            "callback_hint": character.callback_hint,
+            "memory_weight_label": character.memory_weight_label,
+            "quote_anchor": character.evidence_anchor,
+            "status": "candidate",
+            "risk": "internal_review_required",
+        }
+        for character in report.characters
+    ]
+    title_candidates = [
+        f"小满群聊日报｜{main_storyline}",
+        f"{report.character_count} 位剧中人，把今天的群聊推成一条主线",
+        f"今日回看：{main_storyline}",
+    ]
+    opening_candidates = [
+        _daily_opening_line(report),
+    ]
+    if report.highlight:
+        opening_candidates.append(f"今天可以先从这句看起：{report.highlight}")
+    storyline_timeline = [
+        {
+            "date": report.report_date,
+            "case_no": case.case_no,
+            "storyline": _case_storyline_label(case),
+            "message_count": case.message_count,
+            "participant_count": case.participant_count,
+            "status": "candidate",
+            "risk": "internal_review_required",
+        }
+        for case in report.cases
+    ]
+    lookback_callbacks = _lookback_callback_candidates(report)
+    bundle = {
+        "schema_version": "xiaoman-daily-draft-bundle-v1",
+        "source": "daily_case_report_private_review_bundle",
+        "retained_source_policy": "private_curated_drafts_only",
+        "raw_message_rows_included": False,
+        "profile_fact_text_included": False,
+        "public_surface_allowed": False,
+        "review_required": True,
+        "ordinary_digest": {
+            "status": "candidate",
+            "title": f"小满群聊日报｜{report.report_date}｜{main_storyline}",
+            "main_storyline": main_storyline,
+            "section_keys": [
+                "今日台词",
+                "今日剧中人",
+                "梗和回调候选",
+                "同场关系",
+                "今日主线",
+            ],
+            "quote_keys": quote_keys[:12],
+        },
+        "roast_digest": {
+            "status": "candidate_requires_owner_review",
+            "tone": "轻吐槽人物群像",
+            "character_cards": character_cards,
+            "callback_angles": callback_candidates,
+            "boundary": {
+                "criticize_behavior_not_identity": True,
+                "single_day_trait_blocked": True,
+                "sensitive_attributes_blocked": True,
+            },
+        },
+        "public_draft": {
+            "status": "candidate_requires_owner_review",
+            "title_candidates": title_candidates,
+            "opening_candidates": opening_candidates[:3],
+            "storyline_links": [
+                item.get("key", "") for item in wiki_bundle.get("storylines") or []
+            ][:8],
+            "quote_keys": quote_keys[:8],
+        },
+        "storyline_memory": {
+            "active_storyline_candidates": wiki_bundle.get("storylines") or [],
+            "timeline": storyline_timeline,
+            "lookback_callbacks": lookback_callbacks,
+            "relationship_candidates": relationship_candidates,
+        },
+    }
+    bundle["counts"] = {
+        "ordinary_digest_section_count": len(bundle["ordinary_digest"]["section_keys"]),
+        "roast_profile_candidate_count": len(character_cards),
+        "public_draft_title_count": len(title_candidates),
+        "storyline_timeline_count": len(storyline_timeline),
+        "lookback_callback_count": len(lookback_callbacks),
+    }
+    return bundle
+
+
 def _build_wiki_bundle(report: ReportData, quote_map: dict[str, Any]) -> dict[str, Any]:
     universe = report.character_universe or {}
     event_quote_keys: dict[str, list[str]] = {}
@@ -2361,10 +2549,12 @@ def _build_run_manifest(
     report: ReportData,
     quote_map: dict[str, Any],
     wiki_bundle: dict[str, Any],
+    draft_bundle: dict[str, Any] | None = None,
     *,
     source_chat_id: str | None = None,
 ) -> dict[str, Any]:
     universe = report.character_universe or {}
+    draft_counts = (draft_bundle or {}).get("counts") or {}
     return {
         "schema_version": "xiaoman-daily-run-manifest-v1",
         "source": "daily_case_report",
@@ -2394,6 +2584,7 @@ def _build_run_manifest(
             "character_universe": "private_review_json",
             "quote_map": "private_review_json",
             "wiki_bundle": "private_review_json",
+            "draft_bundle": "private_review_json",
             "review_report": "private_review_markdown",
         },
         "counts": {
@@ -2404,6 +2595,18 @@ def _build_run_manifest(
             "wiki_people_count": (wiki_bundle.get("counts") or {}).get("people", 0),
             "wiki_event_count": (wiki_bundle.get("counts") or {}).get("events", 0),
             "wiki_storyline_count": (wiki_bundle.get("counts") or {}).get("storylines", 0),
+            "draft_roast_profile_candidate_count": draft_counts.get(
+                "roast_profile_candidate_count",
+                0,
+            ),
+            "draft_storyline_timeline_count": draft_counts.get(
+                "storyline_timeline_count",
+                0,
+            ),
+            "draft_lookback_callback_count": draft_counts.get(
+                "lookback_callback_count",
+                0,
+            ),
             "creative_profile_candidate_count": len(
                 universe.get("creative_profile_candidates") or []
             ),
@@ -2424,14 +2627,31 @@ def _build_run_manifest(
     }
 
 
+def _public_output_style_contract() -> dict[str, Any]:
+    return {
+        "schema_version": "xiaoman-daily-public-output-style-v1",
+        "source": "wx_cli_style_daily_migration",
+        "character_daily_layout": True,
+        "storyline_first": True,
+        "cast_notes_enabled": True,
+        "meme_callback_section_enabled": True,
+        "relationship_section_enabled": True,
+        "roast_review_boundary": True,
+        "private_draft_only": True,
+        "public_surface_contains_private_draft": False,
+    }
+
+
 def _render_review_report(
     report: ReportData,
     quote_map: dict[str, Any],
     wiki_bundle: dict[str, Any],
+    draft_bundle: dict[str, Any],
     run_manifest: dict[str, Any],
 ) -> str:
     universe = report.character_universe or {}
     counts = wiki_bundle.get("counts") or {}
+    draft_counts = draft_bundle.get("counts") or {}
     profile_candidates = universe.get("creative_profile_candidates") or []
     lines = [
         f"# 小满日报私有审核包｜{report.report_date}",
@@ -2445,6 +2665,7 @@ def _render_review_report(
         f"- 今日剧中人：{report.character_count} 位",
         f"- 引用映射：{quote_map.get('entry_count', 0)} 条候选证据",
         f"- Wiki 候选：people={counts.get('people', 0)} / events={counts.get('events', 0)} / memes={counts.get('memes', 0)} / relationships={counts.get('relationships', 0)} / storylines={counts.get('storylines', 0)}",
+        f"- 草稿候选：roast_profiles={draft_counts.get('roast_profile_candidate_count', 0)} / storyline_timeline={draft_counts.get('storyline_timeline_count', 0)} / lookback_callbacks={draft_counts.get('lookback_callback_count', 0)}",
         "",
         "## 审核清单",
         "",
@@ -2455,6 +2676,7 @@ def _render_review_report(
         "- [ ] creative_profile_candidates 是否仍为 candidate_only，没有写入长期画像表",
         "- [ ] 同名成员是否按 person_id 优先分组，缺失 person_id 才使用展示名兜底",
         "- [ ] meme / relationship / storyline 是否只是候选，没有被当作事实发布",
+        "- [ ] roast/public draft 是否仍为 owner-review 候选，没有进入自动公开发送面",
         "",
         "## 隐私边界",
         "",
@@ -2485,6 +2707,7 @@ def _render_review_report(
             "- 画报和日报 Markdown 用于人工查看。",
             "- 已审核 `creative_profile` 只读取 safe_reply_hints / communication_style 的安全字段，不读取 summary。",
             "- quote-map / wiki-bundle / run-manifest 只用于内部审核和后续人工确认。",
+            "- draft-bundle 承载普通日报、轻吐槽素材和公众号候选素材，但只作为 owner review 输入。",
             "- worker-run evidence 只能保留 presence/count/privacy flags，不能保留 quote、wiki 节点正文或人物画像文本。",
         ]
     )
@@ -3184,6 +3407,7 @@ def _render_image_with_pillow(
     main_storyline = _main_storyline_label(report)
     opening_line = _daily_opening_line(report)
     callback_candidates = _meme_callback_candidates(report)
+    relationship_candidates = _relationship_candidates(report)
 
     def text_right(x: int, y: int, text: str, font: Any, fill: str) -> None:
         box = draw.textbbox((0, 0), text, font=font)
@@ -3623,11 +3847,15 @@ def _result_json(
     universe_path: Path | None = None,
     quote_map_path: Path | None = None,
     wiki_bundle_path: Path | None = None,
+    draft_bundle_path: Path | None = None,
     run_manifest_path: Path | None = None,
     review_report_path: Path | None = None,
+    creative_profile_review_payload_path: Path | None = None,
     quote_map: dict[str, Any] | None = None,
     wiki_bundle: dict[str, Any] | None = None,
+    draft_bundle: dict[str, Any] | None = None,
     run_manifest: dict[str, Any] | None = None,
+    creative_profile_review_payload: dict[str, Any] | None = None,
     output_width: int | None = None,
     source_chat_id: str | None = None,
 ) -> dict[str, Any]:
@@ -3636,16 +3864,24 @@ def _result_json(
     universe_exists = universe_path is not None and universe_path.exists()
     quote_map_exists = quote_map_path is not None and quote_map_path.exists()
     wiki_bundle_exists = wiki_bundle_path is not None and wiki_bundle_path.exists()
+    draft_bundle_exists = draft_bundle_path is not None and draft_bundle_path.exists()
     run_manifest_exists = run_manifest_path is not None and run_manifest_path.exists()
     review_report_exists = review_report_path is not None and review_report_path.exists()
+    creative_profile_review_payload_exists = (
+        creative_profile_review_payload_path is not None
+        and creative_profile_review_payload_path.exists()
+    )
     quote_map = quote_map or _build_quote_map(report)
     wiki_bundle = wiki_bundle or _build_wiki_bundle(report, quote_map)
+    draft_bundle = draft_bundle or _build_draft_bundle(report, quote_map, wiki_bundle)
     run_manifest = run_manifest or _build_run_manifest(
         report,
         quote_map,
         wiki_bundle,
+        draft_bundle,
         source_chat_id=source_chat_id,
     )
+    creative_profile_review_payload = creative_profile_review_payload or {}
     artifact_candidate = (
         _artifact_candidate(image_path, image_format, report, output_width, source_chat_id)
         if image_path is not None and image_format is not None and image_path.exists()
@@ -3673,15 +3909,23 @@ def _result_json(
         "html_path": str(html_path) if html_exists else None,
         "daily_report_markdown_path": str(markdown_path) if markdown_exists else None,
         "daily_report_markdown": _render_daily_markdown(report),
+        "public_output_style": _public_output_style_contract(),
         "character_universe_path": str(universe_path) if universe_exists else None,
         "character_universe": report.character_universe,
         "quote_map_path": str(quote_map_path) if quote_map_exists else None,
         "quote_map": quote_map,
         "wiki_bundle_path": str(wiki_bundle_path) if wiki_bundle_exists else None,
         "wiki_bundle": wiki_bundle,
+        "draft_bundle_path": str(draft_bundle_path) if draft_bundle_exists else None,
+        "draft_bundle": draft_bundle,
         "run_manifest_path": str(run_manifest_path) if run_manifest_exists else None,
         "run_manifest": run_manifest,
         "review_report_path": str(review_report_path) if review_report_exists else None,
+        "creative_profile_review_payload_path": (
+            str(creative_profile_review_payload_path)
+            if creative_profile_review_payload_exists
+            else None
+        ),
         "private_review_bundle": {
             "schema_version": "xiaoman-daily-private-review-bundle-v1",
             "source": "wx_cli_style_daily_migration",
@@ -3691,7 +3935,43 @@ def _result_json(
             "profile_fact_text_included": False,
             "quote_map_entry_count": quote_map.get("entry_count", 0),
             "wiki_counts": wiki_bundle.get("counts", {}),
+            "draft_counts": draft_bundle.get("counts", {}),
             "run_manifest_schema_version": run_manifest.get("schema_version", ""),
+            "creative_profile_review_payload": {
+                "schema_version": creative_profile_review_payload.get("schema_version"),
+                "source": creative_profile_review_payload.get("source", ""),
+                "candidate_count": len(creative_profile_review_payload.get("candidates") or []),
+                "pending_review_count": sum(
+                    1
+                    for candidate in creative_profile_review_payload.get("candidates") or []
+                    if candidate.get("review_decision") == "pending_review"
+                ),
+                "approved_candidate_count": sum(
+                    1
+                    for candidate in creative_profile_review_payload.get("candidates") or []
+                    if candidate.get("review_decision") == "approved"
+                ),
+                "person_id_required": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("person_id_required")
+                is True,
+                "display_name_binding_allowed": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("display_name_binding_allowed")
+                is True,
+                "public_surface_allowed": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("public_surface_allowed")
+                is True,
+                "raw_messages_included": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("raw_messages_included")
+                is True,
+                "profile_fact_text_included": (
+                    creative_profile_review_payload.get("review_notes") or {}
+                ).get("profile_fact_text_included")
+                is True,
+            },
         },
         "artifact_candidate": artifact_candidate,
         "operator_review_message": _operator_review_message(
@@ -3732,8 +4012,13 @@ def main() -> int:
     universe_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.character-universe.json"
     quote_map_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.quote-map.json"
     wiki_bundle_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.wiki-bundle.json"
+    draft_bundle_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.draft-bundle.json"
     run_manifest_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.run-manifest.json"
     review_report_path = output_dir / f"xiaoman-daily-case-report-{timestamp}.review.md"
+    creative_profile_review_payload_path = (
+        output_dir
+        / f"xiaoman-daily-case-report-{timestamp}.creative-profile-review-payload.draft.json"
+    )
     image_path = output_dir / (
         f"xiaoman-daily-case-report-{timestamp}.{_image_extension(args.image_format)}"
     )
@@ -3741,7 +4026,20 @@ def main() -> int:
     html_content = _render_html(report, args.output_width)
     quote_map = _build_quote_map(report)
     wiki_bundle = _build_wiki_bundle(report, quote_map)
-    run_manifest = _build_run_manifest(report, quote_map, wiki_bundle, source_chat_id=args.chat_id)
+    draft_bundle = _build_draft_bundle(report, quote_map, wiki_bundle)
+    run_manifest = _build_run_manifest(
+        report,
+        quote_map,
+        wiki_bundle,
+        draft_bundle,
+        source_chat_id=args.chat_id,
+    )
+    creative_profile_review_payload = _build_creative_profile_review_payload_draft(
+        report.character_universe,
+        datetime.now(_report_timezone(getattr(args, "timezone", DEFAULT_TIMEZONE)))
+        .replace(microsecond=0)
+        .isoformat(),
+    )
     _write_private_text(html_path, html_content)
     _write_private_text(markdown_path, _render_daily_markdown(report))
     _write_private_text(
@@ -3757,12 +4055,20 @@ def main() -> int:
         json.dumps(wiki_bundle, ensure_ascii=False, indent=2),
     )
     _write_private_text(
+        draft_bundle_path,
+        json.dumps(draft_bundle, ensure_ascii=False, indent=2),
+    )
+    _write_private_text(
         run_manifest_path,
         json.dumps(run_manifest, ensure_ascii=False, indent=2),
     )
     _write_private_text(
         review_report_path,
-        _render_review_report(report, quote_map, wiki_bundle, run_manifest),
+        _render_review_report(report, quote_map, wiki_bundle, draft_bundle, run_manifest),
+    )
+    _write_private_text(
+        creative_profile_review_payload_path,
+        json.dumps(creative_profile_review_payload, ensure_ascii=False, indent=2, sort_keys=True),
     )
 
     image_generated = False
@@ -3795,11 +4101,17 @@ def main() -> int:
             universe_path if universe_path.exists() else None,
             quote_map_path if quote_map_path.exists() else None,
             wiki_bundle_path if wiki_bundle_path.exists() else None,
+            draft_bundle_path if draft_bundle_path.exists() else None,
             run_manifest_path if run_manifest_path.exists() else None,
             review_report_path if review_report_path.exists() else None,
+            creative_profile_review_payload_path
+            if creative_profile_review_payload_path.exists()
+            else None,
             quote_map,
             wiki_bundle,
+            draft_bundle,
             run_manifest,
+            creative_profile_review_payload,
             args.output_width if image_generated else None,
             args.chat_id if image_generated else None,
         )

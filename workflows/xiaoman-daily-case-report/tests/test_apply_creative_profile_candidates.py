@@ -47,6 +47,17 @@ class ApplyCreativeProfileCandidatesTest(unittest.TestCase):
             "reviewed_by": "owner-review",
             "reviewed_at": "2026-08-12T20:00:00+08:00",
             "candidates": [candidate],
+            "review_notes": {
+                "person_id_required": True,
+                "person_id_policy": "owner_reviewed_stable_uuid_only",
+                "display_name_binding_allowed": False,
+                "daily_note_only_default": "rejected",
+                "eligible_for_review_default": "pending_review",
+                "apply_requires_owner_approved": True,
+                "public_surface_allowed": False,
+                "raw_messages_included": False,
+                "profile_fact_text_included": False,
+            },
         }
 
     def test_validate_payload_accepts_reviewed_eligible_candidate(self) -> None:
@@ -69,6 +80,29 @@ class ApplyCreativeProfileCandidatesTest(unittest.TestCase):
     def test_payload_requires_reviewed_person_id_not_display_name_guessing(self) -> None:
         with self.assertRaisesRegex(apply_profiles.ApplyError, "reviewed UUID"):
             apply_profiles._validate_payload(self.payload(person_id="小雨"))
+
+    def test_payload_requires_owner_to_change_pending_review_to_approved(self) -> None:
+        with self.assertRaisesRegex(apply_profiles.ApplyError, "review_decision is invalid"):
+            apply_profiles._validate_payload(self.payload(review_decision="pending_review"))
+
+    def test_review_notes_must_keep_identity_and_privacy_boundaries(self) -> None:
+        payload = self.payload()
+        payload["review_notes"]["display_name_binding_allowed"] = True
+
+        with self.assertRaisesRegex(apply_profiles.ApplyError, "display-name binding"):
+            apply_profiles._validate_payload(payload)
+
+        payload = self.payload()
+        payload["review_notes"]["raw_messages_included"] = True
+
+        with self.assertRaisesRegex(apply_profiles.ApplyError, "raw message flag"):
+            apply_profiles._validate_payload(payload)
+
+        payload = self.payload()
+        payload["review_notes"]["apply_requires_owner_approved"] = False
+
+        with self.assertRaisesRegex(apply_profiles.ApplyError, "owner approval"):
+            apply_profiles._validate_payload(payload)
 
     def test_apply_uses_fixed_psql_stdin_and_does_not_echo_database_url(self) -> None:
         captured: dict[str, object] = {}

@@ -46,10 +46,20 @@
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
 - Xiaoman daily case-report character-universe local readiness check:
   `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
+- Xiaoman daily case-report private review bundle now includes `.draft-bundle.json`. It
+  may contain ordinary digest, light-roast, public-draft, storyline timeline, and
+  7/14/30-day lookback callback candidates, so production evidence may retain only
+  `draft_counts` plus privacy flags, never the candidate text.
+- Xiaoman daily case-report production evidence may retain only the fixed
+  `public_output_style` schema/boolean contract proving the character-daily layout,
+  storyline-first output, roast review boundary, and private-draft boundary. Never
+  retain rendered Markdown, labels, quotes, relationship text, or candidate draft text
+  as style evidence.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash
   PYTHONDONTWRITEBYTECODE=1 python3 -m unittest \
+    workflows/xiaoman-daily-case-report/tests/test_build_creative_profile_review_payload.py \
     workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
   ```
 

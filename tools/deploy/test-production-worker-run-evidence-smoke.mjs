@@ -146,6 +146,17 @@ writeFile(
           storyline_candidate_count: 5,
           edge_count: 7,
         },
+        public_output_style: {
+          schema_version: "xiaoman-daily-public-output-style-v1",
+          character_daily_layout: true,
+          storyline_first: true,
+          cast_notes_enabled: true,
+          meme_callback_section_enabled: true,
+          relationship_section_enabled: true,
+          roast_review_boundary: true,
+          private_draft_only: true,
+          public_surface_contains_private_draft: false,
+        },
         private_review_bundle: {
           schema_version: "xiaoman-daily-private-review-bundle-v1",
           source: "wx_cli_style_daily_migration",
@@ -158,6 +169,11 @@ writeFile(
             people: 4,
             events: 6,
             storylines: 5,
+          },
+          draft_counts: {
+            roast_profile_candidate_count: 4,
+            storyline_timeline_count: 6,
+            lookback_callback_count: 9,
           },
         },
       },
@@ -202,6 +218,33 @@ check(
       "xiaoman_daily_case_report_worker_character_universe_storyline_candidate_count=5"
     ) &&
     result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_schema_version=xiaoman-daily-public-output-style-v1"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_character_daily_layout=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_storyline_first=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_cast_notes_enabled=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_meme_callback_section_enabled=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_relationship_section_enabled=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_roast_review_boundary=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_private_draft_only=true"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_public_output_style_public_surface_contains_private_draft=false"
+    ) &&
+    result.stdout.includes(
       "xiaoman_daily_case_report_worker_private_review_bundle_public_surface_allowed=false"
     ) &&
     result.stdout.includes(
@@ -224,6 +267,15 @@ check(
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_private_review_bundle_wiki_storyline_count=5"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_roast_profile_candidate_count=4"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_storyline_timeline_count=6"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_lookback_callback_count=9"
     ),
   `daily case report success emitted unexpected evidence\n${result.stdout}`
 );

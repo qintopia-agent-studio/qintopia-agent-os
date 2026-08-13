@@ -41,6 +41,12 @@ const applyCreativeProfiles = requireFile(
 const applyCreativeProfilesTests = requireFile(
   "workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py"
 );
+const buildCreativeProfilePayload = requireFile(
+  "workflows/xiaoman-daily-case-report/build_creative_profile_review_payload.py"
+);
+const buildCreativeProfilePayloadTests = requireFile(
+  "workflows/xiaoman-daily-case-report/tests/test_build_creative_profile_review_payload.py"
+);
 const worker = requireFile(
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 );
@@ -88,6 +94,7 @@ for (const [fragment, label] of [
   ["def _build_character_universe(", "daily workflow universe builder"],
   ["def _build_quote_map(", "daily workflow wx-cli-style quote map"],
   ["def _build_wiki_bundle(", "daily workflow wx-cli-style wiki bundle"],
+  ["def _build_draft_bundle(", "daily workflow wx-cli-style draft bundle"],
   ["def _build_run_manifest(", "daily workflow wx-cli-style run manifest"],
   ["def _render_review_report(", "daily workflow wx-cli-style review report"],
   ["def _is_time_bucket_topic(", "daily workflow excludes time-bucket wiki topics"],
@@ -145,19 +152,40 @@ for (const [fragment, label] of [
   ["meme_seed", "public-safe meme seed"],
   ["arc_label", "daily character arc label"],
   ['"daily_report_markdown_path"', "Markdown report output path"],
+  ['"public_output_style"', "public output style summary"],
+  [
+    '"schema_version": "xiaoman-daily-public-output-style-v1"',
+    "public output style schema",
+  ],
+  ['"roast_review_boundary": True', "public output style roast boundary"],
+  [
+    '"public_surface_contains_private_draft": False',
+    "public output style blocks private draft surface",
+  ],
   ['"character_universe_path"', "character universe output path"],
   ['"quote_map_path"', "quote map output path"],
   ['"wiki_bundle_path"', "wiki bundle output path"],
+  ['"draft_bundle_path"', "draft bundle output path"],
   ['"run_manifest_path"', "run manifest output path"],
   ['"review_report_path"', "review report output path"],
+  [
+    '"creative_profile_review_payload_path"',
+    "creative-profile review payload output path",
+  ],
   ['"private_review_bundle"', "private review bundle summary"],
   [".character-universe.json", "private universe file output"],
   [".quote-map.json", "private quote-map file output"],
   [".wiki-bundle.json", "private wiki-bundle file output"],
+  [".draft-bundle.json", "private draft-bundle file output"],
   [".run-manifest.json", "private run-manifest file output"],
   [".review.md", "private review report file output"],
+  [
+    ".creative-profile-review-payload.draft.json",
+    "private creative-profile review payload draft file output",
+  ],
   ['"schema_version": "xiaoman-daily-quote-map-v1"', "quote-map schema"],
   ['"schema_version": "xiaoman-daily-wiki-bundle-v1"', "wiki-bundle schema"],
+  ['"schema_version": "xiaoman-daily-draft-bundle-v1"', "draft-bundle schema"],
   ['"schema_version": "xiaoman-daily-run-manifest-v1"', "run-manifest schema"],
   [
     '"source": "wx_cli_style_daily_migration"',
@@ -168,8 +196,30 @@ for (const [fragment, label] of [
     "run manifest preserves latest chat records",
   ],
   [
+    '"draft_bundle": "private_review_json"',
+    "run manifest records draft-bundle private output",
+  ],
+  ['"roast_digest": {', "draft bundle includes roast digest candidate"],
+  ['"public_draft": {', "draft bundle includes public draft candidate"],
+  [
+    '"lookback_callbacks": lookback_callbacks',
+    "draft bundle includes 7/14/30 lookback callbacks",
+  ],
+  [
     '"reviewed_creative_profiles_used": any(',
     "run manifest proves reviewed creative profiles were reused",
+  ],
+  [
+    '"approved_candidate_count": sum(',
+    "private review bundle counts approved creative-profile candidates only",
+  ],
+  [
+    '"pending_review_count": sum(',
+    "private review bundle counts pending creative-profile candidates only",
+  ],
+  [
+    '"display_name_binding_allowed": (',
+    "private review bundle reports display-name binding flag only",
   ],
   [
     '"public_surface_allowed": False',
@@ -217,6 +267,15 @@ for (const [fragment, label] of [
     'person_ids_included": False',
     "creative-profile apply sanitized report excludes person ids",
   ],
+  ["def _validate_review_notes(", "creative-profile apply validates review notes"],
+  [
+    "review_notes must block display-name binding",
+    "creative-profile apply blocks display-name review-note drift",
+  ],
+  [
+    "review_notes must require owner approval before apply",
+    "creative-profile apply requires owner-approved review notes",
+  ],
   ["member_facts_fact_text", "creative-profile apply do-not-disclose fact text"],
   [
     "exact owner approval is required for apply",
@@ -224,6 +283,45 @@ for (const [fragment, label] of [
   ],
 ]) {
   requireIncludes(applyCreativeProfiles, fragment, label);
+}
+
+for (const [fragment, label] of [
+  [
+    'PAYLOAD_SOURCE = "xiaoman-daily-creative-profile-review-v1"',
+    "creative-profile payload source",
+  ],
+  [
+    'CHARACTER_UNIVERSE_SCHEMA = "xiaoman-character-universe-v1"',
+    "creative-profile payload universe schema binding",
+  ],
+  [
+    '"person_id_required": True',
+    "creative-profile payload requires reviewed person id",
+  ],
+  [
+    '"display_name_binding_allowed": False',
+    "creative-profile payload blocks display-name identity binding",
+  ],
+  [
+    '"eligible_for_review_default": "pending_review"',
+    "creative-profile payload keeps eligible candidates pending owner review",
+  ],
+  [
+    '"apply_requires_owner_approved": True',
+    "creative-profile payload requires owner approved before apply",
+  ],
+  ['person_id=""', "creative-profile payload leaves person id blank for owner review"],
+  [
+    '"pending_review" if status == "eligible_for_review" and minimum_recurrence_met else "rejected"',
+    "creative-profile payload gates review draft on recurrence",
+  ],
+  ['"raw_messages_included": False', "creative-profile payload excludes raw messages"],
+  [
+    '"profile_fact_text_included": False',
+    "creative-profile payload excludes profile fact text",
+  ],
+]) {
+  requireIncludes(buildCreativeProfilePayload, fragment, label);
 }
 
 for (const [fragment, label] of [
@@ -303,6 +401,18 @@ for (const [fragment, label] of [
     'self.assertTrue(Path(result["review_report_path"]).is_file())',
     "review report output file assertion",
   ],
+  [
+    'self.assertTrue(Path(result["creative_profile_review_payload_path"]).is_file())',
+    "creative-profile review payload output file assertion",
+  ],
+  [
+    'candidate["review_decision"] == "pending_review"',
+    "creative-profile review payload remains pending by default",
+  ],
+  [
+    '"approved_candidate_count"',
+    "private review bundle approved candidate count assertion",
+  ],
 ]) {
   requireIncludes(workflowTests, fragment, label);
 }
@@ -315,6 +425,14 @@ for (const [fragment, label] of [
   [
     "test_payload_requires_reviewed_person_id_not_display_name_guessing",
     "creative-profile apply requires reviewed person id",
+  ],
+  [
+    "test_payload_requires_owner_to_change_pending_review_to_approved",
+    "creative-profile apply rejects pending-review drafts",
+  ],
+  [
+    "test_review_notes_must_keep_identity_and_privacy_boundaries",
+    "creative-profile apply review-notes privacy regression test",
   ],
   [
     "test_apply_uses_fixed_psql_stdin_and_does_not_echo_database_url",
@@ -334,6 +452,27 @@ for (const [fragment, label] of [
 
 for (const [fragment, label] of [
   [
+    "test_build_payload_defaults_to_review_draft_without_person_id",
+    "creative-profile payload draft regression test",
+  ],
+  [
+    "test_daily_note_only_candidates_are_omitted_by_default",
+    "creative-profile payload omits daily notes by default",
+  ],
+  [
+    "test_include_rejected_keeps_daily_notes_for_review_but_not_apply",
+    "creative-profile payload rejected-review regression test",
+  ],
+  [
+    "test_raw_or_private_markers_are_rejected",
+    "creative-profile payload raw/private marker guard test",
+  ],
+]) {
+  requireIncludes(buildCreativeProfilePayloadTests, fragment, label);
+}
+
+for (const [fragment, label] of [
+  [
     'content_metrics = candidate.get("content_metrics") or {}',
     "worker content metrics",
   ],
@@ -345,7 +484,12 @@ for (const [fragment, label] of [
     'private_review_bundle = rendered.get("private_review_bundle") or {}',
     "worker private review bundle safe summary read",
   ],
+  [
+    'public_output_style = rendered.get("public_output_style") or {}',
+    "worker public output style safe summary read",
+  ],
   ['"character_universe": {', "worker safe universe metadata"],
+  ['"public_output_style": {', "worker safe public output style metadata"],
   ['"private_review_bundle": {', "worker safe private review bundle metadata"],
   [
     '"raw_messages_included": character_universe.get("raw_messages_included") is True',
@@ -370,6 +514,14 @@ for (const [fragment, label] of [
   [
     '"wiki_counts": private_review_bundle.get("wiki_counts") or {}',
     "worker wiki counts only",
+  ],
+  [
+    '"draft_counts": private_review_bundle.get("draft_counts") or {}',
+    "worker draft counts only",
+  ],
+  [
+    '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True',
+    "worker private draft public-surface flag only",
   ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [
@@ -430,6 +582,26 @@ for (const [fragment, label] of [
     "worker-run wiki people count evidence",
   ],
   [
+    'print(f"{key}_worker_private_review_bundle_draft_roast_profile_candidate_count=',
+    "worker-run draft roast candidate count evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_schema_version=',
+    "worker-run public output style schema evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_character_daily_layout=true")',
+    "worker-run character-daily style evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_roast_review_boundary=true")',
+    "worker-run roast boundary style evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_public_surface_contains_private_draft=false")',
+    "worker-run private-draft surface style evidence",
+  ],
+  [
     'print(f"{key}_worker_character_universe_creative_profile_candidate_count=',
     "worker-run creative-profile candidate count evidence",
   ],
@@ -455,11 +627,23 @@ for (const [fragment, label] of [
     "runner allowlist for universe counts",
   ],
   [
+    "xiaoman_daily_case_report_worker_public_output_style_schema_version",
+    "runner allowlist for public output style schema",
+  ],
+  [
+    "xiaoman_daily_case_report_worker_public_output_style_(?:character_daily_layout|storyline_first|cast_notes_enabled|meme_callback_section_enabled|relationship_section_enabled|roast_review_boundary|private_draft_only)",
+    "runner allowlist for public output style true flags",
+  ],
+  [
+    "xiaoman_daily_case_report_worker_public_output_style_public_surface_contains_private_draft",
+    "runner allowlist for public output style false flag",
+  ],
+  [
     "xiaoman_daily_case_report_worker_private_review_bundle_(?:public_surface_allowed|raw_message_rows_included|profile_fact_text_included)",
     "runner allowlist for private review bundle privacy flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_private_review_bundle_(?:quote_map_entry_count|wiki_people_count|wiki_event_count|wiki_storyline_count)",
+    "xiaoman_daily_case_report_worker_private_review_bundle_(?:quote_map_entry_count|wiki_people_count|wiki_event_count|wiki_storyline_count|draft_roast_profile_candidate_count|draft_storyline_timeline_count|draft_lookback_callback_count)",
     "runner allowlist for private review bundle counts",
   ],
 ]) {
