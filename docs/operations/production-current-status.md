@@ -44,7 +44,8 @@ URLs, tokens, raw logs, or raw script output.
   targets after scheduled triggers. The Xiaoman daily case-report completion path now
   requires the retained production observation deploy result so the final checker can
   verify `xiaoman-character-universe-v1`, `daily_case_report_second_pass`,
-  `raw_messages_included=false`, and `profile_fact_text_included=false`.
+  `raw_messages_included=false`, `profile_fact_text_included=false`,
+  `raw_message_payload_read=false`, and `attachment_public_surface_allowed=false`.
 
 ## Reviewed Recurring Jobs
 
