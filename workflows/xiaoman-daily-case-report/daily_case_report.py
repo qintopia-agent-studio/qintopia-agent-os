@@ -3392,6 +3392,7 @@ def _render_image_with_pillow(
     main_storyline = _main_storyline_label(report)
     opening_line = _daily_opening_line(report)
     callback_candidates = _meme_callback_candidates(report)
+    relationship_candidates = _relationship_candidates(report)
 
     def text_right(x: int, y: int, text: str, font: Any, fill: str) -> None:
         box = draw.textbbox((0, 0), text, font=font)
