@@ -61,6 +61,10 @@
   must preserve negative boundaries as negative booleans: `pdf_default_delivery=false`
   and `public_surface_contains_private_draft=false` are success evidence, not failures
   to coerce to `true`.
+- Xiaoman daily case-report JPEG rendering must stay storyline/character-first in both
+  HTML screenshot and Pillow fallback paths. Keep `人物出场表`, `今日台词`,
+  `梗和回调候选`, `同场关系`, and `故事线候选` before `24H 活跃节奏` / `发言出场榜` so
+  production hosts without Playwright do not regress to a statistics-first poster.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash

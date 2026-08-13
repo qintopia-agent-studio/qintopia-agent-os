@@ -79,11 +79,12 @@ long-term profile text.
 
 The public poster now keeps activity rhythm and speaker ranking after the main
 character/storyline sections, so the first screen reads as a character-universe daily
-rather than a statistics dashboard. The private Markdown日报 follows the reference
-`digest-template` structure more directly: `今日一句话`, `天气背景`, `主要话题`,
-`人物动态`, `待解决问题`, `候选公众号选题`, plus the quote/storyline sections. Weather
-is represented as an explicit omitted slot unless a reviewed source exists; the workflow
-must not invent it.
+rather than a statistics dashboard. This applies to both HTML screenshot rendering and
+the Pillow image fallback used on production hosts without Playwright. The private
+Markdown日报 follows the reference `digest-template` structure more directly:
+`今日一句话`, `天气背景`, `主要话题`, `人物动态`, `待解决问题`, `候选公众号选题`, plus
+the quote/storyline sections. Weather is represented as an explicit omitted slot unless
+a reviewed source exists; the workflow must not invent it.
 
 The daily workflow now also derives a richer second-pass character layer without adding
 a new production source. `CharacterMemory` maps long-term `member_facts` counts into

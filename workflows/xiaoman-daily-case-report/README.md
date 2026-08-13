@@ -55,7 +55,10 @@ observation, rollback, and send boundaries still run from the immutable release.
   notes, local-life notes, open questions, risk items, and public-topic candidates. They
   are internal review artifacts, not public or send-ready payloads.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
-  preview and production image share the same report layout.
+  preview and production image share the same report layout. The Pillow fallback is part
+  of the production path and must keep the same storyline/character-first order, with
+  activity rhythm and speaker ranking after the character, quote, meme, relation, and
+  storyline sections.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
   downstream sendable artifact boundary.
 - Bind safe production metadata for the new report shape: content counts,
