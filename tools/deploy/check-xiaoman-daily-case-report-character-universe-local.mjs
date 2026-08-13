@@ -247,7 +247,9 @@ for (const [fragment, label] of [
   ],
   ['"raw_message_payload_read": False', "raw message payload is not read for media"],
   ['"people_notes": ordinary_people_notes', "ordinary digest people notes"],
-  ['"local_life_notes": [', "ordinary digest local-life notes"],
+  ["def _ordinary_digest_local_life_notes(", "ordinary digest local-life note builder"],
+  ['"local_life_notes": ordinary_local_life_notes', "ordinary digest local-life notes"],
+  ['"ordinary_digest_local_life_note_count"', "ordinary digest local-life count"],
   ['"open_questions": ordinary_open_questions', "ordinary digest open questions"],
   ['"risk_items": [', "ordinary digest risk items"],
   [
@@ -690,6 +692,10 @@ for (const [fragment, label] of [
     "worker-run draft roast candidate count evidence",
   ],
   [
+    'print(f"{key}_worker_private_review_bundle_draft_ordinary_digest_local_life_note_count=',
+    "worker-run ordinary digest local-life count evidence",
+  ],
+  [
     'print(f"{key}_worker_public_output_style_schema_version=',
     "worker-run public output style schema evidence",
   ],
@@ -775,7 +781,7 @@ for (const [fragment, label] of [
     "runner allowlist for private review bundle privacy flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_private_review_bundle_(?:quote_map_entry_count|wiki_people_count|wiki_event_count|wiki_storyline_count|draft_roast_profile_candidate_count|draft_storyline_timeline_count|draft_lookback_callback_count)",
+    "xiaoman_daily_case_report_worker_private_review_bundle_(?:quote_map_entry_count|wiki_people_count|wiki_event_count|wiki_storyline_count|draft_ordinary_digest_local_life_note_count|draft_roast_profile_candidate_count|draft_storyline_timeline_count|draft_lookback_callback_count)",
     "runner allowlist for private review bundle counts",
   ],
 ]) {

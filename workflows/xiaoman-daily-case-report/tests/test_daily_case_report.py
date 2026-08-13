@@ -1252,6 +1252,8 @@ class DailyCaseReportTest(unittest.TestCase):
             ordinary_digest["main_topics"][0]["media_notes"]["raw_message_payload_read"]
         )
         self.assertEqual(ordinary_digest["people_notes"][0]["role_label"], "活动推进者")
+        self.assertGreaterEqual(len(ordinary_digest["local_life_notes"]), 1)
+        self.assertEqual(ordinary_digest["local_life_notes"][0]["source"], "CASE 01")
         self.assertTrue(ordinary_digest["risk_items"])
         self.assertGreaterEqual(len(ordinary_digest["candidate_public_topics"]), 1)
         self.assertIn("主要话题", ordinary_digest["section_keys"])
@@ -1262,6 +1264,10 @@ class DailyCaseReportTest(unittest.TestCase):
         )
         self.assertGreaterEqual(
             draft_bundle["counts"]["ordinary_digest_people_note_count"],
+            1,
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_local_life_note_count"],
             1,
         )
         self.assertGreaterEqual(
@@ -1541,7 +1547,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 title="讨论主题",
                 time_label="10:00-11:00",
                 summary="2 条消息，2 人参与",
-                bullets=["原始群消息"],
+                bullets=["社区活动安排已经确认", "有没有人明天提醒一次？"],
                 message_count=2,
                 participant_count=2,
                 color_bg="#fff0a6",
@@ -1582,6 +1588,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("人物出场表", rendered)
         self.assertIn("DAILY WORKSHOP INDEX", rendered)
         self.assertIn("梗和回调候选", rendered)
+        self.assertIn("地点 / 本地生活线索", rendered)
+        self.assertIn("待解决问题", rendered)
         self.assertIn("故事线候选", rendered)
         self.assertIn("发言出场榜", rendered)
         self.assertNotIn("XIAOMAN COMMUNITY SCOREBOARD", rendered)
@@ -1594,6 +1602,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
         self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
         self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("地点 / 本地生活线索"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("待解决问题"), rendered.index("故事线候选"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("当日素材"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("发言出场榜"))
@@ -1605,6 +1615,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("## 今日剧中人", markdown)
         self.assertIn("**成员（活动推进者）**", markdown)
         self.assertIn("## 梗和回调候选", markdown)
+        self.assertIn("## 地点 / 本地生活线索", markdown)
+        self.assertIn("## 待解决问题", markdown)
         self.assertIn("## 候选公众号选题", markdown)
         self.assertIn("raw_messages_included=false", markdown)
         self.assertIn("profile_fact_text_included=false", markdown)
@@ -1809,7 +1821,7 @@ class DailyCaseReportTest(unittest.TestCase):
                             title="讨论主题",
                             time_label="10:00-11:00",
                             summary="3 条消息，2 人参与",
-                            bullets=["活动安排已经确认", "明天提醒一次"],
+                            bullets=["活动安排已经确认", "有没有人明天提醒一次？"],
                             message_count=3,
                             participant_count=2,
                             color_bg="#fff0a6",
@@ -1873,11 +1885,15 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertIn("人物出场表", rendered)
         self.assertIn("今日台词", rendered)
         self.assertIn("梗和回调候选", rendered)
+        self.assertIn("地点 / 本地生活线索", rendered)
+        self.assertIn("待解决问题", rendered)
         self.assertIn("故事线候选", rendered)
         self.assertIn("24H 活跃节奏", rendered)
         self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
         self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
         self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("地点 / 本地生活线索"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("待解决问题"), rendered.index("故事线候选"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
 
     def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:

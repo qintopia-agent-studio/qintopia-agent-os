@@ -2510,6 +2510,50 @@ def _ordinary_digest_open_questions(report: ReportData) -> list[str]:
     return questions
 
 
+def _ordinary_digest_local_life_notes(report: ReportData) -> list[dict[str, str]]:
+    local_life_hints = (
+        "活动",
+        "饭局",
+        "聚餐",
+        "茶",
+        "酒",
+        "咖啡",
+        "店",
+        "地点",
+        "场地",
+        "本地",
+        "社区",
+        "市集",
+        "报名",
+        "接龙",
+        "天气",
+        "路线",
+        "交通",
+    )
+    notes: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for case in report.cases:
+        candidate_texts = [_case_storyline_label(case), *case.bullets[:3]]
+        for text in candidate_texts:
+            cleaned = _clean_text(text)
+            if not cleaned or not any(hint in cleaned for hint in local_life_hints):
+                continue
+            label = cleaned[:80]
+            if label in seen:
+                continue
+            seen.add(label)
+            notes.append(
+                {
+                    "label": label,
+                    "source": case.case_no,
+                    "status": "candidate",
+                }
+            )
+            if len(notes) >= 5:
+                return notes
+    return notes
+
+
 def _ordinary_digest_candidate_topics(report: ReportData) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     main_storyline = _main_storyline_label(report)
@@ -2546,6 +2590,8 @@ def _build_draft_bundle(
     main_storyline = _main_storyline_label(report)
     callback_candidates = _meme_callback_candidates(report)
     relationship_candidates = _relationship_candidates(report)
+    local_life_notes = _ordinary_digest_local_life_notes(report)
+    open_questions = _ordinary_digest_open_questions(report)
     character_cards = [
         {
             "person_key": character.node_key or _node_key(character.name),
@@ -2573,6 +2619,7 @@ def _build_draft_bundle(
         opening_candidates.append(f"今天可以先从这句看起：{report.highlight}")
     ordinary_topic_cards = _ordinary_digest_topic_cards(report)
     ordinary_people_notes = _ordinary_digest_people_notes(report)
+    ordinary_local_life_notes = _ordinary_digest_local_life_notes(report)
     ordinary_open_questions = _ordinary_digest_open_questions(report)
     ordinary_candidate_topics = _ordinary_digest_candidate_topics(report)
     storyline_timeline = [
@@ -2607,18 +2654,7 @@ def _build_draft_bundle(
             "one_sentence_summary": _daily_opening_line(report),
             "main_topics": ordinary_topic_cards,
             "people_notes": ordinary_people_notes,
-            "local_life_notes": [
-                {
-                    "label": topic.get("label", ""),
-                    "source": "wiki_topic_candidate",
-                    "status": "candidate",
-                }
-                for topic in (wiki_bundle.get("topics") or [])
-                if any(
-                    keyword in str(topic.get("label", ""))
-                    for keyword in ("活动", "饭局", "天气", "社区", "本地", "地点")
-                )
-            ][:5],
+            "local_life_notes": ordinary_local_life_notes,
             "open_questions": ordinary_open_questions,
             "risk_items": [
                 "所有直接引用必须回溯到 quote-map 后才能公开使用",
@@ -2674,6 +2710,7 @@ def _build_draft_bundle(
         "ordinary_digest_section_count": len(bundle["ordinary_digest"]["section_keys"]),
         "ordinary_digest_topic_count": len(ordinary_topic_cards),
         "ordinary_digest_people_note_count": len(ordinary_people_notes),
+        "ordinary_digest_local_life_note_count": len(ordinary_local_life_notes),
         "ordinary_digest_open_question_count": len(ordinary_open_questions),
         "ordinary_digest_candidate_public_topic_count": len(ordinary_candidate_topics),
         "roast_profile_candidate_count": len(character_cards),
@@ -3404,6 +3441,8 @@ def _render_html(report: ReportData, width: int) -> str:
     opening_line = _daily_opening_line(report)
     callback_candidates = _meme_callback_candidates(report)
     relationship_candidates = _relationship_candidates(report)
+    local_life_notes = _ordinary_digest_local_life_notes(report)
+    open_questions = _ordinary_digest_open_questions(report)
 
     story_index_html = "\n".join(
         f"""
@@ -3505,6 +3544,28 @@ def _render_html(report: ReportData, width: int) -> str:
     )}</div>
   </section>"""
 
+    local_life_html = ""
+    if local_life_notes:
+        local_life_html = f"""
+  <section class="reference-notes">
+    <div class="reference-heading"><span>LOCAL THREADS</span><h2>地点 / 本地生活线索</h2></div>
+    <div class="reference-list">{"".join(
+        f'''<div class="reference-row"><span>{index}</span><p>{html.escape(item.get("label", ""))}</p></div>'''
+        for index, item in enumerate(local_life_notes, start=1)
+    )}</div>
+  </section>"""
+
+    open_questions_html = ""
+    if open_questions:
+        open_questions_html = f"""
+  <section class="reference-notes questions">
+    <div class="reference-heading"><span>OPEN LOOPS</span><h2>待解决问题</h2></div>
+    <div class="reference-list">{"".join(
+        f'''<div class="reference-row"><span>{index}</span><p>{html.escape(question)}</p></div>'''
+        for index, question in enumerate(open_questions, start=1)
+    )}</div>
+  </section>"""
+
     characters_html = ""
     if report.characters:
         characters_html = f"""
@@ -3574,6 +3635,15 @@ def _render_html(report: ReportData, width: int) -> str:
   .relationship-row {{ display: grid; grid-template-columns: 28px 1fr; align-items: center; min-height: 42px; border: 2px solid #111111; background: #ffffff; }}
   .relationship-row span {{ display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; background: #ffd92e; font-size: 11px; font-weight: 900; }}
   .relationship-row p {{ padding: 8px 10px; font-size: 12px; font-weight: 700; line-height: 1.45; }}
+  .reference-notes {{ margin: 20px 24px 0; padding: 14px 16px 16px; border: 4px solid #111111; background: #ffffff; }}
+  .reference-notes.questions {{ background: #fff0a6; }}
+  .reference-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }}
+  .reference-heading span {{ color: #f25a18; font-size: 11px; font-weight: 800; }}
+  .reference-heading h2 {{ font-size: 20px; font-weight: 900; }}
+  .reference-list {{ display: grid; gap: 8px; }}
+  .reference-row {{ display: grid; grid-template-columns: 28px 1fr; align-items: center; min-height: 42px; border: 2px solid #111111; background: #fff8df; }}
+  .reference-row span {{ display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; background: #88d7ff; font-size: 11px; font-weight: 900; }}
+  .reference-row p {{ padding: 8px 10px; font-size: 12px; font-weight: 700; line-height: 1.45; }}
   .characters {{ margin: 22px 24px 0; padding: 18px 16px 16px; border: 4px solid #111111; background: #ffffff; }}
   .characters-heading {{ display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }}
   .characters-heading span {{ color: #f25a18; font-size: 11px; font-weight: 800; }}
@@ -3625,6 +3695,8 @@ def _render_html(report: ReportData, width: int) -> str:
   {highlight_html}
   {callbacks_html}
   {relationships_html}
+  {local_life_html}
+  {open_questions_html}
   {cases_html}
   <section class="stats">{stats_html}</section>
   <section class="timeline">
@@ -3642,6 +3714,8 @@ def _render_daily_markdown(report: ReportData) -> str:
     main_storyline = _main_storyline_label(report)
     callback_candidates = _meme_callback_candidates(report)
     relationship_candidates = _relationship_candidates(report)
+    local_life_notes = _ordinary_digest_local_life_notes(report)
+    open_questions = _ordinary_digest_open_questions(report)
     lines = [
         f"# 小满群聊日报｜{report.report_date}｜{main_storyline}",
         "",
@@ -3700,7 +3774,12 @@ def _render_daily_markdown(report: ReportData) -> str:
         lines.extend(["## 同场关系", ""])
         lines.extend(f"- {candidate}" for candidate in relationship_candidates)
         lines.append("")
-    open_questions = _ordinary_digest_open_questions(report)
+    if local_life_notes:
+        lines.extend(["## 地点 / 本地生活线索", ""])
+        lines.extend(
+            f"- {item['label']}（{item['source']}）" for item in local_life_notes
+        )
+        lines.append("")
     if open_questions:
         lines.extend(["## 待解决问题", ""])
         lines.extend(f"- {question}" for question in open_questions)
@@ -3884,6 +3963,8 @@ def _render_image_with_pillow(
     opening_line = _daily_opening_line(report)
     callback_candidates = _meme_callback_candidates(report)
     relationship_candidates = _relationship_candidates(report)
+    local_life_notes = _ordinary_digest_local_life_notes(report)
+    open_questions = _ordinary_digest_open_questions(report)
 
     def text_right(x: int, y: int, text: str, font: Any, fill: str) -> None:
         box = draw.textbbox((0, 0), text, font=font)
@@ -3894,6 +3975,46 @@ def _render_image_with_pillow(
         y_pos += 20 * scale
         draw.text((padding, y_pos), title, font=section_font, fill=ink)
         return y_pos + 42 * scale
+
+    def reference_list(y_pos: int, kicker: str, title: str, rows: list[str], fill: str) -> int:
+        if not rows:
+            return y_pos
+        top = y_pos
+        height = (54 + 42 * len(rows)) * scale
+        draw.rectangle(
+            (outer, top, canvas_width - outer, top + height),
+            fill=fill,
+            outline=ink,
+            width=3 * scale,
+        )
+        draw.text((padding, top + 14 * scale), kicker, font=tiny_font, fill=orange)
+        draw.text((padding + 128 * scale, top + 10 * scale), title, font=body_font, fill=ink)
+        for index, row in enumerate(rows):
+            row_top = top + (44 + index * 38) * scale
+            draw.rectangle(
+                (padding, row_top, padding + content_width, row_top + 30 * scale),
+                fill=cream,
+                outline=ink,
+                width=2 * scale,
+            )
+            draw.rectangle(
+                (padding, row_top, padding + 28 * scale, row_top + 30 * scale),
+                fill=blue,
+                outline=ink,
+                width=2 * scale,
+            )
+            draw.text((padding + 10 * scale, row_top + 8 * scale), str(index + 1), font=tiny_font, fill=ink)
+            _draw_wrapped_text(
+                draw,
+                (padding + 40 * scale, row_top + 7 * scale),
+                row,
+                tiny_font,
+                ink,
+                content_width - 52 * scale,
+                max_lines=1,
+                line_gap=0,
+            )
+        return top + height + 38 * scale
 
     y = outer
     draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
@@ -4096,6 +4217,21 @@ def _render_image_with_pillow(
                 line_gap=0,
             )
         y = relationship_top + relationship_height + 38 * scale
+
+    y = reference_list(
+        y,
+        "LOCAL THREADS",
+        "地点 / 本地生活线索",
+        [str(item.get("label", "")) for item in local_life_notes],
+        "#ffffff",
+    )
+    y = reference_list(
+        y,
+        "OPEN LOOPS",
+        "待解决问题",
+        open_questions,
+        pale_yellow,
+    )
 
     y = section_label(y, "STORYLINE FILES", "故事线候选")
     cases = report.cases[:DEFAULT_CASE_LIMIT]

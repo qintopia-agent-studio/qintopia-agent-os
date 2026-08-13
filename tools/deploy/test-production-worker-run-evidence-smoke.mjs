@@ -182,6 +182,7 @@ writeFile(
           },
           draft_counts: {
             roast_profile_candidate_count: 4,
+            ordinary_digest_local_life_note_count: 2,
             storyline_timeline_count: 6,
             lookback_callback_count: 9,
           },
@@ -310,6 +311,9 @@ check(
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_private_review_bundle_draft_roast_profile_candidate_count=4"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_ordinary_digest_local_life_note_count=2"
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_private_review_bundle_draft_storyline_timeline_count=6"

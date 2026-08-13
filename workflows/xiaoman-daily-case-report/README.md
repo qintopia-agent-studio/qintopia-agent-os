@@ -36,9 +36,10 @@ observation, rollback, and send boundaries still run from the immutable release.
   must occur in at least two distinct source messages; omit the hotlist when the report
   window has no qualifying keyword.
 - Keep the character-universe body intact: headline metrics, 今日主线, source-message
-  highlight, 人物出场表, hot topics, 梗和回调候选, 同场关系, and story cards remain the
-  primary sections. Activity rhythm and speaker ranking are secondary support sections,
-  not the opening shape.
+  highlight, 人物出场表, hot
+  topics, 梗和回调候选, 同场关系, 地点 / 本地生活线索, 待解决问题, and story cards
+  remain the primary sections. Activity rhythm and speaker ranking are secondary support
+  sections, not the opening shape.
 - Write a private Markdown daily report alongside the poster so downstream operators can
   review a text日报, not only the image artifact.
 - Write a private `.character-universe.json` second-pass export alongside the poster and
@@ -61,8 +62,8 @@ observation, rollback, and send boundaries still run from the immutable release.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
   preview and production image share the same report layout. The Pillow fallback is part
   of the production path and must keep the same storyline/character-first order, with
-  activity rhythm and speaker ranking after the character, quote, meme, relation, and
-  storyline sections.
+  local-life/open-question notes and then activity rhythm and speaker ranking after the
+  character, quote, meme, relation, and storyline sections.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
   downstream sendable artifact boundary.
 - Bind safe production metadata for the new report shape: content counts,
