@@ -171,6 +171,48 @@ try {
     throw new Error(`unexpected live parity success output\n${result.stdout}`);
   }
 
+  writeJson(erhuaCronFile, { jobs: erhuaJobs });
+  result = spawnSync("bash", [scriptPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_HERMES_CRON_LIVE_PARITY_OBSERVATION_ENABLE: "1",
+    },
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `expected live parity to accept legacy cron envelope without schema_version\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  if (
+    !result.stdout.includes("hermes_cron_live_parity_result=success") ||
+    !result.stdout.includes("hermes_cron_live_parity_live_count=5")
+  ) {
+    throw new Error(`unexpected legacy envelope success output\n${result.stdout}`);
+  }
+
+  writeJson(erhuaCronFile, { schema_version: 2, jobs: erhuaJobs });
+  result = spawnSync("bash", [scriptPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_HERMES_CRON_LIVE_PARITY_OBSERVATION_ENABLE: "1",
+    },
+    encoding: "utf8",
+  });
+  if (result.status === 0) {
+    throw new Error("expected explicit unsupported cron schema version to fail");
+  }
+  if (
+    !result.stdout.includes(
+      "hermes_cron_live_parity_observation_error=cron_schema_invalid"
+    )
+  ) {
+    throw new Error(`unexpected unsupported schema failure output\n${result.stdout}`);
+  }
+
+  writeJson(erhuaCronFile, { schema_version: 1, jobs: erhuaJobs });
   writeJson(xiaomanCronFile, {
     schema_version: 1,
     jobs: xiaomanJobs,
