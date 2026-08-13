@@ -4323,6 +4323,7 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     "--prepare-artifact",
     "--execute-artifact-create",
     "--apply-artifact-create",
+    "--allow-news-unavailable",
     "operations-artifact-review-decision",
     "operations-group-message-confirm",
     "run-group-message-send-worker",
