@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.128](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.127...v0.2.128) (2026-08-12)
+
+
+### Features
+
+* complete xiaoman daily profile migration ([74ca767](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/74ca76700aedd3785e370b2c076021346b410387))
+
 ## [0.2.127](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.126...v0.2.127) (2026-08-12)
 
 
