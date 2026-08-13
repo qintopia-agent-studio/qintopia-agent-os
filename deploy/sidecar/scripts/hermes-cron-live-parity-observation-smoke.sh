@@ -141,7 +141,8 @@ live_count = 0
 enabled_count = 0
 for profile, cron_file in cron_files.items():
     value = load_json(cron_file, "cron")
-    if value.get("schema_version") != 1:
+    schema_version = value.get("schema_version")
+    if schema_version is not None and schema_version != 1:
         fail("cron_schema_invalid")
     jobs = value.get("jobs")
     if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
