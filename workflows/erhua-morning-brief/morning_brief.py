@@ -409,6 +409,25 @@ def _is_internal_marker(value: str) -> bool:
     )
 
 
+CHAT_FACING_FORBIDDEN_PHRASES = (
+    "需要前置",
+    "前置条件",
+    "可宣发",
+    "宣发判断",
+    "计划类活动",
+    "小满运营状态",
+    "下周排期确认",
+    "待确认（居民提交表单后默认）",
+    "已确认-排入下周",
+)
+
+
+def _validate_chat_facing_brief(value: str) -> None:
+    for phrase in CHAT_FACING_FORBIDDEN_PHRASES:
+        if phrase in value:
+            raise RuntimeError("morning brief contains internal planning wording")
+
+
 def _sanitize_public_line(value: str, max_len: int = 180) -> str:
     clean = _strip_markdown(value)
     if not clean or _is_internal_marker(clean):
@@ -645,14 +664,14 @@ def _activity_section(date: str, activity_result: dict[str, Any]) -> tuple[str, 
     if count <= 0:
         if _is_sunday(date):
             return (
-                "暂时还没有可宣发的本周活动。\n"
+                "这周暂时还没有可以直接报名的活动。\n"
                 "昨天提醒过一次，今天早上二花再轻轻补提醒一下：如果你这周想发起共读、散步、"
                 "吃饭、AI 工具试玩，直接在群里说主题、时间和地点。信息够了，二花就帮你整理成招募文案。",
                 0,
                 True,
             )
         return (
-            "今天暂时没有已确认活动。\n"
+            "今天群里暂时没有安排好的活动。\n"
             "想组局的话，今天很适合发起一个小活动：共读、散步、吃饭、AI 工具试玩都可以。"
             "你在群里说一声，二花帮你把人喊起来。",
             0,
@@ -1005,6 +1024,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         news_items=news_items,
         news_unavailable=news_unavailable,
     )
+    _validate_chat_facing_brief(brief)
     result: dict[str, Any] = {
         "success": True,
         "workflow": WORKFLOW_ID,

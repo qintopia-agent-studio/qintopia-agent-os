@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -46,12 +47,15 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         result = self.run_script("--json")
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("今天暂时没有已确认活动", result.stdout)
+        self.assertIn("今天群里暂时没有安排好的活动", result.stdout)
         self.assertIn("发起一个小活动", result.stdout)
         self.assertIn("OpenAI 发布新的 Agent 编排实践", result.stdout)
         self.assertIn("Anthropic 更新企业安全评估", result.stdout)
         self.assertIn("OpenAI launches realtime agent evaluations", result.stdout)
         self.assertIn("OpenAI 发布实时 Agent 评估更新", result.stdout)
+        self.assertNotIn("已确认", result.stdout)
+        self.assertNotIn("可宣发", result.stdout)
+        self.assertNotIn("需要前置", result.stdout)
         self.assertNotIn("https://example.test", result.stdout)
         self.assertNotIn("链上治理工具更新", result.stdout)
         self.assertIn('"sunday_no_publishable_activity_followup": false', result.stdout)
@@ -75,7 +79,9 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("暂时还没有可宣发的本周活动", result.stdout)
+        self.assertIn("这周暂时还没有可以直接报名的活动", result.stdout)
+        self.assertNotIn("可宣发", result.stdout)
+        self.assertNotIn("需要前置", result.stdout)
         self.assertNotIn("计划表里暂时还没有", result.stdout)
         self.assertIn("今天早上二花再轻轻补提醒一下", result.stdout)
         self.assertIn('"sunday_no_publishable_activity_followup": true', result.stdout)
@@ -104,6 +110,42 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn('"activity_publishable_count": 1', result.stdout)
         self.assertIn('"ai_news_item_count": 5', result.stdout)
         self.assertIn('"external_send_executed": false', result.stdout)
+
+    def test_internal_planning_wording_blocks_chat_facing_brief(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = Path(temp_dir) / "activity-internal.json"
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "success": True,
+                        "publishable_count": 1,
+                        "announcement_text": "今日活动预告\n\n1. AI 工具共学\n需要前置：确认活动室。",
+                        "requires_human_confirmation": True,
+                        "external_send_executed": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--date",
+                    "2026-08-08",
+                    "--activity-fixture",
+                    str(fixture),
+                    "--news-fixture",
+                    str(FIXTURES / "qunmind-ai-report.md"),
+                    "--json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("morning brief contains internal planning wording", result.stderr)
 
     def test_missing_news_fails_closed_by_default(self):
         result = subprocess.run(

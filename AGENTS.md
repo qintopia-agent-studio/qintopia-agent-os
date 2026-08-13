@@ -78,6 +78,11 @@
 - Erhua morning brief AI news defaults to five items. English items must carry explicit
   Chinese title and summary translations before they can appear in the brief; do not
   send English-only RSS fallback items as-is.
+- Erhua morning brief chat-facing text must read like a resident-facing group message,
+  not an operations ticket. Block internal planning wording such as `需要前置`,
+  `可宣发`, `宣发判断`, `计划类活动`, and Feishu status labels before artifact creation
+  or QiWe send; the worker should fail closed rather than send that wording to the
+  group.
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
 - Erhua member recognition local release-current readiness check:
