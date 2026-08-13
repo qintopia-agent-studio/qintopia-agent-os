@@ -45,9 +45,9 @@ observation, rollback, and send boundaries still run from the immutable release.
   creative-profile candidates, storyline candidates, and graph edges from curated report
   content only; it does not retain raw messages or hidden profile fact text.
 - Write a `wx-cli`-style private review bundle alongside the poster: `.quote-map.json`,
-  `.wiki-bundle.json`, `.run-manifest.json`, `.review.md`, and
+  `.wiki-bundle.json`, `.draft-bundle.json`, `.run-manifest.json`, `.review.md`, and
   `.creative-profile-review-payload.draft.json`. These files add the reference project's
-  quote-map / Wiki / run-manifest / review structure while preserving the latest
+  quote-map / Wiki / draft / run-manifest / review structure while preserving the latest
   Postgres chat-record source of truth. They are internal review artifacts, not public
   or send-ready payloads.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
@@ -288,10 +288,11 @@ candidate text.
   `profile_version='xiaoman-daily-creative-profile-v1'`; it reads only
   `safe_reply_hints` / `communication_style` and fails soft so latest message reporting
   remains available when the profile layer is unavailable.
-- The private quote-map, wiki-bundle, run-manifest, and review report are generated in
-  the same `0700` output directory with mode `0600`. They may contain curated excerpts,
-  labels, and candidate nodes, so production worker metadata may retain only their
-  presence, counts, and privacy flags.
+- The private quote-map, wiki-bundle, draft-bundle, run-manifest, and review report are
+  generated in the same `0700` output directory with mode `0600`. They may contain
+  curated excerpts, labels, candidate nodes, light-roast material, public-draft title
+  candidates, and lookback callbacks, so production worker metadata may retain only
+  their presence, counts, and privacy flags.
 - Auto-publish metadata retains only safe counters and schema flags from the private
   Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
   character universe and private review bundle paths ran, without retaining people

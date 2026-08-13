@@ -155,6 +155,14 @@ approve accepted candidates before apply. Raw/private markers are rejected, and
 with `--include-rejected`; they still cannot pass
 `apply_creative_profile_candidates.py`.
 
+The private review bundle now also writes `.draft-bundle.json`. This ports the reference
+project's ordinary digest / roast digest / public draft / cross-day storyline habit into
+our governed path without making those drafts public. The bundle carries owner-review
+candidates for ordinary digest structure, light-roast character cards, public-draft
+title/opening material, storyline timelines, and 7/14/30-day lookback callbacks.
+Production worker metadata and worker-run evidence retain only draft counts and the same
+false raw/profile/public-surface privacy flags.
+
 ## Proposed Next Steps
 
 1. Extend the curated character-universe export with durable creative-profile inputs.

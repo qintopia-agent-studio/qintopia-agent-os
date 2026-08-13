@@ -94,6 +94,7 @@ for (const [fragment, label] of [
   ["def _build_character_universe(", "daily workflow universe builder"],
   ["def _build_quote_map(", "daily workflow wx-cli-style quote map"],
   ["def _build_wiki_bundle(", "daily workflow wx-cli-style wiki bundle"],
+  ["def _build_draft_bundle(", "daily workflow wx-cli-style draft bundle"],
   ["def _build_run_manifest(", "daily workflow wx-cli-style run manifest"],
   ["def _render_review_report(", "daily workflow wx-cli-style review report"],
   ["def _is_time_bucket_topic(", "daily workflow excludes time-bucket wiki topics"],
@@ -154,6 +155,7 @@ for (const [fragment, label] of [
   ['"character_universe_path"', "character universe output path"],
   ['"quote_map_path"', "quote map output path"],
   ['"wiki_bundle_path"', "wiki bundle output path"],
+  ['"draft_bundle_path"', "draft bundle output path"],
   ['"run_manifest_path"', "run manifest output path"],
   ['"review_report_path"', "review report output path"],
   [
@@ -164,6 +166,7 @@ for (const [fragment, label] of [
   [".character-universe.json", "private universe file output"],
   [".quote-map.json", "private quote-map file output"],
   [".wiki-bundle.json", "private wiki-bundle file output"],
+  [".draft-bundle.json", "private draft-bundle file output"],
   [".run-manifest.json", "private run-manifest file output"],
   [".review.md", "private review report file output"],
   [
@@ -172,6 +175,7 @@ for (const [fragment, label] of [
   ],
   ['"schema_version": "xiaoman-daily-quote-map-v1"', "quote-map schema"],
   ['"schema_version": "xiaoman-daily-wiki-bundle-v1"', "wiki-bundle schema"],
+  ['"schema_version": "xiaoman-daily-draft-bundle-v1"', "draft-bundle schema"],
   ['"schema_version": "xiaoman-daily-run-manifest-v1"', "run-manifest schema"],
   [
     '"source": "wx_cli_style_daily_migration"',
@@ -180,6 +184,16 @@ for (const [fragment, label] of [
   [
     '"latest_chat_records_preserved": True',
     "run manifest preserves latest chat records",
+  ],
+  [
+    '"draft_bundle": "private_review_json"',
+    "run manifest records draft-bundle private output",
+  ],
+  ['"roast_digest": {', "draft bundle includes roast digest candidate"],
+  ['"public_draft": {', "draft bundle includes public draft candidate"],
+  [
+    '"lookback_callbacks": lookback_callbacks',
+    "draft bundle includes 7/14/30 lookback callbacks",
   ],
   [
     '"reviewed_creative_profiles_used": any(',
@@ -486,6 +500,10 @@ for (const [fragment, label] of [
     '"wiki_counts": private_review_bundle.get("wiki_counts") or {}',
     "worker wiki counts only",
   ],
+  [
+    '"draft_counts": private_review_bundle.get("draft_counts") or {}',
+    "worker draft counts only",
+  ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [
     '"callback_count": len(character_universe.get("callbacks") or [])',
@@ -545,6 +563,10 @@ for (const [fragment, label] of [
     "worker-run wiki people count evidence",
   ],
   [
+    'print(f"{key}_worker_private_review_bundle_draft_roast_profile_candidate_count=',
+    "worker-run draft roast candidate count evidence",
+  ],
+  [
     'print(f"{key}_worker_character_universe_creative_profile_candidate_count=',
     "worker-run creative-profile candidate count evidence",
   ],
@@ -574,7 +596,7 @@ for (const [fragment, label] of [
     "runner allowlist for private review bundle privacy flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_private_review_bundle_(?:quote_map_entry_count|wiki_people_count|wiki_event_count|wiki_storyline_count)",
+    "xiaoman_daily_case_report_worker_private_review_bundle_(?:quote_map_entry_count|wiki_people_count|wiki_event_count|wiki_storyline_count|draft_roast_profile_candidate_count|draft_storyline_timeline_count|draft_lookback_callback_count)",
     "runner allowlist for private review bundle counts",
   ],
 ]) {

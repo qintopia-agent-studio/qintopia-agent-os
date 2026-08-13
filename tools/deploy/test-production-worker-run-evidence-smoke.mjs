@@ -159,6 +159,11 @@ writeFile(
             events: 6,
             storylines: 5,
           },
+          draft_counts: {
+            roast_profile_candidate_count: 4,
+            storyline_timeline_count: 6,
+            lookback_callback_count: 9,
+          },
         },
       },
       null,
@@ -224,6 +229,15 @@ check(
     ) &&
     result.stdout.includes(
       "xiaoman_daily_case_report_worker_private_review_bundle_wiki_storyline_count=5"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_roast_profile_candidate_count=4"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_storyline_timeline_count=6"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_draft_lookback_callback_count=9"
     ),
   `daily case report success emitted unexpected evidence\n${result.stdout}`
 );

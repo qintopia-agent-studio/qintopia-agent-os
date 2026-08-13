@@ -46,6 +46,10 @@
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
 - Xiaoman daily case-report character-universe local readiness check:
   `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
+- Xiaoman daily case-report private review bundle now includes `.draft-bundle.json`. It
+  may contain ordinary digest, light-roast, public-draft, storyline timeline, and
+  7/14/30-day lookback callback candidates, so production evidence may retain only
+  `draft_counts` plus privacy flags, never the candidate text.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash

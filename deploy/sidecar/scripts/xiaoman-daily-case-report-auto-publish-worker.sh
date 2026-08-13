@@ -252,6 +252,7 @@ print(json.dumps({
             "profile_fact_text_included": private_review_bundle.get("profile_fact_text_included") is True,
             "quote_map_entry_count": private_review_bundle.get("quote_map_entry_count", 0),
             "wiki_counts": private_review_bundle.get("wiki_counts") or {},
+            "draft_counts": private_review_bundle.get("draft_counts") or {},
         },
     },
 }, ensure_ascii=False))
@@ -329,6 +330,7 @@ print(json.dumps({
         "profile_fact_text_included": private_review_bundle.get("profile_fact_text_included") is True,
         "quote_map_entry_count": private_review_bundle.get("quote_map_entry_count", 0),
         "wiki_counts": private_review_bundle.get("wiki_counts") or {},
+        "draft_counts": private_review_bundle.get("draft_counts") or {},
     },
 }, ensure_ascii=False, indent=2))
 PY

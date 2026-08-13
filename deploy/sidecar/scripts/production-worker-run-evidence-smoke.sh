@@ -269,6 +269,23 @@ def wiki_count(name: str) -> int:
         raise SystemExit(2)
     return parsed
 
+def draft_count(name: str) -> int:
+    if not isinstance(review_bundle, dict):
+        return 0
+    counts = review_bundle.get("draft_counts") or {}
+    if not isinstance(counts, dict):
+        raise SystemExit(2)
+    value = counts.get(name, 0)
+    if isinstance(value, bool):
+        raise SystemExit(2)
+    try:
+        parsed = int(value)
+    except Exception:
+        raise SystemExit(2)
+    if parsed < 0 or parsed > 100000:
+        raise SystemExit(2)
+    return parsed
+
 print(f"{key}_worker_summary_present=true")
 print(f"{key}_worker_message_count={number('message_count')}")
 print(f"{key}_worker_participant_count={number('participant_count')}")
@@ -297,6 +314,9 @@ print(f"{key}_worker_private_review_bundle_quote_map_entry_count={review_bundle_
 print(f"{key}_worker_private_review_bundle_wiki_people_count={wiki_count('people')}")
 print(f"{key}_worker_private_review_bundle_wiki_event_count={wiki_count('events')}")
 print(f"{key}_worker_private_review_bundle_wiki_storyline_count={wiki_count('storylines')}")
+print(f"{key}_worker_private_review_bundle_draft_roast_profile_candidate_count={draft_count('roast_profile_candidate_count')}")
+print(f"{key}_worker_private_review_bundle_draft_storyline_timeline_count={draft_count('storyline_timeline_count')}")
+print(f"{key}_worker_private_review_bundle_draft_lookback_callback_count={draft_count('lookback_callback_count')}")
 PY
 )"; then
     fail_evidence "daily_case_report_summary_invalid"
