@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.129](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.128...v0.2.129) (2026-08-13)
+
+
+### Features
+
+* finalize Xiaoman daily creative profile review draft ([#545](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/545)) ([540c1de](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/540c1def7e497f9941a26b5626ea821a88dbf937))
+* reuse reviewed creative profiles in xiaoman daily report ([#543](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/543)) ([f47dc49](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f47dc4993e1f276771ae7af7f245e21bbde8283a))
+
 ## [0.2.128](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.127...v0.2.128) (2026-08-12)
 
 
