@@ -581,6 +581,116 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("fact_text", characters[0].memory_label)
         self.assertNotIn("fact_text", characters[0].memory_weight_label)
 
+    def test_character_cards_reuse_reviewed_creative_profiles_for_callbacks(self) -> None:
+        person_id = "11111111-1111-1111-1111-111111111111"
+        messages = [
+            daily_case_report.ReportMessage(
+                id="m1",
+                sender_id="u1",
+                sender_name="小雨",
+                text="今天活动报名我来提醒，报名表也一起同步。",
+                sent_at=datetime(2026, 8, 8, 9, 0, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=person_id,
+            ),
+            daily_case_report.ReportMessage(
+                id="m2",
+                sender_id="u1",
+                sender_name="小雨",
+                text="活动问题收集放到表单里，晚上再提醒一次。",
+                sent_at=datetime(2026, 8, 8, 9, 5, tzinfo=timezone.utc),
+                message_kind="text",
+                person_id=person_id,
+            ),
+        ]
+        creative_memory = {
+            person_id: daily_case_report.CreativeProfileMemory(
+                person_id=person_id,
+                role_label="长期活动导演",
+                story_function="把活动线串成连续剧",
+                daily_arc="上周铺垫，这周继续推进活动主线",
+                memory_weight_label="已审核跨日回调 · 长期线索可用",
+                meme_seed="小雨又来收网了",
+                callback_hint="可以回看她连续三次把活动从闲聊推到报名",
+                recurrence_evidence_count=5,
+            )
+        }
+
+        characters = daily_case_report._compute_characters(
+            messages,
+            {},
+            creative_memory,
+        )
+        universe = daily_case_report._build_character_universe(
+            [],
+            [],
+            characters,
+            "2026年08月08日",
+        )
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="case file",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=1,
+            message_count=2,
+            participant_count=1,
+            case_count=0,
+            suspect_count=0,
+            hourly_counts=[0] * 24,
+            cases=[],
+            suspects=[],
+            highlight=None,
+            character_count=len(characters),
+            characters=characters,
+            character_universe=universe,
+        )
+        quote_map = daily_case_report._build_quote_map(report)
+        wiki_bundle = daily_case_report._build_wiki_bundle(report, quote_map)
+        run_manifest = daily_case_report._build_run_manifest(report, quote_map, wiki_bundle)
+
+        self.assertEqual(characters[0].role_label, "活动推进者")
+        self.assertEqual(characters[0].story_function, "把活动线串成连续剧")
+        self.assertEqual(characters[0].arc_label, "上周铺垫，这周继续推进活动主线")
+        self.assertEqual(characters[0].meme_seed, "小雨又来收网了")
+        self.assertEqual(characters[0].creative_profile_status, "active_reviewed")
+        self.assertIn("已审核创意画像", characters[0].memory_label)
+        self.assertFalse(characters[0].member_fact_memory_used)
+        self.assertTrue(run_manifest["inputs"]["reviewed_creative_profiles_used"])
+        self.assertFalse(run_manifest["inputs"]["long_term_member_facts_used"])
+        self.assertEqual(universe["people"][0]["creative_profile_status"], "active_reviewed")
+        self.assertNotIn(person_id, json.dumps(universe, ensure_ascii=False))
+        self.assertNotIn("profile_text", json.dumps(universe, ensure_ascii=False))
+
+    def test_creative_profile_rows_keep_only_safe_reviewed_fields(self) -> None:
+        memory = daily_case_report._creative_profile_memory_from_rows(
+            [
+                (
+                    "11111111-1111-1111-1111-111111111111",
+                    {
+                        "role_label": "长期活动导演",
+                        "story_function": "串起活动线",
+                    },
+                    {
+                        "daily_arc": "profile_text: should not leak",
+                        "memory_weight_label": "已审核跨日回调",
+                        "meme_seed": "小雨收网",
+                        "callback_hint": "fact_text should not leak",
+                        "evidence_anchor": "daily_character_note:person-safe-key",
+                        "recurrence_evidence_count": 4,
+                    },
+                )
+            ]
+        )
+
+        profile = memory["11111111-1111-1111-1111-111111111111"]
+        self.assertEqual(profile.role_label, "长期活动导演")
+        self.assertEqual(profile.story_function, "串起活动线")
+        self.assertEqual(profile.daily_arc, "")
+        self.assertEqual(profile.callback_hint, "")
+        self.assertEqual(profile.meme_seed, "小雨收网")
+        self.assertEqual(profile.recurrence_evidence_count, 4)
+
     def test_character_profile_candidate_keeps_single_day_signal_as_daily_note(self) -> None:
         messages = [
             daily_case_report.ReportMessage(
@@ -741,10 +851,14 @@ class DailyCaseReportTest(unittest.TestCase):
         old_require = daily_case_report._require_read_through
         old_fetch_messages = daily_case_report._fetch_messages
         old_fetch_memory = daily_case_report._fetch_character_memory
+        old_fetch_creative_memory = daily_case_report._fetch_creative_profile_memory
         daily_case_report._require_read_through = lambda: True
         daily_case_report._fetch_messages = lambda *_args: messages
         daily_case_report._fetch_character_memory = lambda *_args: (_ for _ in ()).throw(
             RuntimeError("member profile memory query failed")
+        )
+        daily_case_report._fetch_creative_profile_memory = lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("creative profile memory query failed")
         )
         try:
             report = daily_case_report._build_report(args)
@@ -752,11 +866,13 @@ class DailyCaseReportTest(unittest.TestCase):
             daily_case_report._require_read_through = old_require
             daily_case_report._fetch_messages = old_fetch_messages
             daily_case_report._fetch_character_memory = old_fetch_memory
+            daily_case_report._fetch_creative_profile_memory = old_fetch_creative_memory
 
         self.assertEqual(report.message_count, 2)
         self.assertEqual(report.character_count, 1)
         self.assertEqual(report.characters[0].name, "小雨")
         self.assertEqual(report.characters[0].memory_label, "")
+        self.assertEqual(report.characters[0].creative_profile_status, "")
 
     def test_character_universe_uses_curated_second_pass_nodes(self) -> None:
         case = daily_case_report.CaseCard(
@@ -982,6 +1098,7 @@ class DailyCaseReportTest(unittest.TestCase):
             topic_count=1,
             node_key="person-safe-key",
             memory_label="近90天 7 次角色复现 · 长期偏「活动推进者」",
+            member_fact_memory_used=True,
             story_function="推进剧情",
             callback_hint="今天不是孤例，可以回看「活动推进者」的长期复现",
             arc_label="长期线索可用，今日再次露出「活动推进者」信号",
