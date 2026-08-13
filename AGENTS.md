@@ -80,9 +80,10 @@
   send English-only RSS fallback items as-is.
 - Erhua morning brief chat-facing text must read like a resident-facing group message,
   not an operations ticket. Block internal planning wording such as `需要前置`,
-  `可宣发`, `宣发判断`, `计划类活动`, and Feishu status labels before artifact creation
-  or QiWe send; the worker should fail closed rather than send that wording to the
-  group.
+  `可宣发`, `宣发判断`, `计划类活动`, `活动状态`, `宣发状态`, and Feishu status labels
+  before artifact creation or QiWe send; the worker should fail closed rather than send
+  that wording to the group. Keep activity status and readiness evidence in logs or
+  sanitized evidence, not in the group-facing brief.
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
 - Erhua member recognition local release-current readiness check:
