@@ -147,6 +147,49 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("morning brief contains internal planning wording", result.stderr)
 
+    def test_activity_status_fields_block_before_brief_composition(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fixture = Path(temp_dir) / "activity-status.json"
+            fixture.write_text(
+                json.dumps(
+                    {
+                        "success": True,
+                        "publishable_count": 1,
+                        "announcement_text": (
+                            "今日活动预告\n\n"
+                            "1. AI 工具共学\n"
+                            "时间：10:00\n"
+                            "地点：社区客厅\n"
+                            "活动状态：已确认\n"
+                            "宣发状态：可宣发"
+                        ),
+                        "requires_human_confirmation": True,
+                        "external_send_executed": False,
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--date",
+                    "2026-08-08",
+                    "--activity-fixture",
+                    str(fixture),
+                    "--news-fixture",
+                    str(FIXTURES / "qunmind-ai-report.md"),
+                    "--json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("morning brief contains internal planning wording", result.stderr)
+
     def test_missing_news_fails_closed_by_default(self):
         result = subprocess.run(
             [

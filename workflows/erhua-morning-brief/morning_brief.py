@@ -412,19 +412,36 @@ def _is_internal_marker(value: str) -> bool:
 CHAT_FACING_FORBIDDEN_PHRASES = (
     "需要前置",
     "前置条件",
+    "暂无需要宣发",
+    "需要宣发",
     "可宣发",
     "宣发判断",
+    "宣发状态",
     "计划类活动",
+    "活动状态",
+    "运营状态",
     "小满运营状态",
+    "小满备注",
+    "活动前提醒状态",
     "下周排期确认",
     "待确认（居民提交表单后默认）",
     "已确认-排入下周",
+    "排入下周",
+)
+
+CHAT_FACING_FORBIDDEN_PATTERNS = (
+    re.compile(r"(?:^|\n)\s*(?:状态|活动状态|宣发状态|宣发判断|运营状态|小满备注)[：:]", re.MULTILINE),
+    re.compile(r"(?:^|\n)\s*(?:前置条件|需要前置|需前置)[：:]", re.MULTILINE),
+    re.compile(r"(?:待确认|暂缓|已确认-排入下周)"),
 )
 
 
 def _validate_chat_facing_brief(value: str) -> None:
     for phrase in CHAT_FACING_FORBIDDEN_PHRASES:
         if phrase in value:
+            raise RuntimeError("morning brief contains internal planning wording")
+    for pattern in CHAT_FACING_FORBIDDEN_PATTERNS:
+        if pattern.search(value):
             raise RuntimeError("morning brief contains internal planning wording")
 
 
@@ -660,7 +677,10 @@ def _activity_section(date: str, activity_result: dict[str, Any]) -> tuple[str, 
     if isinstance(count, bool) or not isinstance(count, int):
         raise RuntimeError("activity preview returned invalid publishable_count")
 
-    announcement = _sanitize_public_text(str(activity_result.get("announcement_text") or ""))
+    raw_announcement = str(activity_result.get("announcement_text") or "")
+    if count > 0:
+        _validate_chat_facing_brief(raw_announcement)
+    announcement = _sanitize_public_text(raw_announcement)
     if count <= 0:
         if _is_sunday(date):
             return (
