@@ -123,7 +123,131 @@ case "$parse_status" in
 esac
 
 summary_date=""
+erhua_morning_brief_summary=""
 daily_case_report_summary=""
+if [[ "$target" == "erhua-morning-brief-worker-run" ]]; then
+  if ! erhua_morning_brief_summary="$("$PYTHON_BIN" - "$log_path" "$task_name" "$evidence_key" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+task = sys.argv[2]
+key = sys.argv[3]
+pattern = re.compile(
+    r"^(?P<ts>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) "
+    + re.escape(task)
+    + r" run=(?P<status>ok|failed)(?: exit=[0-9]+)?$"
+)
+sentinel_pattern = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z "
+    r"[A-Za-z0-9_.-]+ run=(?:ok|failed)(?: exit=[0-9]+)?$"
+)
+
+try:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+except OSError:
+    raise SystemExit(1)
+
+latest_index = None
+for index, line in enumerate(lines):
+    match = pattern.fullmatch(line.strip())
+    if match and match.group("status") == "ok":
+        latest_index = index
+
+if latest_index is None:
+    raise SystemExit(1)
+
+body_lines = lines[latest_index + 1 :]
+next_sentinel = next(
+    (index for index, line in enumerate(body_lines) if sentinel_pattern.fullmatch(line.strip())),
+    len(body_lines),
+)
+text = "\n".join(body_lines[:next_sentinel])
+decoder = json.JSONDecoder()
+objects = []
+position = 0
+while True:
+    start = text.find("{", position)
+    if start < 0:
+        break
+    try:
+        value, end = decoder.raw_decode(text[start:])
+    except Exception:
+        position = start + 1
+        continue
+    if isinstance(value, dict):
+        objects.append(value)
+    position = start + max(end, 1)
+
+worker_summaries = [
+    item for item in objects if item.get("worker") == "erhua-morning-brief-worker"
+]
+if not worker_summaries:
+    raise SystemExit(4)
+summary = worker_summaries[-1]
+if summary.get("success") is not True:
+    raise SystemExit(2)
+if summary.get("artifact_created") is not True:
+    raise SystemExit(2)
+if summary.get("requires_human_confirmation") is not True:
+    raise SystemExit(2)
+if summary.get("external_send_executed") is not False:
+    raise SystemExit(3)
+if summary.get("send_request_created") is not False:
+    raise SystemExit(3)
+
+def bounded_count(name: str) -> int:
+    value = summary.get(name, 0)
+    if isinstance(value, bool):
+        raise SystemExit(2)
+    try:
+        parsed = int(value)
+    except Exception:
+        raise SystemExit(2)
+    if parsed < 0 or parsed > 100000:
+        raise SystemExit(2)
+    return parsed
+
+def safe_bool(name: str) -> bool:
+    value = summary.get(name)
+    if not isinstance(value, bool):
+        raise SystemExit(2)
+    return value
+
+ai_news_count = bounded_count("ai_news_item_count")
+activity_count = bounded_count("activity_publishable_count")
+sunday_followup = safe_bool("sunday_no_publishable_activity_followup")
+
+auto_summaries = [
+    item for item in objects if item.get("worker") == "erhua-morning-brief-auto-publish"
+]
+auto_publish_seen = bool(auto_summaries)
+auto_publish_sent = False
+if auto_summaries:
+    auto = auto_summaries[-1]
+    if auto.get("success") is not True:
+        raise SystemExit(2)
+    if auto.get("external_send_executed") is not True:
+        raise SystemExit(3)
+    status = auto.get("qiwe_text_send_action_status")
+    if not isinstance(status, str) or not re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", status):
+        raise SystemExit(2)
+    auto_publish_sent = True
+
+print(f"{key}_worker_summary_present=true")
+print(f"{key}_worker_artifact_created=true")
+print(f"{key}_worker_activity_publishable_count={activity_count}")
+print(f"{key}_worker_ai_news_item_count={ai_news_count}")
+print(f"{key}_worker_sunday_no_publishable_activity_followup={str(sunday_followup).lower()}")
+print(f"{key}_worker_auto_publish_summary_present={str(auto_publish_seen).lower()}")
+print(f"{key}_worker_auto_publish_external_send_executed={str(auto_publish_sent).lower()}")
+PY
+)"; then
+    fail_evidence "summary_invalid"
+  fi
+fi
 if [[ "$target" == "xiaoman-daily-case-report-worker-run" ]]; then
   if ! daily_case_report_summary="$("$PYTHON_BIN" - "$log_path" "$task_name" "$evidence_key" <<'PY'
 import json
@@ -407,6 +531,9 @@ fi
 
 echo "${evidence_key}_worker_run_result=success"
 echo "${evidence_key}_worker_run_epoch=${run_epoch}"
+if [[ -n "$erhua_morning_brief_summary" ]]; then
+  echo "$erhua_morning_brief_summary"
+fi
 if [[ -n "$daily_case_report_summary" ]]; then
   echo "$daily_case_report_summary"
 fi
