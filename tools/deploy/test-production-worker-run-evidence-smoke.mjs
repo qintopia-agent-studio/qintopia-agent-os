@@ -172,6 +172,8 @@ writeFile(
           review_required: true,
           raw_message_rows_included: false,
           profile_fact_text_included: false,
+          raw_message_payload_read: false,
+          attachment_public_surface_allowed: false,
           quote_map_entry_count: 13,
           wiki_counts: {
             people: 4,
@@ -289,6 +291,12 @@ check(
       "xiaoman_daily_case_report_worker_private_review_bundle_profile_fact_text_included=false"
     ) &&
     result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_raw_message_payload_read=false"
+    ) &&
+    result.stdout.includes(
+      "xiaoman_daily_case_report_worker_private_review_bundle_attachment_public_surface_allowed=false"
+    ) &&
+    result.stdout.includes(
       "xiaoman_daily_case_report_worker_private_review_bundle_quote_map_entry_count=13"
     ) &&
     result.stdout.includes(
@@ -391,6 +399,8 @@ writeFile(
           review_required: true,
           raw_message_rows_included: false,
           profile_fact_text_included: false,
+          raw_message_payload_read: false,
+          attachment_public_surface_allowed: false,
         },
       },
       null,
@@ -406,6 +416,58 @@ check(
   result.stdout.trim() ===
     "xiaoman_daily_case_report_worker_run_error=daily_case_report_summary_invalid",
   `unsafe private review bundle emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=ok",
+    JSON.stringify(
+      {
+        worker: "xiaoman-daily-case-report-auto-publish-worker",
+        content_metrics: { character_count: 1 },
+        character_universe: {
+          raw_messages_included: false,
+          profile_fact_text_included: false,
+          creative_profile_public_surface_allowed: false,
+          creative_universe_public_surface_allowed: false,
+          unreviewed_expressive_labels_public_surface_allowed: false,
+        },
+        public_output_style: {
+          character_daily_layout: true,
+          storyline_first: true,
+          cast_notes_enabled: true,
+          meme_callback_section_enabled: true,
+          relationship_section_enabled: true,
+          owner_reviewed_expressive_labels_only: true,
+          image_first_delivery: true,
+          pdf_default_delivery: false,
+          roast_review_boundary: true,
+          private_draft_only: true,
+          public_surface_contains_private_draft: false,
+        },
+        private_review_bundle: {
+          public_surface_allowed: false,
+          review_required: true,
+          raw_message_rows_included: false,
+          profile_fact_text_included: false,
+          raw_message_payload_read: true,
+          attachment_public_surface_allowed: false,
+        },
+      },
+      null,
+      2
+    ),
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 1, "raw payload private review bundle summary");
+expectNoLeak(result, "raw payload private review bundle summary");
+check(
+  result.stdout.trim() ===
+    "xiaoman_daily_case_report_worker_run_error=daily_case_report_summary_invalid",
+  `unsafe raw payload review bundle emitted unexpected evidence\n${result.stdout}`
 );
 
 writeFile(

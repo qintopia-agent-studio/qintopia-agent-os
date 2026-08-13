@@ -54,6 +54,10 @@ observation, rollback, and send boundaries still run from the immutable release.
   template fields: weather context slot, one-sentence summary, main topics, people
   notes, local-life notes, open questions, risk items, and public-topic candidates. They
   are internal review artifacts, not public or send-ready payloads.
+- Reference-project attachment/media fields are represented as explicit empty review
+  slots until a reviewed attachment source exists. The workflow does not read
+  `messages.raw`, attachment tokens, filenames, media URLs, or image payloads to infer
+  visual content.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
   preview and production image share the same report layout. The Pillow fallback is part
   of the production path and must keep the same storyline/character-first order, with

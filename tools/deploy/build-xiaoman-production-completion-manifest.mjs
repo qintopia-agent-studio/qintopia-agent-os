@@ -601,6 +601,12 @@ function extractDailyCaseReportObservation(file) {
     profile_fact_text_included:
       workerFields.xiaoman_daily_case_report_worker_character_universe_profile_fact_text_included ===
       "true",
+    raw_message_payload_read:
+      workerFields.xiaoman_daily_case_report_worker_private_review_bundle_raw_message_payload_read ===
+      "true",
+    attachment_public_surface_allowed:
+      workerFields.xiaoman_daily_case_report_worker_private_review_bundle_attachment_public_surface_allowed ===
+      "true",
     creative_profile_public_surface_allowed:
       workerFields.xiaoman_daily_case_report_worker_character_universe_creative_profile_public_surface_allowed ===
       "true",
@@ -666,6 +672,8 @@ function assertDailyCaseReportObservation(record, options) {
     record.character_universe_source !== "daily_case_report_second_pass" ||
     record.raw_messages_included !== false ||
     record.profile_fact_text_included !== false ||
+    record.raw_message_payload_read !== false ||
+    record.attachment_public_surface_allowed !== false ||
     record.creative_profile_public_surface_allowed !== false ||
     !safeCount(record.character_universe_topic_count) ||
     !safeCount(record.character_universe_event_count) ||

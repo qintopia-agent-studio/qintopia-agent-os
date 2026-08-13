@@ -182,6 +182,12 @@ structured `weather_context`, `one_sentence_summary`, `main_topics`, `people_not
 matching the reference template while keeping all candidate text private to the review
 bundle.
 
+The reference project's attachment/media slots are also represented, but only as
+explicit empty review fields: `message_ids`, `attachment_pointers`, `media_links`, and
+`media_notes.status=omitted_no_reviewed_attachment_source`. The workflow does not read
+`messages.raw` or infer image/file content until a reviewed attachment source and
+privacy model exist.
+
 The private `character-universe` export now also emits `creative_universe_candidates`.
 This extends the reviewed creative layer beyond person callbacks into cross-day meme
 candidates, same-topic relationship label candidates, and timeline-thread candidates.

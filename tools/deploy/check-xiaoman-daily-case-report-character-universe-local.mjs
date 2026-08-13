@@ -238,6 +238,14 @@ for (const [fragment, label] of [
     "ordinary digest one-sentence summary",
   ],
   ['"main_topics": ordinary_topic_cards', "ordinary digest topic cards"],
+  ['"message_ids": []', "ordinary digest message-id slot intentionally empty"],
+  ['"attachment_pointers": []', "ordinary digest attachment slot intentionally empty"],
+  ['"media_links": []', "ordinary digest media-link slot intentionally empty"],
+  [
+    '"omitted_no_reviewed_attachment_source"',
+    "ordinary digest attachment/media steps are explicitly omitted",
+  ],
+  ['"raw_message_payload_read": False', "raw message payload is not read for media"],
   ['"people_notes": ordinary_people_notes', "ordinary digest people notes"],
   ['"local_life_notes": [', "ordinary digest local-life notes"],
   ['"open_questions": ordinary_open_questions', "ordinary digest open questions"],
@@ -254,6 +262,11 @@ for (const [fragment, label] of [
   [
     '"reviewed_creative_profiles_used": any(',
     "run manifest proves reviewed creative profiles were reused",
+  ],
+  ['"reference_workshop_steps": {', "run manifest records wx-cli workshop step parity"],
+  [
+    '"attachment_public_surface_allowed": False',
+    "run manifest blocks attachment public surface",
   ],
   [
     '"approved_candidate_count": sum(',
@@ -586,6 +599,14 @@ for (const [fragment, label] of [
     "worker draft counts only",
   ],
   [
+    '"raw_message_payload_read": private_review_bundle.get("raw_message_payload_read") is True',
+    "worker raw message payload flag only",
+  ],
+  [
+    '"attachment_public_surface_allowed": private_review_bundle.get("attachment_public_surface_allowed") is True',
+    "worker attachment public-surface flag only",
+  ],
+  [
     '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is False',
     "worker private draft public-surface flag only",
   ],
@@ -650,6 +671,14 @@ for (const [fragment, label] of [
   [
     'print(f"{key}_worker_private_review_bundle_quote_map_entry_count=',
     "worker-run quote-map count evidence",
+  ],
+  [
+    'print(f"{key}_worker_private_review_bundle_raw_message_payload_read=false")',
+    "worker-run raw message payload evidence",
+  ],
+  [
+    'print(f"{key}_worker_private_review_bundle_attachment_public_surface_allowed=false")',
+    "worker-run attachment public-surface evidence",
   ],
   [
     'print(f"{key}_worker_private_review_bundle_wiki_people_count=',
@@ -741,7 +770,7 @@ for (const [fragment, label] of [
     "runner allowlist for public output style false flag",
   ],
   [
-    "xiaoman_daily_case_report_worker_private_review_bundle_(?:public_surface_allowed|raw_message_rows_included|profile_fact_text_included)",
+    "xiaoman_daily_case_report_worker_private_review_bundle_(?:public_surface_allowed|raw_message_rows_included|profile_fact_text_included|raw_message_payload_read|attachment_public_surface_allowed)",
     "runner allowlist for private review bundle privacy flags",
   ],
   [
@@ -779,6 +808,16 @@ for (const [text, label] of [
   requireIncludes(
     text,
     "xiaoman_daily_case_report_worker_private_review_bundle_public_surface_allowed=false",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_private_review_bundle_raw_message_payload_read=false",
+    label
+  );
+  requireIncludes(
+    text,
+    "xiaoman_daily_case_report_worker_private_review_bundle_attachment_public_surface_allowed=false",
     label
   );
   requireIncludes(
