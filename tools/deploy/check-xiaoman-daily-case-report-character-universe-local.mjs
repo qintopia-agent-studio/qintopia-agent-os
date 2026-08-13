@@ -228,6 +228,24 @@ for (const [fragment, label] of [
     "run manifest records draft-bundle private output",
   ],
   ['"roast_digest": {', "draft bundle includes roast digest candidate"],
+  ['"weather_context": {', "ordinary digest includes weather context slot"],
+  [
+    '"status": "omitted_no_reviewed_weather_source"',
+    "ordinary digest does not invent weather",
+  ],
+  [
+    '"one_sentence_summary": _daily_opening_line(report)',
+    "ordinary digest one-sentence summary",
+  ],
+  ['"main_topics": ordinary_topic_cards', "ordinary digest topic cards"],
+  ['"people_notes": ordinary_people_notes', "ordinary digest people notes"],
+  ['"local_life_notes": [', "ordinary digest local-life notes"],
+  ['"open_questions": ordinary_open_questions', "ordinary digest open questions"],
+  ['"risk_items": [', "ordinary digest risk items"],
+  [
+    '"candidate_public_topics": ordinary_candidate_topics',
+    "ordinary digest public topic candidates",
+  ],
   ['"public_draft": {', "draft bundle includes public draft candidate"],
   [
     '"lookback_callbacks": lookback_callbacks',
@@ -568,7 +586,7 @@ for (const [fragment, label] of [
     "worker draft counts only",
   ],
   [
-    '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True',
+    '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is False',
     "worker private draft public-surface flag only",
   ],
   [
@@ -576,8 +594,8 @@ for (const [fragment, label] of [
     "worker image-first delivery flag",
   ],
   [
-    '"pdf_default_delivery": public_output_style.get("pdf_default_delivery") is True',
-    "worker PDF default delivery flag only",
+    '"pdf_default_delivery": public_output_style.get("pdf_default_delivery") is False',
+    "worker PDF non-default delivery flag only",
   ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [

@@ -267,10 +267,10 @@ print(json.dumps({
             "relationship_section_enabled": public_output_style.get("relationship_section_enabled") is True,
             "owner_reviewed_expressive_labels_only": public_output_style.get("owner_reviewed_expressive_labels_only") is True,
             "image_first_delivery": public_output_style.get("image_first_delivery") is True,
-            "pdf_default_delivery": public_output_style.get("pdf_default_delivery") is True,
+            "pdf_default_delivery": public_output_style.get("pdf_default_delivery") is False,
             "roast_review_boundary": public_output_style.get("roast_review_boundary") is True,
             "private_draft_only": public_output_style.get("private_draft_only") is True,
-            "public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True,
+            "public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is False,
         },
         "private_review_bundle": {
             "schema_version": private_review_bundle.get("schema_version", ""),

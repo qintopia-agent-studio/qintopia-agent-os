@@ -1234,6 +1234,30 @@ class DailyCaseReportTest(unittest.TestCase):
             draft_bundle["roast_digest"]["status"],
             "candidate_requires_owner_review",
         )
+        ordinary_digest = draft_bundle["ordinary_digest"]
+        self.assertEqual(
+            ordinary_digest["weather_context"]["status"],
+            "omitted_no_reviewed_weather_source",
+        )
+        self.assertTrue(ordinary_digest["one_sentence_summary"])
+        self.assertEqual(ordinary_digest["main_topics"][0]["title"], "活动讨论")
+        self.assertEqual(ordinary_digest["people_notes"][0]["role_label"], "活动推进者")
+        self.assertTrue(ordinary_digest["risk_items"])
+        self.assertGreaterEqual(len(ordinary_digest["candidate_public_topics"]), 1)
+        self.assertIn("主要话题", ordinary_digest["section_keys"])
+        self.assertIn("候选公众号选题", ordinary_digest["section_keys"])
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_topic_count"],
+            1,
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_people_note_count"],
+            1,
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_candidate_public_topic_count"],
+            1,
+        )
         self.assertGreaterEqual(
             draft_bundle["counts"]["lookback_callback_count"],
             1,
@@ -1537,18 +1561,21 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("今日局势", rendered)
         self.assertNotIn("今日 MVP", rendered)
         self.assertIn("background: #ffd92e", rendered)
-        self.assertLess(rendered.index("今日主线"), rendered.index("24H 活跃节奏"))
-        self.assertLess(rendered.index("24H 活跃节奏"), rendered.index("人物出场表"))
+        self.assertLess(rendered.index("今日主线"), rendered.index("人物出场表"))
         self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
         self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
         self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("发言出场榜"))
 
         markdown = daily_case_report._render_daily_markdown(report)
         self.assertIn("# 小满群聊日报｜2026-08-08｜讨论主题", markdown)
+        self.assertIn("## 天气背景", markdown)
+        self.assertIn("## 主要话题", markdown)
         self.assertIn("## 今日剧中人", markdown)
         self.assertIn("**成员（活动推进者）**", markdown)
         self.assertIn("## 梗和回调候选", markdown)
+        self.assertIn("## 候选公众号选题", markdown)
         self.assertIn("raw_messages_included=false", markdown)
         self.assertIn("profile_fact_text_included=false", markdown)
         style = daily_case_report._public_output_style_contract()
@@ -1679,6 +1706,149 @@ class DailyCaseReportTest(unittest.TestCase):
         finally:
             builtins.__import__ = old_import
             daily_case_report._render_image_with_pillow = old_pillow
+
+    def test_pillow_renderer_keeps_character_daily_story_order(self) -> None:
+        captured_text: list[str] = []
+
+        class FakeFont:
+            def __init__(self, size: int):
+                self.size = size
+
+        class FakeImageObject:
+            height = 20000
+
+            def crop(self, _box):
+                return self
+
+            def save(self, output_path, format=None, **_kwargs):
+                Path(output_path).write_bytes(str(format or "").encode("utf-8"))
+
+        class FakeImageModule(types.SimpleNamespace):
+            def new(self, *_args, **_kwargs):
+                return FakeImageObject()
+
+        class FakeDraw:
+            def text(self, _xy, text, **_kwargs):
+                captured_text.append(str(text))
+
+            def textbbox(self, _xy, text, **_kwargs):
+                return (0, 0, len(str(text)) * 8, 16)
+
+            def textlength(self, text, **_kwargs):
+                return len(str(text)) * 8
+
+            def rectangle(self, *_args, **_kwargs):
+                pass
+
+            def rounded_rectangle(self, *_args, **_kwargs):
+                pass
+
+            def ellipse(self, *_args, **_kwargs):
+                pass
+
+            def line(self, *_args, **_kwargs):
+                pass
+
+        fake_pil = types.ModuleType("PIL")
+        fake_image = FakeImageModule()
+        fake_image_draw = types.SimpleNamespace(Draw=lambda _image: FakeDraw())
+        old_pil = sys.modules.get("PIL")
+        old_image = sys.modules.get("PIL.Image")
+        old_image_draw = sys.modules.get("PIL.ImageDraw")
+        old_pil_font = daily_case_report._pil_font
+        sys.modules["PIL"] = fake_pil
+        sys.modules["PIL.Image"] = fake_image
+        sys.modules["PIL.ImageDraw"] = fake_image_draw
+        daily_case_report._pil_font = lambda size, **_kwargs: FakeFont(size)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                report = daily_case_report.ReportData(
+                    group_name="group",
+                    report_title="群聊战报",
+                    report_date="2026-08-08",
+                    time_range="00:00-23:59",
+                    member_count=2,
+                    message_count=3,
+                    participant_count=2,
+                    case_count=1,
+                    suspect_count=1,
+                    hourly_counts=[0] * 24,
+                    cases=[
+                        daily_case_report.CaseCard(
+                            case_no="CASE 01",
+                            title="讨论主题",
+                            time_label="10:00-11:00",
+                            summary="3 条消息，2 人参与",
+                            bullets=["活动安排已经确认", "明天提醒一次"],
+                            message_count=3,
+                            participant_count=2,
+                            color_bg="#fff0a6",
+                            color_text="#111111",
+                            top_speaker="成员",
+                        )
+                    ],
+                    suspects=[
+                        daily_case_report.Suspect(
+                            rank=1,
+                            name="成员",
+                            message_count=2,
+                            word_count=12,
+                            avatar_emoji="*",
+                        )
+                    ],
+                    highlight="活动安排已经确认",
+                    hot_topics=[
+                        daily_case_report.HotTopic(
+                            rank=1,
+                            keyword="讨论主题",
+                            message_count=2,
+                            participant_count=2,
+                        )
+                    ],
+                    character_count=1,
+                    characters=[
+                        daily_case_report.CharacterCard(
+                            rank=1,
+                            name="成员",
+                            role_label="活动推进者",
+                            one_liner="把松散聊天推成下一步行动",
+                            evidence="活动安排已经确认",
+                            message_count=2,
+                            topic_count=1,
+                        )
+                    ],
+                )
+                daily_case_report._render_image_with_pillow(
+                    report,
+                    Path(tmpdir) / "preview.jpg",
+                    750,
+                    "jpeg",
+                )
+        finally:
+            daily_case_report._pil_font = old_pil_font
+            if old_pil is None:
+                sys.modules.pop("PIL", None)
+            else:
+                sys.modules["PIL"] = old_pil
+            if old_image is None:
+                sys.modules.pop("PIL.Image", None)
+            else:
+                sys.modules["PIL.Image"] = old_image
+            if old_image_draw is None:
+                sys.modules.pop("PIL.ImageDraw", None)
+            else:
+                sys.modules["PIL.ImageDraw"] = old_image_draw
+
+        rendered = "\n".join(captured_text)
+        self.assertIn("人物出场表", rendered)
+        self.assertIn("今日台词", rendered)
+        self.assertIn("梗和回调候选", rendered)
+        self.assertIn("故事线候选", rendered)
+        self.assertIn("24H 活跃节奏", rendered)
+        self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
+        self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
+        self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
 
     def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:
         report = daily_case_report.ReportData(

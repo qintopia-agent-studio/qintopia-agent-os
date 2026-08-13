@@ -27,7 +27,11 @@ collection assumptions, not to the content model.
      behavior can appear only as a daily character note, not as a stable profile trait.
 
 2. Daily report style
-   - Keep the current deterministic latest-24-hour report as the production base.
+   - Use the reference project's daily content workshop as the production content shape:
+     ordinary digest, light-roast candidate, public-draft candidate, quote map, review,
+     Wiki-style second pass, storyline continuity, and graph-ready counts.
+   - Keep Xiaoman's latest Postgres QiWe messages as the production source and daily
+     collection window. The old scoreboard/report-card surface is not the target shape.
    - Add public-safe daily character notes from the same latest message window. These
      are role functions such as activity organizer, resource scout, question raiser,
      answerer, or atmosphere keeper.
@@ -72,6 +76,15 @@ shape instead of the old scoreboard copy. The report opens with `今日主线`, 
 the durable Wiki-style bridge. These fields are derived from the latest Postgres message
 window plus public-safe role labels and recurrence counts; they do not publish raw
 long-term profile text.
+
+The public poster now keeps activity rhythm and speaker ranking after the main
+character/storyline sections, so the first screen reads as a character-universe daily
+rather than a statistics dashboard. This applies to both HTML screenshot rendering and
+the Pillow image fallback used on production hosts without Playwright. The private
+Markdown日报 follows the reference `digest-template` structure more directly:
+`今日一句话`, `天气背景`, `主要话题`, `人物动态`, `待解决问题`, `候选公众号选题`, plus
+the quote/storyline sections. Weather is represented as an explicit omitted slot unless
+a reviewed source exists; the workflow must not invent it.
 
 The daily workflow now also derives a richer second-pass character layer without adding
 a new production source. `CharacterMemory` maps long-term `member_facts` counts into
@@ -162,6 +175,12 @@ candidates for ordinary digest structure, light-roast character cards, public-dr
 title/opening material, storyline timelines, and 7/14/30-day lookback callbacks.
 Production worker metadata and worker-run evidence retain only draft counts and the same
 false raw/profile/public-surface privacy flags.
+
+The ordinary digest candidate is no longer only a section list. It now carries
+structured `weather_context`, `one_sentence_summary`, `main_topics`, `people_notes`,
+`local_life_notes`, `open_questions`, `risk_items`, and `candidate_public_topics`,
+matching the reference template while keeping all candidate text private to the review
+bundle.
 
 The private `character-universe` export now also emits `creative_universe_candidates`.
 This extends the reviewed creative layer beyond person callbacks into cross-day meme

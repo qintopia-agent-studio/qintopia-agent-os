@@ -48,13 +48,23 @@
   `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
 - Xiaoman daily case-report private review bundle now includes `.draft-bundle.json`. It
   may contain ordinary digest, light-roast, public-draft, storyline timeline, and
-  7/14/30-day lookback callback candidates, so production evidence may retain only
-  `draft_counts` plus privacy flags, never the candidate text.
+  7/14/30-day lookback callback candidates. The ordinary digest should follow the
+  reference `wx-cli` content-workshop shape: weather slot, one-sentence summary, main
+  topics, people notes, local-life notes, open questions, risk items, and public-topic
+  candidates. Production evidence may retain only `draft_counts` plus privacy flags,
+  never the candidate text.
 - Xiaoman daily case-report production evidence may retain only the fixed
   `public_output_style` schema/boolean contract proving the character-daily layout,
   storyline-first output, image-first group delivery, PDF-non-default delivery, roast
   review boundary, and private-draft boundary. Never retain rendered Markdown, labels,
-  quotes, relationship text, or candidate draft text as style evidence.
+  quotes, relationship text, or candidate draft text as style evidence. Worker metadata
+  must preserve negative boundaries as negative booleans: `pdf_default_delivery=false`
+  and `public_surface_contains_private_draft=false` are success evidence, not failures
+  to coerce to `true`.
+- Xiaoman daily case-report JPEG rendering must stay storyline/character-first in both
+  HTML screenshot and Pillow fallback paths. Keep `人物出场表`, `今日台词`,
+  `梗和回调候选`, `同场关系`, and `故事线候选` before `24H 活跃节奏` / `发言出场榜` so
+  production hosts without Playwright do not regress to a statistics-first poster.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash
