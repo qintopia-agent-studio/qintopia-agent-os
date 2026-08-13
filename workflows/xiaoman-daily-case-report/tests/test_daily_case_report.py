@@ -1234,6 +1234,30 @@ class DailyCaseReportTest(unittest.TestCase):
             draft_bundle["roast_digest"]["status"],
             "candidate_requires_owner_review",
         )
+        ordinary_digest = draft_bundle["ordinary_digest"]
+        self.assertEqual(
+            ordinary_digest["weather_context"]["status"],
+            "omitted_no_reviewed_weather_source",
+        )
+        self.assertTrue(ordinary_digest["one_sentence_summary"])
+        self.assertEqual(ordinary_digest["main_topics"][0]["title"], "活动讨论")
+        self.assertEqual(ordinary_digest["people_notes"][0]["role_label"], "活动推进者")
+        self.assertTrue(ordinary_digest["risk_items"])
+        self.assertGreaterEqual(len(ordinary_digest["candidate_public_topics"]), 1)
+        self.assertIn("主要话题", ordinary_digest["section_keys"])
+        self.assertIn("候选公众号选题", ordinary_digest["section_keys"])
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_topic_count"],
+            1,
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_people_note_count"],
+            1,
+        )
+        self.assertGreaterEqual(
+            draft_bundle["counts"]["ordinary_digest_candidate_public_topic_count"],
+            1,
+        )
         self.assertGreaterEqual(
             draft_bundle["counts"]["lookback_callback_count"],
             1,
@@ -1537,18 +1561,21 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("今日局势", rendered)
         self.assertNotIn("今日 MVP", rendered)
         self.assertIn("background: #ffd92e", rendered)
-        self.assertLess(rendered.index("今日主线"), rendered.index("24H 活跃节奏"))
-        self.assertLess(rendered.index("24H 活跃节奏"), rendered.index("人物出场表"))
+        self.assertLess(rendered.index("今日主线"), rendered.index("人物出场表"))
         self.assertLess(rendered.index("人物出场表"), rendered.index("今日台词"))
         self.assertLess(rendered.index("今日台词"), rendered.index("梗和回调候选"))
         self.assertLess(rendered.index("梗和回调候选"), rendered.index("故事线候选"))
+        self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("发言出场榜"))
 
         markdown = daily_case_report._render_daily_markdown(report)
         self.assertIn("# 小满群聊日报｜2026-08-08｜讨论主题", markdown)
+        self.assertIn("## 天气背景", markdown)
+        self.assertIn("## 主要话题", markdown)
         self.assertIn("## 今日剧中人", markdown)
         self.assertIn("**成员（活动推进者）**", markdown)
         self.assertIn("## 梗和回调候选", markdown)
+        self.assertIn("## 候选公众号选题", markdown)
         self.assertIn("raw_messages_included=false", markdown)
         self.assertIn("profile_fact_text_included=false", markdown)
         style = daily_case_report._public_output_style_contract()

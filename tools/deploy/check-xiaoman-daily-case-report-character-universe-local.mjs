@@ -228,6 +228,24 @@ for (const [fragment, label] of [
     "run manifest records draft-bundle private output",
   ],
   ['"roast_digest": {', "draft bundle includes roast digest candidate"],
+  ['"weather_context": {', "ordinary digest includes weather context slot"],
+  [
+    '"status": "omitted_no_reviewed_weather_source"',
+    "ordinary digest does not invent weather",
+  ],
+  [
+    '"one_sentence_summary": _daily_opening_line(report)',
+    "ordinary digest one-sentence summary",
+  ],
+  ['"main_topics": ordinary_topic_cards', "ordinary digest topic cards"],
+  ['"people_notes": ordinary_people_notes', "ordinary digest people notes"],
+  ['"local_life_notes": [', "ordinary digest local-life notes"],
+  ['"open_questions": ordinary_open_questions', "ordinary digest open questions"],
+  ['"risk_items": [', "ordinary digest risk items"],
+  [
+    '"candidate_public_topics": ordinary_candidate_topics',
+    "ordinary digest public topic candidates",
+  ],
   ['"public_draft": {', "draft bundle includes public draft candidate"],
   [
     '"lookback_callbacks": lookback_callbacks',

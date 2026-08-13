@@ -2417,6 +2417,106 @@ def _lookback_callback_candidates(report: ReportData) -> list[dict[str, Any]]:
     return callbacks
 
 
+def _ordinary_digest_topic_cards(report: ReportData) -> list[dict[str, Any]]:
+    cards: list[dict[str, Any]] = []
+    for case in report.cases:
+        cards.append(
+            {
+                "title": _case_storyline_label(case),
+                "participants": case.participant_count,
+                "message_count": case.message_count,
+                "summary": case.summary,
+                "anchors": case.bullets[:3],
+                "top_speaker": case.top_speaker,
+                "status": "candidate",
+            }
+        )
+    if cards:
+        return cards[:6]
+    for topic in report.hot_topics:
+        cards.append(
+            {
+                "title": topic.keyword,
+                "participants": topic.participant_count,
+                "message_count": topic.message_count,
+                "summary": f"{topic.message_count} 条消息，{topic.participant_count} 人参与",
+                "anchors": [],
+                "top_speaker": "",
+                "status": "candidate",
+            }
+        )
+    return cards[:6]
+
+
+def _ordinary_digest_people_notes(report: ReportData) -> list[dict[str, Any]]:
+    return [
+        {
+            "person_key": character.node_key or _node_key(character.name),
+            "display_label": character.name,
+            "role_label": character.role_label,
+            "story_function": character.story_function,
+            "daily_arc": character.arc_label,
+            "evidence_anchor": character.evidence_anchor,
+            "quote": character.evidence,
+            "memory_weight_label": character.memory_weight_label,
+            "status": "candidate",
+        }
+        for character in report.characters
+    ]
+
+
+def _ordinary_digest_open_questions(report: ReportData) -> list[str]:
+    questions: list[str] = []
+    seen: set[str] = set()
+    for case in report.cases:
+        for bullet in case.bullets:
+            text = _clean_text(bullet)
+            if "?" in text or "？" in text or any(
+                word in text for word in ("求助", "请问", "有没有", "怎么")
+            ):
+                question = text[:120]
+                if question and question not in seen:
+                    seen.add(question)
+                    questions.append(question)
+            if len(questions) >= 5:
+                return questions
+    for character in report.characters:
+        if character.role_label == "问题发射台":
+            question = character.evidence[:120]
+            if question and question not in seen:
+                seen.add(question)
+                questions.append(question)
+        if len(questions) >= 5:
+            break
+    return questions
+
+
+def _ordinary_digest_candidate_topics(report: ReportData) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    main_storyline = _main_storyline_label(report)
+    if report.case_count > 0:
+        candidates.append(
+            {
+                "title": f"{main_storyline}的一天",
+                "source": "daily_storyline",
+                "reason": "当天已有可归档主线和 quote-map 候选证据",
+                "review_required": True,
+            }
+        )
+    for callback in _meme_callback_candidates(report, limit=3):
+        label = callback.split("：", 1)[0].strip("「」")
+        if label:
+            candidates.append(
+                {
+                    "title": f"围绕{label}的群聊回看",
+                    "source": "meme_callback_candidate",
+                    "reason": "梗或回调候选需要人工判断是否适合公开文章",
+                    "review_required": True,
+                }
+            )
+    return candidates[:5]
+
+
 def _build_draft_bundle(
     report: ReportData,
     quote_map: dict[str, Any],
@@ -2452,6 +2552,10 @@ def _build_draft_bundle(
     ]
     if report.highlight:
         opening_candidates.append(f"今天可以先从这句看起：{report.highlight}")
+    ordinary_topic_cards = _ordinary_digest_topic_cards(report)
+    ordinary_people_notes = _ordinary_digest_people_notes(report)
+    ordinary_open_questions = _ordinary_digest_open_questions(report)
+    ordinary_candidate_topics = _ordinary_digest_candidate_topics(report)
     storyline_timeline = [
         {
             "date": report.report_date,
@@ -2477,7 +2581,41 @@ def _build_draft_bundle(
             "status": "candidate",
             "title": f"小满群聊日报｜{report.report_date}｜{main_storyline}",
             "main_storyline": main_storyline,
+            "weather_context": {
+                "status": "omitted_no_reviewed_weather_source",
+                "public_surface_allowed": False,
+            },
+            "one_sentence_summary": _daily_opening_line(report),
+            "main_topics": ordinary_topic_cards,
+            "people_notes": ordinary_people_notes,
+            "local_life_notes": [
+                {
+                    "label": topic.get("label", ""),
+                    "source": "wiki_topic_candidate",
+                    "status": "candidate",
+                }
+                for topic in (wiki_bundle.get("topics") or [])
+                if any(
+                    keyword in str(topic.get("label", ""))
+                    for keyword in ("活动", "饭局", "天气", "社区", "本地", "地点")
+                )
+            ][:5],
+            "open_questions": ordinary_open_questions,
+            "risk_items": [
+                "所有直接引用必须回溯到 quote-map 后才能公开使用",
+                "人物动态只作为今日出场，不自动升级为长期画像",
+                "公众号候选文发布前必须人工审核隐私和人物边界",
+            ],
+            "candidate_public_topics": ordinary_candidate_topics,
             "section_keys": [
+                "天气背景",
+                "今日一句话",
+                "主要话题",
+                "人物动态",
+                "地点/本地生活线索",
+                "待解决问题",
+                "不可公开/需人工复核素材",
+                "候选公众号选题",
                 "今日台词",
                 "今日剧中人",
                 "梗和回调候选",
@@ -2515,6 +2653,10 @@ def _build_draft_bundle(
     }
     bundle["counts"] = {
         "ordinary_digest_section_count": len(bundle["ordinary_digest"]["section_keys"]),
+        "ordinary_digest_topic_count": len(ordinary_topic_cards),
+        "ordinary_digest_people_note_count": len(ordinary_people_notes),
+        "ordinary_digest_open_question_count": len(ordinary_open_questions),
+        "ordinary_digest_candidate_public_topic_count": len(ordinary_candidate_topics),
         "roast_profile_candidate_count": len(character_cards),
         "public_draft_title_count": len(title_candidates),
         "storyline_timeline_count": len(storyline_timeline),
@@ -3262,7 +3404,7 @@ def _render_html(report: ReportData, width: int) -> str:
   .stat-label, .section-kicker, .highlight-kicker, .hotlist-heading span {{ color: #ffd92e; font-size: 11px; font-weight: 800; }}
   .stat-value {{ margin-top: 5px; font-size: 34px; font-weight: 900; line-height: 1; }}
   .stat-caption {{ margin-top: 5px; color: #c9c9c9; font-size: 11px; }}
-  .timeline {{ margin: 0; padding: 26px 24px 18px; background: #ffd92e; border-bottom: 4px solid #111111; }}
+  .timeline {{ margin: 22px 24px 0; padding: 18px 18px 12px; border: 4px solid #111111; background: #fff0a6; }}
   .timeline-head {{ display: flex; align-items: baseline; justify-content: space-between; }}
   .timeline h2, .section h2 {{ font-size: 26px; font-weight: 900; line-height: 1.1; }}
   .peak {{ font-size: 12px; font-weight: 700; }}
@@ -3335,15 +3477,15 @@ def _render_html(report: ReportData, width: int) -> str:
     <div class="hero-badge">人物<br>主线</div>
   </header>
   <section class="stats">{stats_html}</section>
-  <section class="timeline">
-    <div class="timeline-head"><h2>24H 活跃节奏</h2><div class="peak">峰值 {peak_count} 条 / {peak_idx:02d}:00</div></div>
-    <svg viewBox="0 0 {chart_width} 106" aria-label="24小时活跃节奏">{timeline_svg}{peak_svg}{timeline_labels}</svg>
-  </section>
   {characters_html}
   {highlight_html}
   {callbacks_html}
   {relationships_html}
   {cases_html}
+  <section class="timeline">
+    <div class="timeline-head"><h2>24H 活跃节奏</h2><div class="peak">峰值 {peak_count} 条 / {peak_idx:02d}:00</div></div>
+    <svg viewBox="0 0 {chart_width} 106" aria-label="24小时活跃节奏">{timeline_svg}{peak_svg}{timeline_labels}</svg>
+  </section>
   {mvp_html}
   <footer class="footer">本报告由小满根据最新群聊窗口自动整理 · 长期画像只以公开安全的角色复现计数参与</footer>
 </main>
@@ -3358,7 +3500,11 @@ def _render_daily_markdown(report: ReportData) -> str:
     lines = [
         f"# 小满群聊日报｜{report.report_date}｜{main_storyline}",
         "",
+        "## 今日一句话",
+        "",
         _daily_opening_line(report),
+        "",
+        "## 基本信息",
         "",
         f"- 日期：{report.report_date}",
         f"- 时间范围：{report.time_range}",
@@ -3367,7 +3513,21 @@ def _render_daily_markdown(report: ReportData) -> str:
         f"- 可归档主线：{report.case_count} 条",
         f"- 今日剧中人：{report.character_count} 位",
         "",
+        "## 天气背景",
+        "",
+        "今日未接入已审核天气来源，公开日报不硬塞天气。",
+        "",
     ]
+    topic_cards = _ordinary_digest_topic_cards(report)
+    if topic_cards:
+        lines.extend(["## 主要话题", ""])
+        for topic in topic_cards:
+            lines.extend(
+                [
+                    f"- **{topic['title']}**：{topic['summary']}；参与者 {topic['participants']} 人",
+                ]
+            )
+        lines.append("")
     if report.highlight:
         lines.extend(["## 今日台词", "", f"> {report.highlight}", ""])
     if report.characters:
@@ -3394,6 +3554,18 @@ def _render_daily_markdown(report: ReportData) -> str:
     if relationship_candidates:
         lines.extend(["## 同场关系", ""])
         lines.extend(f"- {candidate}" for candidate in relationship_candidates)
+        lines.append("")
+    open_questions = _ordinary_digest_open_questions(report)
+    if open_questions:
+        lines.extend(["## 待解决问题", ""])
+        lines.extend(f"- {question}" for question in open_questions)
+        lines.append("")
+    candidate_topics = _ordinary_digest_candidate_topics(report)
+    if candidate_topics:
+        lines.extend(["## 候选公众号选题", ""])
+        lines.extend(
+            f"- {topic['title']}：{topic['reason']}" for topic in candidate_topics
+        )
         lines.append("")
     if report.cases:
         lines.extend(["## 今日主线", ""])

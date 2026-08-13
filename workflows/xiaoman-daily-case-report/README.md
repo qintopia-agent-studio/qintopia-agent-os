@@ -37,7 +37,8 @@ observation, rollback, and send boundaries still run from the immutable release.
   window has no qualifying keyword.
 - Keep the character-universe body intact: headline metrics, 今日主线, source-message
   highlight, 人物出场表, hot topics, 梗和回调候选, 同场关系, and story cards remain the
-  primary sections.
+  primary sections. Activity rhythm and speaker ranking are secondary support sections,
+  not the opening shape.
 - Write a private Markdown daily report alongside the poster so downstream operators can
   review a text日报, not only the image artifact.
 - Write a private `.character-universe.json` second-pass export alongside the poster and
@@ -49,8 +50,10 @@ observation, rollback, and send boundaries still run from the immutable release.
   `.wiki-bundle.json`, `.draft-bundle.json`, `.run-manifest.json`, `.review.md`, and
   `.creative-profile-review-payload.draft.json`. These files add the reference project's
   quote-map / Wiki / draft / run-manifest / review structure while preserving the latest
-  Postgres chat-record source of truth. They are internal review artifacts, not public
-  or send-ready payloads.
+  Postgres chat-record source of truth. The ordinary digest draft follows the reference
+  template fields: weather context slot, one-sentence summary, main topics, people
+  notes, local-life notes, open questions, risk items, and public-topic candidates. They
+  are internal review artifacts, not public or send-ready payloads.
 - Render a mobile-friendly JPEG poster from the character-daily template. The HTML
   preview and production image share the same report layout.
 - Emit the content hash, file MD5, byte size, MIME type, and filename needed for the
@@ -128,6 +131,11 @@ labels use a stricter field-level boundary: the daily report may generate
 already reviewed into `safe_reply_hints.public_expressive_labels` with
 `public_surface_allowed=true` and `review_status=reviewed|approved`. Unreviewed roast
 labels, relationship tension, or cross-day jokes remain private review candidates.
+
+The default visual order is storyline-first and character-first: 今日主线, 人物出场表,
+source quote, meme/callback candidates, same-topic relationships, story cards, then
+activity rhythm and speaker ranking. This keeps the group-facing poster close to the
+reference project's daily story style instead of the old metrics dashboard.
 
 ## Running it
 
@@ -301,8 +309,9 @@ candidate text.
 - The private quote-map, wiki-bundle, draft-bundle, run-manifest, and review report are
   generated in the same `0700` output directory with mode `0600`. They may contain
   curated excerpts, labels, candidate nodes, light-roast material, public-draft title
-  candidates, and lookback callbacks, so production worker metadata may retain only
-  their presence, counts, and privacy flags.
+  candidates, ordinary digest template fields, open questions, risk items, and lookback
+  callbacks, so production worker metadata may retain only their presence, counts, and
+  privacy flags.
 - Auto-publish metadata retains only safe counters and schema flags from the private
   Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
   character universe and private review bundle paths ran, without retaining people
