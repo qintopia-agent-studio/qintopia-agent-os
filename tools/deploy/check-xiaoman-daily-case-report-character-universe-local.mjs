@@ -108,8 +108,34 @@ for (const [fragment, label] of [
   ['"callbacks": callbacks', "universe callback candidates"],
   ['"relationships": relationships', "universe relationship candidates"],
   [
+    '"expressive_label_candidates": expressive_label_candidates',
+    "universe expressive label candidates",
+  ],
+  ['"expressive_label_policy": {', "universe expressive label policy"],
+  [
+    '"public_render_requires_reviewed_safe_reply_hints": True',
+    "expressive labels require reviewed safe hints for public render",
+  ],
+  [
     '"creative_profile_candidates": creative_profile_candidates',
     "universe creative-profile candidates",
+  ],
+  ['"creative_universe_candidates": {', "universe creative-universe candidates"],
+  [
+    '"schema_version": "xiaoman-daily-creative-universe-candidates-v1"',
+    "creative-universe candidate schema",
+  ],
+  [
+    '"cross_day_memes": creative_meme_candidates',
+    "creative-universe cross-day meme candidates",
+  ],
+  [
+    '"relationship_labels": creative_relationship_candidates',
+    "creative-universe relationship label candidates",
+  ],
+  [
+    '"timeline_threads": creative_timeline_candidates',
+    "creative-universe timeline candidates",
   ],
   [
     '"creative_profile_candidate_policy": {',
@@ -158,6 +184,8 @@ for (const [fragment, label] of [
     "public output style schema",
   ],
   ['"roast_review_boundary": True', "public output style roast boundary"],
+  ['"image_first_delivery": True', "public output style image-first delivery"],
+  ['"pdf_default_delivery": False', "public output style PDF non-default delivery"],
   [
     '"public_surface_contains_private_draft": False',
     "public output style blocks private draft surface",
@@ -508,6 +536,26 @@ for (const [fragment, label] of [
     "worker creative-profile public-surface flag",
   ],
   [
+    '"creative_universe_candidate_count": int(creative_universe_candidates.get("candidate_count") or 0)',
+    "worker creative-universe candidate count only",
+  ],
+  [
+    '"creative_universe_public_surface_allowed": creative_universe_candidates.get("public_surface_allowed") is True',
+    "worker creative-universe public-surface flag only",
+  ],
+  [
+    '"expressive_label_candidate_count": len(character_universe.get("expressive_label_candidates") or [])',
+    "worker expressive label candidate count only",
+  ],
+  [
+    '"reviewed_public_expressive_label_count": sum(',
+    "worker reviewed public expressive label count only",
+  ],
+  [
+    '"unreviewed_expressive_labels_public_surface_allowed": any(',
+    "worker unreviewed expressive public-surface flag only",
+  ],
+  [
     '"quote_map_entry_count": private_review_bundle.get("quote_map_entry_count", 0)',
     "worker quote-map count only",
   ],
@@ -522,6 +570,14 @@ for (const [fragment, label] of [
   [
     '"public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True',
     "worker private draft public-surface flag only",
+  ],
+  [
+    '"image_first_delivery": public_output_style.get("image_first_delivery") is True',
+    "worker image-first delivery flag",
+  ],
+  [
+    '"pdf_default_delivery": public_output_style.get("pdf_default_delivery") is True',
+    "worker PDF default delivery flag only",
   ],
   ['"meme_count": len(character_universe.get("memes") or [])', "worker meme count"],
   [
@@ -598,6 +654,14 @@ for (const [fragment, label] of [
     "worker-run roast boundary style evidence",
   ],
   [
+    'print(f"{key}_worker_public_output_style_image_first_delivery=true")',
+    "worker-run image-first delivery style evidence",
+  ],
+  [
+    'print(f"{key}_worker_public_output_style_pdf_default_delivery=false")',
+    "worker-run PDF non-default style evidence",
+  ],
+  [
     'print(f"{key}_worker_public_output_style_public_surface_contains_private_draft=false")',
     "worker-run private-draft surface style evidence",
   ],
@@ -609,6 +673,26 @@ for (const [fragment, label] of [
     'print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")',
     "worker-run creative-profile public-surface evidence",
   ],
+  [
+    'print(f"{key}_worker_character_universe_creative_universe_candidate_count=',
+    "worker-run creative-universe candidate count evidence",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_creative_universe_public_surface_allowed=false")',
+    "worker-run creative-universe public-surface evidence",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_expressive_label_candidate_count=',
+    "worker-run expressive label candidate count evidence",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_reviewed_public_expressive_label_count=',
+    "worker-run reviewed public expressive label count evidence",
+  ],
+  [
+    'print(f"{key}_worker_character_universe_unreviewed_expressive_labels_public_surface_allowed=false")',
+    "worker-run unreviewed expressive label public-surface evidence",
+  ],
 ]) {
   requireIncludes(workerRunEvidence, fragment, label);
 }
@@ -619,11 +703,11 @@ for (const [fragment, label] of [
     "runner allowlist for universe labels",
   ],
   [
-    "xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included|creative_profile_public_surface_allowed)",
+    "xiaoman_daily_case_report_worker_character_universe_(?:raw_messages_included|profile_fact_text_included|creative_profile_public_surface_allowed|creative_universe_public_surface_allowed|unreviewed_expressive_labels_public_surface_allowed)",
     "runner allowlist for universe privacy flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|meme_count|callback_count|relationship_count|creative_profile_candidate_count|storyline_candidate_count|edge_count)",
+    "xiaoman_daily_case_report_worker_character_universe_(?:people_count|topic_count|event_count|meme_count|callback_count|relationship_count|expressive_label_candidate_count|reviewed_public_expressive_label_count|creative_profile_candidate_count|creative_universe_candidate_count|storyline_candidate_count|edge_count)",
     "runner allowlist for universe counts",
   ],
   [
@@ -631,11 +715,11 @@ for (const [fragment, label] of [
     "runner allowlist for public output style schema",
   ],
   [
-    "xiaoman_daily_case_report_worker_public_output_style_(?:character_daily_layout|storyline_first|cast_notes_enabled|meme_callback_section_enabled|relationship_section_enabled|roast_review_boundary|private_draft_only)",
+    "xiaoman_daily_case_report_worker_public_output_style_(?:character_daily_layout|storyline_first|cast_notes_enabled|meme_callback_section_enabled|relationship_section_enabled|owner_reviewed_expressive_labels_only|image_first_delivery|roast_review_boundary|private_draft_only)",
     "runner allowlist for public output style true flags",
   ],
   [
-    "xiaoman_daily_case_report_worker_public_output_style_public_surface_contains_private_draft",
+    "xiaoman_daily_case_report_worker_public_output_style_(?:public_surface_contains_private_draft|pdf_default_delivery)",
     "runner allowlist for public output style false flag",
   ],
   [

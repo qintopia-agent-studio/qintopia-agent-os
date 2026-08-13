@@ -223,6 +223,7 @@ class CharacterCard:
     meme_seed: str = ""
     memory_weight_label: str = ""
     evidence_anchor: str = ""
+    expressive_label: str = ""
     profile_evidence_count: int = 0
     profile_upgrade_status: str = ""
     profile_upgrade_reason: str = ""
@@ -251,6 +252,7 @@ class CreativeProfileMemory:
     memory_weight_label: str = ""
     meme_seed: str = ""
     callback_hint: str = ""
+    expressive_label: str = ""
     evidence_anchor: str = ""
     recurrence_evidence_count: int = 0
 
@@ -825,6 +827,22 @@ def _safe_creative_int(value: Any) -> int:
     return min(parsed, 1000)
 
 
+def _reviewed_public_expressive_label(safe_reply_hints: dict[str, Any]) -> str:
+    labels = safe_reply_hints.get("public_expressive_labels")
+    if not isinstance(labels, dict):
+        return ""
+    if labels.get("public_surface_allowed") is not True:
+        return ""
+    if str(labels.get("review_status") or "") not in {"reviewed", "approved"}:
+        return ""
+    return _safe_creative_text(
+        labels.get("relationship_tension")
+        or labels.get("callback_label")
+        or labels.get("roast_label"),
+        48,
+    )
+
+
 def _fetch_creative_profile_memory(
     person_ids: set[str],
     end: datetime,
@@ -966,6 +984,7 @@ def _creative_profile_memory_from_rows(rows: Any) -> dict[str, CreativeProfileMe
             memory_weight_label=_safe_creative_text(safe_reply_hints.get("memory_weight_label"), 64),
             meme_seed=_safe_creative_text(safe_reply_hints.get("meme_seed"), 80),
             callback_hint=_safe_creative_text(safe_reply_hints.get("callback_hint"), 120),
+            expressive_label=_reviewed_public_expressive_label(safe_reply_hints),
             evidence_anchor=_safe_creative_text(safe_reply_hints.get("evidence_anchor"), 80),
             recurrence_evidence_count=_safe_creative_int(
                 safe_reply_hints.get("recurrence_evidence_count")
@@ -1836,6 +1855,9 @@ def _compute_characters(
                     else _character_meme_seed(role_label, topic_count, evidence, memory),
                     memory_weight_label=memory_weight_label,
                     evidence_anchor=f"daily_character_note:{node_key}",
+                    expressive_label=creative_memory.expressive_label
+                    if creative_memory and creative_memory.expressive_label
+                    else "",
                     profile_evidence_count=profile_evidence_count,
                     profile_upgrade_status=_profile_upgrade_status(profile_evidence_count),
                     profile_upgrade_reason=profile_upgrade_reason,
@@ -1912,6 +1934,7 @@ def _build_character_universe(
             "arc_label": character.arc_label,
             "relationship_hint": character.relationship_hint,
             "meme_seed": character.meme_seed,
+            "expressive_label": character.expressive_label,
             "memory_weight_label": character.memory_weight_label,
             "evidence_anchor": character_anchor(character),
             "profile_evidence_count": character_evidence_count(character),
@@ -2026,6 +2049,7 @@ def _build_character_universe(
             "memory_weight_label": character.memory_weight_label,
             "meme_seed": character.meme_seed,
             "callback_hint": character.callback_hint,
+            "expressive_label": character.expressive_label,
             "evidence_anchor": character_anchor(character),
             "recurrence_evidence_count": character_evidence_count(character),
             "minimum_recurrence_met": character_evidence_count(character) >= 2,
@@ -2070,6 +2094,89 @@ def _build_character_universe(
                 "risk": "public_safe_summary",
             }
         )
+    creative_meme_candidates = [
+        {
+            "type": "creative_meme_candidate",
+            "key": _node_key(f"creative-meme-{item.get('key', '')}"),
+            "label": item.get("label", ""),
+            "related_people": item.get("related_people", []),
+            "source": item.get("source", ""),
+            "lookback_days": [7, 14, 30],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": False,
+            "risk": "internal_review_required",
+        }
+        for item in memes[:8]
+    ]
+    creative_relationship_candidates = [
+        {
+            "type": "creative_relationship_candidate",
+            "key": _node_key(f"creative-relationship-{item.get('key', '')}"),
+            "source": item.get("source", ""),
+            "target": item.get("target", ""),
+            "topic": item.get("topic", ""),
+            "candidate_label": item.get("label", ""),
+            "evidence_policy": "same_topic_co_presence_only",
+            "status": "pending_review",
+            "public_surface_allowed": False,
+            "risk": "internal_review_required",
+        }
+        for item in relationships[:8]
+    ]
+    creative_timeline_candidates = [
+        {
+            "type": "creative_timeline_candidate",
+            "key": _node_key(f"creative-timeline-{item.get('key', '')}"),
+            "label": item.get("label", ""),
+            "last_seen": item.get("last_seen", report_date),
+            "related_event": item.get("related_event", ""),
+            "lookback_days": [7, 14, 30],
+            "candidate_arc": f"连续观察「{item.get('label', '')}」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": False,
+            "risk": "internal_review_required",
+        }
+        for item in storyline_candidates[:8]
+        if item.get("label")
+    ]
+    creative_universe_candidate_sets = {
+        "cross_day_memes": creative_meme_candidates,
+        "relationship_labels": creative_relationship_candidates,
+        "timeline_threads": creative_timeline_candidates,
+    }
+    creative_universe_candidate_count = sum(
+        len(items) for items in creative_universe_candidate_sets.values()
+    )
+    expressive_label_candidates = [
+        {
+            "type": "expressive_label_candidate",
+            "key": _node_key(f"expressive-{character_key(character)}-{character.role_label}"),
+            "related_person": character_key(character),
+            "candidate_label": (
+                character.expressive_label
+                or character.meme_seed
+                or character.relationship_hint
+                or character.callback_hint
+            ),
+            "label_kind": "reviewed_public"
+            if character.expressive_label
+            else "draft_requires_owner_review",
+            "review_status": "reviewed" if character.expressive_label else "candidate",
+            "public_surface_allowed": bool(character.expressive_label),
+            "evidence_anchor": character_anchor(character),
+            "risk": "field_level_owner_review_required",
+        }
+        for character in characters
+        if character.role_label
+        and (
+            character.expressive_label
+            or character.meme_seed
+            or character.relationship_hint
+            or character.callback_hint
+        )
+    ]
     edges: list[dict[str, Any]] = []
     for character in characters:
         character_key_value = character_key(character)
@@ -2123,13 +2230,33 @@ def _build_character_universe(
         "memes": memes,
         "callbacks": callbacks,
         "relationships": relationships,
+        "expressive_label_candidates": expressive_label_candidates,
         "creative_profile_candidates": creative_profile_candidates,
+        "creative_universe_candidates": {
+            "schema_version": "xiaoman-daily-creative-universe-candidates-v1",
+            "source": "daily_case_report_second_pass",
+            "apply_mode": "candidate_only",
+            "public_surface_allowed": False,
+            "review_required": True,
+            "raw_messages_included": False,
+            "profile_fact_text_included": False,
+            "writes_member_profile_snapshots": False,
+            "candidate_count": creative_universe_candidate_count,
+            "candidate_sets": creative_universe_candidate_sets,
+        },
         "creative_profile_candidate_policy": {
             "profile_kind": "creative_profile",
             "apply_mode": "candidate_only",
             "writes_member_profile_snapshots": False,
             "public_surface_allowed": False,
             "evidence_policy": "daily_character_note_or_quote_map",
+            "review_required": True,
+        },
+        "expressive_label_policy": {
+            "apply_mode": "candidate_only",
+            "public_surface_allowed_requires_owner_review": True,
+            "public_render_requires_reviewed_safe_reply_hints": True,
+            "writes_member_profile_snapshots": False,
             "review_required": True,
         },
         "storyline_candidates": storyline_candidates,
@@ -2555,6 +2682,7 @@ def _build_run_manifest(
 ) -> dict[str, Any]:
     universe = report.character_universe or {}
     draft_counts = (draft_bundle or {}).get("counts") or {}
+    creative_universe_candidates = universe.get("creative_universe_candidates") or {}
     return {
         "schema_version": "xiaoman-daily-run-manifest-v1",
         "source": "daily_case_report",
@@ -2610,6 +2738,18 @@ def _build_run_manifest(
             "creative_profile_candidate_count": len(
                 universe.get("creative_profile_candidates") or []
             ),
+            "expressive_label_candidate_count": len(
+                universe.get("expressive_label_candidates") or []
+            ),
+            "reviewed_public_expressive_label_count": sum(
+                1
+                for item in universe.get("expressive_label_candidates") or []
+                if item.get("public_surface_allowed") is True
+                and item.get("review_status") == "reviewed"
+            ),
+            "creative_universe_candidate_count": int(
+                creative_universe_candidates.get("candidate_count") or 0
+            ),
         },
         "privacy": {
             "public_surface_allowed": False,
@@ -2620,6 +2760,14 @@ def _build_run_manifest(
                     "public_surface_allowed"
                 )
                 is True
+            ),
+            "creative_universe_public_surface_allowed": (
+                creative_universe_candidates.get("public_surface_allowed") is True
+            ),
+            "unreviewed_expressive_labels_public_surface_allowed": any(
+                item.get("public_surface_allowed") is True
+                and item.get("review_status") != "reviewed"
+                for item in universe.get("expressive_label_candidates") or []
             ),
             "writes_member_profile_snapshots": False,
         },
@@ -2636,6 +2784,9 @@ def _public_output_style_contract() -> dict[str, Any]:
         "cast_notes_enabled": True,
         "meme_callback_section_enabled": True,
         "relationship_section_enabled": True,
+        "owner_reviewed_expressive_labels_only": True,
+        "image_first_delivery": True,
+        "pdf_default_delivery": False,
         "roast_review_boundary": True,
         "private_draft_only": True,
         "public_surface_contains_private_draft": False,
@@ -2653,6 +2804,7 @@ def _render_review_report(
     counts = wiki_bundle.get("counts") or {}
     draft_counts = draft_bundle.get("counts") or {}
     profile_candidates = universe.get("creative_profile_candidates") or []
+    creative_universe_candidates = universe.get("creative_universe_candidates") or {}
     lines = [
         f"# 小满日报私有审核包｜{report.report_date}",
         "",
@@ -2666,6 +2818,8 @@ def _render_review_report(
         f"- 引用映射：{quote_map.get('entry_count', 0)} 条候选证据",
         f"- Wiki 候选：people={counts.get('people', 0)} / events={counts.get('events', 0)} / memes={counts.get('memes', 0)} / relationships={counts.get('relationships', 0)} / storylines={counts.get('storylines', 0)}",
         f"- 草稿候选：roast_profiles={draft_counts.get('roast_profile_candidate_count', 0)} / storyline_timeline={draft_counts.get('storyline_timeline_count', 0)} / lookback_callbacks={draft_counts.get('lookback_callback_count', 0)}",
+        f"- 创作资产候选：{creative_universe_candidates.get('candidate_count', 0)} 条（梗 / 关系标签 / 时间线，仅供审核）",
+        f"- 已审核公开表达标签：{run_manifest['counts']['reviewed_public_expressive_label_count']} 条",
         "",
         "## 审核清单",
         "",
@@ -2683,6 +2837,8 @@ def _render_review_report(
         f"- raw_message_rows_included={str(run_manifest['privacy']['raw_message_rows_included']).lower()}",
         f"- profile_fact_text_included={str(run_manifest['privacy']['profile_fact_text_included']).lower()}",
         f"- creative_profile_public_surface_allowed={str(run_manifest['privacy']['creative_profile_public_surface_allowed']).lower()}",
+        f"- creative_universe_public_surface_allowed={str(run_manifest['privacy']['creative_universe_public_surface_allowed']).lower()}",
+        f"- unreviewed_expressive_labels_public_surface_allowed={str(run_manifest['privacy']['unreviewed_expressive_labels_public_surface_allowed']).lower()}",
         f"- writes_member_profile_snapshots={str(run_manifest['privacy']['writes_member_profile_snapshots']).lower()}",
         "",
         "## 可审核人物画像候选",
@@ -3079,7 +3235,7 @@ def _render_html(report: ReportData, width: int) -> str:
   <section class="characters">
     <div class="characters-heading"><span>CAST NOTES</span><h2>人物出场表</h2></div>
     <div class="character-grid">{"".join(
-        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)} · {html.escape(character.story_function)}</strong><p>{html.escape(character.arc_label or character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{html.escape(character.callback_hint)}{(" · " + html.escape(character.relationship_hint)) if character.relationship_hint else ""}{(" · " + html.escape(character.memory_weight_label)) if character.memory_weight_label else ""}</small></div></article>'''
+        f'''<article class="character-card"><div class="character-rank">{character.rank}</div><div class="character-copy"><h3>{html.escape(character.name)}</h3><strong>{html.escape(character.role_label)} · {html.escape(character.story_function)}</strong><p>{html.escape(character.arc_label or character.one_liner)}</p><blockquote>{html.escape(character.evidence)}</blockquote><small>{html.escape(character.callback_hint)}{(" · " + html.escape(character.relationship_hint)) if character.relationship_hint else ""}{(" · 已审核标签：" + html.escape(character.expressive_label)) if character.expressive_label else ""}{(" · " + html.escape(character.memory_weight_label)) if character.memory_weight_label else ""}</small></div></article>'''
         for character in report.characters
     )}</div>
   </section>"""
@@ -3229,6 +3385,8 @@ def _render_daily_markdown(report: ReportData) -> str:
             )
             if character.relationship_hint:
                 lines.extend([f"  同场接力：{character.relationship_hint}", ""])
+            if character.expressive_label:
+                lines.extend([f"  已审核公开标签：{character.expressive_label}", ""])
     if callback_candidates:
         lines.extend(["## 梗和回调候选", ""])
         lines.extend(f"- {candidate}" for candidate in callback_candidates)
@@ -3281,6 +3439,7 @@ def _render_daily_markdown(report: ReportData) -> str:
             "- 本日报由小满根据最新群聊窗口自动整理。",
             "- 长期画像只以角色复现计数参与，不展示内部画像原文。",
             "- creative_profile_candidates 仅供内部审核，不写入长期画像表，不允许直接公开展示。",
+            "- expressive_label_candidates 只有 owner-reviewed safe_reply_hints 字段可进入公开文案。",
             "- raw_messages_included=false；profile_fact_text_included=false。",
         ]
     )
@@ -3588,7 +3747,12 @@ def _render_image_with_pillow(
             _draw_wrapped_text(
                 draw,
                 (copy_x, card_y + 54 * scale),
-                f"{character.arc_label or character.one_liner}｜{character.evidence}",
+                (
+                    f"已审核标签：{character.expressive_label}｜"
+                    if character.expressive_label
+                    else ""
+                )
+                + f"{character.arc_label or character.one_liner}｜{character.evidence}",
                 tiny_font,
                 ink,
                 card_width - 58 * scale,

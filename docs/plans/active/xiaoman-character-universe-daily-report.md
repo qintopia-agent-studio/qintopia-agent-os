@@ -163,21 +163,27 @@ title/opening material, storyline timelines, and 7/14/30-day lookback callbacks.
 Production worker metadata and worker-run evidence retain only draft counts and the same
 false raw/profile/public-surface privacy flags.
 
+The private `character-universe` export now also emits `creative_universe_candidates`.
+This extends the reviewed creative layer beyond person callbacks into cross-day meme
+candidates, same-topic relationship label candidates, and timeline-thread candidates.
+They are candidate-only review assets with `public_surface_allowed=false`,
+`writes_member_profile_snapshots=false`, and raw/profile text excluded; worker metadata
+and production evidence retain only the candidate count plus the false public-surface
+flag.
+
+Owner-reviewed expressive labels now have an explicit field-level gate. The daily
+workflow emits `expressive_label_candidates` for rich roast labels, relationship
+tension, and cross-day jokes, but public Markdown/poster rendering can use only labels
+already present in reviewed `safe_reply_hints.public_expressive_labels` with
+`public_surface_allowed=true` and `review_status=reviewed|approved`. Production metadata
+and worker-run evidence retain only expressive-label counts plus the false
+`unreviewed_expressive_labels_public_surface_allowed` flag.
+
 ## Proposed Next Steps
 
-1. Extend the curated character-universe export with durable creative-profile inputs.
-   - The daily export now covers people, topics, events, meme candidates, callback
-     candidates, same-topic co-presence relationships, storyline candidates, and edges
-     from the report second pass.
-   - Next, extend reviewed creative-profile artifacts beyond person callbacks into
-     cross-day memes, relationships, and timelines.
-   - Default export must continue to exclude raw messages, raw attachments, run logs,
-     secrets, and internal-only profile details.
-
-2. Add owner-reviewed expressive labels for richer cross-day callbacks.
-   - The current poster and Markdown now have the narrative slots, but rich roast
-     labels, relationship tension, and cross-day jokes still need an explicit
-     publish-safe field before they appear in group-bound auto-published posters.
+1. Merge the reviewed PR, then follow the existing release and production Hermes cron
+   runbooks. Do not publish or activate until the merged release has passed CI and the
+   production observation evidence proves the image-first daily report path.
 
 ## Boundaries
 

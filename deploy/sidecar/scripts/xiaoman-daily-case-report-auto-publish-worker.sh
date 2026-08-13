@@ -176,6 +176,7 @@ content_metrics = candidate.get("content_metrics") or {}
 character_universe = rendered.get("character_universe") or {}
 private_review_bundle = rendered.get("private_review_bundle") or {}
 public_output_style = rendered.get("public_output_style") or {}
+creative_universe_candidates = character_universe.get("creative_universe_candidates") or {}
 artifact_uri = uploaded.get("artifact_uri")
 if not artifact_uri:
     raise SystemExit("media upload did not return artifact_uri")
@@ -236,10 +237,23 @@ print(json.dumps({
             "meme_count": len(character_universe.get("memes") or []),
             "callback_count": len(character_universe.get("callbacks") or []),
             "relationship_count": len(character_universe.get("relationships") or []),
+            "expressive_label_candidate_count": len(character_universe.get("expressive_label_candidates") or []),
+            "reviewed_public_expressive_label_count": sum(
+                1
+                for item in character_universe.get("expressive_label_candidates") or []
+                if item.get("public_surface_allowed") is True
+                and item.get("review_status") == "reviewed"
+            ),
             "creative_profile_candidate_count": len(character_universe.get("creative_profile_candidates") or []),
             "creative_profile_public_surface_allowed": (
                 (character_universe.get("creative_profile_candidate_policy") or {}).get("public_surface_allowed")
                 is True
+            ),
+            "creative_universe_candidate_count": int(creative_universe_candidates.get("candidate_count") or 0),
+            "creative_universe_public_surface_allowed": creative_universe_candidates.get("public_surface_allowed") is True,
+            "unreviewed_expressive_labels_public_surface_allowed": any(
+                item.get("public_surface_allowed") is True and item.get("review_status") != "reviewed"
+                for item in character_universe.get("expressive_label_candidates") or []
             ),
             "storyline_candidate_count": len(character_universe.get("storyline_candidates") or []),
             "edge_count": len(character_universe.get("edges") or []),
@@ -251,6 +265,9 @@ print(json.dumps({
             "cast_notes_enabled": public_output_style.get("cast_notes_enabled") is True,
             "meme_callback_section_enabled": public_output_style.get("meme_callback_section_enabled") is True,
             "relationship_section_enabled": public_output_style.get("relationship_section_enabled") is True,
+            "owner_reviewed_expressive_labels_only": public_output_style.get("owner_reviewed_expressive_labels_only") is True,
+            "image_first_delivery": public_output_style.get("image_first_delivery") is True,
+            "pdf_default_delivery": public_output_style.get("pdf_default_delivery") is True,
             "roast_review_boundary": public_output_style.get("roast_review_boundary") is True,
             "private_draft_only": public_output_style.get("private_draft_only") is True,
             "public_surface_contains_private_draft": public_output_style.get("public_surface_contains_private_draft") is True,

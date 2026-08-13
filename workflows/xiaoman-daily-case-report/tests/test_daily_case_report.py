@@ -659,6 +659,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(characters[0].story_function, "把活动线串成连续剧")
         self.assertEqual(characters[0].arc_label, "上周铺垫，这周继续推进活动主线")
         self.assertEqual(characters[0].meme_seed, "小雨又来收网了")
+        self.assertEqual(characters[0].expressive_label, "")
         self.assertEqual(characters[0].creative_profile_status, "active_reviewed")
         self.assertIn("已审核创意画像", characters[0].memory_label)
         self.assertFalse(characters[0].member_fact_memory_used)
@@ -692,6 +693,11 @@ class DailyCaseReportTest(unittest.TestCase):
                         "memory_weight_label": "已审核跨日回调",
                         "meme_seed": "小雨收网",
                         "callback_hint": "fact_text should not leak",
+                        "public_expressive_labels": {
+                            "public_surface_allowed": True,
+                            "review_status": "reviewed",
+                            "roast_label": "收网导演",
+                        },
                         "evidence_anchor": "daily_character_note:person-safe-key",
                         "recurrence_evidence_count": 4,
                     },
@@ -705,7 +711,28 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(profile.daily_arc, "")
         self.assertEqual(profile.callback_hint, "")
         self.assertEqual(profile.meme_seed, "小雨收网")
+        self.assertEqual(profile.expressive_label, "收网导演")
         self.assertEqual(profile.recurrence_evidence_count, 4)
+
+    def test_unreviewed_expressive_labels_do_not_enter_public_memory(self) -> None:
+        memory = daily_case_report._creative_profile_memory_from_rows(
+            [
+                (
+                    "11111111-1111-1111-1111-111111111111",
+                    {"role_label": "长期活动导演"},
+                    {
+                        "meme_seed": "小雨收网",
+                        "public_expressive_labels": {
+                            "public_surface_allowed": True,
+                            "review_status": "candidate",
+                            "roast_label": "未经审核外号",
+                        },
+                    },
+                )
+            ]
+        )
+
+        self.assertEqual(memory["11111111-1111-1111-1111-111111111111"].expressive_label, "")
 
     def test_character_profile_candidate_keeps_single_day_signal_as_daily_note(self) -> None:
         messages = [
@@ -1067,6 +1094,32 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(universe["callbacks"])
         self.assertTrue(universe["relationships"])
         self.assertTrue(universe["creative_profile_candidates"])
+        self.assertTrue(universe["expressive_label_candidates"])
+        self.assertFalse(
+            any(
+                candidate["public_surface_allowed"]
+                and candidate["review_status"] != "reviewed"
+                for candidate in universe["expressive_label_candidates"]
+            )
+        )
+        self.assertEqual(
+            universe["creative_universe_candidates"]["schema_version"],
+            "xiaoman-daily-creative-universe-candidates-v1",
+        )
+        self.assertFalse(universe["creative_universe_candidates"]["public_surface_allowed"])
+        self.assertFalse(
+            universe["creative_universe_candidates"]["writes_member_profile_snapshots"]
+        )
+        self.assertGreaterEqual(
+            universe["creative_universe_candidates"]["candidate_count"],
+            1,
+        )
+        self.assertTrue(
+            universe["creative_universe_candidates"]["candidate_sets"]["cross_day_memes"]
+        )
+        self.assertTrue(
+            universe["creative_universe_candidates"]["candidate_sets"]["relationship_labels"]
+        )
         self.assertTrue(
             any(
                 candidate["profile_upgrade_status"] == "eligible_for_review"
@@ -1193,10 +1246,19 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertTrue(run_manifest["inputs"]["latest_chat_records_preserved"])
         self.assertTrue(run_manifest["inputs"]["long_term_member_facts_used"])
         self.assertFalse(run_manifest["inputs"]["long_term_member_fact_text_included"])
+        self.assertGreaterEqual(run_manifest["counts"]["creative_universe_candidate_count"], 1)
+        self.assertGreaterEqual(run_manifest["counts"]["expressive_label_candidate_count"], 1)
         self.assertFalse(run_manifest["privacy"]["profile_fact_text_included"])
         self.assertFalse(run_manifest["privacy"]["creative_profile_public_surface_allowed"])
+        self.assertFalse(run_manifest["privacy"]["creative_universe_public_surface_allowed"])
+        self.assertFalse(
+            run_manifest["privacy"]["unreviewed_expressive_labels_public_surface_allowed"]
+        )
         self.assertIn("审核清单", review_report)
         self.assertIn("eligible_for_review", review_report)
+        self.assertIn("创作资产候选", review_report)
+        self.assertIn("creative_universe_public_surface_allowed=false", review_report)
+        self.assertIn("unreviewed_expressive_labels_public_surface_allowed=false", review_report)
         self.assertIn("evidence_count=", review_report)
         self.assertIn("worker-run evidence 只能保留 presence/count/privacy flags", review_report)
         serialized = json.dumps(
@@ -1493,6 +1555,8 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(style["schema_version"], "xiaoman-daily-public-output-style-v1")
         self.assertTrue(style["character_daily_layout"])
         self.assertTrue(style["storyline_first"])
+        self.assertTrue(style["image_first_delivery"])
+        self.assertFalse(style["pdf_default_delivery"])
         self.assertTrue(style["roast_review_boundary"])
         self.assertTrue(style["private_draft_only"])
         self.assertFalse(style["public_surface_contains_private_draft"])
@@ -1799,6 +1863,8 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertTrue(style["cast_notes_enabled"])
             self.assertTrue(style["meme_callback_section_enabled"])
             self.assertTrue(style["relationship_section_enabled"])
+            self.assertTrue(style["image_first_delivery"])
+            self.assertFalse(style["pdf_default_delivery"])
             self.assertTrue(style["roast_review_boundary"])
             self.assertTrue(style["private_draft_only"])
             self.assertFalse(style["public_surface_contains_private_draft"])

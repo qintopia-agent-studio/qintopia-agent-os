@@ -321,6 +321,10 @@ if universe.get("profile_fact_text_included") is not False:
     raise SystemExit(3)
 if universe.get("creative_profile_public_surface_allowed") is not False:
     raise SystemExit(3)
+if universe.get("creative_universe_public_surface_allowed") is not False:
+    raise SystemExit(3)
+if universe.get("unreviewed_expressive_labels_public_surface_allowed") is not False:
+    raise SystemExit(3)
 if public_output_style.get("character_daily_layout") is not True:
     raise SystemExit(3)
 if public_output_style.get("storyline_first") is not True:
@@ -330,6 +334,12 @@ if public_output_style.get("cast_notes_enabled") is not True:
 if public_output_style.get("meme_callback_section_enabled") is not True:
     raise SystemExit(3)
 if public_output_style.get("relationship_section_enabled") is not True:
+    raise SystemExit(3)
+if public_output_style.get("owner_reviewed_expressive_labels_only") is not True:
+    raise SystemExit(3)
+if public_output_style.get("image_first_delivery") is not True:
+    raise SystemExit(3)
+if public_output_style.get("pdf_default_delivery") is not False:
     raise SystemExit(3)
 if public_output_style.get("roast_review_boundary") is not True:
     raise SystemExit(3)
@@ -453,8 +463,13 @@ print(f"{key}_worker_character_universe_event_count={universe_count('event_count
 print(f"{key}_worker_character_universe_meme_count={universe_count('meme_count')}")
 print(f"{key}_worker_character_universe_callback_count={universe_count('callback_count')}")
 print(f"{key}_worker_character_universe_relationship_count={universe_count('relationship_count')}")
+print(f"{key}_worker_character_universe_expressive_label_candidate_count={universe_count('expressive_label_candidate_count')}")
+print(f"{key}_worker_character_universe_reviewed_public_expressive_label_count={universe_count('reviewed_public_expressive_label_count')}")
+print(f"{key}_worker_character_universe_unreviewed_expressive_labels_public_surface_allowed=false")
 print(f"{key}_worker_character_universe_creative_profile_candidate_count={universe_count('creative_profile_candidate_count')}")
 print(f"{key}_worker_character_universe_creative_profile_public_surface_allowed=false")
+print(f"{key}_worker_character_universe_creative_universe_candidate_count={universe_count('creative_universe_candidate_count')}")
+print(f"{key}_worker_character_universe_creative_universe_public_surface_allowed=false")
 print(f"{key}_worker_character_universe_storyline_candidate_count={universe_count('storyline_candidate_count')}")
 print(f"{key}_worker_character_universe_edge_count={universe_count('edge_count')}")
 print(f"{key}_worker_public_output_style_schema_version={safe_style_label('schema_version')}")
@@ -463,6 +478,9 @@ print(f"{key}_worker_public_output_style_storyline_first=true")
 print(f"{key}_worker_public_output_style_cast_notes_enabled=true")
 print(f"{key}_worker_public_output_style_meme_callback_section_enabled=true")
 print(f"{key}_worker_public_output_style_relationship_section_enabled=true")
+print(f"{key}_worker_public_output_style_owner_reviewed_expressive_labels_only=true")
+print(f"{key}_worker_public_output_style_image_first_delivery=true")
+print(f"{key}_worker_public_output_style_pdf_default_delivery=false")
 print(f"{key}_worker_public_output_style_roast_review_boundary=true")
 print(f"{key}_worker_public_output_style_private_draft_only=true")
 print(f"{key}_worker_public_output_style_public_surface_contains_private_draft=false")

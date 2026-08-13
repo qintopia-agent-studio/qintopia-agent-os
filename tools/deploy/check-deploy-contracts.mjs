@@ -585,6 +585,15 @@ if (!exists(packageJsonPath)) {
       "package.json: deploy:contracts:check must run node tools/deploy/test-erhua-member-recognition-roster-audit.mjs"
     );
   }
+  if (
+    !scripts["deploy:contracts:check"]?.includes(
+      "node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs"
+    )
+  ) {
+    addError(
+      "package.json: deploy:contracts:check must run node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs"
+    );
+  }
 }
 
 const erhuaMemberRecognitionLocalCheckPath =
