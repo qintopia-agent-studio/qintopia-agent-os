@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.130](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.129...v0.2.130) (2026-08-13)
+
+
+### Bug Fixes
+
+* allow degraded Erhua morning brief news ([#546](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/546)) ([e2b2886](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e2b288605a2b1b78fd2264e757ea72ffccc0f6a5))
+* block internal wording in Erhua morning brief ([#548](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/548)) ([62b775a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/62b775a0a884ce348dc819e487a789945ce11eab))
+* harden Erhua morning brief wording boundary ([#549](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/549)) ([9447acc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9447acc51c796f3fed335b6489ba5a8c06c21f0c))
+
 ## [0.2.129](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.128...v0.2.129) (2026-08-13)
 
 
