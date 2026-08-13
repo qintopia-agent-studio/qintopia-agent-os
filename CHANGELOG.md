@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.131](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.130...v0.2.131) (2026-08-13)
+
+
+### Bug Fixes
+
+* enforce image-first Xiaoman daily report delivery ([#551](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/551)) ([9dacdc4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9dacdc40dff0e67ed26ffb18f0a7b7838760351a))
+* harden Xiaoman daily report reference delivery ([#556](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/556)) ([278050a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/278050a6626f8b4e7452bbd2b9f632036456abf8))
+* mirror wx-cli media review slots ([#554](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/554)) ([563bfec](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/563bfec79472d517548b1ed941cd29d3d8eb0e92))
+* preserve image-first Xiaoman daily report evidence ([#553](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/553)) ([0230877](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/02308775e48425e30c6e229bae04a07eeadfbcc7))
+
+
+### Documentation
+
+* record daily report media evidence gates ([#555](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/555)) ([17d2f0b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/17d2f0b3cb15fed0a89cee15c46ea633511c1a2e))
+
 ## [0.2.130](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.129...v0.2.130) (2026-08-13)
 
 
