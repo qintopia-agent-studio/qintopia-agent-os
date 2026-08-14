@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-08-14 Qintopia root TLS renewal](2026-08-14-qintopia-root-tls-renewal.md)
 - [2026-08-11 Xiaoman character-universe daily report PR body](2026-08-11-xiaoman-character-universe-daily-report-pr-body.md)
 - [2026-08-13 Hermes live parity legacy envelope PR body](2026-08-13-hermes-live-parity-legacy-envelope-pr-body.md)
 - [2026-08-09 Xiaoman weekly activation legacy cron drift](2026-08-09-xiaoman-weekly-activation-legacy-cron-drift.md)
