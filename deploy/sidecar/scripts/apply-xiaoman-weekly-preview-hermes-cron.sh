@@ -168,6 +168,7 @@ def install_wrapper(entry_stat: os.stat_result) -> bool:
     safe_chown(str(hermes_scripts_dir), entry_stat.st_uid, entry_stat.st_gid)
     os.chmod(hermes_scripts_dir, 0o700)
 
+    uid, gid = entry_stat.st_uid, entry_stat.st_gid
     if wrapper_target.exists():
         current_payload, target_stat = read_regular_file(
             wrapper_target, MAX_WRAPPER_BYTES, "installed Hermes wrapper"
@@ -175,8 +176,6 @@ def install_wrapper(entry_stat: os.stat_result) -> bool:
         uid, gid = target_stat.st_uid, target_stat.st_gid
         if current_payload == source_payload and stat.S_IMODE(target_stat.st_mode) == 0o700:
             return False
-    else:
-        uid, gid = entry_stat.st_uid, entry_stat.st_gid
     atomic_replace(wrapper_target, source_payload, uid, gid, 0o700)
     return True
 
