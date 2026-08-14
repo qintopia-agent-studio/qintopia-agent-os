@@ -17,7 +17,7 @@ PYTHON_BIN="/usr/bin/python3"
 RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"
 CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"
 PROFILE_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"
-HERMES_SCRIPTS_DIR="/home/ubuntu/.hermes/scripts"
+HERMES_SCRIPTS_DIR="/home/ubuntu/.hermes/profiles/xiaoman/scripts"
 WRAPPER_SOURCE="${RELEASE_CURRENT}/runtime/hermes/scripts/qintopia_xiaoman_weekly_preview.sh"
 WRAPPER_TARGET="${HERMES_SCRIPTS_DIR}/qintopia_xiaoman_weekly_preview.sh"
 SNAPSHOT_SYNC="${RELEASE_CURRENT}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"
@@ -153,22 +153,20 @@ def resolve_chat_id() -> str:
     return chat_id
 
 
-def install_wrapper() -> bool:
+def install_wrapper(entry_stat: os.stat_result) -> bool:
     source_payload, _ = read_regular_file(
         wrapper_source, MAX_WRAPPER_BYTES, "release-local wrapper source"
     )
     if not wrapper_target.is_absolute():
         fail("Hermes wrapper target path must be absolute")
-    try:
-        scripts_real = hermes_scripts_dir.resolve(strict=True)
-        target_real = wrapper_target.parent.resolve(strict=True)
-    except FileNotFoundError:
-        fail("Hermes scripts directory is required")
-    if target_real != scripts_real:
+    if wrapper_target.parent != hermes_scripts_dir:
         fail("Hermes wrapper target must stay inside the Hermes scripts directory")
+    hermes_scripts_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     scripts_stat = os.lstat(hermes_scripts_dir)
     if stat.S_ISLNK(scripts_stat.st_mode) or not stat.S_ISDIR(scripts_stat.st_mode):
         fail("Hermes scripts directory must be a regular directory")
+    safe_chown(str(hermes_scripts_dir), entry_stat.st_uid, entry_stat.st_gid)
+    os.chmod(hermes_scripts_dir, 0o700)
 
     if wrapper_target.exists():
         current_payload, target_stat = read_regular_file(
@@ -178,7 +176,7 @@ def install_wrapper() -> bool:
         if current_payload == source_payload and stat.S_IMODE(target_stat.st_mode) == 0o700:
             return False
     else:
-        uid, gid = scripts_stat.st_uid, scripts_stat.st_gid
+        uid, gid = entry_stat.st_uid, entry_stat.st_gid
     atomic_replace(wrapper_target, source_payload, uid, gid, 0o700)
     return True
 
@@ -301,7 +299,7 @@ if mode == "--install":
     if any(job.get("script") == JOB_SCRIPT and job.get("name") != JOB_NAME for job in jobs):
         fail("Hermes cron file already declares a job bound to the weekly preview script")
     chat_id = resolve_chat_id()
-    wrapper_installed = install_wrapper()
+    wrapper_installed = install_wrapper(entry_stat)
     if matching_name:
         _, existing_job = find_reviewed_job(jobs)
         if schema_normalized:

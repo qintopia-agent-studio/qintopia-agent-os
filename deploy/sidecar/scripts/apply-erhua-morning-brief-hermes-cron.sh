@@ -15,7 +15,7 @@ PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 PYTHON_BIN="/usr/bin/python3"
 RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
 WRAPPER_SOURCE="${RELEASE_DIR}/runtime/hermes/scripts/qintopia_erhua_morning_brief.sh"
-WRAPPER_DEST="/home/ubuntu/.hermes/scripts/qintopia_erhua_morning_brief.sh"
+WRAPPER_DEST="/home/ubuntu/.hermes/profiles/erhua/scripts/qintopia_erhua_morning_brief.sh"
 CRON_FILE="/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json"
 PROFILE_ENV="/home/ubuntu/.hermes/profiles/erhua/.env"
 SNAPSHOT_SYNC="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"
@@ -34,12 +34,7 @@ fail() {
 [[ -f "$PROFILE_ENV" ]] || fail "Erhua profile env is missing"
 [[ -x "$SNAPSHOT_SYNC" ]] || fail "snapshot sync script is missing from release/current"
 
-umask 077
-mkdir -p "$(dirname "$WRAPPER_DEST")"
-cp "$WRAPPER_SOURCE" "$WRAPPER_DEST"
-chmod 0700 "$WRAPPER_DEST"
-
-"$PYTHON_BIN" - "$CRON_FILE" "$PROFILE_ENV" "$WRAPPER_MODE" <<'PY'
+"$PYTHON_BIN" - "$CRON_FILE" "$PROFILE_ENV" "$WRAPPER_SOURCE" "$WRAPPER_DEST" "$WRAPPER_MODE" <<'PY'
 from __future__ import annotations
 
 import datetime as dt
@@ -56,10 +51,13 @@ from pathlib import Path
 
 cron_file = Path(sys.argv[1])
 profile_env = Path(sys.argv[2])
-mode = sys.argv[3]
+wrapper_source = Path(sys.argv[3])
+wrapper_dest = Path(sys.argv[4])
+mode = sys.argv[5]
 job_name = "二花·每日早报"
 job_schedule = {"kind": "cron", "expr": "10 8 * * *", "display": "10 8 * * *"}
 job_script = "qintopia_erhua_morning_brief.sh"
+max_wrapper_bytes = 65536
 
 
 def fail(message: str) -> None:
@@ -73,6 +71,64 @@ def safe_chown(path: str, uid: int, gid: int) -> None:
         current = os.stat(path, follow_symlinks=False)
         if current.st_uid != uid or current.st_gid != gid:
             raise
+
+
+def read_wrapper(path: Path, label: str) -> bytes:
+    try:
+        path_stat = os.lstat(path)
+    except FileNotFoundError:
+        fail(f"{label} is required")
+    if stat.S_ISLNK(path_stat.st_mode) or not stat.S_ISREG(path_stat.st_mode):
+        fail(f"{label} must be a regular non-symlink file")
+    if path_stat.st_nlink != 1:
+        fail(f"{label} hard links are forbidden")
+    if path_stat.st_size <= 0 or path_stat.st_size > max_wrapper_bytes:
+        fail(f"{label} size is invalid")
+    if stat.S_IMODE(path_stat.st_mode) & (stat.S_IWGRP | stat.S_IWOTH):
+        fail(f"{label} must not be group/world writable")
+    return path.read_bytes()
+
+
+def atomic_replace_file(path: Path, payload: bytes, uid: int, gid: int, file_mode: int) -> None:
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as temp:
+            temp.write(payload)
+            temp.flush()
+            os.fsync(temp.fileno())
+        safe_chown(temp_name, uid, gid)
+        os.chmod(temp_name, file_mode)
+        os.replace(temp_name, path)
+    except Exception:
+        try:
+            os.unlink(temp_name)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def install_wrapper(uid: int, gid: int) -> bool:
+    expected_dest = cron_file.parent.parent / "scripts" / job_script
+    if not wrapper_source.is_absolute() or not wrapper_dest.is_absolute():
+        fail("Hermes wrapper paths must be absolute")
+    if wrapper_dest != expected_dest:
+        fail("Hermes wrapper target must stay inside the profile-local scripts directory")
+    source_payload = read_wrapper(wrapper_source, "release-local wrapper source")
+    wrapper_dir = wrapper_dest.parent
+    wrapper_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    dir_stat = os.lstat(wrapper_dir)
+    if stat.S_ISLNK(dir_stat.st_mode) or not stat.S_ISDIR(dir_stat.st_mode):
+        fail("Hermes wrapper directory must be a regular directory")
+    safe_chown(str(wrapper_dir), uid, gid)
+    os.chmod(wrapper_dir, 0o700)
+    if wrapper_dest.exists():
+        current_payload = read_wrapper(wrapper_dest, "installed Hermes wrapper")
+        target_stat = os.lstat(wrapper_dest)
+        if current_payload == source_payload and stat.S_IMODE(target_stat.st_mode) == 0o700:
+            safe_chown(str(wrapper_dest), uid, gid)
+            return False
+    atomic_replace_file(wrapper_dest, source_payload, uid, gid, 0o700)
+    return True
 
 
 def parse_chat_id(path: Path) -> str:
@@ -127,6 +183,8 @@ if entry_stat.st_size > 1024 * 1024:
 previous_mode = stat.S_IMODE(entry_stat.st_mode)
 if previous_mode & 0o002:
     fail("Erhua cron file must not be world writable")
+
+wrapper_updated = install_wrapper(entry_stat.st_uid, entry_stat.st_gid)
 
 payload = cron_file.read_bytes()
 try:
@@ -261,6 +319,7 @@ print(
             "updated_at_preserved": isinstance(value.get("updated_at"), str),
             "new_sha256": new_sha256,
             "backup_created": backup_created,
+            "wrapper_updated": wrapper_updated,
             "live_profile_modified": changed,
             "external_calls_executed": False,
             "safe_for_chat": False,

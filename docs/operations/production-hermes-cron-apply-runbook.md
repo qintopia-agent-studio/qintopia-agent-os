@@ -39,9 +39,10 @@ that fixed scope, the fixed target enum above, and `apply_mode` of `install` or
 This is a production write to live Hermes state:
 
 - `install` runs the target apply script with its fixed owner approval string. The apply
-  script installs the reviewed wrapper into `/home/ubuntu/.hermes/scripts/`, writes or
-  preserves the reviewed job in the live profile `cron/jobs.json` as disabled, backs up
-  before writing, and runs the server-local snapshot sync.
+  script installs the reviewed wrapper into the matching profile-local
+  `/home/ubuntu/.hermes/profiles/<profile>/scripts/` directory, writes or preserves the
+  reviewed job in the live profile `cron/jobs.json` as disabled, backs up before
+  writing, and runs the server-local snapshot sync.
 - `enable` reruns the same apply script with `--enable`. The apply script must first
   prove the live declaration still matches the reviewed name, schedule, script, delivery
   mode, origin platform, and resolved chat id before flipping `enabled`.
@@ -75,7 +76,9 @@ a cryptographic signature over `jobs.json`.
 - The production deploy-runner unit must keep `ProtectHome=read-only` while granting
   `ReadWritePaths` only to:
   - `/home/ubuntu/.hermes/profiles/erhua`
+  - `/home/ubuntu/.hermes/profiles/erhua/scripts`
   - `/home/ubuntu/.hermes/profiles/xiaoman/cron`
+  - `/home/ubuntu/.hermes/profiles/xiaoman/scripts`
   - `/home/ubuntu/.hermes/scripts`
   - `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`
 - The snapshot sync path must remain server-local and must not have a remote.
