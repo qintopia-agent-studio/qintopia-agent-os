@@ -186,14 +186,17 @@
   `/home/ubuntu/.hermes/profiles/<profile>/scripts/`; enable is a later explicit request
   after live declaration parity is proven. Hermes no-agent scheduler resolves the
   `script` field from this profile-local scripts directory, not from the global
-  `/home/ubuntu/.hermes/scripts/` helper area. The approval strings authorize the
-  production action boundary, not a cryptographic signature over `jobs.json`. The
-  workflow must not accept chat ids, cron JSON, script paths, approval strings, env-file
-  paths, systemctl commands, or arbitrary shell from inputs, and deploy results must not
-  record live cron content, group ids, prompts, env values, or raw script output. Apply
-  scripts may emit a bounded safe failure reason only through the explicit
-  `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must ignore all
-  other stdout/stderr for result details. Because each apply ends by running
+  `/home/ubuntu/.hermes/scripts/` helper area. Apply scripts must converge profile-local
+  wrapper ownership to the live cron file/profile owner and mode `0700` even when the
+  wrapper content is already current; preserving a stale root-owned wrapper can make
+  Hermes report install success while the ubuntu profile cannot execute it. The approval
+  strings authorize the production action boundary, not a cryptographic signature over
+  `jobs.json`. The workflow must not accept chat ids, cron JSON, script paths, approval
+  strings, env-file paths, systemctl commands, or arbitrary shell from inputs, and
+  deploy results must not record live cron content, group ids, prompts, env values, or
+  raw script output. Apply scripts may emit a bounded safe failure reason only through
+  the explicit `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must
+  ignore all other stdout/stderr for result details. Because each apply ends by running
   `sync-hermes-cron-snapshot.sh`, the deploy-runner service must grant `ReadWritePaths`
   to the fixed server-local snapshot repo
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; do not broaden this

@@ -6589,6 +6589,7 @@ for (const hermesCronApplyScript of hermesCronApplyScripts) {
     "print(chat_id)",
     "QINTOPIA_HERMES_CRON_FILE",
     "QINTOPIA_HERMES_PROFILE_DIR",
+    "uid, gid = target_stat.st_uid, target_stat.st_gid",
   ]) {
     forbidFragment(hermesCronApplyScript, apply, fragment);
   }

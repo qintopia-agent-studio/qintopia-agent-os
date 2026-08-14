@@ -42,7 +42,10 @@ This is a production write to live Hermes state:
   script installs the reviewed wrapper into the matching profile-local
   `/home/ubuntu/.hermes/profiles/<profile>/scripts/` directory, writes or preserves the
   reviewed job in the live profile `cron/jobs.json` as disabled, backs up before
-  writing, and runs the server-local snapshot sync.
+  writing, and runs the server-local snapshot sync. Wrapper install must converge owner
+  to the live cron file/profile owner and mode `0700` even when content is already
+  current, so a stale root-owned wrapper cannot pass install while remaining
+  unexecutable by Hermes.
 - `enable` reruns the same apply script with `--enable`. The apply script must first
   prove the live declaration still matches the reviewed name, schedule, script, delivery
   mode, origin platform, and resolved chat id before flipping `enabled`.

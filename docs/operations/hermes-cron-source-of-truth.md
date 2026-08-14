@@ -48,7 +48,10 @@ Git-managed (sanitized, reviewed through PR):
 
 Runtime-local (never in git): live `jobs.json`, no-agent scripts deployed under
 `/home/ubuntu/.hermes/profiles/<profile>/scripts/`, legacy global helpers under
-`/home/ubuntu/.hermes/scripts/`, and the snapshot repo.
+`/home/ubuntu/.hermes/scripts/`, and the snapshot repo. Reviewed apply scripts must
+normalize profile-local no-agent wrapper owner/mode back to the live cron file/profile
+owner and `0700`; preserving an old root-owned wrapper would make Hermes unable to
+execute the reviewed script even when declaration parity passes.
 
 ## Adding a New Recurring Task
 
