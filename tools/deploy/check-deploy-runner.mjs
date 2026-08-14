@@ -89,6 +89,7 @@ const requiredFiles = [
   "tools/deploy/test-production-timer-activation-runner.mjs",
   "tools/deploy/test-production-observation-runner.mjs",
   "tools/deploy/test-production-worker-run-evidence-smoke.mjs",
+  "tools/deploy/test-smoke-release-erhua-profile-gate.mjs",
   "tools/deploy/test-production-hermes-cron-apply-runner.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-production-runtime-one-shot-runner.mjs",
@@ -2420,6 +2421,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-production-worker-run-evidence-smoke.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-smoke-release-erhua-profile-gate.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-production-hermes-cron-apply-runner.mjs"], {

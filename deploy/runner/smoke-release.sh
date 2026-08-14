@@ -107,9 +107,9 @@ smoke_erhua_profile() {
       --env "${profile_dir}/.env" \
       --backup-dir "$(dirname "$profile_metadata")" \
       --metadata "$profile_metadata"
+    python3 "$renderer" verify --config "${profile_dir}/config.yaml" --overlay "$overlay"
+    python3 "$migrator" check --env "${profile_dir}/.env"
   fi
-  python3 "$renderer" verify --config "${profile_dir}/config.yaml" --overlay "$overlay"
-  python3 "$migrator" check --env "${profile_dir}/.env"
   if ! runuser -l "$hermes_systemd_user" -c \
     "${hermes_python} ${runtime_verifier} --config ${profile_dir}/config.yaml" >/dev/null 2>&1; then
     echo "Erhua Hermes runtime did not resolve the Livecool provider" >&2

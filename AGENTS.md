@@ -622,8 +622,12 @@
   activate the reviewed `hermes-profile-erhua` overlay so the Erhua profile has
   `channel.wecom.enabled=true`; the overlay may manage only that boolean under
   `channel.wecom`, preserving runtime-local bot bindings and never reporting channel
-  values. Health is the allowlist observation smoke plus the snapshot git history.
-  Follow `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`.
+  values. Ordinary release `smoke-release` must not verify live profile files against a
+  new release overlay unless it is running the `hermes-profile-erhua` activation path
+  with profile metadata; otherwise a release that merely carries the next overlay can
+  fail before the reviewed profile activation request has a chance to apply it. Health
+  is the allowlist observation smoke plus the snapshot git history. Follow
+  `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`.
 
 - Xiaoman weekly preview now uses a Hermes cron job (task 1), not the release-managed
   Monday timer. The reviewed declaration is
