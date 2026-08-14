@@ -845,6 +845,10 @@ Use `rg` and `rg --files` for search.
 - Before publishing a draft GitHub Release, confirm its tag points to current
   `origin/master`. If `master` advanced after the draft was prepared, do not publish or
   retry the stale tag; validate and publish the next Release Please PR instead.
+- Production release deploy resolution must not scan unbounded historical Actions logs.
+  Keep `deploy-production.yml` release-run lookup bounded to recent completed release
+  deploy runs and keep `tools/deploy/collect-release-deploy-results.mjs` enforcing a
+  `--max-release-runs` cap before it calls `gh run view --log`.
 - Do not merge a Release Please PR unless the draft GitHub Release will be published or
   intentionally deleted in the same release decision. The repository release manifest
   must track the latest published Release tag; deleted draft-only releases must not

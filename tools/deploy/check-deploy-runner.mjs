@@ -983,9 +983,9 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "Wait for server deploy result",
     "previous_release_tag",
     "repos/${GITHUB_REPOSITORY}/releases?per_page=100",
-    "gh api --paginate --slurp",
-    "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100",
+    "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=30&event=release&status=completed",
     "collect-release-deploy-results.mjs",
+    "--max-release-runs 12",
     "validate-legacy-runner-bootstrap.mjs",
     "legacy_runner_bootstrap",
     'huabaosi_feature_contract="current"',
@@ -1019,6 +1019,16 @@ if (exists(".github/workflows/deploy-production.yml")) {
     addError(
       ".github/workflows/deploy-production.yml: workflow must not execute scripts from an older target SHA"
     );
+  }
+  for (const forbidden of [
+    "gh api --paginate --slurp",
+    "actions/workflows/deploy-production.yml/runs?per_page=100",
+  ]) {
+    if (workflowText.includes(forbidden)) {
+      addError(
+        `.github/workflows/deploy-production.yml: must not use unbounded deploy run history lookup (${forbidden})`
+      );
+    }
   }
   if (
     workflowText.includes("TENCENT_COS_SECRET_ID: ${{ env.TENCENT_COS_SECRET_ID }}")

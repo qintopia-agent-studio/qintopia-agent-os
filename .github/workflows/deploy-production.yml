@@ -361,11 +361,12 @@ jobs:
             deploy_results_file="dist/deploy-resolution/deploy-results.json"
             gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
               > "$releases_file"
-            gh api --paginate --slurp \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=30&event=release&status=completed" \
               > "$workflow_runs_file"
             node tools/deploy/collect-release-deploy-results.mjs \
               --workflow-runs-file "$workflow_runs_file" \
+              --max-release-runs 12 \
               --output "$deploy_results_file"
             releases_json="$(cat "$releases_file")"
             previous_release_tag="$(printf '%s' "$releases_json" | node -e '
@@ -511,11 +512,12 @@ jobs:
             mkdir -p dist/deploy-resolution
             workflow_runs_file="dist/deploy-resolution/bootstrap-deploy-runs.json"
             deploy_results_file="dist/deploy-resolution/bootstrap-deploy-results.json"
-            gh api --paginate --slurp \
-              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=100" \
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=30&event=release&status=completed" \
               > "$workflow_runs_file"
             node tools/deploy/collect-release-deploy-results.mjs \
               --workflow-runs-file "$workflow_runs_file" \
+              --max-release-runs 12 \
               --output "$deploy_results_file"
             node tools/deploy/validate-legacy-runner-bootstrap.mjs \
               --deploy-results-file "$deploy_results_file" \

@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
 import {
   attachWorkflowRunMetadata,
   extractDeployResultsFromLog,
@@ -59,6 +63,64 @@ const paginatedRuns = workflowRuns([
 ]);
 if (paginatedRuns.map((run) => run.id).join(",") !== "1,2,3") {
   throw new Error("paginated workflow runs were not flattened");
+}
+
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-release-results-"));
+try {
+  const runsFile = path.join(tempDir, "runs.json");
+  const outputFile = path.join(tempDir, "results.json");
+  const logsDir = path.join(tempDir, "logs");
+  fs.mkdirSync(logsDir);
+  fs.writeFileSync(
+    runsFile,
+    JSON.stringify({
+      workflow_runs: [
+        {
+          id: 1,
+          event: "release",
+          status: "completed",
+          created_at: "2026-07-08T05:00:00Z",
+        },
+        {
+          id: 2,
+          event: "release",
+          status: "completed",
+          created_at: "2026-07-08T06:00:00Z",
+        },
+        {
+          id: 3,
+          event: "release",
+          status: "completed",
+          created_at: "2026-07-08T07:00:00Z",
+        },
+      ],
+    })
+  );
+  for (const id of [1, 2, 3]) {
+    fs.writeFileSync(path.join(logsDir, `${id}.log`), log);
+  }
+  execFileSync(
+    "node",
+    [
+      "tools/deploy/collect-release-deploy-results.mjs",
+      "--workflow-runs-file",
+      runsFile,
+      "--log-dir",
+      logsDir,
+      "--max-release-runs",
+      "2",
+      "--output",
+      outputFile,
+    ],
+    { stdio: "pipe" }
+  );
+  const boundedResults = JSON.parse(fs.readFileSync(outputFile, "utf8"));
+  const boundedIds = boundedResults.map((result) => result.workflow_run?.id).join(",");
+  if (boundedIds !== "2,3") {
+    throw new Error(`expected latest two release runs, got ${boundedIds}`);
+  }
+} finally {
+  fs.rmSync(tempDir, { recursive: true, force: true });
 }
 
 console.log("Release deploy result log collector tests passed.");
