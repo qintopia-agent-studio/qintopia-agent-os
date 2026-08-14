@@ -24,6 +24,13 @@ entries:
     notes:
       Active fixed-location weather capability; qintopia-tools keeps only the current
       Hermes registration shell.
+  - id: skills/erhua-csv
+    path: skills/erhua-csv
+    manifest: skills/erhua-csv/manifest.yaml
+    status: adopting
+    notes:
+      Append-only, current-QiWe-group CSV persistence and ledger capability for Erhua;
+      qintopia-tools keeps stable Hermes registration.
   - id: skills/knowledge-retrieval
     path: skills/knowledge-retrieval
     manifest: skills/knowledge-retrieval/manifest.yaml

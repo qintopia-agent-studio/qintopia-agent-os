@@ -78,6 +78,7 @@ XIAOMAN_ACTIVITY_HANDOFF_TYPES = ["visual_asset_request"]
 XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
 _QINTOPIA_WEATHER_PLUGIN = None
 _KNOWLEDGE_RETRIEVAL_PLUGIN = None
+_ERHUA_CSV_PLUGIN = None
 
 
 class _SkillPluginUnavailable(RuntimeError):
@@ -238,7 +239,19 @@ def _knowledge_retrieval_plugin():
     return _KNOWLEDGE_RETRIEVAL_PLUGIN
 
 
+def _erhua_csv_plugin():
+    global _ERHUA_CSV_PLUGIN
+    if _ERHUA_CSV_PLUGIN is not None:
+        return _ERHUA_CSV_PLUGIN
+    _ERHUA_CSV_PLUGIN = _load_skill_plugin("erhua-csv", "erhua_csv_plugin")
+    return _ERHUA_CSV_PLUGIN
+
+
 QINTOPIA_WEATHER_LOOKUP_SCHEMA = _qintopia_weather_plugin().QINTOPIA_WEATHER_LOOKUP_SCHEMA
+QINTOPIA_ERHUA_CSV_LIST_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_LIST_SCHEMA
+QINTOPIA_ERHUA_CSV_CREATE_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_CREATE_SCHEMA
+QINTOPIA_ERHUA_CSV_APPEND_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_APPEND_SCHEMA
+QINTOPIA_ERHUA_CSV_QUERY_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_QUERY_SCHEMA
 QINTOPIA_KB_SEARCH_SCHEMA = {
     "description": (
         "Search Qintopia approved knowledge snapshot indexes. Defaults to "
@@ -2483,6 +2496,22 @@ def handle_qintopia_weather_lookup(args: dict[str, Any], **_: Any) -> str:
     return _qintopia_weather_plugin().handle_qintopia_weather_lookup(args)
 
 
+def handle_qintopia_erhua_csv_list(args: dict[str, Any], **_: Any) -> str:
+    return _erhua_csv_plugin().handle_qintopia_erhua_csv_list(args)
+
+
+def handle_qintopia_erhua_csv_create(args: dict[str, Any], **_: Any) -> str:
+    return _erhua_csv_plugin().handle_qintopia_erhua_csv_create(args)
+
+
+def handle_qintopia_erhua_csv_append(args: dict[str, Any], **_: Any) -> str:
+    return _erhua_csv_plugin().handle_qintopia_erhua_csv_append(args)
+
+
+def handle_qintopia_erhua_csv_query(args: dict[str, Any], **_: Any) -> str:
+    return _erhua_csv_plugin().handle_qintopia_erhua_csv_query(args)
+
+
 def handle_qintopia_kb_search(args: dict[str, Any], **_: Any) -> str:
     query = str(args.get("query") or "").strip()
     terms = _tokenize(query)
@@ -2759,6 +2788,10 @@ def check_weather_lookup_requirements() -> bool:
     return bool(_qintopia_weather_plugin().check_weather_lookup_requirements())
 
 
+def check_erhua_csv_requirements() -> bool:
+    return bool(_erhua_csv_plugin().check_erhua_csv_requirements())
+
+
 def check_xiaoman_activity_requirements() -> bool:
     return _xiaoman_activity_wrappers_enabled()
 
@@ -2790,6 +2823,42 @@ def register(ctx) -> None:
         check_fn=check_weather_lookup_requirements,
         description=QINTOPIA_WEATHER_LOOKUP_SCHEMA["description"],
         emoji="⛅",
+    )
+    ctx.register_tool(
+        name="qintopia_erhua_csv_list",
+        toolset="qintopia",
+        schema=QINTOPIA_ERHUA_CSV_LIST_SCHEMA,
+        handler=handle_qintopia_erhua_csv_list,
+        check_fn=check_erhua_csv_requirements,
+        description=QINTOPIA_ERHUA_CSV_LIST_SCHEMA["description"],
+        emoji="📋",
+    )
+    ctx.register_tool(
+        name="qintopia_erhua_csv_create",
+        toolset="qintopia",
+        schema=QINTOPIA_ERHUA_CSV_CREATE_SCHEMA,
+        handler=handle_qintopia_erhua_csv_create,
+        check_fn=check_erhua_csv_requirements,
+        description=QINTOPIA_ERHUA_CSV_CREATE_SCHEMA["description"],
+        emoji="🗂️",
+    )
+    ctx.register_tool(
+        name="qintopia_erhua_csv_append",
+        toolset="qintopia",
+        schema=QINTOPIA_ERHUA_CSV_APPEND_SCHEMA,
+        handler=handle_qintopia_erhua_csv_append,
+        check_fn=check_erhua_csv_requirements,
+        description=QINTOPIA_ERHUA_CSV_APPEND_SCHEMA["description"],
+        emoji="➕",
+    )
+    ctx.register_tool(
+        name="qintopia_erhua_csv_query",
+        toolset="qintopia",
+        schema=QINTOPIA_ERHUA_CSV_QUERY_SCHEMA,
+        handler=handle_qintopia_erhua_csv_query,
+        check_fn=check_erhua_csv_requirements,
+        description=QINTOPIA_ERHUA_CSV_QUERY_SCHEMA["description"],
+        emoji="🔎",
     )
     ctx.register_tool(
         name="qintopia_wenyuange_lookup",

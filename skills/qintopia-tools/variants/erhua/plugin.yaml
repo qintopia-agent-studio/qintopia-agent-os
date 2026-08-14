@@ -11,6 +11,10 @@ provides_tools:
   - qintopia_kb_search
   - qintopia_gis_location_lookup
   - qintopia_weather_lookup
+  - qintopia_erhua_csv_list
+  - qintopia_erhua_csv_create
+  - qintopia_erhua_csv_append
+  - qintopia_erhua_csv_query
   - qintopia_wenyuange_lookup
   - qintopia_dify_dataset_list
   - qintopia_dify_dataset_get

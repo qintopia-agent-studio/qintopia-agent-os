@@ -82,6 +82,7 @@ rules:
       - "workflows/erhua-consultation/**"
       - "workflows/erhua-morning-brief/**"
       - "skills/qintopia-weather/**"
+      - "skills/erhua-csv/**"
       - "mcp/weather-provider/**"
 
   - target: hermes-wenyuange

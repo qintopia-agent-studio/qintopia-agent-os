@@ -253,19 +253,25 @@ class QintopiaToolsTest(unittest.TestCase):
         skills_dir = self.index_dir / "agent-os-skills"
         knowledge_dir = skills_dir / "knowledge-retrieval"
         weather_dir = skills_dir / "qintopia-weather"
+        csv_dir = skills_dir / "erhua-csv"
         knowledge_dir.mkdir(parents=True)
         weather_dir.mkdir(parents=True)
+        csv_dir.mkdir(parents=True)
         (knowledge_dir / "__init__.py").write_text("MARKER = 'knowledge-from-explicit-skills-dir'\n", encoding="utf-8")
         (weather_dir / "__init__.py").write_text("MARKER = 'weather-from-explicit-skills-dir'\n", encoding="utf-8")
+        (csv_dir / "__init__.py").write_text("MARKER = 'csv-from-explicit-skills-dir'\n", encoding="utf-8")
         os.environ["QINTOPIA_AGENT_OS_SKILLS_DIR"] = str(skills_dir)
         self.module._KNOWLEDGE_RETRIEVAL_PLUGIN = None
         self.module._QINTOPIA_WEATHER_PLUGIN = None
+        self.module._ERHUA_CSV_PLUGIN = None
 
         knowledge_plugin = self.module._knowledge_retrieval_plugin()
         weather_plugin = self.module._qintopia_weather_plugin()
+        csv_plugin = self.module._erhua_csv_plugin()
 
         self.assertEqual(knowledge_plugin.MARKER, "knowledge-from-explicit-skills-dir")
         self.assertEqual(weather_plugin.MARKER, "weather-from-explicit-skills-dir")
+        self.assertEqual(csv_plugin.MARKER, "csv-from-explicit-skills-dir")
 
     def test_message_store_search_requires_wenyuange_caller(self):
         payload = json.loads(
@@ -899,6 +905,43 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(fake_plugin.calls, [{"intent": "umbrella", "hours": 24}])
         self.assertTrue(self.module.check_weather_lookup_requirements())
 
+    def test_erhua_csv_tools_delegate_to_erhua_csv_skill(self):
+        class FakeCsvPlugin:
+            def __init__(self) -> None:
+                self.calls = []
+
+            def handle_qintopia_erhua_csv_list(self, args):
+                self.calls.append(("list", args))
+                return json.dumps({"success": True, "delegated": "list"})
+
+            def handle_qintopia_erhua_csv_create(self, args):
+                self.calls.append(("create", args))
+                return json.dumps({"success": True, "delegated": "create"})
+
+            def handle_qintopia_erhua_csv_append(self, args):
+                self.calls.append(("append", args))
+                return json.dumps({"success": True, "delegated": "append"})
+
+            def handle_qintopia_erhua_csv_query(self, args):
+                self.calls.append(("query", args))
+                return json.dumps({"success": True, "delegated": "query"})
+
+            def check_erhua_csv_requirements(self):
+                return True
+
+        fake = FakeCsvPlugin()
+        self.module._ERHUA_CSV_PLUGIN = fake
+        handlers = (
+            (self.module.handle_qintopia_erhua_csv_list, "list", {}),
+            (self.module.handle_qintopia_erhua_csv_create, "create", {"name": "ledger"}),
+            (self.module.handle_qintopia_erhua_csv_append, "append", {"csv_id": "id", "row": {}}),
+            (self.module.handle_qintopia_erhua_csv_query, "query", {"csv_id": "id"}),
+        )
+        for handler, expected, args in handlers:
+            self.assertEqual(json.loads(handler(args))["delegated"], expected)
+        self.assertEqual([call[0] for call in fake.calls], ["list", "create", "append", "query"])
+        self.assertTrue(self.module.check_erhua_csv_requirements())
+
     def test_xiaoman_activity_mutations_use_agentos_event_signal_contract(self):
         old_profile = os.environ.get("QINTOPIA_PROFILE_ID")
         old_enabled = os.environ.get("QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE")
@@ -972,6 +1015,10 @@ class QintopiaToolsTest(unittest.TestCase):
 
         self.assertIn("qintopia_wenyuange_lookup", ctx.names)
         self.assertIn("qintopia_weather_lookup", ctx.names)
+        self.assertIn("qintopia_erhua_csv_list", ctx.names)
+        self.assertIn("qintopia_erhua_csv_create", ctx.names)
+        self.assertIn("qintopia_erhua_csv_append", ctx.names)
+        self.assertIn("qintopia_erhua_csv_query", ctx.names)
         self.assertIn("qintopia_complaint_intake_create", ctx.names)
         self.assertIn("qintopia_complaint_intake_update", ctx.names)
         self.assertIn("qintopia_complaint_followup_send", ctx.names)

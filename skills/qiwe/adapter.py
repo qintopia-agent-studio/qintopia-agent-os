@@ -1008,6 +1008,16 @@ def _member_context_channel_prompt(
             },
         }
     reply_directives = _answer_context_reply_directives(answer_context)
+    csv_directives = ""
+    if parsed.conversation_type == "group":
+        csv_directives = (
+            "\n\n当前是 QiWe 群聊，可使用二花的当前群 CSV 工具处理成员明确要求的持久记录。"
+            "先用 qintopia_erhua_csv_list 找合适的表；没有合适的表时再用 qintopia_erhua_csv_create 创建。"
+            "记账使用 preset=ledger，其他需求使用 custom 并按对话定义字段；写入用 qintopia_erhua_csv_append，"
+            "查询、计数和求和用 qintopia_erhua_csv_query。账目纠错使用 reverses_event_id 冲正，不要声称删除或改写历史。"
+            "不要向成员索要或向工具传群 ID、用户 ID、消息 ID、文件名、路径、系统字段或 amount_delta；"
+            "不要用群 CSV 保存密码、Token、身份证等秘密或高敏感数据。工具失败时明确说本次没有写入成功。"
+        )
     return (
         f"{reply_directives}\n\n"
         "QiWe 当前说话人上下文如下。用户没有要求公开人物画像时，不要在回复中提到这些字段、工具名或画像来源。\n"
@@ -1020,6 +1030,7 @@ def _member_context_channel_prompt(
         "如果 mentioned_members 中有 resolved=true 的成员，回答相关问题时优先使用其 safe_summary 和 safe_reply_hints。"
         "如果被提及成员 unresolved 或 ambiguous，先反问确认，不要硬猜。"
         "不要说自己在监控群成员，不要说“画像显示”，不要暴露 raw history、隐藏画像、敏感事实、内部标签或日报全文。\n"
+        f"{csv_directives}"
         f"answer_context: {json.dumps(answer_context, ensure_ascii=False)}"
     )
 
