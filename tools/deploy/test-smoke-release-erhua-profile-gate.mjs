@@ -15,7 +15,7 @@ const writeExecutable = (relativePath, content) => {
   fs.writeFileSync(target, content, { mode: 0o755 });
 };
 
-const runSmoke = (extraArgs = []) =>
+const runSmoke = (extraArgs = [], restartTargets = "hermes-erhua") =>
   spawnSync(
     "bash",
     [
@@ -23,7 +23,7 @@ const runSmoke = (extraArgs = []) =>
       "--release-root",
       path.join(tmpRoot, "releases"),
       "--restart-targets",
-      "hermes-erhua",
+      restartTargets,
       ...extraArgs,
     ],
     {
@@ -59,6 +59,31 @@ exit 0
   if (ordinaryRestart.status !== 0) {
     throw new Error(
       `ordinary Erhua restart must not require profile overlay verification\nstdout:\n${ordinaryRestart.stdout}\nstderr:\n${ordinaryRestart.stderr}`
+    );
+  }
+
+  writeExecutable(
+    "bin/systemctl",
+    `#!/usr/bin/env bash
+if [[ "\${1:-}" == "restart" && "\${2:-}" == "qintopia-agentos-daily-digest-publisher.service" ]]; then
+  exit 77
+fi
+exit 0
+`
+  );
+  const systemServiceRestart = runSmoke([], "qintopia-system-services");
+  if (systemServiceRestart.status === 0) {
+    throw new Error(
+      `expected fixed system service restart failure\nstdout:\n${systemServiceRestart.stdout}\nstderr:\n${systemServiceRestart.stderr}`
+    );
+  }
+  if (
+    !systemServiceRestart.stderr.includes(
+      "qintopia_smoke_release_safe_failure=target=qintopia-system-services;phase=restart;subject=qintopia-agentos-daily-digest-publisher.service"
+    )
+  ) {
+    throw new Error(
+      `system service restart failure did not emit safe marker\nstderr:\n${systemServiceRestart.stderr}`
     );
   }
 

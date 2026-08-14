@@ -179,7 +179,9 @@
   provider/doctor verification belongs only to the reviewed Erhua profile activation
   path where profile metadata is present. Do not let general sidecar/deploy-bundle
   releases fail on Erhua provider state while unrelated runtime changes are being
-  promoted.
+  promoted. When ordinary release smoke fails, expose only the bounded
+  `qintopia_smoke_release_safe_failure=` marker in deploy-result detail; never retain
+  raw systemctl output, journal lines, env, prompts, or live Hermes cron content.
 - After ordinary release promotion, deploy-runner must execute
   `deploy/runner/install-release-systemd-units.sh` and `deploy/runner/smoke-release.sh`
   from the just-promoted release directory, not from the root runner's already-installed

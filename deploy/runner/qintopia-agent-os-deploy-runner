@@ -452,6 +452,38 @@ started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 deploy_stage="starting"
 deploy_failure_stage=""
 deploy_failure_status=""
+deploy_failure_safe_detail=""
+
+capture_safe_failure_detail() {
+  local output_file="$1"
+  local marker=""
+  if [[ -f "$output_file" ]]; then
+    marker="$(grep -E '^qintopia_smoke_release_safe_failure=' "$output_file" | tail -n 1 | cut -d= -f2- || true)"
+  fi
+  if [[ -n "$marker" ]]; then
+    if [[ "$marker" =~ ^[A-Za-z0-9_.=-]+(\;[A-Za-z0-9_.=-]+)*$ ]]; then
+      deploy_failure_safe_detail="$marker"
+    else
+      deploy_failure_safe_detail="marker_rejected"
+    fi
+  fi
+}
+
+run_with_safe_failure_capture() {
+  local output_file=""
+  local status=0
+  output_file="$(mktemp)"
+  if "$@" >"$output_file" 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    capture_safe_failure_detail "$output_file"
+  fi
+  rm -f "$output_file"
+  return "$status"
+}
 
 write_result() {
   local status="$1"
@@ -476,6 +508,7 @@ write_result() {
     "${RESULT_DIR}/${request_id}.smoke.json" "${RESULT_DIR}/${request_id}.restore.json" \
     "$release_scope" "$deploy_failure_stage" "$deploy_failure_status" \
     "$promoted_current" "$profile_activation_attempted" \
+    "$deploy_failure_safe_detail" \
     "${RESULT_DIR}/${request_id}.activation.json" \
     "${RESULT_DIR}/${request_id}.observation.json" \
     "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" \
@@ -511,12 +544,13 @@ import sys
     deploy_failure_status,
     promoted_current,
     profile_activation_attempted,
+    deploy_failure_safe_detail,
     activation_evidence_path,
     observation_evidence_path,
     legacy_cron_retirement_evidence_path,
     hermes_cron_apply_evidence_path,
     runtime_one_shot_evidence_path,
-) = sys.argv[1:31]
+) = sys.argv[1:32]
 
 runner_check = {
     "name": "deploy-runner",
@@ -529,6 +563,8 @@ if deploy_failure_stage:
         "promoted_current": promoted_current == "true",
         "profile_activation_attempted": profile_activation_attempted == "true",
     }
+    if deploy_failure_safe_detail:
+        detail["safe_failure"] = deploy_failure_safe_detail[:240]
     runner_check["detail"] = json.dumps(detail, separators=(",", ":"))
 
 result = {
@@ -1611,7 +1647,7 @@ run_promotion() {
     assert_current_profile_release || return $?
     rm -f "${RESULT_DIR}/${request_id}.smoke.json"
     deploy_stage="profile-smoke-release"
-    "$profile_release_dir/deploy/runner/smoke-release.sh" \
+    run_with_safe_failure_capture "$profile_release_dir/deploy/runner/smoke-release.sh" \
       --release-root "$RELEASE_ROOT" \
       --profile-release-dir "$profile_release_dir" \
       --profile-metadata "${STATE_DIR}/profile-backups/${request_id}/metadata.json" \
@@ -1667,7 +1703,7 @@ run_promotion() {
       return 1
     fi
     deploy_stage="smoke-release"
-    "$release_smoke" \
+    run_with_safe_failure_capture "$release_smoke" \
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
