@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.134](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.133...v0.2.134) (2026-08-14)
+
+
+### Features
+
+* **erhua:** add group-isolated CSV workspaces ([#564](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/564)) ([cf460d2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cf460d24d06f1e5c0aa69d62b50b80dbeff9b336))
+
+
+### Bug Fixes
+
+* enable erhua wecom profile boundary ([#565](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/565)) ([f5cb219](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f5cb2191b3efbef63bb745c4e4c61b6ac1a54efc))
+* install Hermes cron wrappers profile-locally ([#561](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/561)) ([62bbbbf](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/62bbbbf38c8a65c5c6468ab5f467f4bd5f294e50))
+* normalize hermes wrapper ownership ([#563](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/563)) ([85c3df0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/85c3df0c0f036aae0896191c410887dce7f0756a))
+
 ## [0.2.133](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.132...v0.2.133) (2026-08-13)
 
 
