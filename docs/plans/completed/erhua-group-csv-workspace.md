@@ -112,6 +112,8 @@ schema version using Decimal arithmetic.
   group writes remain in place; add rate limiting later only from observed abuse or
   performance evidence.
 - 100 returned query rows and 5 equality filters.
+- Decimal input text and fixed-point expansion are each limited to 1024 characters or
+  digits before formatting, preventing oversized exponents from exhausting resources.
 - Formula-like text beginning with `=`, `+`, `-`, `@`, tab, or carriage return is
   rejected. Negative values are accepted only by numeric field types.
 - CSV data is group-visible and must not store passwords, tokens, government identity

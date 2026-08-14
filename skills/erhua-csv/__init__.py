@@ -51,6 +51,8 @@ MAX_FILE_BYTES = 10 * 1024 * 1024
 MAX_GROUP_BYTES = 100 * 1024 * 1024
 MAX_QUERY_ROWS = 100
 MAX_QUERY_FILTERS = 5
+MAX_DECIMAL_INPUT_CHARS = 1024
+MAX_DECIMAL_FIXED_DIGITS = 1024
 SNAPSHOT_RETENTION_DAYS = 30
 
 LEDGER_FIELDS = (
@@ -287,12 +289,23 @@ def _validate_event_id(value: Any) -> str:
 def _canonical_decimal(value: Any, label: str) -> str:
     if isinstance(value, bool) or value is None:
         raise CsvWorkspaceError(f"{label} must be a decimal")
+    text = str(value).strip()
+    if not text or len(text) > MAX_DECIMAL_INPUT_CHARS:
+        raise CsvWorkspaceError(f"{label} exceeds the supported decimal size")
     try:
-        decimal_value = Decimal(str(value))
+        decimal_value = Decimal(text)
     except (InvalidOperation, ValueError) as exc:
         raise CsvWorkspaceError(f"{label} must be a decimal") from exc
     if not decimal_value.is_finite():
         raise CsvWorkspaceError(f"{label} must be finite")
+    _, digits, exponent = decimal_value.as_tuple()
+    integer_digits = max(len(digits) + exponent, 1)
+    fractional_digits = max(-exponent, 0)
+    if (
+        len(digits) > MAX_DECIMAL_FIXED_DIGITS
+        or integer_digits + fractional_digits > MAX_DECIMAL_FIXED_DIGITS
+    ):
+        raise CsvWorkspaceError(f"{label} exceeds the supported decimal size")
     normalized = format(decimal_value, "f")
     if "." in normalized:
         normalized = normalized.rstrip("0").rstrip(".")

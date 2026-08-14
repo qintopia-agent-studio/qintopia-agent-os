@@ -223,6 +223,51 @@ class ErhuaCsvWorkspaceTests(unittest.TestCase):
                 },
             )
 
+    def test_decimal_expansion_is_bounded_before_fixed_point_formatting(self) -> None:
+        for value in ("1e100000000", "1e-100000000"):
+            with self.assertRaisesRegex(
+                erhua_csv.CsvWorkspaceError, "supported decimal size"
+            ):
+                erhua_csv._canonical_decimal(value, "test decimal")
+
+        with self.assertRaisesRegex(erhua_csv.CsvWorkspaceError, "supported decimal size"):
+            self.workspace.create(
+                self.ctx("group-a", "user-a", "decimal-default"),
+                {
+                    "name": "Unsafe default",
+                    "preset": "custom",
+                    "fields": [
+                        {"name": "amount", "type": "decimal", "default": "1e100000000"}
+                    ],
+                },
+            )
+
+        csv_id = self.create_custom(
+            fields=[{"name": "amount", "type": "decimal"}], name="Bounded decimals"
+        )
+        with self.assertRaisesRegex(erhua_csv.CsvWorkspaceError, "supported decimal size"):
+            self.workspace.append(
+                self.ctx("group-a", "user-a", "decimal-append"),
+                csv_id,
+                {"amount": "1e100000000"},
+            )
+        with self.assertRaisesRegex(erhua_csv.CsvWorkspaceError, "supported decimal size"):
+            self.workspace.query(
+                self.context,
+                {"csv_id": csv_id, "filters": {"amount": "1e100000000"}},
+            )
+
+        ledger = self.workspace.create(
+            self.ctx("group-a", "user-a", "decimal-ledger-create"),
+            {"name": "Bounded ledger", "preset": "ledger"},
+        )
+        with self.assertRaisesRegex(erhua_csv.CsvWorkspaceError, "supported decimal size"):
+            self.workspace.append(
+                self.ctx("group-a", "user-a", "decimal-ledger-append"),
+                ledger["dataset"]["csv_id"],
+                {"direction": "income", "amount": "1e100000000"},
+            )
+
     def test_groups_cannot_list_or_query_each_others_datasets(self) -> None:
         csv_id = self.create_custom()
         other = self.ctx("group-b", "user-a", "message-2")

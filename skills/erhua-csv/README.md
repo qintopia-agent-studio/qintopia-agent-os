@@ -22,7 +22,11 @@ snapshots live in the separate, tool-inaccessible
 
 The public tool registration stays in `skills/qintopia-tools/variants/erhua`; this
 package owns validation and storage behavior. See
-`docs/plans/active/erhua-group-csv-workspace.md` for the complete contract.
+`docs/plans/completed/erhua-group-csv-workspace.md` for the complete contract.
+
+Decimal inputs and their fixed-point expansion are each capped at 1024 characters or
+digits before formatting. This keeps exact-Decimal fields and ledger arithmetic bounded
+against exponent-expansion resource exhaustion.
 
 Group CSVs are visible to all members of that group. They must not be used for
 passwords, tokens, government identity numbers, or similarly sensitive data.
