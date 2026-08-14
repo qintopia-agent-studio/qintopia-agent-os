@@ -470,7 +470,6 @@ exit 72
 
   const commandLog = fs.readFileSync(oneShotLog, "utf8");
   for (const expected of [
-    "observe-daily:enabled",
     "run-daily-backfill:2026-08-10",
     "observe-erhua:enabled",
     "run-erhua-one-shot",
@@ -479,6 +478,11 @@ exit 72
     if (!commandLog.includes(expected)) {
       throw new Error(`missing one-shot command log entry: ${expected}`);
     }
+  }
+  if (commandLog.includes("observe-daily:")) {
+    throw new Error(
+      "daily case-report backfill should not require the retired systemd timer observation"
+    );
   }
 
   const invalidRequest = runRequest("deploy-20260810T000005Z-abcdef123456", {

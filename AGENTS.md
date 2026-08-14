@@ -460,7 +460,9 @@
   records the `generated_image` artifact plus one automatic `group_message_request`;
   actual QiWe delivery rides the separate `operations-group-send-ready` chain. The
   `xiaoman-daily-case-report-auto-publish-backfill` one-shot workflow target stays valid
-  after migration because it calls the worker boundary directly.
+  after migration because it calls the worker boundary directly, temporarily exporting
+  the worker enablement/date override for that process while leaving the persistent
+  sidecar env flag at `0` and the retired systemd timer disabled.
 - The Xiaoman daily case-report worker uploads through the Huabaosi Feishu primary
   storage boundary. Its release SHA binding now lives in the Hermes wrapper: after
   sourcing the persistent env, the wrapper derives the release SHA from
@@ -518,8 +520,10 @@
   `jobs.json`, group ids, prompts, env values, snapshot contents, or raw script output.
 - Production immediate worker/backfill runs should use the
   `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
-  containing the runner support is deployed and the corresponding release-managed timer
-  is already enabled. It creates a signed `production-runtime-one-shot` deploy-runner
+  containing the runner support is deployed. Erhua one-shots still require the
+  corresponding release-managed timer to be enabled; Xiaoman daily case-report backfill
+  is the reviewed Hermes-cutover exception and must not require the retired systemd
+  timer to be enabled. It creates a signed `production-runtime-one-shot` deploy-runner
   request and accepts exactly one fixed target per request: `erhua-morning-brief` with
   `approved-production-erhua-morning-brief-one-shot`, or
   `xiaoman-daily-case-report-auto-publish-backfill` with
@@ -1382,7 +1386,10 @@ Use `rg` and `rg --files` for search.
   `xiaoman-daily-case-report-auto-publish-backfill.sh` entrypoint with the exact owner
   approval, reviewed release SHA, and `YYYY-MM-DD` date. The worker may honor
   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE` only when paired with the matching backfill
-  approval; do not send missed reports by local image path or ad-hoc QiWe calls.
+  approval, and the backfill script may temporarily export
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1` only for that worker
+  process; do not send missed reports by local image path, retired timer starts, or
+  ad-hoc QiWe calls.
 - Xiaoman daily case-report character-universe outputs are private second-pass
   artifacts. Production worker logs and send-ready metadata may retain only safe
   counters and schema flags; never retain Markdown body, raw universe nodes, member

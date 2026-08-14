@@ -75,7 +75,9 @@ Follow "Per-Task Shape" in `README.md`. Concrete names:
   sanitized evidence only; never print media URIs or group ids in the runbook log.
 - The `Run Production Runtime One-Shot` GitHub workflow target
   `xiaoman-daily-case-report-auto-publish-backfill` stays valid after migration (it
-  calls the worker boundary directly). Note this in the runbook so nobody "fixes" it.
+  calls the worker boundary directly and supplies the process-local enable/date
+  override). Note this in the runbook so nobody "fixes" it back to the retired systemd
+  timer.
 
 ## Server Phase
 

@@ -1,10 +1,12 @@
 # Production Runtime One-Shot Runbook
 
 Use the `Run Production Runtime One-Shot` GitHub workflow only after the reviewed
-Release has been deployed and the corresponding production timer is already enabled.
-This path is for an explicit, owner-approved immediate run of a fixed production
-worker/backfill when waiting for the next timer tick would delay recovery or launch
-evidence.
+Release has been deployed. Erhua immediate runs still require the corresponding
+production timer to be enabled. Xiaoman daily case-report backfill is different after
+the Hermes cutover: it runs the fixed release-local worker directly for one reviewed
+date and must not require the retired systemd timer to be enabled. This path is for an
+explicit, owner-approved immediate run of a fixed production worker/backfill when
+waiting for the next timer tick would delay recovery or launch evidence.
 
 ## Scope
 
@@ -20,18 +22,22 @@ The request must target the current production release SHA, must use
 `restart_targets=["qintopia-system-services"]`, and must set both `dry_run=false` and
 `rollback_on_smoke_failure=false`.
 
-The runner first observes that the corresponding release-managed timer is enabled. It
-then runs only the fixed release-local script for that target and records sanitized
-result evidence. The result must not include worker raw output, raw message content,
-group ids, person ids, database URLs, tokens, Feishu payloads, QiWe payloads, reviewed
-profile payload content, or journal logs.
+The runner observes the corresponding release-managed timer only for targets that still
+depend on that timer boundary, such as Erhua morning brief. Xiaoman daily case-report
+backfill runs only the fixed release-local backfill script, which sources the fixed
+production env file, temporarily exports the worker enablement/date override, and
+discards worker stdout/stderr in a private temp directory. The result must not include
+worker raw output, raw message content, group ids, person ids, database URLs, tokens,
+Feishu payloads, QiWe payloads, reviewed profile payload content, or journal logs.
 
 ## Fixed Targets
 
 ### Xiaoman Daily Case Report Backfill
 
 Use when a reviewed production daily case report must be generated and auto-publish
-requested for a specific date after the timer has already been enabled.
+requested for a specific date. This target remains valid after the Hermes migration even
+though the retired systemd timer and persistent
+`QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED` flag are disabled.
 
 Workflow inputs:
 
@@ -43,7 +49,8 @@ approval=approved-production-xiaoman-daily-case-report-auto-publish-backfill
 ```
 
 This may create/update production artifacts and group message requests through the
-reviewed daily case-report and QiWe image-send boundaries.
+reviewed daily case-report and QiWe image-send boundaries. It does not enable the
+retired timer or change persistent production configuration.
 
 ### Xiaoman Creative Profile Candidates Apply
 
@@ -118,7 +125,9 @@ This workflow must not:
 - retire legacy Hermes cron files;
 - accept arbitrary commands, service names, payload paths, payload JSON, dates for
   Erhua, or multiple targets;
-- run business workers if the target timer is not already observed as enabled.
+- run business workers if their required timer boundary is not already observed as
+  enabled; Xiaoman daily case-report backfill is the reviewed exception because its
+  scheduler is now Hermes and the one-shot calls the worker boundary directly.
 
 Use `Activate Production Timers` for timer activation, `Retire Production Legacy Crons`
 for legacy cron retirement, and target-specific rollback workflows or scripts for
