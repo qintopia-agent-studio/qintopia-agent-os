@@ -215,6 +215,18 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 mkdir -p "\${release_root}/${sha}" "\${release_root}/${previousSha}"
+mkdir -p "\${release_root}/${sha}/deploy/runner"
+cat >"\${release_root}/${sha}/deploy/runner/install-release-systemd-units.sh" <<'INSTALL'
+#!/usr/bin/env bash
+echo "simulated release-local systemd install failure" >&2
+exit 55
+INSTALL
+chmod 0755 "\${release_root}/${sha}/deploy/runner/install-release-systemd-units.sh"
+cat >"\${release_root}/${sha}/deploy/runner/smoke-release.sh" <<'SMOKE'
+#!/usr/bin/env bash
+exit 0
+SMOKE
+chmod 0755 "\${release_root}/${sha}/deploy/runner/smoke-release.sh"
 ln -sfn "\${release_root}/${previousSha}" "\${release_root}/previous"
 ln -sfn "\${release_root}/${sha}" "\${release_root}/current"
 `
@@ -222,8 +234,8 @@ ln -sfn "\${release_root}/${sha}" "\${release_root}/current"
   writeExecutable(
     "deploy/runner/install-release-systemd-units.sh",
     `#!/usr/bin/env bash
-echo "simulated systemd install failure" >&2
-exit 55
+echo "stale runner installer must not be used" >&2
+exit 64
 `
   );
   writeExecutable(
@@ -357,13 +369,27 @@ with open(sys.argv[2], "w", encoding="utf-8") as fh:
     )
     fh.write("\\n")
 PY
+mkdir -p "\${release_root}/${sha}/deploy/runner"
+cat >"\${release_root}/${sha}/deploy/runner/install-release-systemd-units.sh" <<'INSTALL'
+#!/usr/bin/env bash
+echo "release-local installer reached" >"\${QINTOPIA_RELEASE_LOCAL_INSTALL_MARKER:?}"
+exit 0
+INSTALL
+chmod 0755 "\${release_root}/${sha}/deploy/runner/install-release-systemd-units.sh"
+cat >"\${release_root}/${sha}/deploy/runner/smoke-release.sh" <<'SMOKE'
+#!/usr/bin/env bash
+echo "release-local smoke reached" >"\${QINTOPIA_RELEASE_LOCAL_SMOKE_MARKER:?}"
+exit 0
+SMOKE
+chmod 0755 "\${release_root}/${sha}/deploy/runner/smoke-release.sh"
 ln -sfn "\${release_root}/${sha}" "\${release_root}/current"
 `
   );
   writeExecutable(
     "deploy/runner/install-release-systemd-units.sh",
     `#!/usr/bin/env bash
-exit 0
+echo "stale runner installer must not be used" >&2
+exit 64
 `
   );
   writeExecutable(
@@ -372,6 +398,15 @@ exit 0
 exit 0
 `
   );
+  writeExecutable(
+    "deploy/runner/smoke-release.sh",
+    `#!/usr/bin/env bash
+echo "stale runner smoke must not be used" >&2
+exit 64
+`
+  );
+  const releaseLocalInstallMarker = path.join(tmpRoot, "release-local-install.marker");
+  const releaseLocalSmokeMarker = path.join(tmpRoot, "release-local-smoke.marker");
 
   const qiweResult = spawnSync("bash", [runnerPath, "--request-file", requestFile], {
     cwd: stateDir,
@@ -385,6 +420,8 @@ exit 0
       DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
       TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
       TENCENT_COS_REGION: "ap-shanghai",
+      QINTOPIA_RELEASE_LOCAL_INSTALL_MARKER: releaseLocalInstallMarker,
+      QINTOPIA_RELEASE_LOCAL_SMOKE_MARKER: releaseLocalSmokeMarker,
     },
     encoding: "utf8",
   });
@@ -398,6 +435,12 @@ exit 0
   const qiweDeployResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
   if (qiweDeployResult.status !== "succeeded") {
     throw new Error(`expected succeeded result, got ${qiweDeployResult.status}`);
+  }
+  if (!fs.existsSync(releaseLocalInstallMarker)) {
+    throw new Error("runner did not execute release-local installer after promotion");
+  }
+  if (!fs.existsSync(releaseLocalSmokeMarker)) {
+    throw new Error("runner did not execute release-local smoke after promotion");
   }
   if (
     qiweDeployResult.commit_sha !== sha ||

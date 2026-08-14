@@ -8,12 +8,16 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Release State
 
-- Latest published Release tag in git: `v0.2.135`.
-- Production `Deploy Production` for `v0.2.135`
-  (`24a2bfc2a41722dabd4059be8c2e870b12d622c0`) uploaded the release artifacts and deploy
+- Latest published Release tag in git: `v0.2.136`.
+- Production `Deploy Production` for `v0.2.136`
+  (`7c4cbca965226054c0e737bef0aec8dec7ed23f0`) uploaded the release artifacts and deploy
   request, then failed during `smoke-release` and rolled back successfully to `v0.2.133`
   (`032b4c96e6d68321a6b21740c265441592ea4fdf`). Treat production `release/current` as
   still on `v0.2.133` until a newer deploy result reports `status=succeeded`.
+- Production `Deploy Production` for `v0.2.135`
+  (`24a2bfc2a41722dabd4059be8c2e870b12d622c0`) uploaded the release artifacts and deploy
+  request, then failed during `smoke-release` and rolled back successfully to `v0.2.133`
+  (`032b4c96e6d68321a6b21740c265441592ea4fdf`).
 - Production `Deploy Production` for `v0.2.134`
   (`c3b1c0ae3b8a5ce655fbe7106596dfd57fd083bc`) also failed during `smoke-release` and
   rolled back successfully to `v0.2.133`.
@@ -23,15 +27,17 @@ URLs, tokens, raw logs, or raw script output.
   not production deployment evidence.
 - Production deploy evidence in this repo-local status page still needs to be refreshed
   after a successful deploy that includes the daily-report, Hermes cron assets, backfill
-  cutover fix, and ordinary release-smoke Erhua profile-check gate.
-- Release `v0.2.135` contains the Xiaoman character-universe daily-report path and the
-  Erhua WeCom profile-boundary fix in Git, but those changes are not production-current
-  because the release deploy rolled back.
-- PR `#568` contains the follow-up fixes for the Xiaoman daily backfill path after
-  Hermes cutover and for skipping Erhua profile checks during ordinary release smoke. It
-  is not production-current until merged, released, deployed, and observed.
-- Hermes cron live apply: successful workflow runs exist before `v0.2.135`, but no
-  successful apply against the `v0.2.135` release SHA is recorded in this status page.
+  cutover fix, ordinary release-smoke Erhua profile-check gate, and ordinary release
+  install/smoke self-bootstrap fix.
+- Release `v0.2.136` contains the Xiaoman character-universe daily-report path, the
+  Erhua WeCom profile-boundary fix, and PR `#568`, but those changes are not
+  production-current because the release deploy rolled back.
+- The `v0.2.136` failure shows ordinary post-promotion checks still executed the
+  already-installed root runner's stale deploy scripts instead of the just-promoted
+  release-local runner scripts. A follow-up Release must make ordinary post-promotion
+  install and smoke execute from `${RELEASE_ROOT}/${release_sha}/deploy/runner/`.
+- Hermes cron live apply: successful workflow runs exist before `v0.2.136`, but no
+  successful apply against the `v0.2.136` release SHA is recorded in this status page.
 - Hermes cron enablement: not complete; run only after install and declaration parity
   pass.
 
@@ -73,8 +79,9 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Next Production Actions
 
-1. Merge PR `#568`, then publish and deploy the follow-up Release containing the Xiaoman
-   backfill cutover fix and ordinary release-smoke Erhua profile-check gate.
+1. Publish and deploy a follow-up Release containing the ordinary release install/smoke
+   self-bootstrap fix, so post-promotion checks run from the just-promoted release
+   instead of the stale root runner directory.
 2. Confirm the server deploy result reports `status=succeeded`.
 3. Activate the reviewed `hermes-profile-erhua` overlay before enabling the Erhua
    morning-brief Hermes cron.
