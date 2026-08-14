@@ -1,8 +1,6 @@
 # Erhua Group CSV Workspace
 
-Status: implementation complete  
-Owner: Qintopia  
-Updated: 2026-08-14
+Status: implementation complete Owner: Qintopia Updated: 2026-08-14
 
 ## Goal
 
