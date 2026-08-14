@@ -157,7 +157,8 @@
   `QINTOPIA_XIAOMAN_LEGACY_CRON_RETIREMENT=approved-production-xiaoman-legacy-cron-retirement deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh`
 - Hermes cron snapshot sync (version history for the conversation-editable source of
   truth): `deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh` mirrors live `jobs.json`
-  files and `/home/ubuntu/.hermes/scripts/` into the server-local git repo at
+  files plus profile-local no-agent wrappers under
+  `/home/ubuntu/.hermes/profiles/<profile>/scripts/` into the server-local git repo at
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; first init requires
   `QINTOPIA_HERMES_CRON_SNAPSHOT=approved-production-hermes-cron-snapshot`. Timer
   install:
@@ -182,15 +183,20 @@
   `xiaoman-weekly-plan-confirmation`, and `xiaoman-weekly-preview`. This is the
   repository-to-live step for `/home/ubuntu/.hermes/profiles/<profile>/cron/jobs.json`:
   install first writes the reviewed job disabled and installs the reviewed wrapper under
-  `/home/ubuntu/.hermes/scripts/`; enable is a later explicit request after live
-  declaration parity is proven. The approval strings authorize the production action
-  boundary, not a cryptographic signature over `jobs.json`. The workflow must not accept
-  chat ids, cron JSON, script paths, approval strings, env-file paths, systemctl
-  commands, or arbitrary shell from inputs, and deploy results must not record live cron
-  content, group ids, prompts, env values, or raw script output. Apply scripts may emit
-  a bounded safe failure reason only through the explicit
-  `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must ignore all
-  other stdout/stderr for result details. Because each apply ends by running
+  `/home/ubuntu/.hermes/profiles/<profile>/scripts/`; enable is a later explicit request
+  after live declaration parity is proven. Hermes no-agent scheduler resolves the
+  `script` field from this profile-local scripts directory, not from the global
+  `/home/ubuntu/.hermes/scripts/` helper area. Apply scripts must converge profile-local
+  wrapper ownership to the live cron file/profile owner and mode `0700` even when the
+  wrapper content is already current; preserving a stale root-owned wrapper can make
+  Hermes report install success while the ubuntu profile cannot execute it. The approval
+  strings authorize the production action boundary, not a cryptographic signature over
+  `jobs.json`. The workflow must not accept chat ids, cron JSON, script paths, approval
+  strings, env-file paths, systemctl commands, or arbitrary shell from inputs, and
+  deploy results must not record live cron content, group ids, prompts, env values, or
+  raw script output. Apply scripts may emit a bounded safe failure reason only through
+  the explicit `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must
+  ignore all other stdout/stderr for result details. Because each apply ends by running
   `sync-hermes-cron-snapshot.sh`, the deploy-runner service must grant `ReadWritePaths`
   to the fixed server-local snapshot repo
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; do not broaden this
@@ -852,9 +858,9 @@ Use `rg` and `rg --files` for search.
 - A new `ReadWritePaths` entry under `/home/ubuntu` must have its fixed target directory
   prepared before installing the updated deploy-runner unit. A missing non-optional path
   can prevent the next runner service start before `ExecStart`, so the release systemd
-  installer owns the fixed Hermes cron snapshot root preparation. Root-owned preparation
-  must reject symlinks in every fixed parent path component before create/chown, not
-  only check the final directory.
+  installer owns the fixed Hermes cron snapshot root and ubuntu user systemd unit
+  directory preparation. Root-owned preparation must reject symlinks in every fixed
+  parent path component before create/chown, not only check the final directory.
 - Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
   after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
   guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does

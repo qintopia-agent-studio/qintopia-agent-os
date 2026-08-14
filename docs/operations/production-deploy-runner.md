@@ -366,19 +366,24 @@ installed unit in place and do not source it from an unverified working tree.
 
 Keep `ProtectHome=read-only`. Xiaoman legacy cron retirement requires only the fixed
 `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory in `ReadWritePaths`; reviewed
-Hermes cron apply additionally needs the fixed `/home/ubuntu/.hermes/scripts` wrapper
-directory and `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` snapshot
-repo. Do not grant write access to the whole Xiaoman Hermes profile, the whole
-qintopia-agentos state directory, or the whole home.
+Hermes cron apply additionally needs the fixed profile-local wrapper directories
+`/home/ubuntu/.hermes/profiles/xiaoman/scripts` and
+`/home/ubuntu/.hermes/profiles/erhua/scripts` plus the governed Erhua profile and the
+`/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` snapshot repo. The
+reviewed snapshot timer installer also needs exactly `/home/ubuntu/.config/systemd/user`
+so it can install the ubuntu user service and timer. Do not grant write access to the
+whole Xiaoman Hermes profile, the whole qintopia-agentos state directory, or the whole
+home.
 
 When adding a new non-optional `ReadWritePaths` entry under `/home/ubuntu`, the release
 systemd installer must prepare that exact fixed directory before installing the updated
 runner unit. If the path is missing when systemd starts the runner, startup can fail
 before `ExecStart`, leaving GitHub deploy requests waiting for a result that will never
-be uploaded. The Hermes cron snapshot path is prepared as `ubuntu:ubuntu 0700` so both
-the root deploy-runner apply path and the ubuntu Hermes snapshot timer share the same
-server-local git history boundary. Preparation must reject symlinks in every fixed path
-component before creating or changing ownership, not only inspect the final directory.
+be uploaded. The Hermes cron snapshot path and ubuntu user systemd unit directory are
+prepared as `ubuntu:ubuntu 0700` so both the root deploy-runner apply path and the
+ubuntu Hermes snapshot timer share the same server-local git history boundary.
+Preparation must reject symlinks in every fixed path component before creating or
+changing ownership, not only inspect the final directory.
 
 ## Validation
 

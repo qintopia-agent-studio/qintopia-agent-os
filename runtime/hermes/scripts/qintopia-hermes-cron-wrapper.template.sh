@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Template for Hermes no_agent cron wrappers. Copy to
 # runtime/hermes/scripts/qintopia_<task>.sh, replace __TASK_NAME__ and
-# __WORKER_SCRIPT__, and deploy the copy to /home/ubuntu/.hermes/scripts/ through the
-# task's reviewed apply script. Hermes delivers any stdout to the job's origin chat, so
-# success paths must stay silent; only the failure line below may print.
+# __WORKER_SCRIPT__, and deploy the copy to the profile-local
+# /home/ubuntu/.hermes/profiles/<profile>/scripts/ directory through the task's reviewed
+# apply script. Hermes delivers any stdout to the job's origin chat, so success paths
+# must stay silent; only the failure line below may print.
 set -euo pipefail
 
 TASK_NAME="__TASK_NAME__"

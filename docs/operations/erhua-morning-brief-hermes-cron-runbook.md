@@ -58,7 +58,7 @@ the next morning has exactly one scheduler enabled.
 2. Manually run the wrapper once:
 
    ```bash
-   /home/ubuntu/.hermes/scripts/qintopia_erhua_morning_brief.sh
+   /home/ubuntu/.hermes/profiles/erhua/scripts/qintopia_erhua_morning_brief.sh
    ```
 
    Compare the produced brief artifact and the send-ready evidence against the most

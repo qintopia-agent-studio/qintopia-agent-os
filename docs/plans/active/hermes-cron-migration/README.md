@@ -36,12 +36,13 @@ any older assumptions in cutover runbooks.
    `next_run_at`, `state`, `last_status`, `last_error`, `repeat.completed`); apply
    scripts must preserve them for untouched jobs.
 4. `no_agent: true` + `script` contract (`cron/scheduler.py` lines 851-976 and
-   1256-1360): the script must live inside `/home/ubuntu/.hermes/scripts/` (absolute
-   paths are validated to stay inside it); `.sh` runs through bash; env is the gateway
-   process env plus `HERMES_HOME` and `HOME=<profile home>`; cwd is the scripts dir;
-   non-empty stdout is delivered verbatim to the `deliver` target, empty stdout is a
-   silent success, non-zero exit is delivered as an error alert. stdout/stderr pass
-   through `redact_sensitive_text`, but wrappers must still never print secrets.
+   1256-1360): the script must live inside
+   `/home/ubuntu/.hermes/profiles/<profile>/scripts/` (absolute paths are validated to
+   stay inside it); `.sh` runs through bash; env is the gateway process env plus
+   `HERMES_HOME` and `HOME=<profile home>`; cwd is the scripts dir; non-empty stdout is
+   delivered verbatim to the `deliver` target, empty stdout is a silent success,
+   non-zero exit is delivered as an error alert. stdout/stderr pass through
+   `redact_sensitive_text`, but wrappers must still never print secrets.
 5. Write protocol for `jobs.json`: timestamped backup copy, read-modify-write, atomic
    replace, keep mode `0600` and owner `ubuntu:ubuntu`. Model: the existing
    `deploy/sidecar/scripts/retire-xiaoman-legacy-cron-production.sh` (minus its
@@ -60,15 +61,15 @@ any older assumptions in cutover runbooks.
 ## Target Architecture
 
 - Source of truth: `/home/ubuntu/.hermes/profiles/<profile>/cron/jobs.json` plus wrapper
-  scripts in `/home/ubuntu/.hermes/scripts/`.
+  scripts in `/home/ubuntu/.hermes/profiles/<profile>/scripts/`.
 - Each migrated timer is a `no_agent: true` script job whose wrapper sources
   `/etc/qintopia/message-sidecar.env` and calls the existing release-managed worker
   under `/home/ubuntu/qintopia-agent-os-releases/current`. Business logic stays
   release-managed and reviewed; Hermes owns schedule, enablement, and delivery target.
 - Version management: `sync-hermes-cron-snapshot.sh` copies live `jobs.json` files and
-  `scripts/` into a server-local git repo (no remote) on a user timer and after every
-  apply. Sanitized declaration templates in `runtime/hermes/cron/` are the review
-  boundary in this monorepo.
+  profile-local `scripts/` into a server-local git repo (no remote) on a user timer and
+  after every apply. Sanitized declaration templates in `runtime/hermes/cron/` are the
+  review boundary in this monorepo.
 - Governance: `*-legacy-cron-observation-smoke.sh` scripts switch from "fail on any
   declaration" to "allow only declarations listed in the reviewed registry"
   (`runtime/hermes/cron/reviewed-cron-jobs.json`).

@@ -60,8 +60,8 @@ Follow "Per-Task Shape" in `README.md`. Concrete names for this task:
    It resolves the real chat id from the Xiaoman profile env at apply time (read-only,
    never printed), generates the 12-hex id, inserts the job `enabled: false`, and on
    `--enable` flips it. It also installs the wrapper into
-   `/home/ubuntu/.hermes/scripts/` (mode `0700`) and runs the task-0 snapshot sync at
-   the end of each pass.
+   `/home/ubuntu/.hermes/profiles/xiaoman/scripts/` (mode `0700`) and runs the task-0
+   snapshot sync at the end of each pass.
 4. Registry entry: profile `xiaoman`, expr `30 9 * * 1`, script
    `qintopia_xiaoman_weekly_preview.sh`.
 5. `docs/operations/xiaoman-weekly-preview-hermes-cron-runbook.md`.

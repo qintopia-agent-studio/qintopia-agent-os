@@ -28,7 +28,7 @@ One entry per migrated timer:
       "profile": "xiaoman",
       "name": "<exact job name, matches jobs.json>",
       "schedule_expr": "<exact 5-field cron expr>",
-      "script": "<exact script filename under /home/ubuntu/.hermes/scripts/>",
+      "script": "<exact script filename under /home/ubuntu/.hermes/profiles/<profile>/scripts/>",
       "no_agent": true,
       "deliver": "origin",
       "approved_at": "<YYYY-MM-DD>",
@@ -97,8 +97,9 @@ Copy-based version management (the snapshot mechanism). Requirements:
 - Snapshot root: `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` (git
   repo, `git init` if missing, no remote, dir mode `0700`).
 - Mirrors every `/home/ubuntu/.hermes/profiles/*/cron/jobs.json` into
-  `profiles/<name>/cron/jobs.json` and every file under `/home/ubuntu/.hermes/scripts/`
-  into `scripts/`, excluding `__pycache__`, `*.bak*`, `.tick.lock`, `output/`.
+  `profiles/<name>/cron/jobs.json` and every profile-local wrapper under
+  `/home/ubuntu/.hermes/profiles/*/scripts/` into `profiles/<name>/scripts/`, excluding
+  `__pycache__`, `*.bak*`, `.tick.lock`, `output/`.
 - Copies only files whose content hash changed since the last snapshot (cheap compare).
 - `git add -A && git commit` with message `snapshot <utc-iso8601>` only when the tree is
   dirty. Never pushes, never prints file contents.
