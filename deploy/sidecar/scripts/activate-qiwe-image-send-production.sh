@@ -101,7 +101,7 @@ with open(path, encoding="utf-8") as fh:
         ):
             value = value[1:-1]
         has_control = any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
-        if "$(" in value or "`" in value or has_control:
+        if chr(36) + chr(40) in value or chr(96) in value or has_control:
             raise SystemExit(f"unsafe env value for {expected_key}")
         print(value)
 
