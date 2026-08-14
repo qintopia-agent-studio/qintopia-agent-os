@@ -12,6 +12,18 @@ const argValue = (name, fallback = "") => {
   return index >= 0 ? process.argv[index + 1] || "" : fallback;
 };
 
+const positiveIntegerArg = (name, fallback = 0) => {
+  const raw = argValue(name, "");
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(value) || value <= 0 || String(value) !== raw) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+};
+
 const readJsonFile = (filePath) =>
   JSON.parse(fs.readFileSync(path.resolve(repoRoot, filePath), "utf8"));
 
@@ -129,6 +141,7 @@ const main = () => {
   const workflowRunsFile = argValue("--workflow-runs-file");
   const output = argValue("--output");
   const logDir = argValue("--log-dir");
+  const maxReleaseRuns = positiveIntegerArg("--max-release-runs", 0);
 
   if (!workflowRunsFile) {
     throw new Error("--workflow-runs-file is required");
@@ -137,12 +150,12 @@ const main = () => {
     throw new Error("--output is required");
   }
 
-  const runs = sortedWorkflowRuns(workflowRuns(readJsonFile(workflowRunsFile)));
+  const releaseRuns = sortedWorkflowRuns(
+    workflowRuns(readJsonFile(workflowRunsFile))
+  ).filter(isReleaseDeployRun);
+  const runs = maxReleaseRuns > 0 ? releaseRuns.slice(-maxReleaseRuns) : releaseRuns;
   const results = [];
   for (const runRecord of runs) {
-    if (!isReleaseDeployRun(runRecord)) {
-      continue;
-    }
     let logText = "";
     if (logDir) {
       const logPath = path.join(
