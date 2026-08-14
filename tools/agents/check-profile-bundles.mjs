@@ -33,6 +33,11 @@ if (exists("agents/erhua/config.template.yaml")) {
         provider: "custom:livecool.net",
         base_url: "",
       },
+      channel: {
+        wecom: {
+          enabled: true,
+        },
+      },
       custom_provider: {
         name: "Livecool.net",
         base_url: "https://livecool.net/v1",
