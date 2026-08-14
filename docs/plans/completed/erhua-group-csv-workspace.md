@@ -28,7 +28,7 @@ instead of requiring a product-specific code path.
   `_extra_json` until a later schema version promotes them to formal fields.
 - Provide a `ledger` preset with generated signed deltas, reversal events, checksum
   verification, and post-write balance recomputation.
-- Create one internal recovery snapshot after the first successful mutation on each
+- Refresh one internal recovery snapshot after each successful mutation on each
   Asia/Shanghai day and retain the latest 30 dates.
 
 Out of scope for v1: direct-chat spaces, overwrite, delete, rename, move, arbitrary file

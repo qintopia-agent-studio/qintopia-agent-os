@@ -1385,18 +1385,27 @@ class CsvWorkspace:
         destination = snapshots / local_date
         for path in (self.internal_root, self.internal_root / "snapshots", snapshots):
             self._ensure_dir(path)
+        temporary = snapshots / f".{local_date}.{uuid.uuid4().hex}.tmp"
+        self._copy_snapshot(group, temporary)
         if destination.exists() or destination.is_symlink():
             info = destination.lstat()
             if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                self._remove_snapshot(temporary)
                 raise CsvIntegrityError("daily snapshot path is unsafe")
+            backup = snapshots / f".{local_date}.{uuid.uuid4().hex}.old"
+            destination.rename(backup)
+            try:
+                temporary.rename(destination)
+            except Exception:
+                backup.rename(destination)
+                raise
+            self._remove_snapshot(backup)
         else:
-            temporary = snapshots / f".{local_date}.{uuid.uuid4().hex}.tmp"
-            self._copy_snapshot(group, temporary)
             try:
                 temporary.rename(destination)
             except FileExistsError:
                 self._remove_snapshot(temporary)
-            self._fsync_dir(snapshots)
+        self._fsync_dir(snapshots)
         self._prune_snapshots(snapshots)
 
     def _result_after_snapshot(

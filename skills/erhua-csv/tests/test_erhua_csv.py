@@ -394,7 +394,7 @@ class ErhuaCsvWorkspaceTests(unittest.TestCase):
         result = restarted.query(self.context, {"csv_id": csv_id, "count": True})
         self.assertEqual(result["count"], 10)
 
-    def test_daily_snapshot_is_created_once_and_files_are_private(self) -> None:
+    def test_daily_snapshot_is_refreshed_and_files_are_private(self) -> None:
         csv_id = self.create_custom()
         self.workspace.append(self.ctx("group-a", "user-a", "message-2"), csv_id, {"person": "A"})
         self.workspace.append(self.ctx("group-a", "user-a", "message-3"), csv_id, {"person": "B"})
@@ -402,6 +402,13 @@ class ErhuaCsvWorkspaceTests(unittest.TestCase):
         snapshots = self.workspace.internal_root / "snapshots" / scope
         dated = [path for path in snapshots.iterdir() if erhua_csv.DATE_DIR_RE.fullmatch(path.name)]
         self.assertEqual(len(dated), 1)
+        snapshot_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in dated[0].rglob("*")
+            if path.is_file()
+        )
+        self.assertIn("message-3", snapshot_text)
+        self.assertIn("B", snapshot_text)
         for path in (self.workspace.root, self.workspace._group_path(self.context), snapshots):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
         catalog = self.workspace._group_path(self.context) / "catalog.jsonl"
