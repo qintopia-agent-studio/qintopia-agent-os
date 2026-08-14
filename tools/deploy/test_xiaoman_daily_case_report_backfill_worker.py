@@ -110,7 +110,10 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE="$BACKFILL_DATE"',
             'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL="$APPROVAL"',
             '"$WORKER" >"${tmp_dir}/worker-output.txt" 2>&1',
-            "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill worker failed",
+            "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill: ${reason}",
+            'fail "worker failed"',
+            'fail "env ${key} count invalid"',
+            'fail "env ${key} value invalid"',
         ]:
             self.assertIn(fragment, backfill)
 

@@ -102,6 +102,10 @@ if [[ -n "$(git_snapshot remote)" ]]; then
   fail "snapshot repo must not have a remote"
 fi
 
+snapshot_has_commit() {
+  git_snapshot rev-parse --verify HEAD >/dev/null 2>&1
+}
+
 "$PYTHON_BIN" - "$HERMES_HOME" "$SNAPSHOT_ROOT" <<'PY'
 from __future__ import annotations
 
@@ -223,6 +227,13 @@ PY
 normalize_snapshot_permissions
 changed_count="$(git_snapshot status --porcelain -- profiles scripts | wc -l | tr -d ' ')"
 if [[ "$changed_count" == "0" ]]; then
+  if ! snapshot_has_commit; then
+    timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    git_snapshot commit --allow-empty --quiet -m "snapshot ${timestamp}" >/dev/null
+    normalize_snapshot_permissions
+    echo "snapshot_commit=created-empty-baseline snapshot_entries=0"
+    exit 0
+  fi
   echo "snapshot_commit=skipped-no-changes"
   normalize_snapshot_permissions
   exit 0

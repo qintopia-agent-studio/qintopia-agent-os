@@ -170,7 +170,10 @@
   plus `rev-parse --git-dir`, rejecting remotes, and normalizing the fixed repo
   owner/modes back to `/home/ubuntu` ownership with `0700` directories and `0600` files.
   Root deploy-runner Git operations should run as the fixed ubuntu user rather than
-  broadening Git trust or writing to a parent repository.
+  broadening Git trust or writing to a parent repository. If the fixed snapshot repo
+  exists but has no source-file changes and no `HEAD` commit, create an empty baseline
+  commit so `hermes-cron-snapshot` observation can prove the repo is initialized without
+  exposing snapshot contents.
 - Deploy-runner production one-shots run from the root service boundary. If a one-shot
   needs ubuntu user systemd, use fixed `/usr/sbin/runuser -u ubuntu` with
   `XDG_RUNTIME_DIR=/run/user/<ubuntu-uid>` and the matching user bus address; direct
@@ -554,7 +557,10 @@
   timers, retire cron files, accept multiple targets, or record raw worker output, live
   cron JSON, group ids, prompts, database URLs, tokens, person ids, reviewed profile
   payload content, Feishu payloads, QiWe payloads, message content, snapshot contents,
-  or journal logs.
+  or journal logs. Runtime one-shot entrypoints must emit a bounded
+  `qintopia_runtime_one_shot_safe_failure=` marker for every pre-worker failure as well
+  as worker failures; otherwise deploy results collapse to bare `exit 1` and production
+  troubleshooting loses the reviewed boundary.
 - Recurring Agent timers are moving back to Hermes cron as the source of truth (owner
   decision, 2026-08-10): live `jobs.json` under
   `/home/ubuntu/.hermes/profiles/<profile>/cron/` is conversation-editable and wins; the

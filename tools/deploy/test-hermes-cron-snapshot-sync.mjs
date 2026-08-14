@@ -333,6 +333,63 @@ exit 66
     throw new Error("snapshot sync wrote sensitive files into the parent git repo");
   }
 
+  const emptyHermesHome = path.join(homeDir, ".empty-hermes");
+  const emptySnapshotRoot = path.join(
+    homeDir,
+    ".local",
+    "state",
+    "qintopia-agentos",
+    "empty-hermes-cron-snapshot"
+  );
+  const emptyScriptPath = path.join(tmpRoot, "sync-empty-hermes-cron-snapshot.sh");
+  fs.mkdirSync(path.join(emptyHermesHome, "profiles"), { recursive: true });
+  const emptySource = fs
+    .readFileSync(sourceScript, "utf8")
+    .replace(
+      "    /home/ubuntu | /home/ubuntu/* | /usr/bin/* | /usr/sbin/*) ;;",
+      "    *) ;;"
+    )
+    .replaceAll(
+      "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot",
+      emptySnapshotRoot
+    )
+    .replaceAll("/home/ubuntu/.hermes", emptyHermesHome)
+    .replaceAll("/home/ubuntu", homeDir)
+    .replaceAll("/usr/bin/python3", commandPath("python3"))
+    .replaceAll("/usr/bin/git", commandPath("git"))
+    .replaceAll("/usr/bin/stat", fakeStat)
+    .replaceAll("/usr/bin/chmod", commandPath("chmod"))
+    .replaceAll("/usr/bin/chown", fakeChown)
+    .replaceAll("/usr/bin/find", commandPath("find"))
+    .replaceAll("/usr/sbin/runuser", fakeRunuser);
+  writeExecutable(emptyScriptPath, emptySource);
+
+  result = run("bash", [emptyScriptPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      QINTOPIA_HERMES_CRON_SNAPSHOT: "approved-production-hermes-cron-snapshot",
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `empty baseline snapshot sync failed\n${result.stdout}\n${result.stderr}`
+    );
+  }
+  if (!result.stdout.includes("snapshot_commit=created-empty-baseline")) {
+    throw new Error(`empty baseline commit evidence missing\n${result.stdout}`);
+  }
+  result = run(commandPath("git"), [
+    "-C",
+    emptySnapshotRoot,
+    "rev-list",
+    "--count",
+    "HEAD",
+  ]);
+  if (result.status !== 0 || result.stdout.trim() !== "1") {
+    throw new Error("empty baseline snapshot sync did not create exactly one commit");
+  }
+
   console.log("Hermes cron snapshot sync fixture passed.");
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

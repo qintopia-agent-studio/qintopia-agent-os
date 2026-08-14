@@ -3317,7 +3317,7 @@ if (exists(xiaomanDailyCaseReportBackfillPath)) {
     'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE="$BACKFILL_DATE"',
     'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL="$APPROVAL"',
     '"$WORKER" >"${tmp_dir}/worker-output.txt" 2>&1',
-    "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill worker failed",
+    "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill: ${reason}",
   ]) {
     requireFragment(xiaomanDailyCaseReportBackfillPath, backfill, fragment);
   }
