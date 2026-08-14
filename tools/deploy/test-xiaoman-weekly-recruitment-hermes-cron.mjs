@@ -30,7 +30,7 @@ const sourceDeclaration = path.join(
 
 const fixedCronFile = "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json";
 const fixedProfileEnv = "/home/ubuntu/.hermes/profiles/xiaoman/.env";
-const fixedScriptsDir = "/home/ubuntu/.hermes/scripts";
+const fixedScriptsDir = "/home/ubuntu/.hermes/profiles/xiaoman/scripts";
 const fixedReleaseCurrent = "/home/ubuntu/qintopia-agent-os-releases/current";
 const approval = "approved-production-xiaoman-weekly-recruitment-hermes-cron";
 
@@ -77,7 +77,7 @@ try {
   const cronDir = path.join(profileDir, "cron");
   const cronFile = path.join(cronDir, "jobs.json");
   const profileEnv = path.join(profileDir, ".env");
-  const scriptsDir = path.join(tmpRoot, "home/ubuntu/.hermes/scripts");
+  const scriptsDir = path.join(profileDir, "scripts");
   const releaseCurrent = path.join(tmpRoot, "release/current");
   const releaseWrapper = path.join(
     releaseCurrent,
@@ -86,7 +86,6 @@ try {
   const installedWrapper = path.join(scriptsDir, jobScript);
 
   fs.mkdirSync(cronDir, { recursive: true });
-  fs.mkdirSync(scriptsDir, { recursive: true });
   fs.mkdirSync(path.dirname(releaseWrapper), { recursive: true });
   fs.copyFileSync(sourceWrapper, releaseWrapper);
   fs.chmodSync(releaseWrapper, 0o755);
@@ -270,7 +269,7 @@ try {
   // A second install refreshes the reviewed wrapper and must not append twice.
   baselineSha = sha256(fs.readFileSync(cronFile));
   fs.writeFileSync(installedWrapper, "#!/usr/bin/env bash\necho old-wrapper\n", "utf8");
-  fs.chmodSync(installedWrapper, 0o700);
+  fs.chmodSync(installedWrapper, 0o600);
   result = runApproved(["--install"]);
   check(
     result.status === 0,
@@ -283,6 +282,7 @@ try {
       result.stdout.includes('"wrapper_installed":true') &&
       sha256(fs.readFileSync(cronFile)) === baselineSha &&
       listBackups(cronDir).length === 1 &&
+      modeOf(installedWrapper) === 0o700 &&
       fs.readFileSync(installedWrapper, "utf8") ===
         fs.readFileSync(releaseWrapper, "utf8"),
     "repeat install mutated the cron file or failed to refresh the wrapper"

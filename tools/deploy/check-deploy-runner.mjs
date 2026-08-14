@@ -2076,6 +2076,7 @@ const runnerReadWritePaths = runnerServiceText
   )
   .map(normalizeReadWritePathToken);
 const qintopiaAgentosStatePath = "/home/ubuntu/.local/state/qintopia-agentos";
+const ubuntuUserSystemdUnitPath = "/home/ubuntu/.config/systemd/user";
 const hermesCronSnapshotPath =
   "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot";
 const xiaomanCreativeProfileCandidatesPath =
@@ -2116,6 +2117,14 @@ if (
 }
 if (
   runnerServiceText &&
+  !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/erhua/scripts")
+) {
+  addError(
+    "deploy runner service must explicitly allow fixed Erhua profile-local Hermes wrapper installs"
+  );
+}
+if (
+  runnerServiceText &&
   !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/xiaoman/cron")
 ) {
   addError(
@@ -2124,10 +2133,23 @@ if (
 }
 if (
   runnerServiceText &&
+  !runnerReadWritePaths.includes("/home/ubuntu/.hermes/profiles/xiaoman/scripts")
+) {
+  addError(
+    "deploy runner service must explicitly allow fixed Xiaoman profile-local Hermes wrapper installs"
+  );
+}
+if (
+  runnerServiceText &&
   !runnerReadWritePaths.includes("/home/ubuntu/.hermes/scripts")
 ) {
   addError(
-    "deploy runner service must explicitly allow fixed Hermes cron wrapper installs"
+    "deploy runner service must explicitly allow fixed legacy/global Hermes helper compatibility"
+  );
+}
+if (runnerServiceText && !runnerReadWritePaths.includes(ubuntuUserSystemdUnitPath)) {
+  addError(
+    "deploy runner service must explicitly allow fixed ubuntu user systemd unit installs"
   );
 }
 if (runnerServiceText && !runnerReadWritePaths.includes(hermesCronSnapshotPath)) {
@@ -2660,19 +2682,34 @@ if (exists("deploy/runner/install-release-systemd-units.sh")) {
     "normalize_production_sidecar_env_metadata",
     'chown root:ubuntu "$env_file"',
     'chmod 0640 "$env_file"',
+    'ubuntu_user_systemd_unit_dir="/home/ubuntu/.config/systemd/user"',
+    'erhua_profile_scripts_dir="/home/ubuntu/.hermes/profiles/erhua/scripts"',
+    'xiaoman_profile_scripts_dir="/home/ubuntu/.hermes/profiles/xiaoman/scripts"',
     'hermes_cron_snapshot_root="/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"',
-    "prepare_hermes_cron_snapshot_root",
+    "prepare_ubuntu_owned_directory",
     "flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC",
     "os.O_NOFOLLOW",
     'current_fd = os.open("/", flags)',
     "next_fd = os.open(segment, flags, dir_fd=current_fd)",
-    "os.mkdir(segment, 0o700 if is_snapshot_root else 0o755, dir_fd=current_fd)",
-    "Hermes cron snapshot path components must be non-symlink directories",
-    "os.fchown(snapshot_fd, ubuntu_uid, ubuntu_gid)",
-    "os.fchmod(snapshot_fd, 0o700)",
+    "os.mkdir(segment, leaf_mode if is_target else 0o755, dir_fd=current_fd)",
+    "path components must be non-symlink directories",
+    "os.fchown(target_fd, ubuntu_uid, ubuntu_gid)",
+    "os.fchmod(target_fd, leaf_mode)",
     'pwd.getpwnam("ubuntu")',
     'grp.getgrnam("ubuntu")',
-    'prepare_hermes_cron_snapshot_root "$hermes_cron_snapshot_root"',
+    "prepare_ubuntu_owned_directory \\",
+    '"$ubuntu_user_systemd_unit_dir"',
+    '"/home/ubuntu/.config/systemd/user"',
+    '"ubuntu user systemd unit directory"',
+    '"$erhua_profile_scripts_dir"',
+    '"/home/ubuntu/.hermes/profiles/erhua/scripts"',
+    '"Erhua profile-local Hermes scripts directory"',
+    '"$xiaoman_profile_scripts_dir"',
+    '"/home/ubuntu/.hermes/profiles/xiaoman/scripts"',
+    '"Xiaoman profile-local Hermes scripts directory"',
+    '"$hermes_cron_snapshot_root"',
+    '"/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"',
+    '"Hermes cron snapshot root"',
   ]) {
     if (!installer.includes(fragment)) {
       addError(`release systemd installer is missing ${fragment}`);

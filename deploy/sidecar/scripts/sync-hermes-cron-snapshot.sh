@@ -107,6 +107,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -128,6 +129,13 @@ def sha256(path: Path) -> str:
 
 
 EXCLUDED_DIR_NAMES = {"__pycache__", "output"}
+REVIEWED_PROFILE_SCRIPTS = {
+    ("erhua", "qintopia_erhua_morning_brief.sh"),
+    ("xiaoman", "qintopia_xiaoman_daily_case_report.sh"),
+    ("xiaoman", "qintopia_xiaoman_weekly_plan_confirmation.sh"),
+    ("xiaoman", "qintopia_xiaoman_weekly_preview.sh"),
+    ("xiaoman", "qintopia_xiaoman_weekly_recruitment.sh"),
+}
 
 
 def excluded(path: Path) -> bool:
@@ -137,15 +145,53 @@ def excluded(path: Path) -> bool:
     return any(part in EXCLUDED_DIR_NAMES for part in path.parts)
 
 
+def is_regular_file_no_symlink(path: Path) -> bool:
+    try:
+        return stat.S_ISREG(path.lstat().st_mode)
+    except FileNotFoundError:
+        return False
+
+
+def ensure_directory_no_symlink(path: Path) -> None:
+    if path == snapshot_root:
+        return
+    ensure_directory_no_symlink(path.parent)
+    if path.exists() or path.is_symlink():
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            return
+        if not stat.S_ISDIR(mode):
+            rel = path.relative_to(snapshot_root)
+            fail(f"snapshot destination is not a directory: {rel}")
+        return
+    path.mkdir(mode=0o700)
+
+
+def prepare_dest_file(path: Path) -> None:
+    ensure_directory_no_symlink(path.parent)
+    if path.exists() or path.is_symlink():
+        if not is_regular_file_no_symlink(path):
+            path.unlink()
+
+
 def source_files():
     profiles_dir = hermes_home / "profiles"
     for jobs_file in sorted(profiles_dir.glob("*/cron/jobs.json")):
+        if not is_regular_file_no_symlink(jobs_file):
+            continue
         profile = jobs_file.parent.parent.name
         yield jobs_file, Path("profiles") / profile / "cron" / "jobs.json"
+    for script_file in sorted(profiles_dir.glob("*/scripts/*")):
+        if is_regular_file_no_symlink(script_file):
+            profile = script_file.parent.parent.name
+            if (profile, script_file.name) in REVIEWED_PROFILE_SCRIPTS:
+                script_rel = script_file.relative_to(script_file.parent)
+                yield script_file, Path("profiles") / profile / "scripts" / script_rel
     scripts_dir = hermes_home / "scripts"
     if scripts_dir.is_dir():
         for entry in sorted(scripts_dir.rglob("*")):
-            if entry.is_file() and not excluded(entry.relative_to(scripts_dir)):
+            if is_regular_file_no_symlink(entry) and not excluded(entry.relative_to(scripts_dir)):
                 yield entry, Path("scripts") / entry.relative_to(scripts_dir)
 
 
@@ -154,21 +200,22 @@ seen = set()
 for src, rel in source_files():
     seen.add(str(rel))
     dest = snapshot_root / rel
-    if dest.is_file() and sha256(dest) == sha256(src):
+    if is_regular_file_no_symlink(dest) and sha256(dest) == sha256(src):
         continue
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    prepare_dest_file(dest)
     shutil.copyfile(src, dest)
     dest.chmod(0o600)
     copied += 1
 
 removed = 0
 for existing in sorted(snapshot_root.rglob("*")):
-    if not existing.is_file() or ".git" in existing.parts:
+    if ".git" in existing.parts:
         continue
     rel = existing.relative_to(snapshot_root)
     if rel.parts[0] in {"profiles", "scripts"} and str(rel) not in seen:
-        existing.unlink()
-        removed += 1
+        if existing.is_symlink() or is_regular_file_no_symlink(existing):
+            existing.unlink()
+            removed += 1
 
 print(f"snapshot_files_copied={copied} snapshot_files_removed={removed}")
 PY

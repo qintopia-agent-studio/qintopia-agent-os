@@ -31,6 +31,11 @@ const forbidFragment = (relativePath, text, fragment) => {
     addError(`${relativePath}: must not include ${fragment}`);
   }
 };
+const forbidPattern = (relativePath, text, pattern, description) => {
+  if (pattern.test(text)) {
+    addError(`${relativePath}: must not include ${description}`);
+  }
+};
 const requireExecutable = (relativePath) => {
   if (!exists(relativePath)) {
     addError(`${relativePath}: missing executable file`);
@@ -3201,7 +3206,6 @@ if (exists(xiaomanDailyCaseReportConfigApplyPath)) {
     requireFragment(xiaomanDailyCaseReportConfigApplyPath, configApply, fragment);
   }
   for (const fragment of [
-    "source ",
     "eval ",
     "QIWE_TOKEN",
     "QIWE_GUID",
@@ -3209,6 +3213,12 @@ if (exists(xiaomanDailyCaseReportConfigApplyPath)) {
   ]) {
     forbidFragment(xiaomanDailyCaseReportConfigApplyPath, configApply, fragment);
   }
+  forbidPattern(
+    xiaomanDailyCaseReportConfigApplyPath,
+    configApply,
+    /(^|[;&|({]\s*)source\s+/m,
+    "source command"
+  );
 }
 if (exists(xiaomanCreativeProfileCandidatesApplyPath)) {
   const applyCreativeProfiles = readText(xiaomanCreativeProfileCandidatesApplyPath);
@@ -3419,10 +3429,13 @@ if (!exists(xiaomanDailyCaseReportHermesCronApplyPath)) {
     'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
     'CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"',
     'PROFILE_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
+    'HERMES_SCRIPTS_DIR="/home/ubuntu/.hermes/profiles/xiaoman/scripts"',
     'WRAPPER_TARGET="${HERMES_SCRIPTS_DIR}/qintopia_xiaoman_daily_case_report.sh"',
     'SNAPSHOT_SYNC="${RELEASE_CURRENT}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
     "WECOM_HOME_CHANNEL",
     "origin_chat_id_resolved",
+    "install_wrapper(entry_stat)",
+    "safe_chown(str(hermes_scripts_dir), entry_stat.st_uid, entry_stat.st_gid)",
     "verify_installed_wrapper",
     "atomic_replace",
     "external_calls_executed",
@@ -3670,19 +3683,20 @@ if (!exists(xiaomanPlanConfirmationHermesCronApplyPath)) {
     'RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
     'CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"',
     'PROFILE_ENV="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
-    'WRAPPER_DEST="/home/ubuntu/.hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh"',
+    'WRAPPER_DEST="/home/ubuntu/.hermes/profiles/xiaoman/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh"',
     'SNAPSHOT_SYNC="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
     "WECOM_HOME_CHANNEL",
     "origin_chat_id_sha256",
+    "install_wrapper",
+    "wrapper_updated",
+    "safe_chown(str(wrapper_dir), uid, gid)",
     "os.replace(temp_name, cron_file)",
     "external_calls_executed",
     "safe_for_chat",
-    'chmod 0700 "$WRAPPER_DEST"',
   ]) {
     requireFragment(xiaomanPlanConfirmationHermesCronApplyPath, apply, fragment);
   }
   for (const fragment of [
-    "source ",
     "eval ",
     "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON_FILE",
     "QINTOPIA_XIAOMAN_WEEKLY_PLAN_CONFIRMATION_HERMES_CRON_PROFILE_DIR",
@@ -3692,6 +3706,12 @@ if (!exists(xiaomanPlanConfirmationHermesCronApplyPath)) {
   ]) {
     forbidFragment(xiaomanPlanConfirmationHermesCronApplyPath, apply, fragment);
   }
+  forbidPattern(
+    xiaomanPlanConfirmationHermesCronApplyPath,
+    apply,
+    /(^|[;&|({]\s*)source\s+/m,
+    "source command"
+  );
 }
 const deployBundleBuilderForWeeklyLoop = readText(
   "tools/deploy/build-deploy-bundle.mjs"
@@ -3762,20 +3782,21 @@ if (!exists(erhuaMorningBriefHermesCronApplyPath)) {
     'RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
     'CRON_FILE="/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json"',
     'PROFILE_ENV="/home/ubuntu/.hermes/profiles/erhua/.env"',
-    'WRAPPER_DEST="/home/ubuntu/.hermes/scripts/qintopia_erhua_morning_brief.sh"',
+    'WRAPPER_DEST="/home/ubuntu/.hermes/profiles/erhua/scripts/qintopia_erhua_morning_brief.sh"',
     'SNAPSHOT_SYNC="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
     "WECOM_HOME_CHANNEL",
     "origin_chat_id_sha256",
     "updated_at_preserved",
+    "install_wrapper",
+    "wrapper_updated",
+    "safe_chown(str(wrapper_dir), uid, gid)",
     "os.replace(temp_name, cron_file)",
     "external_calls_executed",
     "safe_for_chat",
-    'chmod 0700 "$WRAPPER_DEST"',
   ]) {
     requireFragment(erhuaMorningBriefHermesCronApplyPath, apply, fragment);
   }
   for (const fragment of [
-    "source ",
     "eval ",
     "QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON_FILE",
     "QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON_PROFILE_DIR",
@@ -3785,6 +3806,12 @@ if (!exists(erhuaMorningBriefHermesCronApplyPath)) {
   ]) {
     forbidFragment(erhuaMorningBriefHermesCronApplyPath, apply, fragment);
   }
+  forbidPattern(
+    erhuaMorningBriefHermesCronApplyPath,
+    apply,
+    /(^|[;&|({]\s*)source\s+/m,
+    "source command"
+  );
 }
 const deployBundleBuilderForErhuaMorningBrief = readText(
   "tools/deploy/build-deploy-bundle.mjs"
@@ -4064,10 +4091,13 @@ if (!exists(xiaomanWeeklyPreviewHermesCronApplyPath)) {
     'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
     'CRON_FILE="/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json"',
     'PROFILE_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
+    'HERMES_SCRIPTS_DIR="/home/ubuntu/.hermes/profiles/xiaoman/scripts"',
     'WRAPPER_TARGET="${HERMES_SCRIPTS_DIR}/qintopia_xiaoman_weekly_preview.sh"',
     'SNAPSHOT_SYNC="${RELEASE_CURRENT}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"',
     "WECOM_HOME_CHANNEL",
     "origin_chat_id_resolved",
+    "install_wrapper(entry_stat)",
+    "safe_chown(str(hermes_scripts_dir), entry_stat.st_uid, entry_stat.st_gid)",
     "verify_installed_wrapper",
     "atomic_replace",
     "external_calls_executed",
@@ -6535,7 +6565,7 @@ for (const hermesCronApplyScript of hermesCronApplyScripts) {
     'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
     'PYTHON_BIN="/usr/bin/python3"',
     "/home/ubuntu/qintopia-agent-os-releases/current",
-    "/home/ubuntu/.hermes/scripts",
+    "/home/ubuntu/.hermes/profiles/",
     "sync-hermes-cron-snapshot.sh",
     "QINTOPIA_HERMES_CRON_SNAPSHOT",
     "approved-production-hermes-cron-snapshot",
@@ -6562,6 +6592,12 @@ for (const hermesCronApplyScript of hermesCronApplyScripts) {
   ]) {
     forbidFragment(hermesCronApplyScript, apply, fragment);
   }
+  forbidPattern(
+    hermesCronApplyScript,
+    apply,
+    /(^|[;&|({]\s*)source\s+/m,
+    "source command"
+  );
 }
 
 const hermesCronSnapshotSyncScript =
@@ -6577,6 +6613,16 @@ if (exists(hermesCronSnapshotSyncScript)) {
     'PATH="/usr/bin:/bin"',
     "/home/ubuntu | /home/ubuntu/* | /usr/bin/* | /usr/sbin/*",
     "normalize_snapshot_permissions",
+    "import stat",
+    "REVIEWED_PROFILE_SCRIPTS",
+    "lstat().st_mode",
+    "stat.S_ISREG",
+    "ensure_directory_no_symlink",
+    "stat.S_ISDIR",
+    'profiles_dir.glob("*/scripts/*")',
+    "(profile, script_file.name) in REVIEWED_PROFILE_SCRIPTS",
+    'Path("profiles") / profile / "scripts"',
+    "path.is_symlink()",
     '-c "%u"',
     '-c "%g"',
     "chown",

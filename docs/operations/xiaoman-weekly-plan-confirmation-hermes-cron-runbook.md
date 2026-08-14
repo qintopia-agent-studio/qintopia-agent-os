@@ -62,7 +62,7 @@ mutable `release/current` symlink path.
 2. Manually run the wrapper once:
 
    ```bash
-   /home/ubuntu/.hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh
+   /home/ubuntu/.hermes/profiles/xiaoman/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh
    ```
 
    Compare `latest-operator-review-message.txt` and `latest-summary.json` under

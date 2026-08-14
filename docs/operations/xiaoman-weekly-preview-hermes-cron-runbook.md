@@ -84,9 +84,9 @@ QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_HERMES_CRON=approved-production-xiaoman-weekly-p
 ```
 
 The script resolves the origin chat id from the Xiaoman profile env without printing it,
-installs the wrapper into `/home/ubuntu/.hermes/scripts/` at mode `0700`, backs up
-`jobs.json`, and inserts the job with `enabled: false` through an atomic replace that
-keeps mode `0600 ubuntu:ubuntu`.
+installs the wrapper into `/home/ubuntu/.hermes/profiles/xiaoman/scripts/` at mode
+`0700`, backs up `jobs.json`, and inserts the job with `enabled: false` through an
+atomic replace that keeps mode `0600 ubuntu:ubuntu`.
 
 Expect `"status":"weekly_preview_hermes_cron_installed"`, `"job_enabled":false`,
 `"backup_created":true`, and `xiaoman_weekly_preview_hermes_cron_snapshot_sync_ok=true`.
@@ -95,7 +95,7 @@ A disabled job never fires, so this step is safe at any time.
 ## Step 2 - Run the wrapper once and compare artifacts
 
 ```bash
-/home/ubuntu/.hermes/scripts/qintopia_xiaoman_weekly_preview.sh
+/home/ubuntu/.hermes/profiles/xiaoman/scripts/qintopia_xiaoman_weekly_preview.sh
 echo "exit=$?"
 ```
 

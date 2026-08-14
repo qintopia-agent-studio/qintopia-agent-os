@@ -215,10 +215,19 @@ The target server currently has:
 - root `python3` with PyYAML
 - runner `ReadWritePaths` access to `/home/ubuntu/.hermes/profiles/erhua`
 - runner `ReadWritePaths` access to the fixed
+  `/home/ubuntu/.hermes/profiles/erhua/scripts` directory for reviewed profile-local
+  Erhua Hermes wrapper installs only
+- runner `ReadWritePaths` access to the fixed
   `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory for reviewed Xiaoman legacy
   cron retirement and Hermes cron apply only
-- runner `ReadWritePaths` access to `/home/ubuntu/.hermes/scripts` for reviewed Hermes
-  cron wrapper installs
+- runner `ReadWritePaths` access to the fixed
+  `/home/ubuntu/.hermes/profiles/xiaoman/scripts` directory for reviewed profile-local
+  Xiaoman Hermes wrapper installs only
+- runner `ReadWritePaths` access to `/home/ubuntu/.hermes/scripts` only for reviewed
+  legacy/global Hermes helper compatibility; no-agent cron wrappers install into the
+  profile-local `scripts` directory
+- runner `ReadWritePaths` access to `/home/ubuntu/.config/systemd/user` for the reviewed
+  Hermes cron snapshot user timer install only
 - runner `ReadWritePaths` access to the fixed
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` repo for reviewed
   Hermes cron apply snapshot sync only

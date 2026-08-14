@@ -54,6 +54,9 @@ try {
   fs.mkdirSync(path.join(hermesHome, "profiles", "erhua", "cron"), {
     recursive: true,
   });
+  fs.mkdirSync(path.join(hermesHome, "profiles", "erhua", "scripts"), {
+    recursive: true,
+  });
   fs.mkdirSync(path.join(hermesHome, "scripts"), { recursive: true });
   fs.writeFileSync(
     path.join(hermesHome, "profiles", "erhua", "cron", "jobs.json"),
@@ -61,9 +64,41 @@ try {
     "utf8"
   );
   fs.writeFileSync(
+    path.join(
+      hermesHome,
+      "profiles",
+      "erhua",
+      "scripts",
+      "qintopia_erhua_morning_brief.sh"
+    ),
+    "#!/usr/bin/env bash\nexit 0\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(hermesHome, "profiles", "erhua", "scripts", "unreviewed.sh"),
+    "#!/usr/bin/env bash\nexit 0\n",
+    "utf8"
+  );
+  fs.writeFileSync(
     path.join(hermesHome, "scripts", "qintopia_fixture.sh"),
     "#!/usr/bin/env bash\nexit 0\n",
     "utf8"
+  );
+  const secretSource = path.join(tmpRoot, "message-sidecar.env");
+  fs.writeFileSync(secretSource, "QIWE_TOKEN=must-not-enter-snapshot\n", "utf8");
+  fs.symlinkSync(
+    secretSource,
+    path.join(
+      hermesHome,
+      "profiles",
+      "erhua",
+      "scripts",
+      "qintopia_erhua_morning_brief_symlink.sh"
+    )
+  );
+  fs.symlinkSync(
+    secretSource,
+    path.join(hermesHome, "scripts", "qintopia_fixture_symlink.sh")
   );
 
   fs.mkdirSync(snapshotRoot, { recursive: true });
@@ -159,7 +194,7 @@ exit 66
     throw new Error(`snapshot sync failed\n${result.stdout}\n${result.stderr}`);
   }
   if (
-    !result.stdout.includes("snapshot_files_copied=2 snapshot_files_removed=0") ||
+    !result.stdout.includes("snapshot_files_copied=3 snapshot_files_removed=0") ||
     !result.stdout.includes("snapshot_commit=created")
   ) {
     throw new Error(`snapshot sync evidence incomplete\n${result.stdout}`);
@@ -181,9 +216,36 @@ exit 66
     modeOf(snapshotRoot) !== 0o700 ||
     modeOf(path.join(snapshotRoot, ".git")) !== 0o700 ||
     modeOf(path.join(snapshotRoot, "profiles")) !== 0o700 ||
-    modeOf(path.join(snapshotRoot, "profiles", "erhua", "cron", "jobs.json")) !== 0o600
+    modeOf(path.join(snapshotRoot, "profiles", "erhua", "cron", "jobs.json")) !==
+      0o600 ||
+    modeOf(
+      path.join(
+        snapshotRoot,
+        "profiles",
+        "erhua",
+        "scripts",
+        "qintopia_erhua_morning_brief.sh"
+      )
+    ) !== 0o600
   ) {
     throw new Error("snapshot sync did not normalize repo permissions");
+  }
+  if (
+    fs.existsSync(
+      path.join(snapshotRoot, "profiles", "erhua", "scripts", "unreviewed.sh")
+    ) ||
+    fs.existsSync(
+      path.join(
+        snapshotRoot,
+        "profiles",
+        "erhua",
+        "scripts",
+        "qintopia_erhua_morning_brief_symlink.sh"
+      )
+    ) ||
+    fs.existsSync(path.join(snapshotRoot, "scripts", "qintopia_fixture_symlink.sh"))
+  ) {
+    throw new Error("snapshot sync copied unreviewed files or symlinks");
   }
 
   result = run("bash", [scriptPath], {
@@ -199,6 +261,58 @@ exit 66
   }
   if (!result.stdout.includes("snapshot_commit=skipped-no-changes")) {
     throw new Error("idempotent snapshot sync did not skip unchanged state");
+  }
+  const snapshotWrapperPath = path.join(
+    snapshotRoot,
+    "profiles",
+    "erhua",
+    "scripts",
+    "qintopia_erhua_morning_brief.sh"
+  );
+  fs.unlinkSync(snapshotWrapperPath);
+  fs.symlinkSync(secretSource, snapshotWrapperPath);
+  result = run("bash", [scriptPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `snapshot sync failed to replace a destination symlink\n${result.stdout}\n${result.stderr}`
+    );
+  }
+  if (
+    fs.lstatSync(snapshotWrapperPath).isSymbolicLink() ||
+    fs.readFileSync(snapshotWrapperPath, "utf8").includes("QIWE_TOKEN") ||
+    fs.readFileSync(secretSource, "utf8") !== "QIWE_TOKEN=must-not-enter-snapshot\n"
+  ) {
+    throw new Error("snapshot sync followed or preserved a destination symlink");
+  }
+  const staleSnapshotSymlink = path.join(
+    snapshotRoot,
+    "profiles",
+    "erhua",
+    "scripts",
+    "stale-symlink.sh"
+  );
+  fs.symlinkSync(path.join(tmpRoot, "missing-secret.env"), staleSnapshotSymlink);
+  result = run("bash", [scriptPath], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `snapshot sync failed to remove a stale symlink\n${result.stdout}\n${result.stderr}`
+    );
+  }
+  if (
+    fs.existsSync(staleSnapshotSymlink) ||
+    fs.lstatSync(path.dirname(staleSnapshotSymlink)).isSymbolicLink()
+  ) {
+    throw new Error("snapshot sync did not remove a stale symlink");
   }
   result = run(commandPath("git"), [
     "-C",
