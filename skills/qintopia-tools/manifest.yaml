@@ -30,6 +30,7 @@ dependencies:
   - runtime/hermes
   - mcp/context-server
   - skills/qintopia-weather
+  - skills/erhua-csv
   - skills/knowledge-retrieval
   - skills/xiaoman-activity
 tags:
@@ -42,6 +43,8 @@ next_actions:
     explicit profile overlays.
   - Keep weather behavior in skills/qintopia-weather; qintopia-tools should only expose
     the legacy Hermes registration shell for qintopia_weather_lookup.
+  - Keep Erhua CSV storage behavior in skills/erhua-csv; qintopia-tools should only
+    expose the four stable qintopia_erhua_csv_* registrations.
   - Keep WenYuanGe/Dify retrieval behavior in skills/knowledge-retrieval; qintopia-tools
     should only expose stable Hermes tool registration for those tool names.
   - Keep new Xiaoman activity behavior in skills/xiaoman-activity; qintopia-tools should

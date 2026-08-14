@@ -68,6 +68,11 @@ assertSuccess(
   ["hermes-erhua"]
 );
 assertSuccess(
+  "erhua-csv-skill",
+  ["skills/erhua-csv/__init__.py", "skills/erhua-csv/manifest.yaml"],
+  ["hermes-erhua"]
+);
+assertSuccess(
   "qintopia-tools-manifest-metadata",
   ["skills/qintopia-tools/manifest.yaml"],
   []

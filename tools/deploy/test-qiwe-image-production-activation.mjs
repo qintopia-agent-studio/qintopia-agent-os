@@ -74,6 +74,15 @@ try {
   ) {
     throw new Error("activation must use the fixed sha256sum path");
   }
+  const activationSource = fs.readFileSync(activationScript, "utf8");
+  if (
+    activationSource.includes('"$(" in value') ||
+    activationSource.includes('"`" in value')
+  ) {
+    throw new Error(
+      "activation must avoid shell substitution tokens inside a command-substitution heredoc"
+    );
+  }
   if (
     !fs
       .readFileSync(activationScript, "utf8")

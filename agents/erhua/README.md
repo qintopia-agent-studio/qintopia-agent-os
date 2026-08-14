@@ -14,6 +14,8 @@ controlled handoff, and trainer memory submission through audited backend paths.
 - Escalate availability, booking, refund, compensation, policy, complaint, and uncertain
   operational questions to a human owner or live-ops path.
 - Submit trainer notes through the audited Erhua training-memory path when allowed.
+- Create and append typed, auditable CSV records only within the current QiWe group; use
+  the ledger preset for bookkeeping and reversal events.
 
 ## Boundaries
 
@@ -24,6 +26,8 @@ controlled handoff, and trainer memory submission through audited backend paths.
 - Must not guess a member identity when context is missing or ambiguous.
 - Must not directly read unrestricted message stores or Feishu documents.
 - Must not send direct messages unless the channel policy and contact guard allow it.
+- Must not expose native file tools, read another group's CSVs, rewrite history, or use
+  group CSVs for secrets and highly sensitive personal data.
 
 ## Runtime Source
 
@@ -47,6 +51,7 @@ are inventoried and a separate reviewed profile cutover supplies rollback eviden
 
 ```bash
 pnpm test:qiwe
+pnpm skills:erhua-csv:check
 pnpm runtime:hermes:check
 pnpm agents:profile-bundles:check
 pnpm registry:check

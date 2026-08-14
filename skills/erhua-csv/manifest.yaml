@@ -1,0 +1,35 @@
+id: skills/erhua-csv
+type: skill
+name: Erhua Group CSV Workspace
+owner: Qintopia
+status: adopting
+risk_level: high
+description:
+  Append-only, group-isolated conversational CSV datasets and ledger records for Erhua
+  QiWe group chats.
+source:
+  path: skills/erhua-csv/__init__.py
+  reference: erhua-group-csv-workspace-v1
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: false
+validation:
+  commands:
+    - pnpm skills:erhua-csv:check
+    - pnpm skills:qintopia-tools:check
+    - pnpm test:qiwe
+    - pnpm registry:check
+dependencies: []
+tags:
+  - skill
+  - erhua
+  - qiwe
+  - csv
+  - append-only
+  - group-isolation
+next_actions:
+  - Publish a reviewed Release and restart hermes-erhua through release/current.
+  - Use the first real group bookkeeping entry as business acceptance evidence.
