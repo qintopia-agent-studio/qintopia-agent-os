@@ -247,11 +247,51 @@ def _erhua_csv_plugin():
     return _ERHUA_CSV_PLUGIN
 
 
+_ERHUA_CSV_FALLBACK_SCHEMAS = {
+    "QINTOPIA_ERHUA_CSV_LIST_SCHEMA": (
+        "qintopia_erhua_csv_list",
+        "List append-only CSV datasets visible to the current QiWe group.",
+    ),
+    "QINTOPIA_ERHUA_CSV_CREATE_SCHEMA": (
+        "qintopia_erhua_csv_create",
+        "Create a custom or ledger CSV for the current QiWe group.",
+    ),
+    "QINTOPIA_ERHUA_CSV_APPEND_SCHEMA": (
+        "qintopia_erhua_csv_append",
+        "Append one auditable row to a current-group CSV.",
+    ),
+    "QINTOPIA_ERHUA_CSV_QUERY_SCHEMA": (
+        "qintopia_erhua_csv_query",
+        "Query the current group's logical CSV across all schema versions.",
+    ),
+}
+
+
+def _erhua_csv_schema(schema_name: str) -> dict[str, Any]:
+    try:
+        return getattr(_erhua_csv_plugin(), schema_name)
+    except Exception:
+        tool_name, description = _ERHUA_CSV_FALLBACK_SCHEMAS[schema_name]
+        return {
+            "description": (
+                f"{description} Disabled until the Erhua CSV runtime package is "
+                "available."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": True,
+            },
+            "x-qintopia-runtime-disabled": True,
+            "x-qintopia-tool-name": tool_name,
+        }
+
+
 QINTOPIA_WEATHER_LOOKUP_SCHEMA = _qintopia_weather_plugin().QINTOPIA_WEATHER_LOOKUP_SCHEMA
-QINTOPIA_ERHUA_CSV_LIST_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_LIST_SCHEMA
-QINTOPIA_ERHUA_CSV_CREATE_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_CREATE_SCHEMA
-QINTOPIA_ERHUA_CSV_APPEND_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_APPEND_SCHEMA
-QINTOPIA_ERHUA_CSV_QUERY_SCHEMA = _erhua_csv_plugin().QINTOPIA_ERHUA_CSV_QUERY_SCHEMA
+QINTOPIA_ERHUA_CSV_LIST_SCHEMA = _erhua_csv_schema("QINTOPIA_ERHUA_CSV_LIST_SCHEMA")
+QINTOPIA_ERHUA_CSV_CREATE_SCHEMA = _erhua_csv_schema("QINTOPIA_ERHUA_CSV_CREATE_SCHEMA")
+QINTOPIA_ERHUA_CSV_APPEND_SCHEMA = _erhua_csv_schema("QINTOPIA_ERHUA_CSV_APPEND_SCHEMA")
+QINTOPIA_ERHUA_CSV_QUERY_SCHEMA = _erhua_csv_schema("QINTOPIA_ERHUA_CSV_QUERY_SCHEMA")
 QINTOPIA_KB_SEARCH_SCHEMA = {
     "description": (
         "Search Qintopia approved knowledge snapshot indexes. Defaults to "
@@ -2496,20 +2536,33 @@ def handle_qintopia_weather_lookup(args: dict[str, Any], **_: Any) -> str:
     return _qintopia_weather_plugin().handle_qintopia_weather_lookup(args)
 
 
+def _delegate_erhua_csv(handler_name: str, args: dict[str, Any]) -> str:
+    try:
+        return getattr(_erhua_csv_plugin(), handler_name)(args)
+    except Exception:
+        return _json(
+            {
+                "success": False,
+                "safe_answer_mode": "runtime_package_missing",
+                "error": "Erhua CSV runtime package unavailable",
+            }
+        )
+
+
 def handle_qintopia_erhua_csv_list(args: dict[str, Any], **_: Any) -> str:
-    return _erhua_csv_plugin().handle_qintopia_erhua_csv_list(args)
+    return _delegate_erhua_csv("handle_qintopia_erhua_csv_list", args)
 
 
 def handle_qintopia_erhua_csv_create(args: dict[str, Any], **_: Any) -> str:
-    return _erhua_csv_plugin().handle_qintopia_erhua_csv_create(args)
+    return _delegate_erhua_csv("handle_qintopia_erhua_csv_create", args)
 
 
 def handle_qintopia_erhua_csv_append(args: dict[str, Any], **_: Any) -> str:
-    return _erhua_csv_plugin().handle_qintopia_erhua_csv_append(args)
+    return _delegate_erhua_csv("handle_qintopia_erhua_csv_append", args)
 
 
 def handle_qintopia_erhua_csv_query(args: dict[str, Any], **_: Any) -> str:
-    return _erhua_csv_plugin().handle_qintopia_erhua_csv_query(args)
+    return _delegate_erhua_csv("handle_qintopia_erhua_csv_query", args)
 
 
 def handle_qintopia_kb_search(args: dict[str, Any], **_: Any) -> str:
@@ -2789,7 +2842,10 @@ def check_weather_lookup_requirements() -> bool:
 
 
 def check_erhua_csv_requirements() -> bool:
-    return bool(_erhua_csv_plugin().check_erhua_csv_requirements())
+    try:
+        return bool(_erhua_csv_plugin().check_erhua_csv_requirements())
+    except Exception:
+        return False
 
 
 def check_xiaoman_activity_requirements() -> bool:

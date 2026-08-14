@@ -314,6 +314,98 @@ if "qintopia_complaint_intake_create" in ctx.tools:
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
   }
+
+  if (variant === "erhua") {
+    let missingCsvRoot;
+    try {
+      missingCsvRoot = fs.mkdtempSync(
+        path.join(os.tmpdir(), "qintopia-tools-erhua-missing-csv-")
+      );
+      const pluginsDir = path.join(missingCsvRoot, "plugins");
+      fs.mkdirSync(path.join(pluginsDir, "qintopia-tools"), { recursive: true });
+      fs.copyFileSync(
+        path.join(repoRoot, variantPath),
+        path.join(pluginsDir, "qintopia-tools", "__init__.py")
+      );
+      fs.cpSync(
+        path.join(repoRoot, "skills/qintopia-weather"),
+        path.join(pluginsDir, "qintopia-weather"),
+        { recursive: true }
+      );
+      fs.cpSync(
+        path.join(repoRoot, "skills/knowledge-retrieval"),
+        path.join(pluginsDir, "knowledge-retrieval"),
+        { recursive: true }
+      );
+
+      execFileSync(
+        "python3",
+        [
+          "-c",
+          `
+import importlib.util
+import json
+import pathlib
+
+plugin_path = pathlib.Path("${missingCsvRoot}/plugins/qintopia-tools/__init__.py").resolve()
+spec = importlib.util.spec_from_file_location("qintopia_tools_missing_erhua_csv", plugin_path)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+class Ctx:
+    def __init__(self):
+        self.tools = {}
+
+    def register_tool(self, **kwargs):
+        assert kwargs.get("name")
+        assert kwargs.get("schema") is not None
+        assert callable(kwargs.get("handler"))
+        self.tools[kwargs["name"]] = kwargs
+
+    def register_hook(self, name, callback):
+        pass
+
+ctx = Ctx()
+module.register(ctx)
+schema = ctx.tools["qintopia_erhua_csv_list"]["schema"]
+assert schema.get("x-qintopia-runtime-disabled") is True, schema
+schema_text = json.dumps(schema, ensure_ascii=False)
+for item in ["${missingCsvRoot}", "Checked paths", "Load error", "/skills/", "/plugins/", "QINTOPIA_AGENT_OS"]:
+    assert item not in schema_text, schema_text
+assert ctx.tools["qintopia_erhua_csv_list"]["check_fn"]() is False
+payload = json.loads(ctx.tools["qintopia_erhua_csv_list"]["handler"]({}))
+assert payload == {
+    "success": False,
+    "safe_answer_mode": "runtime_package_missing",
+    "error": "Erhua CSV runtime package unavailable",
+}
+`,
+        ],
+        {
+          cwd: missingCsvRoot,
+          env: {
+            ...process.env,
+            PYTHONDONTWRITEBYTECODE: "1",
+            QINTOPIA_PROFILE_ID: variant,
+            QINTOPIA_DIFY_RAW_TOOLS_ENABLE: "",
+            QINTOPIA_MESSAGE_STORE_ENABLE: "",
+            QINTOPIA_AGENT_OS_SKILLS_DIR: "",
+            QINTOPIA_AGENT_OS_RELEASE_DIR: "",
+            QINTOPIA_AGENT_OS_MONOREPO_DIR: "",
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        }
+      );
+    } catch (error) {
+      errors.push(
+        `missing Erhua CSV smoke failed: ${error.stderr?.toString() ?? error}`
+      );
+    } finally {
+      if (missingCsvRoot) {
+        fs.rmSync(missingCsvRoot, { recursive: true, force: true });
+      }
+    }
+  }
 }
 
 for (const file of walk(packageRoot)) {
