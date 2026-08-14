@@ -3306,15 +3306,18 @@ if (exists(xiaomanDailyCaseReportBackfillPath)) {
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE",
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
-    'SYSTEMCTL="/usr/bin/systemctl"',
-    "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
-    'require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "1"',
+    'WORKER="${RELEASE_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"',
+    'require_env_line_any "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "0|1"',
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL",
     'require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE" "1"',
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
-    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE=${BACKFILL_DATE}",
-    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL=${APPROVAL}",
-    '"$SYSTEMCTL" start "$SERVICE_NAME"',
+    'export QINTOPIA_DEPLOYED_COMMIT_SHA="$EXPECTED_RELEASE_SHA"',
+    'export QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA="$EXPECTED_RELEASE_SHA"',
+    "export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1",
+    'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE="$BACKFILL_DATE"',
+    'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL="$APPROVAL"',
+    '"$WORKER" >"${tmp_dir}/worker-output.txt" 2>&1',
+    "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill worker failed",
   ]) {
     requireFragment(xiaomanDailyCaseReportBackfillPath, backfill, fragment);
   }
@@ -3327,6 +3330,7 @@ if (exists(xiaomanDailyCaseReportBackfillPath)) {
     "eval ",
     'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
     'SYSTEMCTL="systemctl"',
+    '"$SYSTEMCTL" start "$SERVICE_NAME"',
   ]) {
     forbidFragment(xiaomanDailyCaseReportBackfillPath, backfill, fragment);
   }

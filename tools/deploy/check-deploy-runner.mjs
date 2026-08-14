@@ -1767,7 +1767,6 @@ for (const fragment of [
   "observe_erhua_legacy_cron",
   "observe_xiaoman_legacy_cron",
   "observe_enabled_erhua_morning_brief_timer_for_one_shot",
-  "observe_enabled_xiaoman_daily_case_report_timer_for_one_shot",
   "run_production_activation",
   "run_production_observation",
   "run_production_hermes_cron_apply",

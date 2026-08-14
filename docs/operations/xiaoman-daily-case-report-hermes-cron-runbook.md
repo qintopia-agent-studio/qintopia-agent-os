@@ -68,9 +68,11 @@ exactly as under systemd.
 
 The `Run Production Runtime One-Shot` GitHub workflow target
 `xiaoman-daily-case-report-auto-publish-backfill` stays valid after this migration: it
-calls the worker boundary directly with its own one-day `--date` override and does not
-depend on which scheduler owns the daily fire. Do not "fix" or retire that target as
-part of this cutover.
+calls the worker boundary directly with its own one-day `--date` override, temporarily
+exports `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1` for that process,
+and does not depend on which scheduler owns the daily fire. The persistent env still
+keeps that flag at `0` after Hermes cutover. Do not "fix" or retire that target as part
+of this cutover.
 
 ## Preconditions
 

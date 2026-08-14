@@ -8,24 +8,30 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Release State
 
-- Latest published Release tag in git: `v0.2.134`.
-- Production `Deploy Production` for `v0.2.134`
-  (`c3b1c0ae3b8a5ce655fbe7106596dfd57fd083bc`) uploaded the release artifacts and deploy
+- Latest published Release tag in git: `v0.2.135`.
+- Production `Deploy Production` for `v0.2.135`
+  (`24a2bfc2a41722dabd4059be8c2e870b12d622c0`) uploaded the release artifacts and deploy
   request, then failed during `smoke-release` and rolled back successfully to `v0.2.133`
   (`032b4c96e6d68321a6b21740c265441592ea4fdf`). Treat production `release/current` as
   still on `v0.2.133` until a newer deploy result reports `status=succeeded`.
+- Production `Deploy Production` for `v0.2.134`
+  (`c3b1c0ae3b8a5ce655fbe7106596dfd57fd083bc`) also failed during `smoke-release` and
+  rolled back successfully to `v0.2.133`.
 - Repository-local Xiaoman production evidence chain check passed on 2026-08-11 with
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`. This proves
   local contracts, fixtures, and the character-universe daily-report PR body only; it is
   not production deployment evidence.
 - Production deploy evidence in this repo-local status page still needs to be refreshed
-  after a successful deploy that includes the `v0.2.134` daily-report and Hermes cron
-  assets.
-- Release `v0.2.134` contains the Xiaoman character-universe daily-report path and the
+  after a successful deploy that includes the daily-report, Hermes cron assets, backfill
+  cutover fix, and ordinary release-smoke Erhua profile-check gate.
+- Release `v0.2.135` contains the Xiaoman character-universe daily-report path and the
   Erhua WeCom profile-boundary fix in Git, but those changes are not production-current
   because the release deploy rolled back.
-- Hermes cron live apply: successful workflow runs exist before `v0.2.134`, but no
-  successful apply against the `v0.2.134` release SHA is recorded in this status page.
+- PR `#568` contains the follow-up fixes for the Xiaoman daily backfill path after
+  Hermes cutover and for skipping Erhua profile checks during ordinary release smoke. It
+  is not production-current until merged, released, deployed, and observed.
+- Hermes cron live apply: successful workflow runs exist before `v0.2.135`, but no
+  successful apply against the `v0.2.135` release SHA is recorded in this status page.
 - Hermes cron enablement: not complete; run only after install and declaration parity
   pass.
 
@@ -67,19 +73,20 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Next Production Actions
 
-1. Publish and deploy a follow-up Release containing the `smoke-release` profile-gate
-   fix, then confirm the server deploy result reports `status=succeeded`.
-2. Activate the reviewed `hermes-profile-erhua` overlay before enabling the Erhua
+1. Merge PR `#568`, then publish and deploy the follow-up Release containing the Xiaoman
+   backfill cutover fix and ordinary release-smoke Erhua profile-check gate.
+2. Confirm the server deploy result reports `status=succeeded`.
+3. Activate the reviewed `hermes-profile-erhua` overlay before enabling the Erhua
    morning-brief Hermes cron.
-3. Run `Apply Production Hermes Crons` with `apply_mode=install` for the selected fixed
+4. Run `Apply Production Hermes Crons` with `apply_mode=install` for the selected fixed
    targets.
-4. Run `Observe Production Runtime` with `hermes-cron-snapshot` and
+5. Run `Observe Production Runtime` with `hermes-cron-snapshot` and
    `hermes-cron-live-parity`.
-5. Run `Apply Production Hermes Crons` with `apply_mode=enable`, preferably in small
+6. Run `Apply Production Hermes Crons` with `apply_mode=enable`, preferably in small
    target groups.
-6. Run `Observe Production Runtime` after the first scheduled trigger for each enabled
+7. Run `Observe Production Runtime` after the first scheduled trigger for each enabled
    target.
-7. For Xiaoman daily case-report completion, retain the production observation deploy
+8. For Xiaoman daily case-report completion, retain the production observation deploy
    result that includes `xiaoman-daily-case-report-worker-run` and pass it as
    `--daily-case-report-observation` to the final production completion evidence
    builder/checker.

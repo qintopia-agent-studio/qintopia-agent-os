@@ -101,14 +101,16 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             'EXPECTED_RELEASE_SHA="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA:-}"',
             'BACKFILL_DATE="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE:-}"',
             'ENV_FILE="/etc/qintopia/message-sidecar.env"',
-            'SYSTEMCTL="/usr/bin/systemctl"',
-            'SERVICE_NAME="qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"',
-            'require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "1"',
+            'WORKER="${RELEASE_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"',
+            'require_env_line_any "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "0|1"',
             'require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID"',
-            '"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE=${BACKFILL_DATE}"',
-            '"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL=${APPROVAL}"',
-            '"$SYSTEMCTL" start "$SERVICE_NAME"',
-            '"$SYSTEMCTL" unset-environment',
+            'export QINTOPIA_DEPLOYED_COMMIT_SHA="$EXPECTED_RELEASE_SHA"',
+            'export QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA="$EXPECTED_RELEASE_SHA"',
+            'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1',
+            'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE="$BACKFILL_DATE"',
+            'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL="$APPROVAL"',
+            '"$WORKER" >"${tmp_dir}/worker-output.txt" 2>&1',
+            "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill worker failed",
         ]:
             self.assertIn(fragment, backfill)
 
@@ -116,6 +118,7 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
         self.assertNotIn("QIWE_TOKEN", backfill)
         self.assertNotIn("source ", backfill)
         self.assertNotIn("eval ", backfill)
+        self.assertNotIn('"$SYSTEMCTL" start "$SERVICE_NAME"', backfill)
 
 
 if __name__ == "__main__":

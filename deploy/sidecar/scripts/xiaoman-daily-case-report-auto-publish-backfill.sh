@@ -15,8 +15,7 @@ RELEASE_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd -P)"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 PYTHON_BIN="/usr/bin/python3"
-SYSTEMCTL="/usr/bin/systemctl"
-SERVICE_NAME="qintopia-agentos-xiaoman-daily-case-report-auto-publish.service"
+WORKER="${RELEASE_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 
 if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
@@ -34,12 +33,12 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "xiaoman daily case report backfill requires the persistent sidecar env file" >&2
   exit 1
 fi
-if ! command -v "$SYSTEMCTL" >/dev/null 2>&1; then
-  echo "systemctl is required for xiaoman daily case report backfill" >&2
-  exit 1
-fi
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "python3 is required for xiaoman daily case report backfill" >&2
+  exit 1
+fi
+if [[ ! -x "$WORKER" ]]; then
+  echo "xiaoman daily case report backfill requires the reviewed release-local worker" >&2
   exit 1
 fi
 
@@ -75,6 +74,21 @@ require_env_line() {
   fi
 }
 
+require_env_line_any() {
+  local key="$1"
+  local pattern="$2"
+  local count
+  count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
+  if [[ "$count" != "1" ]]; then
+    echo "xiaoman daily case report backfill requires exactly one ${key}" >&2
+    exit 1
+  fi
+  if ! grep -Eq "^${key}=(${pattern})$" "$ENV_FILE"; then
+    echo "xiaoman daily case report backfill requires ${key} to be reviewed" >&2
+    exit 1
+  fi
+}
+
 require_present_env_line() {
   local key="$1"
   local count
@@ -85,7 +99,7 @@ require_present_env_line() {
   fi
 }
 
-require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "1"
+require_env_line_any "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED" "0|1"
 require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL" "approved-production-xiaoman-daily-case-report-auto-publish"
 require_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE" "1"
 require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"
@@ -93,23 +107,24 @@ require_present_env_line "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID"
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
-  "$SYSTEMCTL" unset-environment \
-    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE \
-    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL >/dev/null 2>&1 || true
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
 
-service_unit="$tmp_dir/service-unit.txt"
-"$SYSTEMCTL" daemon-reload
-"$SYSTEMCTL" cat "$SERVICE_NAME" >"$service_unit"
-grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${EXPECTED_RELEASE_SHA} " "$service_unit" >/dev/null
-grep -F "xiaoman-daily-case-report-auto-publish-worker.sh" "$service_unit" >/dev/null
-grep -F "EnvironmentFile=${ENV_FILE}" "$service_unit" >/dev/null
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export QINTOPIA_DEPLOYED_COMMIT_SHA="$EXPECTED_RELEASE_SHA"
+export QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA="$EXPECTED_RELEASE_SHA"
+export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1
+export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE="$BACKFILL_DATE"
+export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL="$APPROVAL"
 
-"$SYSTEMCTL" set-environment \
-  "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE=${BACKFILL_DATE}" \
-  "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL=${APPROVAL}"
-"$SYSTEMCTL" start "$SERVICE_NAME"
+if ! "$WORKER" >"${tmp_dir}/worker-output.txt" 2>&1; then
+  echo "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill worker failed" >&2
+  exit 1
+fi
 
-echo "xiaoman daily case report backfill started for ${BACKFILL_DATE}"
+echo "xiaoman daily case report backfill completed for ${BACKFILL_DATE}"

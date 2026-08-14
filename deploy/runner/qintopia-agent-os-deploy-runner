@@ -1302,14 +1302,6 @@ observe_enabled_erhua_morning_brief_timer_for_one_shot() {
     "${script_dir}/erhua-morning-brief-timer-observation-smoke.sh" >/dev/null
 }
 
-observe_enabled_xiaoman_daily_case_report_timer_for_one_shot() {
-  local script_dir="${runtime_one_shot_release_dir}/deploy/sidecar/scripts"
-  env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
-    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_OBSERVATION_ENABLE=1 \
-    QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_EXPECTED_STATE=enabled \
-    "${script_dir}/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh" >/dev/null
-}
-
 run_runtime_one_shot_target() {
   local target="$1"
   local script_dir="${runtime_one_shot_release_dir}/deploy/sidecar/scripts"
@@ -1322,7 +1314,6 @@ run_runtime_one_shot_target() {
         "${script_dir}/erhua-morning-brief-one-shot-production.sh" >/dev/null || return $?
       ;;
     xiaoman-daily-case-report-auto-publish-backfill)
-      observe_enabled_xiaoman_daily_case_report_timer_for_one_shot || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL=approved-production-xiaoman-daily-case-report-auto-publish-backfill \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA="$release_sha" \
