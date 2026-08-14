@@ -46,6 +46,11 @@ try {
   writeExecutable(
     "bin/runuser",
     `#!/usr/bin/env bash
+joined="$*"
+if [[ "$joined" == *"verify_runtime_provider.py"* || "$joined" == *"--profile erhua doctor"* ]]; then
+  echo "ordinary restart must not run Erhua provider checks" >&2
+  exit 41
+fi
 exit 0
 `
   );
@@ -60,6 +65,16 @@ exit 0
   const metadataPath = path.join(tmpRoot, "profile-backups", "metadata.json");
   fs.mkdirSync(path.dirname(metadataPath), { recursive: true });
   fs.writeFileSync(metadataPath, "{}\n");
+  writeExecutable(
+    "bin/python3",
+    `#!/usr/bin/env bash
+if [[ "$*" == *"verify-activated"* ]]; then
+  echo "activated-file verification reached" >&2
+  exit 42
+fi
+exec /usr/bin/python3 "$@"
+`
+  );
   const profileActivation = runSmoke(["--profile-metadata", metadataPath]);
   if (profileActivation.status === 0) {
     throw new Error(

@@ -166,7 +166,7 @@ for target in "${targets[@]}"; do
     hermes-erhua)
       restart_hermes_service hermes-gateway-erhua.service
       erhua_service_active=true
-      if [[ "$skip_erhua_provider_check" != "true" ]]; then
+      if [[ "$skip_erhua_provider_check" != "true" && -n "$profile_metadata" ]]; then
         smoke_erhua_profile
       fi
       ;;
