@@ -247,11 +247,11 @@ exec ${JSON.stringify(systemTar)} "$@"
   requireMode(path.join(outputRoot, "SHA256SUMS"), 0o444);
   requireMode(path.join(outputRoot, "qintopia-message-sidecar.tar.gz"), 0o444);
 
-  const legacyFeatures = [
+  const twoFeatureLegacyFeatures = [
     "huabaosi-production-adapter",
     "huabaosi-feishu-mirror-adapter",
   ];
-  writeHuabaosiManifest(legacyFeatures);
+  writeHuabaosiManifest(twoFeatureLegacyFeatures);
   const legacyDefaultResult = spawnSync(
     "bash",
     [
@@ -282,6 +282,13 @@ exec ${JSON.stringify(systemTar)} "$@"
   ) {
     throw new Error("COS fetch default contract accepted a legacy Huabaosi artifact");
   }
+
+  const deployedBootstrapFeatures = [
+    "huabaosi-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "xiaoman-feishu-poster-adapter",
+  ];
+  writeHuabaosiManifest(deployedBootstrapFeatures);
 
   const runLegacyFetch = (runtimeSha) =>
     spawnSync(
@@ -327,7 +334,7 @@ exec ${JSON.stringify(systemTar)} "$@"
   const legacyBoundResult = runLegacyFetch(sha);
   if (legacyBoundResult.status !== 0) {
     throw new Error(
-      `COS fetch rejected an exactly bound legacy artifact\n${legacyBoundResult.stdout}\n${legacyBoundResult.stderr}`
+      `COS fetch rejected an exactly bound bootstrap artifact\n${legacyBoundResult.stdout}\n${legacyBoundResult.stderr}`
     );
   }
 

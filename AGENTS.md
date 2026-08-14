@@ -179,7 +179,9 @@
   provider/doctor verification belongs only to the reviewed Erhua profile activation
   path where profile metadata is present. Do not let general sidecar/deploy-bundle
   releases fail on Erhua provider state while unrelated runtime changes are being
-  promoted.
+  promoted. When ordinary release smoke fails, expose only the bounded
+  `qintopia_smoke_release_safe_failure=` marker in deploy-result detail; never retain
+  raw systemctl output, journal lines, env, prompts, or live Hermes cron content.
 - After ordinary release promotion, deploy-runner must execute
   `deploy/runner/install-release-systemd-units.sh` and `deploy/runner/smoke-release.sh`
   from the just-promoted release directory, not from the root runner's already-installed
@@ -1744,7 +1746,7 @@ Use `rg` and `rg --files` for search.
 - If the previous runner rejects the new Huabaosi artifact feature contract before
   promotion, the default-disabled `legacy_runner_bootstrap` workflow mode is the only
   allowed bridge. It must bind the legacy runtime to the latest trusted successful
-  deploy result, accept only the exact legacy two-feature Huabaosi artifact, use a
+  deploy result, accept only the exact deployed Huabaosi three-feature artifact, use a
   distinct transition release SHA, and restrict scope/restarts to `deploy-bundle` and
   `qintopia-system-services`. Normal fetches must continue to require the current
   three-feature artifact. Run a dry-run before any live bootstrap.

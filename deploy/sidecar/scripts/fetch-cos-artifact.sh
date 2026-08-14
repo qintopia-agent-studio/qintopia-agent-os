@@ -203,7 +203,7 @@ case "$artifact_type" in
               echo "legacy runner bootstrap requires an exact deployed runtime SHA binding" >&2
               exit 2
             fi
-            expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter"]'
+            expected_cargo_features='["huabaosi-production-adapter","huabaosi-feishu-mirror-adapter","xiaoman-feishu-poster-adapter"]'
             ;;
           *)
             echo "QINTOPIA_HUABAOSI_PRODUCTION_FEATURE_CONTRACT must be current or legacy-runner-bootstrap" >&2

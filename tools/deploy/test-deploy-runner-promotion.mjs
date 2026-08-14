@@ -326,6 +326,113 @@ exit 0
   fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
   fs.mkdirSync(releaseRoot, { recursive: true });
 
+  writeExecutable(
+    "deploy/runner/promote-release.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+release_root=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --release-root)
+      release_root="\${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "\${release_root}/${sha}" "\${release_root}/${previousSha}"
+mkdir -p "\${release_root}/${sha}/deploy/runner"
+cat >"\${release_root}/${sha}/deploy/runner/install-release-systemd-units.sh" <<'INSTALL'
+#!/usr/bin/env bash
+exit 0
+INSTALL
+chmod 0755 "\${release_root}/${sha}/deploy/runner/install-release-systemd-units.sh"
+cat >"\${release_root}/${sha}/deploy/runner/smoke-release.sh" <<'SMOKE'
+#!/usr/bin/env bash
+echo "qintopia_smoke_release_safe_failure=target=qintopia-system-services;phase=is-active;subject=qintopia-agentos-daily-digest-publisher.service" >&2
+exit 77
+SMOKE
+chmod 0755 "\${release_root}/${sha}/deploy/runner/smoke-release.sh"
+ln -sfn "\${release_root}/${previousSha}" "\${release_root}/previous"
+ln -sfn "\${release_root}/${sha}" "\${release_root}/current"
+`
+  );
+  writeExecutable(
+    "deploy/runner/rollback-release.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+release_root=""
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --release-root)
+      release_root="\${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+target="$(readlink -f "\${release_root}/previous")"
+ln -sfn "$target" "\${release_root}/current"
+`
+  );
+  writeExecutable(
+    "deploy/runner/smoke-release.sh",
+    `#!/usr/bin/env bash
+exit 0
+`
+  );
+
+  const smokeFailureResult = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", requestFile],
+    {
+      cwd: stateDir,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
+        QINTOPIA_RELEASE_ROOT: releaseRoot,
+        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+        TENCENT_COS_REGION: "ap-shanghai",
+      },
+      encoding: "utf8",
+    }
+  );
+  if (smokeFailureResult.status !== 77) {
+    throw new Error(
+      `expected runner to return smoke failure status 77, got ${smokeFailureResult.status}\nstdout:\n${smokeFailureResult.stdout}\nstderr:\n${smokeFailureResult.stderr}`
+    );
+  }
+  const smokeFailureDeployResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  if (smokeFailureDeployResult.status !== "rolled_back") {
+    throw new Error(
+      `expected smoke failure rolled_back result, got ${smokeFailureDeployResult.status}`
+    );
+  }
+  const smokeFailureDetail = JSON.parse(smokeFailureDeployResult.checks[0].detail);
+  if (
+    smokeFailureDetail.failure_stage !== "smoke-release" ||
+    smokeFailureDetail.exit_status !== 77 ||
+    smokeFailureDetail.safe_failure !==
+      "target=qintopia-system-services;phase=is-active;subject=qintopia-agentos-daily-digest-publisher.service"
+  ) {
+    throw new Error(
+      `expected safe smoke failure detail, got ${smokeFailureDeployResult.checks[0].detail}`
+    );
+  }
+
+  fs.rmSync(stateDir, { recursive: true, force: true });
+  fs.rmSync(releaseRoot, { recursive: true, force: true });
+  fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
+  fs.mkdirSync(releaseRoot, { recursive: true });
+
   const qiweRequest = buildRequest("qiwe-production");
   qiweRequest.signature = {
     ...signatureMetadata,

@@ -14,6 +14,13 @@ evidence_phase="activation"
 erhua_service_active=false
 erhua_provider_checked=false
 erhua_activated_files_verified=false
+emit_safe_failure() {
+  local target="$1"
+  local phase="$2"
+  local subject="$3"
+  echo "qintopia_smoke_release_safe_failure=target=${target};phase=${phase};subject=${subject}" >&2
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --restart-targets)
@@ -75,19 +82,35 @@ system_services=(
 )
 
 restart_system_services() {
-  systemctl daemon-reload
+  if ! systemctl daemon-reload; then
+    emit_safe_failure qintopia-system-services daemon-reload systemd
+    return 1
+  fi
   for service in "${system_services[@]}"; do
-    systemctl restart "$service"
-    systemctl is-active --quiet "$service"
+    if ! systemctl restart "$service"; then
+      emit_safe_failure qintopia-system-services restart "$service"
+      return 1
+    fi
+    if ! systemctl is-active --quiet "$service"; then
+      emit_safe_failure qintopia-system-services is-active "$service"
+      return 1
+    fi
   done
 }
 
 restart_hermes_service() {
-  local service="$1"
-  runuser -l "$hermes_systemd_user" -c \
-    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart ${service}"
-  runuser -l "$hermes_systemd_user" -c \
-    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active --quiet ${service}"
+  local target="$1"
+  local service="$2"
+  if ! runuser -l "$hermes_systemd_user" -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user restart ${service}"; then
+    emit_safe_failure "$target" restart "$service"
+    return 1
+  fi
+  if ! runuser -l "$hermes_systemd_user" -c \
+    "XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user is-active --quiet ${service}"; then
+    emit_safe_failure "$target" is-active "$service"
+    return 1
+  fi
 }
 
 smoke_erhua_profile() {
@@ -164,26 +187,26 @@ for target in "${targets[@]}"; do
       restart_system_services
       ;;
     hermes-erhua)
-      restart_hermes_service hermes-gateway-erhua.service
+      restart_hermes_service hermes-erhua hermes-gateway-erhua.service
       erhua_service_active=true
       if [[ "$skip_erhua_provider_check" != "true" && -n "$profile_metadata" ]]; then
         smoke_erhua_profile
       fi
       ;;
     hermes-wenyuange)
-      restart_hermes_service hermes-gateway-wenyuange.service
+      restart_hermes_service hermes-wenyuange hermes-gateway-wenyuange.service
       ;;
     hermes-xiaoman)
-      restart_hermes_service hermes-gateway-xiaoman.service
+      restart_hermes_service hermes-xiaoman hermes-gateway-xiaoman.service
       ;;
     hermes-silaoshi)
-      restart_hermes_service hermes-gateway-silaoshi.service
+      restart_hermes_service hermes-silaoshi hermes-gateway-silaoshi.service
       ;;
     hermes-huabaosi)
-      restart_hermes_service hermes-gateway-huabaosi.service
+      restart_hermes_service hermes-huabaosi hermes-gateway-huabaosi.service
       ;;
     hermes-guanerye)
-      restart_hermes_service hermes-gateway-guanerye.service
+      restart_hermes_service hermes-guanerye hermes-gateway-guanerye.service
       ;;
     "")
       ;;
