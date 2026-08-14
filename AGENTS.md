@@ -173,7 +173,9 @@
   broadening Git trust or writing to a parent repository. If the fixed snapshot repo
   exists but has no source-file changes and no `HEAD` commit, create an empty baseline
   commit so `hermes-cron-snapshot` observation can prove the repo is initialized without
-  exposing snapshot contents.
+  exposing snapshot contents. Snapshot observation must also read Git state through the
+  fixed ubuntu user; root direct `git -C` can misreport an existing ubuntu-owned repo as
+  `repo_commit_missing`.
 - Deploy-runner production one-shots run from the root service boundary. If a one-shot
   needs ubuntu user systemd, use fixed `/usr/sbin/runuser -u ubuntu` with
   `XDG_RUNTIME_DIR=/run/user/<ubuntu-uid>` and the matching user bus address; direct

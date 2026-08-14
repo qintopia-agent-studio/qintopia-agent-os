@@ -10,7 +10,11 @@ PATH="/usr/bin:/bin"
 export PATH
 
 GIT_BIN="/usr/bin/git"
+ID_BIN="/usr/bin/id"
+RUNUSER_BIN="/usr/sbin/runuser"
+STAT_BIN="/usr/bin/stat"
 SNAPSHOT_ROOT="/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"
+HOME_DIR="/home/ubuntu"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 SERVICE_UNIT="${UNIT_DIR}/hermes-cron-snapshot.service"
 TIMER_UNIT="${UNIT_DIR}/hermes-cron-snapshot.timer"
@@ -22,6 +26,19 @@ fail() {
 }
 
 [[ -x "$GIT_BIN" ]] || fail "git_unavailable"
+[[ -x "$ID_BIN" ]] || fail "id_unavailable"
+[[ -x "$RUNUSER_BIN" ]] || fail "runuser_unavailable"
+[[ -x "$STAT_BIN" ]] || fail "stat_unavailable"
+[[ -d "$HOME_DIR" ]] || fail "home_missing"
+
+git_snapshot() {
+  if [[ "$("$ID_BIN" -u)" == "0" ]]; then
+    "$RUNUSER_BIN" -u ubuntu -- /usr/bin/env -i HOME="$HOME_DIR" PATH="/usr/bin:/bin" \
+      "$GIT_BIN" -C "$SNAPSHOT_ROOT" "$@"
+  else
+    "$GIT_BIN" -C "$SNAPSHOT_ROOT" "$@"
+  fi
+}
 
 for required_file in "$SERVICE_UNIT" "$TIMER_UNIT"; do
   [[ -f "$required_file" && ! -L "$required_file" ]] || fail "unit_missing"
@@ -35,17 +52,17 @@ grep -Fx "OnUnitActiveSec=5min" "$TIMER_UNIT" >/dev/null || fail "timer_interval
 
 [[ -d "$SNAPSHOT_ROOT/.git" && ! -L "$SNAPSHOT_ROOT" ]] || fail "repo_missing"
 
-root_mode="$(stat -c '%a' "$SNAPSHOT_ROOT")"
+root_mode="$("$STAT_BIN" -c '%a' "$SNAPSHOT_ROOT")"
 case "$root_mode" in
   700 | 0700) ;;
   *) fail "repo_mode_drift" ;;
 esac
 
-if [[ -n "$("$GIT_BIN" -C "$SNAPSHOT_ROOT" remote)" ]]; then
+if [[ -n "$(git_snapshot remote)" ]]; then
   fail "repo_remote_present"
 fi
 
-latest_commit_epoch="$("$GIT_BIN" -C "$SNAPSHOT_ROOT" log -1 --format=%ct 2>/dev/null || true)"
+latest_commit_epoch="$(git_snapshot log -1 --format=%ct 2>/dev/null || true)"
 if [[ ! "$latest_commit_epoch" =~ ^[0-9]{9,12}$ ]]; then
   fail "repo_commit_missing"
 fi
