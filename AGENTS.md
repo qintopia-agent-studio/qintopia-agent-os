@@ -180,6 +180,12 @@
   path where profile metadata is present. Do not let general sidecar/deploy-bundle
   releases fail on Erhua provider state while unrelated runtime changes are being
   promoted.
+- After ordinary release promotion, deploy-runner must execute
+  `deploy/runner/install-release-systemd-units.sh` and `deploy/runner/smoke-release.sh`
+  from the just-promoted release directory, not from the root runner's already-installed
+  `RUNNER_DIR`. The root runner may be older than the release it is promoting, so using
+  stale runner-local install or smoke logic can block self-bootstrap fixes before they
+  reach production.
 - Production Hermes cron live apply should use the `Apply Production Hermes Crons`
   GitHub workflow after the reviewed release containing the runner support is deployed.
   It creates a signed `production-hermes-cron-apply` deploy-runner request and accepts

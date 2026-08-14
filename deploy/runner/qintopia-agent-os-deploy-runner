@@ -1641,12 +1641,33 @@ run_promotion() {
     write_result dry_run_succeeded
   else
     promoted_current=true
+    release_installer="${RELEASE_ROOT}/${release_sha}/deploy/runner/install-release-systemd-units.sh"
+    release_smoke="${RELEASE_ROOT}/${release_sha}/deploy/runner/smoke-release.sh"
+    release_target="$(readlink -f "${RELEASE_ROOT}/${release_sha}" 2>/dev/null || true)"
+    current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+    if [[ -z "$release_target" || "$current_target" != "$release_target" ]]; then
+      echo "current release is not bound to the requested release before install" >&2
+      return 1
+    fi
+    if [[ ! -x "$release_installer" ]]; then
+      echo "release-local systemd installer is missing or not executable: ${release_installer}" >&2
+      return 1
+    fi
+    if [[ ! -x "$release_smoke" ]]; then
+      echo "release-local smoke runner is missing or not executable: ${release_smoke}" >&2
+      return 1
+    fi
     deploy_stage="install-release-systemd-units"
-    "${RUNNER_DIR}/install-release-systemd-units.sh" \
+    "$release_installer" \
       --release-root "$RELEASE_ROOT" \
       --release-sha "$release_sha" || return $?
+    current_target="$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+    if [[ -z "$release_target" || "$current_target" != "$release_target" ]]; then
+      echo "current release is not bound to the requested release before smoke" >&2
+      return 1
+    fi
     deploy_stage="smoke-release"
-    "${RUNNER_DIR}/smoke-release.sh" \
+    "$release_smoke" \
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
