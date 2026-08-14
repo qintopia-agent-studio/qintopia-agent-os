@@ -95,6 +95,7 @@ const requiredFiles = [
   "tools/deploy/test-production-runtime-one-shot-runner.mjs",
   "tools/deploy/test-xiaoman-creative-profile-candidates-production-apply.mjs",
   "tools/deploy/test-hermes-cron-snapshot-install.mjs",
+  "tools/deploy/test-hermes-cron-snapshot-observation.mjs",
   "tools/deploy/test-wait-deploy-result.mjs",
   "tools/deploy/test-promote-existing-release-metadata.mjs",
   "tools/deploy/test-promote-release-tree.mjs",
@@ -2451,6 +2452,9 @@ try {
     }
   );
   execFileSync("node", ["tools/deploy/test-hermes-cron-snapshot-install.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-hermes-cron-snapshot-observation.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-promote-release-tree.mjs"], {
