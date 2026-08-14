@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.136](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.135...v0.2.136) (2026-08-14)
+
+
+### Bug Fixes
+
+* keep Xiaoman daily backfill valid after Hermes cutover ([#568](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/568)) ([c8cff3c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c8cff3ca57910f5a4e27e8373f6c8dcebdb04083))
+
 ## [0.2.135](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.134...v0.2.135) (2026-08-14)
 
 
