@@ -1744,7 +1744,7 @@ Use `rg` and `rg --files` for search.
 - If the previous runner rejects the new Huabaosi artifact feature contract before
   promotion, the default-disabled `legacy_runner_bootstrap` workflow mode is the only
   allowed bridge. It must bind the legacy runtime to the latest trusted successful
-  deploy result, accept only the exact legacy two-feature Huabaosi artifact, use a
+  deploy result, accept only the exact deployed Huabaosi three-feature artifact, use a
   distinct transition release SHA, and restrict scope/restarts to `deploy-bundle` and
   `qintopia-system-services`. Normal fetches must continue to require the current
   three-feature artifact. Run a dry-run before any live bootstrap.

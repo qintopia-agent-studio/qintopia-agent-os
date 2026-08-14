@@ -8,12 +8,22 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Release State
 
-- Latest published Release tag in git: `v0.2.136`.
-- Production `Deploy Production` for `v0.2.136`
-  (`7c4cbca965226054c0e737bef0aec8dec7ed23f0`) uploaded the release artifacts and deploy
+- Latest published Release tag in git: `v0.2.137`.
+- Production `Deploy Production` for `v0.2.137`
+  (`259bda85f12cd5679b30375c260f549c68d07675`) uploaded the release artifacts and deploy
   request, then failed during `smoke-release` and rolled back successfully to `v0.2.133`
   (`032b4c96e6d68321a6b21740c265441592ea4fdf`). Treat production `release/current` as
   still on `v0.2.133` until a newer deploy result reports `status=succeeded`.
+- A `legacy_runner_bootstrap` dry-run for the `v0.2.137` deploy bundle failed before
+  request upload because the bootstrap feature contract expected the wrong Huabaosi
+  runtime manifest shape. The latest trusted deployed runtime artifact (`v0.2.133`)
+  carries the same reviewed three-feature Huabaosi manifest as the current production
+  contract, so bootstrap compatibility must bind that exact runtime SHA and accept that
+  exact three-feature manifest.
+- Production `Deploy Production` for `v0.2.136`
+  (`7c4cbca965226054c0e737bef0aec8dec7ed23f0`) uploaded the release artifacts and deploy
+  request, then failed during `smoke-release` and rolled back successfully to `v0.2.133`
+  (`032b4c96e6d68321a6b21740c265441592ea4fdf`).
 - Production `Deploy Production` for `v0.2.135`
   (`24a2bfc2a41722dabd4059be8c2e870b12d622c0`) uploaded the release artifacts and deploy
   request, then failed during `smoke-release` and rolled back successfully to `v0.2.133`
@@ -29,15 +39,16 @@ URLs, tokens, raw logs, or raw script output.
   after a successful deploy that includes the daily-report, Hermes cron assets, backfill
   cutover fix, ordinary release-smoke Erhua profile-check gate, and ordinary release
   install/smoke self-bootstrap fix.
-- Release `v0.2.136` contains the Xiaoman character-universe daily-report path, the
-  Erhua WeCom profile-boundary fix, and PR `#568`, but those changes are not
+- Release `v0.2.137` contains the Xiaoman character-universe daily-report path, the
+  Erhua WeCom profile-boundary fix, PR `#568`, and PR `#570`, but those changes are not
   production-current because the release deploy rolled back.
-- The `v0.2.136` failure shows ordinary post-promotion checks still executed the
-  already-installed root runner's stale deploy scripts instead of the just-promoted
-  release-local runner scripts. A follow-up Release must make ordinary post-promotion
-  install and smoke execute from `${RELEASE_ROOT}/${release_sha}/deploy/runner/`.
-- Hermes cron live apply: successful workflow runs exist before `v0.2.136`, but no
-  successful apply against the `v0.2.136` release SHA is recorded in this status page.
+- The `v0.2.136` and `v0.2.137` failures show the already-installed root runner still
+  processes the first release containing deploy-runner behavior changes. Use the
+  reviewed `legacy_runner_bootstrap` bridge after the bootstrap feature contract fix is
+  released; do not retry ordinary deployment until the bridge has passed dry-run and
+  live bootstrap.
+- Hermes cron live apply: successful workflow runs exist before `v0.2.137`, but no
+  successful apply against the `v0.2.137` release SHA is recorded in this status page.
 - Hermes cron enablement: not complete; run only after install and declaration parity
   pass.
 
