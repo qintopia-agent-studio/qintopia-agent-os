@@ -34,6 +34,11 @@ emits only its SHA-256 in evidence. It also preserves the Erhua `jobs.json` enve
 
 - A reviewed Release containing the assets above is deployed and `release/current`
   points at it.
+- The reviewed Erhua profile overlay has been activated through the
+  `hermes-profile-erhua` deploy-runner path so
+  `/home/ubuntu/.hermes/profiles/erhua/config.yaml` has `channel.wecom.enabled=true`.
+  The profile evidence may report only changed paths and hashes, never channel
+  credentials or runtime field values.
 - The existing auto-publish chain is already enabled in
   `/etc/qintopia/message-sidecar.env`:
   `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1`,

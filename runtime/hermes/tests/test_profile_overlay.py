@@ -64,7 +64,8 @@ class ProfileOverlayTests(unittest.TestCase):
             repeated = yaml.safe_load(second.read_text())
 
             self.assertEqual(rendered, repeated)
-            self.assertEqual(original["channel"], rendered["channel"])
+            self.assertEqual(original["channel"]["qiwe"], rendered["channel"]["qiwe"])
+            self.assertTrue(rendered["channel"]["wecom"]["enabled"])
             self.assertEqual(original["unrelated_flag"], rendered["unrelated_flag"])
             self.assertEqual("gpt-5.6-luna", rendered["model"]["default"])
             self.assertEqual(original["model"]["default"], rendered["model"]["default"])
@@ -80,6 +81,7 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertNotIn("fixture-livecool-key-not-real", report_text)
             report = json.loads(report_text)
             self.assertTrue(report["secret_values_redacted"])
+            self.assertIn("channel.wecom.enabled", report["changed_paths"])
             self.assertNotIn("model.default", report["changed_paths"])
             self.assertEqual("unchanged", json.loads(second_report.read_text())["status"])
 
@@ -107,6 +109,30 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertIn("model fields must be exactly: provider, base_url", result.stderr)
             self.assertFalse(output.exists())
 
+    def test_overlay_cannot_manage_unreviewed_channel_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            overlay = yaml.safe_load(OVERLAY.read_text())
+            overlay["managed"]["channel"]["wecom"]["bot_id"] = "must-not-enter-git"
+            overlay_path = directory / "overlay.yaml"
+            overlay_path.write_text(yaml.safe_dump(overlay, sort_keys=False))
+            output = directory / "config.yaml"
+            result = self.run_tool(
+                RENDERER,
+                "render",
+                "--base",
+                str(FIXTURES / "erhua-base.yaml"),
+                "--overlay",
+                str(overlay_path),
+                "--output",
+                str(output),
+                "--report",
+                str(directory / "report.json"),
+                expect=1,
+            )
+            self.assertIn("channel.wecom fields must be exactly: enabled", result.stderr)
+            self.assertFalse(output.exists())
+
     def test_existing_inline_provider_is_replaced_without_secret(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory) / "base.yaml"
@@ -125,6 +151,34 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertNotIn("must-not-survive", output.read_text())
             self.assertNotIn("must-not-survive", report.read_text())
             self.assertEqual(45, yaml.safe_load(output.read_text())["custom_providers"][1]["timeout"])
+
+    def test_disabled_wecom_channel_is_enabled_without_leaking_runtime_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            base = directory / "base.yaml"
+            base_config = yaml.safe_load((FIXTURES / "erhua-base.yaml").read_text())
+            base_config["channel"]["wecom"] = {
+                "enabled": False,
+                "extra": {
+                    "bot_id": "fixture-bot-id",
+                    "secret": "fixture-secret",
+                },
+            }
+            base.write_text(yaml.safe_dump(base_config, sort_keys=False))
+            output, report = self.render(directory, base)
+            rendered = yaml.safe_load(output.read_text())
+            self.assertTrue(rendered["channel"]["wecom"]["enabled"])
+            self.assertEqual(
+                {
+                    "bot_id": "fixture-bot-id",
+                    "secret": "fixture-secret",
+                },
+                rendered["channel"]["wecom"]["extra"],
+            )
+            report_text = report.read_text()
+            self.assertIn("channel.wecom.enabled", report_text)
+            self.assertNotIn("fixture-bot-id", report_text)
+            self.assertNotIn("fixture-secret", report_text)
 
     def test_runtime_provider_verifier_requires_affirmative_hermes_resolution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

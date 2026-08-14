@@ -72,7 +72,9 @@ profile cutover.
 ## Erhua Model Overlay
 
 `render_profile_overlay.py` applies the reviewed Erhua Livecool provider overlay to a
-sanitized or runtime-local base config while preserving `model.default`. It rejects
+sanitized or runtime-local base config while preserving `model.default`. It also keeps
+the Erhua WeCom channel enabled by managing only `channel.wecom.enabled=true`; existing
+runtime-local channel fields remain in place and never enter reports. It rejects
 aliases, duplicate keys/providers, forbidden overlay fields, and path aliasing. Reports
 contain changed field paths and file hashes, not values. `migrate_erhua_livecool_env.py`
 creates or checks the server-local `LIVECOOL_API_KEY` binding without printing

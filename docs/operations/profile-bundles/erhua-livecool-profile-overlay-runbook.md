@@ -11,12 +11,15 @@ fields and no others:
 
 - `model.provider: custom:livecool.net`
 - `model.base_url: ""`
+- `channel.wecom.enabled: true`
 - the single custom provider named `Livecool.net`, with `https://livecool.net/v1`,
   `gpt-5.5`, `key_env: LIVECOOL_API_KEY`, and `api_mode: chat_completions`
 
 The renderer preserves `model.default` exactly as found in the runtime-local base
 config. Default-model selection is outside this provider overlay. This runbook does not
-introduce a shared Agent model policy or authorize a default-model change.
+introduce a shared Agent model policy or authorize a default-model change. It also
+preserves existing `channel.wecom` runtime fields such as server-local bot bindings,
+while rejecting any overlay attempt to carry those fields in Git.
 
 The live Erhua `config.yaml` remains runtime-local. Rendering starts from that file,
 preserves unrelated keys and providers, and writes a replacement atomically with mode
@@ -109,6 +112,11 @@ Successful evidence contains:
 Smoke does not call a model and does not send a QiWe message. The change touches Hermes
 profile runtime, a server-local secret binding, and Erhua's user systemd service. It
 does not send externally, write the business database, or alter Feishu.
+
+For the Erhua morning brief Hermes cron cutover, this profile overlay must be activated
+before enabling the cron job. Otherwise the no-agent scheduler can start the wrapper but
+Hermes delivery may still fail closed when the WeCom channel is disabled in
+`config.yaml`.
 
 The uploaded result records `release_scope`, `restart_targets`, the authorizing dry-run
 request ID, activation or rollback smoke phase, and separate restore evidence.

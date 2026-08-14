@@ -618,9 +618,12 @@
   plus `apply-erhua-morning-brief-hermes-cron.sh --install` then `--enable`. Disable the
   old timer with `rollback-erhua-morning-brief-production.sh` before enabling the job;
   the auto-publish approvals `approved-production-erhua-morning-brief-auto-publish` and
-  `approved-production-qiwe-text-send` are unchanged. Health is the allowlist
-  observation smoke plus the snapshot git history. Follow
-  `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`.
+  `approved-production-qiwe-text-send` are unchanged. Before enabling the Hermes job,
+  activate the reviewed `hermes-profile-erhua` overlay so the Erhua profile has
+  `channel.wecom.enabled=true`; the overlay may manage only that boolean under
+  `channel.wecom`, preserving runtime-local bot bindings and never reporting channel
+  values. Health is the allowlist observation smoke plus the snapshot git history.
+  Follow `docs/operations/erhua-morning-brief-hermes-cron-runbook.md`.
 
 - Xiaoman weekly preview now uses a Hermes cron job (task 1), not the release-managed
   Monday timer. The reviewed declaration is
