@@ -27,6 +27,7 @@ validation:
 dependencies:
   - skills/qiwe
   - skills/qintopia-weather
+  - skills/erhua-csv
   - mcp/context-server
   - mcp/message-store
   - runtime/sidecar

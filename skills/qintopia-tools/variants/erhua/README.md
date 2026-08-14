@@ -24,6 +24,14 @@ stable Hermes tool registration.
   QWeather MCP wrapper, with Open-Meteo as a limited fallback. It covers current
   weather, 24-hour rain/umbrella windows, thunderstorm windows, warnings, and current
   air quality.
+- `qintopia_erhua_csv_list`: lists typed CSV datasets in the current QiWe group or
+  describes one opaque dataset id.
+- `qintopia_erhua_csv_create`: creates a current-group custom or ledger dataset, or adds
+  optional fields through a new immutable schema version.
+- `qintopia_erhua_csv_append`: appends one audited row; ledger writes generate signed
+  deltas and support one reversal per original event.
+- `qintopia_erhua_csv_query`: merges schema versions for bounded filtering, pagination,
+  count, and exact Decimal sum without exposing raw scope or audit ids.
 - `qintopia_wenyuange_lookup`: synchronously retrieves Dify-backed knowledge through
   WenYuanGe guardrails for 二花 and 小秦. It returns answer basis, source metadata, risk
   flags, and safe reply guidance, not raw Dify chunks.
@@ -151,6 +159,20 @@ Weather guardrails:
 - The weather wrapper never runs shell snippets from member messages and never asks the
   group to approve networking or command execution.
 
+Erhua CSV guardrails:
+
+- The implementation lives in `skills/erhua-csv`; this plugin keeps only stable Hermes
+  registration and delegation.
+- Scope, actor, and source message come only from task-local `HERMES_SESSION_*` context.
+  Tools never accept a group id, user id, message id, filename, or path.
+- Only QiWe groups are accepted. Direct chats, missing context, cross-group access,
+  overwrite, delete, rename, move, arbitrary file access, and raw system fields fail
+  closed.
+- The package stores append-only CSV and catalog events under Erhua profile data,
+  validates checksums after writes, and keeps internal daily recovery snapshots.
+- Group members must not store passwords, tokens, government identity numbers, or
+  similarly sensitive data in group-visible CSVs.
+
 小满 daily event radar guardrails:
 
 - `qintopia_daily_digest_publish` is disabled unless
@@ -177,8 +199,9 @@ layout, not an ad hoc `rsync` of only this plugin:
 The same release must include delegated skill packages under
 `/home/ubuntu/qintopia-agent-os-releases/current/skills`. Erhua currently delegates
 weather to `skills/qintopia-weather` and Dify/WenYuanGe lookup to
-`skills/knowledge-retrieval`. If Hermes loads this plugin from a copied profile-local
-directory, set `QINTOPIA_AGENT_OS_SKILLS_DIR` to the release `skills` directory.
+`skills/knowledge-retrieval`, and current-group CSV storage to `skills/erhua-csv`. If
+Hermes loads this plugin from a copied profile-local directory, set
+`QINTOPIA_AGENT_OS_SKILLS_DIR` to the release `skills` directory.
 
 Enable in the profile `config.yaml`:
 

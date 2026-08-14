@@ -28,6 +28,7 @@ from adapter import (
     _handle_qiwe_send_rich_message,
     _handle_qiwe_voice_to_text,
     QiWeAdapter,
+    ParsedQiWeMessage,
     SendResult,
     _answer_context_from_mcp_stdout,
     _answer_context_mcp_request,
@@ -2002,6 +2003,29 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIn("当前回复/引用的消息发送者已解析", prompt)
         self.assertIn("被回复对象 => 小乔", prompt)
         self.assertIn("多次出现跑步活动相关信号", prompt)
+
+    def test_group_prompt_injects_erhua_csv_rules_but_direct_prompt_does_not(self) -> None:
+        raw = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(raw, bot_names=["二花"], bot_user_id="1688857683805864")
+        group_prompt = _member_context_channel_prompt(parsed, None, None)
+
+        self.assertIn("qintopia_erhua_csv_list", group_prompt)
+        self.assertIn("qintopia_erhua_csv_create", group_prompt)
+        self.assertIn("preset=ledger", group_prompt)
+        self.assertIn("reverses_event_id", group_prompt)
+        self.assertIn("不要向成员索要或向工具传群 ID", group_prompt)
+
+        direct = ParsedQiWeMessage(
+            accepted=True,
+            reason="direct",
+            conversation_type="direct",
+            sender_id="direct-user",
+            sender_name="Direct User",
+            message_id="direct-message",
+        )
+        direct_prompt = _member_context_channel_prompt(direct, None, None)
+        self.assertNotIn("qintopia_erhua_csv_", direct_prompt)
+        self.assertNotIn("preset=ledger", direct_prompt)
 
     def test_answer_context_prompt_referenced_member_wins_pronoun_question(self) -> None:
         raw = load_fixture("group_mention.json")

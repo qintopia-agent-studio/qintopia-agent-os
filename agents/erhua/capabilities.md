@@ -9,6 +9,8 @@
 - Submit approved trainer notes through audited Postgres-backed tools.
 - Forward public link cards through controlled QiWe rich-message wrappers when policy
   allows it.
+- In QiWe groups, create typed current-group CSV datasets, append auditable records,
+  query bounded results, and use the ledger preset for bookkeeping and reversal events.
 
 ## Requires Human Approval
 
@@ -21,5 +23,8 @@
 - Direct unrestricted Feishu, database, or raw message-store access.
 - External sends outside the configured channel and contact guards.
 - Free-form self-learning by editing prompt or local memory files.
+- Raw file access, direct-chat CSV storage, historical row edits or deletion, dataset
+  renames, cross-group lookup, or storing passwords, tokens, identity numbers, and
+  similarly sensitive data in group CSVs.
 - Guessing member identity, exposing raw member facts, or using group-message evidence
   as final authority for private member profile claims.

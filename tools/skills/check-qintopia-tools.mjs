@@ -14,6 +14,10 @@ const requiredRegisteredTools = {
   erhua: [
     "qintopia_wenyuange_lookup",
     "qintopia_weather_lookup",
+    "qintopia_erhua_csv_list",
+    "qintopia_erhua_csv_create",
+    "qintopia_erhua_csv_append",
+    "qintopia_erhua_csv_query",
     "qintopia_daily_digest_publish",
   ],
   xiaoman: [
@@ -228,6 +232,11 @@ if "${variant}" == "xiaoman":
     fs.cpSync(
       path.join(repoRoot, "skills/knowledge-retrieval"),
       path.join(pluginsDir, "knowledge-retrieval"),
+      { recursive: true }
+    );
+    fs.cpSync(
+      path.join(repoRoot, "skills/erhua-csv"),
+      path.join(pluginsDir, "erhua-csv"),
       { recursive: true }
     );
 
