@@ -3,9 +3,15 @@ set -euo pipefail
 
 APPROVAL="approved-production-xiaoman-daily-case-report-auto-publish-backfill"
 
-if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL:-}" != "$APPROVAL" ]]; then
-  echo "xiaoman daily case report backfill requires explicit owner approval" >&2
+fail() {
+  local reason="$1"
+  echo "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill: ${reason}" >&2
+  echo "xiaoman daily case report backfill failed: ${reason}" >&2
   exit 1
+}
+
+if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_BACKFILL:-}" != "$APPROVAL" ]]; then
+  fail "approval missing"
 fi
 
 EXPECTED_RELEASE_SHA="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA:-}"
@@ -18,31 +24,25 @@ PYTHON_BIN="/usr/bin/python3"
 WORKER="${RELEASE_DIR}/deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh"
 
 if [[ ! "$EXPECTED_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-  echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA must be a 40-character lowercase hex SHA" >&2
-  exit 1
+  fail "release sha invalid"
 fi
 if [[ ! "$BACKFILL_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-  echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE must be YYYY-MM-DD" >&2
-  exit 1
+  fail "backfill date invalid"
 fi
 if [[ "${RELEASE_DIR##*/}" != "$EXPECTED_RELEASE_SHA" ]]; then
-  echo "xiaoman daily case report backfill must run from the reviewed release/current SHA" >&2
-  exit 1
+  fail "release sha drift"
 fi
 if [[ ! -f "$ENV_FILE" ]]; then
-  echo "xiaoman daily case report backfill requires the persistent sidecar env file" >&2
-  exit 1
+  fail "persistent env missing"
 fi
 if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "python3 is required for xiaoman daily case report backfill" >&2
-  exit 1
+  fail "python unavailable"
 fi
 if [[ ! -x "$WORKER" ]]; then
-  echo "xiaoman daily case report backfill requires the reviewed release-local worker" >&2
-  exit 1
+  fail "worker missing"
 fi
 
-"$PYTHON_BIN" - "$BACKFILL_DATE" <<'PY'
+"$PYTHON_BIN" - "$BACKFILL_DATE" <<'PY' || fail "backfill date rejected"
 from __future__ import annotations
 
 import sys
@@ -65,12 +65,10 @@ require_env_line() {
   local count
   count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
   if [[ "$count" != "1" ]]; then
-    echo "xiaoman daily case report backfill requires exactly one ${key}" >&2
-    exit 1
+    fail "env ${key} count invalid"
   fi
   if ! grep -Fxq "${key}=${expected}" "$ENV_FILE"; then
-    echo "xiaoman daily case report backfill requires ${key}=${expected}" >&2
-    exit 1
+    fail "env ${key} value invalid"
   fi
 }
 
@@ -80,12 +78,10 @@ require_env_line_any() {
   local count
   count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
   if [[ "$count" != "1" ]]; then
-    echo "xiaoman daily case report backfill requires exactly one ${key}" >&2
-    exit 1
+    fail "env ${key} count invalid"
   fi
   if ! grep -Eq "^${key}=(${pattern})$" "$ENV_FILE"; then
-    echo "xiaoman daily case report backfill requires ${key} to be reviewed" >&2
-    exit 1
+    fail "env ${key} value invalid"
   fi
 }
 
@@ -94,8 +90,7 @@ require_present_env_line() {
   local count
   count="$(grep -Ec "^${key}=" "$ENV_FILE" || true)"
   if [[ "$count" != "1" ]]; then
-    echo "xiaoman daily case report backfill requires exactly one ${key}" >&2
-    exit 1
+    fail "env ${key} count invalid"
   fi
 }
 
@@ -123,8 +118,7 @@ export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE="$BACKFILL_DATE"
 export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL="$APPROVAL"
 
 if ! "$WORKER" >"${tmp_dir}/worker-output.txt" 2>&1; then
-  echo "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report backfill worker failed" >&2
-  exit 1
+  fail "worker failed"
 fi
 
 echo "xiaoman daily case report backfill completed for ${BACKFILL_DATE}"
