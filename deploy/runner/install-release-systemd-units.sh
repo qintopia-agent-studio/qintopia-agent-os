@@ -76,6 +76,9 @@ fi
 systemctl_bin="${SYSTEMCTL:-systemctl}"
 unit_dir="${QINTOPIA_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 sidecar_env_file="/etc/qintopia/message-sidecar.env"
+ubuntu_user_systemd_unit_dir="/home/ubuntu/.config/systemd/user"
+erhua_profile_scripts_dir="/home/ubuntu/.hermes/profiles/erhua/scripts"
+xiaoman_profile_scripts_dir="/home/ubuntu/.hermes/profiles/xiaoman/scripts"
 hermes_cron_snapshot_root="/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot"
 if [[ -n "${QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE:-}" ]]; then
   case "$release_root" in
@@ -132,16 +135,19 @@ PY
 
 normalize_production_sidecar_env_metadata "$sidecar_env_file"
 
-prepare_hermes_cron_snapshot_root() {
-  local snapshot_root="$1"
+prepare_ubuntu_owned_directory() {
+  local target_dir="$1"
+  local expected_path="$2"
+  local leaf_mode="$3"
+  local label="$4"
   case "$release_root" in
     /home/ubuntu/qintopia-agent-os-releases) ;;
     *)
-      echo "Hermes cron snapshot root preparation skipped outside production release root"
+      echo "${label} preparation skipped outside production release root"
       return
       ;;
   esac
-  python3 - "$snapshot_root" <<'PY'
+  python3 - "$target_dir" "$expected_path" "$leaf_mode" "$label" <<'PY'
 import errno
 import os
 import pwd
@@ -150,77 +156,94 @@ import stat
 import sys
 from pathlib import Path
 
-snapshot_root = Path(sys.argv[1])
-expected = Path("/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot")
-if snapshot_root != expected:
-    raise SystemExit("unexpected Hermes cron snapshot root")
+target_dir = Path(sys.argv[1])
+expected = Path(sys.argv[2])
+leaf_mode = int(sys.argv[3], 8)
+label = sys.argv[4]
+if target_dir != expected:
+    raise SystemExit(f"unexpected {label}")
 
 flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC
 if hasattr(os, "O_NOFOLLOW"):
     flags |= os.O_NOFOLLOW
 
 current_fd = os.open("/", flags)
-snapshot_fd = None
+target_fd = None
 try:
     for index, segment in enumerate(expected.parts[1:]):
-        is_snapshot_root = index == len(expected.parts[1:]) - 1
+        is_target = index == len(expected.parts[1:]) - 1
         try:
             next_fd = os.open(segment, flags, dir_fd=current_fd)
         except FileNotFoundError:
             if segment in {"home", "ubuntu"}:
-                raise SystemExit("Hermes cron snapshot base directory is missing")
-            os.mkdir(segment, 0o700 if is_snapshot_root else 0o755, dir_fd=current_fd)
+                raise SystemExit(f"{label} base directory is missing")
+            os.mkdir(segment, leaf_mode if is_target else 0o755, dir_fd=current_fd)
             next_fd = os.open(segment, flags, dir_fd=current_fd)
         except OSError as error:
             if error.errno in {errno.ELOOP, errno.ENOTDIR}:
-                raise SystemExit(
-                    "Hermes cron snapshot path components must be non-symlink directories"
-                )
+                raise SystemExit(f"{label} path components must be non-symlink directories")
             raise
 
         metadata = os.fstat(next_fd)
         if not stat.S_ISDIR(metadata.st_mode):
-            raise SystemExit(
-                "Hermes cron snapshot path components must be non-symlink directories"
-            )
+            raise SystemExit(f"{label} path components must be non-symlink directories")
         os.close(current_fd)
         current_fd = next_fd
 
-    snapshot_fd = current_fd
+    target_fd = current_fd
     current_fd = None
-    final_metadata = os.lstat(snapshot_root)
-    snapshot_metadata = os.fstat(snapshot_fd)
+    final_metadata = os.lstat(target_dir)
+    target_metadata = os.fstat(target_fd)
     if stat.S_ISLNK(final_metadata.st_mode) or (
         final_metadata.st_dev,
         final_metadata.st_ino,
-    ) != (snapshot_metadata.st_dev, snapshot_metadata.st_ino):
-        raise SystemExit("Hermes cron snapshot root changed during preparation")
+    ) != (target_metadata.st_dev, target_metadata.st_ino):
+        raise SystemExit(f"{label} changed during preparation")
 except BaseException:
     if current_fd is not None:
         os.close(current_fd)
-    if snapshot_fd is not None:
-        os.close(snapshot_fd)
+    if target_fd is not None:
+        os.close(target_fd)
     raise
 
 ubuntu_uid = pwd.getpwnam("ubuntu").pw_uid
 ubuntu_gid = grp.getgrnam("ubuntu").gr_gid
 try:
-    os.fchown(snapshot_fd, ubuntu_uid, ubuntu_gid)
-    os.fchmod(snapshot_fd, 0o700)
-    final_metadata = os.lstat(snapshot_root)
-    snapshot_metadata = os.fstat(snapshot_fd)
+    os.fchown(target_fd, ubuntu_uid, ubuntu_gid)
+    os.fchmod(target_fd, leaf_mode)
+    final_metadata = os.lstat(target_dir)
+    target_metadata = os.fstat(target_fd)
     if stat.S_ISLNK(final_metadata.st_mode) or (
         final_metadata.st_dev,
         final_metadata.st_ino,
-    ) != (snapshot_metadata.st_dev, snapshot_metadata.st_ino):
-        raise SystemExit("Hermes cron snapshot root changed during preparation")
+    ) != (target_metadata.st_dev, target_metadata.st_ino):
+        raise SystemExit(f"{label} changed during preparation")
 finally:
-    os.close(snapshot_fd)
+    os.close(target_fd)
 PY
-  echo "Prepared Hermes cron snapshot root"
+  echo "Prepared ${label}"
 }
 
-prepare_hermes_cron_snapshot_root "$hermes_cron_snapshot_root"
+prepare_ubuntu_owned_directory \
+  "$ubuntu_user_systemd_unit_dir" \
+  "/home/ubuntu/.config/systemd/user" \
+  "0700" \
+  "ubuntu user systemd unit directory"
+prepare_ubuntu_owned_directory \
+  "$erhua_profile_scripts_dir" \
+  "/home/ubuntu/.hermes/profiles/erhua/scripts" \
+  "0700" \
+  "Erhua profile-local Hermes scripts directory"
+prepare_ubuntu_owned_directory \
+  "$xiaoman_profile_scripts_dir" \
+  "/home/ubuntu/.hermes/profiles/xiaoman/scripts" \
+  "0700" \
+  "Xiaoman profile-local Hermes scripts directory"
+prepare_ubuntu_owned_directory \
+  "$hermes_cron_snapshot_root" \
+  "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot" \
+  "0700" \
+  "Hermes cron snapshot root"
 
 "$render_script" \
   --target-sha "$release_sha" \

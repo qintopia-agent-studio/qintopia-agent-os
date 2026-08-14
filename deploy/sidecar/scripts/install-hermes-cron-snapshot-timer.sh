@@ -33,8 +33,8 @@ fail() {
 [[ "$(readlink -f "$RELEASE_DIR")" != "$RELEASE_DIR" ]] || fail "release/current must be a symlink"
 [[ -d "$HOME_DIR" ]] || fail "ubuntu home directory is missing"
 
-UBUNTU_UID="$("$STAT" -c "%u" "$HOME_DIR")"
-UBUNTU_GID="$("$STAT" -c "%g" "$HOME_DIR")"
+UBUNTU_UID="$("$STAT" -c "%u" "$HOME_DIR")" || fail "ubuntu uid lookup failed"
+UBUNTU_GID="$("$STAT" -c "%g" "$HOME_DIR")" || fail "ubuntu gid lookup failed"
 
 systemctl_user() {
   "$RUNUSER" -u ubuntu -- /usr/bin/env -i \
@@ -51,10 +51,10 @@ run_baseline_sync() {
 }
 
 umask 077
-mkdir -p "$UNIT_DIR"
-chown "$UBUNTU_UID:$UBUNTU_GID" "$UNIT_DIR"
+mkdir -p "$UNIT_DIR" || fail "user unit directory create failed"
+chown "$UBUNTU_UID:$UBUNTU_GID" "$UNIT_DIR" || fail "user unit directory ownership failed"
 
-cat >"$SERVICE_UNIT" <<EOF
+cat >"$SERVICE_UNIT" <<EOF || fail "service unit write failed"
 [Unit]
 Description=Hermes cron state snapshot (server-local git history)
 
@@ -63,7 +63,7 @@ Type=oneshot
 ExecStart=${SYNC_SCRIPT}
 EOF
 
-cat >"$TIMER_UNIT" <<EOF
+cat >"$TIMER_UNIT" <<EOF || fail "timer unit write failed"
 [Unit]
 Description=Hermes cron state snapshot timer
 
@@ -76,8 +76,8 @@ Persistent=false
 WantedBy=timers.target
 EOF
 
-chmod 0600 "$SERVICE_UNIT" "$TIMER_UNIT"
-chown "$UBUNTU_UID:$UBUNTU_GID" "$SERVICE_UNIT" "$TIMER_UNIT"
+chmod 0600 "$SERVICE_UNIT" "$TIMER_UNIT" || fail "unit mode update failed"
+chown "$UBUNTU_UID:$UBUNTU_GID" "$SERVICE_UNIT" "$TIMER_UNIT" || fail "unit ownership update failed"
 
 systemctl_user daemon-reload || fail "user systemd daemon-reload failed"
 systemctl_user enable --now hermes-cron-snapshot.timer >/dev/null ||

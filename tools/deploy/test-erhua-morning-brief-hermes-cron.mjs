@@ -17,7 +17,8 @@ const sourceApply = path.join(
   "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh"
 );
 const fixedReleaseDir = "/home/ubuntu/qintopia-agent-os-releases/current";
-const fixedWrapperDest = "/home/ubuntu/.hermes/scripts/qintopia_erhua_morning_brief.sh";
+const fixedWrapperDest =
+  "/home/ubuntu/.hermes/profiles/erhua/scripts/qintopia_erhua_morning_brief.sh";
 const fixedCronFile = "/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json";
 const fixedProfileEnv = "/home/ubuntu/.hermes/profiles/erhua/.env";
 const fixedSyncScript =
@@ -76,10 +77,7 @@ try {
   const cronFile = path.join(cronDir, "jobs.json");
   const profileEnv = path.join(profileDir, ".env");
   const wrapperDest = path.join(
-    tmpRoot,
-    "home",
-    "ubuntu",
-    ".hermes",
+    profileDir,
     "scripts",
     "qintopia_erhua_morning_brief.sh"
   );

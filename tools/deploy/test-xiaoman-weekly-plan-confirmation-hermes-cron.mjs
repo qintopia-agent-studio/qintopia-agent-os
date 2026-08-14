@@ -22,7 +22,7 @@ const sourceWrapper = path.join(
 );
 const fixedReleaseDir = "/home/ubuntu/qintopia-agent-os-releases/current";
 const fixedWrapperDest =
-  "/home/ubuntu/.hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh";
+  "/home/ubuntu/.hermes/profiles/xiaoman/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh";
 const fixedCronFile = "/home/ubuntu/.hermes/profiles/xiaoman/cron/jobs.json";
 const fixedProfileEnv = "/home/ubuntu/.hermes/profiles/xiaoman/.env";
 const fixedSyncScript =
@@ -84,10 +84,7 @@ try {
   const cronFile = path.join(cronDir, "jobs.json");
   const profileEnv = path.join(profileDir, ".env");
   const wrapperDest = path.join(
-    tmpRoot,
-    "home",
-    "ubuntu",
-    ".hermes",
+    profileDir,
     "scripts",
     "qintopia_xiaoman_weekly_plan_confirmation.sh"
   );

@@ -22,7 +22,8 @@ after every run with `tempfile + atomic_replace`, which replaces the link with a
 regular file on the first run. Version history is copy-based instead:
 
 - `deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh` mirrors every live `jobs.json`
-  and every file under `/home/ubuntu/.hermes/scripts/` into a server-local git repo at
+  plus profile-local no-agent wrappers under
+  `/home/ubuntu/.hermes/profiles/<profile>/scripts/` into a server-local git repo at
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot` (no remote, mode
   `0700`), committing whenever content changes.
 - The `hermes-cron-snapshot.timer` systemd **user** timer runs it every 5 minutes, and
@@ -45,8 +46,12 @@ Git-managed (sanitized, reviewed through PR):
   release-managed workers. Business logic stays in the reviewed workers under
   `release/current`; Hermes owns schedule, enablement, and delivery target.
 
-Runtime-local (never in git): live `jobs.json`, scripts deployed under
-`/home/ubuntu/.hermes/scripts/`, and the snapshot repo.
+Runtime-local (never in git): live `jobs.json`, no-agent scripts deployed under
+`/home/ubuntu/.hermes/profiles/<profile>/scripts/`, legacy global helpers under
+`/home/ubuntu/.hermes/scripts/`, and the snapshot repo. Reviewed apply scripts must
+normalize profile-local no-agent wrapper owner/mode back to the live cron file/profile
+owner and `0700`; preserving an old root-owned wrapper would make Hermes unable to
+execute the reviewed script even when declaration parity passes.
 
 ## Adding a New Recurring Task
 
