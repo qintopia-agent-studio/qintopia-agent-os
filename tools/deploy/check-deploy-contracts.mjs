@@ -3170,6 +3170,8 @@ const xiaomanDailyCaseReportBackfillPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh";
 const xiaomanDailyCaseReportApprovalRepairPath =
   "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-production-approval.sh";
+const xiaomanDailyCaseReportReadThroughRepairPath =
+  "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-read-through-production.sh";
 const xiaomanDailyCaseReportActivationPath =
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh";
 const xiaomanDailyCaseReportRollbackPath =
@@ -3180,6 +3182,7 @@ for (const scriptPath of [
   xiaomanDailyCaseReportWorkerPath,
   xiaomanDailyCaseReportBackfillPath,
   xiaomanDailyCaseReportApprovalRepairPath,
+  xiaomanDailyCaseReportReadThroughRepairPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,

@@ -15,6 +15,7 @@ runner accepts exactly one target per request:
 
 - `xiaoman-daily-case-report-auto-publish-backfill`
 - `xiaoman-daily-case-report-approval-repair`
+- `xiaoman-daily-case-report-read-through-repair`
 - `xiaoman-creative-profile-candidates-apply`
 - `erhua-morning-brief`
 - `hermes-cron-snapshot-install`
@@ -75,6 +76,29 @@ approval=approved-production-xiaoman-daily-case-report-config-v1
 The repair script validates the current release SHA and the fixed env file shape. It
 no-ops when the exact approval already exists, fails closed on duplicate or wrong
 approval values, and emits only sanitized runtime one-shot evidence.
+
+### Xiaoman Daily Case Report Read-Through Repair
+
+Use only when Xiaoman daily case-report backfill or worker-run evidence reports the
+fixed safe failure
+`QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE count invalid` after Hermes
+cutover. This target may add exactly one fixed `READ_THROUGH_ENABLE=1` line to the fixed
+persistent env file; it does not accept chat ids, group ids, database hashes, payload
+JSON, env values, or arbitrary config fields.
+
+Workflow inputs:
+
+```text
+release_sha=<current-production-release-sha>
+runtime_one_shot_target=xiaoman-daily-case-report-read-through-repair
+backfill_date=
+payload_sha256=
+approval=approved-production-xiaoman-daily-case-report-config-v1
+```
+
+The repair script validates the current release SHA and the fixed env file shape. It
+no-ops when the exact read-through key already exists, fails closed on duplicate or
+wrong values, and emits only sanitized runtime one-shot evidence.
 
 ### Xiaoman Creative Profile Candidates Apply
 

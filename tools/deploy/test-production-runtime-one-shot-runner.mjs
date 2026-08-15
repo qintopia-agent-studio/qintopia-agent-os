@@ -249,6 +249,28 @@ echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID=must-not-leak"
   writeExecutable(
     path.relative(
       tmpRoot,
+      path.join(
+        scriptsDir,
+        "repair-xiaoman-daily-case-report-read-through-production.sh"
+      )
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_REPAIR:-}" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
+  exit 66
+fi
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_REPAIR_RELEASE_SHA:-}" != ${JSON.stringify(
+      sha
+    )} ]]; then
+  exit 67
+fi
+printf 'run-daily-read-through-repair\\n' >> ${JSON.stringify(oneShotLog)}
+echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
       path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
     ),
     `#!/usr/bin/env bash
@@ -383,6 +405,43 @@ exit 72
   }
   if (oneShotCheck.detail.includes("must-not-leak")) {
     throw new Error("daily approval repair evidence leaked raw script output");
+  }
+
+  const dailyReadThroughRepairRequestId = "deploy-20260810T000008Z-abcdef123456";
+  result = runRequest(dailyReadThroughRepairRequestId, {
+    targets: ["xiaoman-daily-case-report-read-through-repair"],
+    approval: "approved-production-xiaoman-daily-case-report-config-v1",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `daily read-through repair one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${dailyReadThroughRepairRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error("daily read-through repair check was not recorded as passed");
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "xiaoman-daily-case-report-read-through-repair" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !==
+      "xiaoman_daily_case_report_read_through_repair=completed"
+  ) {
+    throw new Error(
+      `unexpected daily read-through repair evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("daily read-through repair evidence leaked raw script output");
   }
 
   const erhuaRequestId = "deploy-20260810T000001Z-abcdef123456";
@@ -528,6 +587,7 @@ exit 72
     "run-erhua-one-shot",
     "run-hermes-cron-snapshot-install",
     "run-daily-approval-repair",
+    "run-daily-read-through-repair",
   ]) {
     if (!commandLog.includes(expected)) {
       throw new Error(`missing one-shot command log entry: ${expected}`);
