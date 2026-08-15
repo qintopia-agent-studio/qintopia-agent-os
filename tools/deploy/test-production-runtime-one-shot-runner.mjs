@@ -230,6 +230,25 @@ echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak"
   writeExecutable(
     path.relative(
       tmpRoot,
+      path.join(scriptsDir, "repair-xiaoman-daily-case-report-production-approval.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_APPROVAL_REPAIR:-}" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
+  exit 64
+fi
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_APPROVAL_REPAIR_RELEASE_SHA:-}" != ${JSON.stringify(
+      sha
+    )} ]]; then
+  exit 65
+fi
+printf 'run-daily-approval-repair\\n' >> ${JSON.stringify(oneShotLog)}
+echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID=must-not-leak"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
       path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
     ),
     `#!/usr/bin/env bash
@@ -330,6 +349,40 @@ exit 72
   }
   if (oneShotCheck.detail.includes("must-not-leak")) {
     throw new Error("runtime one-shot evidence leaked raw script output");
+  }
+
+  const dailyRepairRequestId = "deploy-20260810T000007Z-abcdef123456";
+  result = runRequest(dailyRepairRequestId, {
+    targets: ["xiaoman-daily-case-report-approval-repair"],
+    approval: "approved-production-xiaoman-daily-case-report-config-v1",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `daily approval repair one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${dailyRepairRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error("daily approval repair check was not recorded as passed");
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "xiaoman-daily-case-report-approval-repair" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !== "xiaoman_daily_case_report_approval_repair=completed"
+  ) {
+    throw new Error(`unexpected daily approval repair evidence ${oneShotCheck.detail}`);
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("daily approval repair evidence leaked raw script output");
   }
 
   const erhuaRequestId = "deploy-20260810T000001Z-abcdef123456";
@@ -474,6 +527,7 @@ exit 72
     "observe-erhua:enabled",
     "run-erhua-one-shot",
     "run-hermes-cron-snapshot-install",
+    "run-daily-approval-repair",
   ]) {
     if (!commandLog.includes(expected)) {
       throw new Error(`missing one-shot command log entry: ${expected}`);

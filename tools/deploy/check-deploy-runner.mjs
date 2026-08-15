@@ -1630,6 +1630,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
   const targetOptions = targetInput?.options || [];
   for (const expectedTarget of [
     "xiaoman-daily-case-report-auto-publish-backfill",
+    "xiaoman-daily-case-report-approval-repair",
     "xiaoman-creative-profile-candidates-apply",
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
@@ -1667,8 +1668,9 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "require_allowed_value()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install",
+    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install",
     "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+    "approved-production-xiaoman-daily-case-report-config-v1",
     "approved-production-xiaoman-creative-profile-candidates",
     "approved-production-erhua-morning-brief-one-shot",
     "approved-production-hermes-cron-snapshot",
@@ -1801,6 +1803,7 @@ for (const fragment of [
   "activate-xiaoman-weekly-plan-confirmation-production.sh",
   "activate-xiaoman-weekly-preview-production.sh",
   "xiaoman-daily-case-report-auto-publish-backfill.sh",
+  "repair-xiaoman-daily-case-report-production-approval.sh",
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "qiwe-image-send-production-observation-smoke.sh",
   "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
@@ -2097,6 +2100,7 @@ const hermesCronSnapshotPath =
   "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot";
 const xiaomanCreativeProfileCandidatesPath =
   "/home/ubuntu/.local/state/qintopia-agentos/xiaoman-creative-profile-candidates";
+const sidecarEnvPath = "/etc/qintopia/message-sidecar.env";
 for (const bypassFixture of [
   "/home/ubuntu/.local/state/qintopia-agentos/",
   "/home/ubuntu/.local/state//qintopia-agentos/.",
@@ -2180,6 +2184,21 @@ if (
   addError(
     "deploy runner service must explicitly allow fixed Xiaoman creative-profile candidate payload access"
   );
+}
+if (runnerServiceText && !runnerReadWritePaths.includes(sidecarEnvPath)) {
+  addError(
+    "deploy runner service must explicitly allow fixed Xiaoman daily report approval repair env writes"
+  );
+}
+if (
+  runnerServiceText &&
+  runnerReadWritePaths.some(
+    (candidatePath) =>
+      candidatePath === "/etc/qintopia" ||
+      readWritePathCovers(candidatePath, "/etc/qintopia")
+  )
+) {
+  addError("deploy runner service must not allow whole /etc/qintopia writes");
 }
 if (
   runnerServiceText &&
@@ -2616,6 +2635,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh",
+    "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-production-approval.sh",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",

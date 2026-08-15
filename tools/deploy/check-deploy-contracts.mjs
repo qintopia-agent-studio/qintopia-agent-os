@@ -3168,6 +3168,8 @@ const xiaomanDailyCaseReportObservationPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh";
 const xiaomanDailyCaseReportBackfillPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh";
+const xiaomanDailyCaseReportApprovalRepairPath =
+  "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-production-approval.sh";
 const xiaomanDailyCaseReportActivationPath =
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh";
 const xiaomanDailyCaseReportRollbackPath =
@@ -3177,6 +3179,7 @@ for (const scriptPath of [
   xiaomanCreativeProfileCandidatesApplyPath,
   xiaomanDailyCaseReportWorkerPath,
   xiaomanDailyCaseReportBackfillPath,
+  xiaomanDailyCaseReportApprovalRepairPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,
@@ -3333,6 +3336,34 @@ if (exists(xiaomanDailyCaseReportBackfillPath)) {
     '"$SYSTEMCTL" start "$SERVICE_NAME"',
   ]) {
     forbidFragment(xiaomanDailyCaseReportBackfillPath, backfill, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportApprovalRepairPath)) {
+  const repair = readText(xiaomanDailyCaseReportApprovalRepairPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_APPROVAL_REPAIR",
+    "approved-production-xiaoman-daily-case-report-config-v1",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_APPROVAL_REPAIR_RELEASE_SHA",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL",
+    "approved-production-xiaoman-daily-case-report-auto-publish",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'RELEASE_CURRENT="/home/ubuntu/qintopia-agent-os-releases/current"',
+    "stat.S_ISLNK",
+    "approval key is duplicated",
+    "approval key value invalid",
+    "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report approval repair: ${reason}",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportApprovalRepairPath, repair, fragment);
+  }
+  for (const fragment of [
+    "QIWE_TOKEN",
+    "QIWE_GUID",
+    "source ",
+    "eval ",
+    'SYSTEMCTL="${SYSTEMCTL:-systemctl}"',
+    'SYSTEMCTL="systemctl"',
+  ]) {
+    forbidFragment(xiaomanDailyCaseReportApprovalRepairPath, repair, fragment);
   }
 }
 if (exists(xiaomanDailyCaseReportObservationPath)) {

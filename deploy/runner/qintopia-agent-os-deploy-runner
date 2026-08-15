@@ -133,6 +133,7 @@ allowed_runtime_one_shot_targets = {
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
     "xiaoman-daily-case-report-auto-publish-backfill",
+    "xiaoman-daily-case-report-approval-repair",
     "xiaoman-creative-profile-candidates-apply",
 }
 allowed_targets = {
@@ -340,6 +341,7 @@ if "production-runtime-one-shot" in release_scope:
         "erhua-morning-brief": "approved-production-erhua-morning-brief-one-shot",
         "hermes-cron-snapshot-install": "approved-production-hermes-cron-snapshot",
         "xiaoman-daily-case-report-auto-publish-backfill": "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
+        "xiaoman-daily-case-report-approval-repair": "approved-production-xiaoman-daily-case-report-config-v1",
         "xiaoman-creative-profile-candidates-apply": "approved-production-xiaoman-creative-profile-candidates",
     }
     if approval != expected_approvals[target]:
@@ -1073,6 +1075,9 @@ runtime_one_shot_success_detail() {
       printf 'xiaoman_daily_case_report_backfill_date=%s; xiaoman_daily_case_report_backfill=completed' \
         "$runtime_one_shot_backfill_date"
       ;;
+    xiaoman-daily-case-report-approval-repair)
+      printf 'xiaoman_daily_case_report_approval_repair=completed'
+      ;;
     xiaoman-creative-profile-candidates-apply)
       printf 'xiaoman_creative_profile_candidates_apply=completed; payload_sha256=%s' \
         "$runtime_one_shot_payload_sha256"
@@ -1355,6 +1360,12 @@ run_runtime_one_shot_target() {
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_RELEASE_SHA="$release_sha" \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_DATE="$runtime_one_shot_backfill_date" \
         "${script_dir}/xiaoman-daily-case-report-auto-publish-backfill.sh" >/dev/null || return $?
+      ;;
+    xiaoman-daily-case-report-approval-repair)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_APPROVAL_REPAIR=approved-production-xiaoman-daily-case-report-config-v1 \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_APPROVAL_REPAIR_RELEASE_SHA="$release_sha" \
+        "${script_dir}/repair-xiaoman-daily-case-report-production-approval.sh" >/dev/null || return $?
       ;;
     hermes-cron-snapshot-install)
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
