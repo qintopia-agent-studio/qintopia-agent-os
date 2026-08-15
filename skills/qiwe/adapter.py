@@ -825,20 +825,35 @@ def _recent_message_context(chat_id: str, message_id: str) -> Dict[str, Any]:
     return dict(context)
 
 
+# 企业微信对合并转发（聊天记录）/图片/语音等类型的引用气泡不返回原文，
+# 常见表现为引用气泡仅显示此占位符，或引用对象本身就没有可提取文本。
+_QIWE_UNREADABLE_REPLY_PLACEHOLDER = "该消息类型暂不能展示"
+
+
 def _reply_reference(raw_event: Dict[str, Any]) -> Dict[str, Any]:
     msg_data = raw_event.get("msgData") if isinstance(raw_event.get("msgData"), dict) else {}
     reply = msg_data.get("reply")
     if not isinstance(reply, dict) or not reply:
         return {}
     msg_id = _text(reply.get("msgId") or reply.get("msgUniqueIdentifier"))
+    kind = _message_kind({"msgType": reply.get("msgType")}, {"msgType": reply.get("msgType"), "msgData": reply})
+    text = _text(reply.get("content") or reply.get("title"))
     ref: Dict[str, Any] = {
         "message_id": msg_id,
-        "message_kind": _message_kind({"msgType": reply.get("msgType")}, {"msgType": reply.get("msgType"), "msgData": reply}),
-        "text": _text(reply.get("content") or reply.get("title")),
+        "message_kind": kind,
+        "text": text,
         "sender_id": _text(reply.get("userId") or reply.get("senderId") or reply.get("fromUserId")),
     }
     if isinstance(reply.get("reply"), dict):
         ref["nested_reply"] = True
+    # 识别「被引用消息原文不可读」：企业微信对合并转发/部分类型不返回引用内容，
+    # 要么给占位符，要么引用对象本身就没有可提取文本（图片/语音/合并转发等）。
+    if text == _QIWE_UNREADABLE_REPLY_PLACEHOLDER:
+        ref["unreadable"] = True
+        ref["unreadable_reason"] = "placeholder"
+    elif not text:
+        ref["unreadable"] = True
+        ref["unreadable_reason"] = "unsupported_type"
     return {key: value for key, value in ref.items() if value not in ("", None, [], {})}
 
 
@@ -859,6 +874,13 @@ def _resolve_referenced_message(parsed: ParsedQiWeMessage) -> Dict[str, Any]:
 def _referenced_message_text(reference: Dict[str, Any]) -> str:
     if not reference:
         return ""
+    if reference.get("unreadable"):
+        lines = ["引用消息上下文："]
+        kind = _text(reference.get("message_kind"))
+        if kind:
+            lines.append(f"- 类型：{kind}")
+        lines.append("- 注意：被引用消息的原文企业微信未提供（合并转发/部分类型不返回引用内容），无法读取。")
+        return "\n".join(lines)
     lines = ["引用消息上下文："]
     kind = _text(reference.get("message_kind"))
     if kind:
@@ -2330,6 +2352,13 @@ class QiWeAdapter(BasePlatformAdapter):
         reference_text = _referenced_message_text(parsed.referenced_message)
         if parsed.message_kind == "text":
             if reference_text:
+                if parsed.referenced_message and parsed.referenced_message.get("unreadable"):
+                    guidance = (
+                        "【引用消息不可读】你引用的消息原文企业微信未返回"
+                        "（合并转发/部分类型不提供引用内容）。请直接把要处理的聊天文本发给我，"
+                        "或把聊天记录转发到本群，我来读取处理。"
+                    )
+                    return f"{guidance}\n\n{reference_text}\n\n当前消息：{parsed.text}"
                 return f"{reference_text}\n\n当前消息：{parsed.text}"
             return parsed.text
         if not self.qiwe.active_attachment_preprocess_enabled:

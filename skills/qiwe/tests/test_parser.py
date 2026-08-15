@@ -1874,6 +1874,82 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(event.raw_message["referenced_message"]["sender_id"], "7881303308049798")
         _RECENT_QIWE_MESSAGE_CONTEXTS.clear()
 
+    def test_reply_reference_placeholder_marked_unreadable(self) -> None:
+        # 企业微信对合并转发（聊天记录）的引用气泡不返回原文，仅给占位符。
+        raw_event = {
+            "msgData": {
+                "reply": {
+                    "msgId": "quoted-chat-record-001",
+                    "msgType": 123,
+                    "content": "该消息类型暂不能展示",
+                }
+            }
+        }
+        ref = adapter_module._reply_reference(raw_event)
+
+        self.assertTrue(ref.get("unreadable"))
+        self.assertEqual(ref.get("unreadable_reason"), "placeholder")
+        ref_text = adapter_module._referenced_message_text(ref)
+        # 不能把占位符当原文注入，应给出不可读说明。
+        self.assertNotIn("该消息类型暂不能展示", ref_text)
+        self.assertNotIn("- 内容：", ref_text)
+        self.assertIn("无法读取", ref_text)
+        self.assertIn("合并转发", ref_text)
+
+    def test_reply_reference_empty_reply_not_faked(self) -> None:
+        # 无引用的普通消息，reply 为空对象，不应伪造引用内容。
+        raw_event = {"msgData": {"reply": {}, "content": "普通消息"}}
+        ref = adapter_module._reply_reference(raw_event)
+        self.assertEqual(ref, {})
+
+    def test_normal_text_quote_still_works(self) -> None:
+        # 普通文本引用应照常注入原文，且不被标记为不可读。
+        raw_event = {
+            "msgData": {
+                "reply": {
+                    "msgId": "quoted-text-001",
+                    "msgType": 0,
+                    "content": "二花生成的真实文本",
+                }
+            }
+        }
+        ref = adapter_module._reply_reference(raw_event)
+
+        self.assertNotIn("unreadable", ref)
+        self.assertEqual(ref.get("text"), "二花生成的真实文本")
+        ref_text = adapter_module._referenced_message_text(ref)
+        self.assertIn("- 内容：二花生成的真实文本", ref_text)
+
+    def test_dispatch_text_unreadable_quote_guidance(self) -> None:
+        # 不可读引用场景下，dispatch 文本应给出明确引导而非编造。
+        raw_event = {
+            "msgData": {
+                "reply": {
+                    "msgId": "quoted-chat-record-002",
+                    "msgType": 123,
+                    "content": "该消息类型暂不能展示",
+                }
+            }
+        }
+        ref = adapter_module._reply_reference(raw_event)
+        parsed = ParsedQiWeMessage(
+            accepted=True,
+            reason="ok",
+            should_trigger=True,
+            text="提炼一下二花这段的风格",
+            message_kind="text",
+            referenced_message=ref,
+        )
+        adapter = QiWeAdapter(type("Config", (), {"extra": {"active_attachment_preprocess_enabled": True}})())
+
+        dispatch_text = adapter._active_dispatch_text(parsed)
+
+        self.assertIn("引用消息不可读", dispatch_text)
+        self.assertIn("转发到本群", dispatch_text)
+        self.assertIn("当前消息：提炼一下二花这段的风格", dispatch_text)
+        # 占位符本身不应作为原文泄露给模型。
+        self.assertNotIn("该消息类型暂不能展示", dispatch_text)
+
     def test_dispatch_uses_persisted_identity_cache_without_qiwe_lookup(self) -> None:
         class RecordingAdapter(QiWeAdapter):
             def __init__(self) -> None:
