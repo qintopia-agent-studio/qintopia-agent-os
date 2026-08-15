@@ -290,6 +290,28 @@ echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID=must-not-leak"
   writeExecutable(
     path.relative(
       tmpRoot,
+      path.join(
+        scriptsDir,
+        "repair-xiaoman-daily-case-report-target-group-id-production.sh"
+      )
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID_REPAIR:-}" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
+  exit 70
+fi
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID_REPAIR_RELEASE_SHA:-}" != ${JSON.stringify(
+      sha
+    )} ]]; then
+  exit 71
+fi
+printf 'run-daily-target-group-id-repair\\n' >> ${JSON.stringify(oneShotLog)}
+echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID=must-not-leak"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
       path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
     ),
     `#!/usr/bin/env bash
@@ -495,6 +517,43 @@ exit 72
   }
   if (oneShotCheck.detail.includes("must-not-leak")) {
     throw new Error("daily chat-id repair evidence leaked raw script output");
+  }
+
+  const dailyTargetGroupIdRepairRequestId = "deploy-20260810T000010Z-abcdef123456";
+  result = runRequest(dailyTargetGroupIdRepairRequestId, {
+    targets: ["xiaoman-daily-case-report-target-group-id-repair"],
+    approval: "approved-production-xiaoman-daily-case-report-config-v1",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `daily target group id repair one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${dailyTargetGroupIdRepairRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error("daily target group id repair check was not recorded as passed");
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "xiaoman-daily-case-report-target-group-id-repair" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !==
+      "xiaoman_daily_case_report_target_group_id_repair=completed"
+  ) {
+    throw new Error(
+      `unexpected daily target group id repair evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("daily target group id repair evidence leaked raw script output");
   }
 
   const erhuaRequestId = "deploy-20260810T000001Z-abcdef123456";
