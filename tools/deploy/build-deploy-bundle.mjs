@@ -72,6 +72,7 @@ const sourceFiles = [
   "deploy/sidecar/scripts/apply-xiaoman-creative-profile-candidates-production.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-backfill.sh",
+  "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-production-approval.sh",
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",

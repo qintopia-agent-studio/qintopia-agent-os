@@ -82,6 +82,16 @@
     workflows/xiaoman-daily-case-report/tests/test_apply_creative_profile_candidates.py -v
   ```
 
+- Xiaoman daily case-report production approval repair is the only reviewed one-shot
+  path for restoring a missing
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_PRODUCTION_APPROVAL` after Hermes
+  cutover. Use `Run Production Runtime One-Shot` with
+  `runtime_one_shot_target=xiaoman-daily-case-report-approval-repair` and
+  `approval=approved-production-xiaoman-daily-case-report-config-v1`; it may write only
+  the fixed approval constant to `/etc/qintopia/message-sidecar.env`, must fail closed
+  on duplicate/wrong values, and must never accept or expose chat ids, group ids, DB
+  hashes, payload JSON, env values, or arbitrary config fields.
+
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - Local PR quick tier: `pnpm check:pr:quick`
