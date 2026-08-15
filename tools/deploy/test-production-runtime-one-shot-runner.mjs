@@ -309,6 +309,29 @@ printf 'run-daily-target-group-id-repair\\n' >> ${JSON.stringify(oneShotLog)}
 echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID=must-not-leak"
 `
   );
+
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(
+        scriptsDir,
+        "repair-xiaoman-daily-case-report-storage-backend-production.sh"
+      )
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND_REPAIR:-}" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
+  exit 70
+fi
+if [[ "\${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND_REPAIR_RELEASE_SHA:-}" != ${JSON.stringify(
+      sha
+    )} ]]; then
+  exit 71
+fi
+printf 'run-daily-storage-backend-repair\\n' >> ${JSON.stringify(oneShotLog)}
+echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND=must-not-leak"
+`
+  );
   writeExecutable(
     path.relative(
       tmpRoot,
@@ -554,6 +577,43 @@ exit 72
   }
   if (oneShotCheck.detail.includes("must-not-leak")) {
     throw new Error("daily target group id repair evidence leaked raw script output");
+  }
+
+  const dailyStorageBackendRepairRequestId = "deploy-20260810T000011Z-abcdef123456";
+  result = runRequest(dailyStorageBackendRepairRequestId, {
+    targets: ["xiaoman-daily-case-report-storage-backend-repair"],
+    approval: "approved-production-xiaoman-daily-case-report-config-v1",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `daily storage backend repair one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${dailyStorageBackendRepairRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error("daily storage backend repair check was not recorded as passed");
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "xiaoman-daily-case-report-storage-backend-repair" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !==
+      "xiaoman_daily_case_report_storage_backend_repair=completed"
+  ) {
+    throw new Error(
+      `unexpected daily storage backend repair evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("daily storage backend repair evidence leaked raw script output");
   }
 
   const erhuaRequestId = "deploy-20260810T000001Z-abcdef123456";

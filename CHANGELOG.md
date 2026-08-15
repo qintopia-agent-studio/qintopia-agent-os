@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.146](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.145...v0.2.146) (2026-08-15)
+
+
+### Bug Fixes
+
+* **deploy:** add xiaoman daily case report storage backend repair one-shot ([#590](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/590)) ([1be9dfc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1be9dfc45d133b6e9368e09f71599112d96db4fe))
+
 ## [0.2.145](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.144...v0.2.145) (2026-08-15)
 
 
