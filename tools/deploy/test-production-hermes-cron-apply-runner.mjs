@@ -16,6 +16,8 @@ const signingKey = "test-signing-key";
 const keyId = "production";
 const requestId = "deploy-20260811T010000Z-abcdef123456";
 const sha = "f426017c852acc6ed1d554a9b64ffd90d303bbc4";
+const createdAt = new Date().toISOString();
+const expiresAt = new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString();
 
 const writeExecutable = (relativePath, content) => {
   const filePath = path.join(tmpRoot, relativePath);
@@ -52,8 +54,8 @@ const buildRequest = (overrides = {}) => {
     environment: "production",
     repository: "qintopia-agent-studio/qintopia-agent-os",
     requested_by: "codex",
-    created_at: "2026-08-11T01:00:00Z",
-    expires_at: "2099-08-11T02:00:00Z",
+    created_at: createdAt,
+    expires_at: expiresAt,
     commit_sha: sha,
     runtime_sha: sha,
     runtime_artifact_profile: "huabaosi-production",
@@ -87,7 +89,7 @@ const buildRequest = (overrides = {}) => {
     algorithm: "hmac-sha256",
     issuer: "github-actions",
     key_id: keyId,
-    signed_at: "2026-08-11T01:00:00Z",
+    signed_at: request.created_at,
   };
   request.signature = {
     ...signatureMetadata,

@@ -16,6 +16,8 @@ const signingKey = "test-signing-key";
 const keyId = "production";
 const requestId = "deploy-20260809T000000Z-abcdef123456";
 const sha = "113ce49141b06fc44edcee42026aee0a614ac027";
+const createdAt = new Date().toISOString();
+const expiresAt = new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString();
 
 const writeExecutable = (relativePath, content) => {
   const filePath = path.join(tmpRoot, relativePath);
@@ -44,6 +46,21 @@ const signRequest = (request, metadata) =>
     .update(canonicalJson({ request, signature: metadata }))
     .digest("hex");
 
+const resignRequest = (request, signedAt = request.created_at) => {
+  delete request.signature;
+  const signatureMetadata = {
+    algorithm: "hmac-sha256",
+    issuer: "github-actions",
+    key_id: keyId,
+    signed_at: signedAt,
+  };
+  request.signature = {
+    ...signatureMetadata,
+    value: signRequest(request, signatureMetadata),
+  };
+  return request;
+};
+
 const buildRequest = (overrides = {}) => {
   const effectiveRequestId = overrides.request_id ?? requestId;
   const request = {
@@ -52,8 +69,8 @@ const buildRequest = (overrides = {}) => {
     environment: "production",
     repository: "qintopia-agent-studio/qintopia-agent-os",
     requested_by: "codex",
-    created_at: "2026-08-09T00:00:00Z",
-    expires_at: "2099-08-09T01:00:00Z",
+    created_at: createdAt,
+    expires_at: expiresAt,
     commit_sha: sha,
     runtime_sha: sha,
     runtime_artifact_profile: "huabaosi-production",
@@ -80,17 +97,7 @@ const buildRequest = (overrides = {}) => {
     },
     ...overrides,
   };
-  const signatureMetadata = {
-    algorithm: "hmac-sha256",
-    issuer: "github-actions",
-    key_id: keyId,
-    signed_at: "2026-08-09T00:00:00Z",
-  };
-  request.signature = {
-    ...signatureMetadata,
-    value: signRequest(request, signatureMetadata),
-  };
-  return request;
+  return resignRequest(request);
 };
 
 try {
@@ -164,6 +171,7 @@ fi
     "xiaoman-weekly-plan-confirmation-production-observation-smoke.sh",
     "activate-xiaoman-weekly-preview-production.sh",
     "xiaoman-weekly-preview-production-observation-smoke.sh",
+    "activate-space-automation-runtime-production.sh",
   ];
   for (const scriptName of scriptNames) {
     writeExecutable(
@@ -174,6 +182,21 @@ printf '%s\\n' ${JSON.stringify(scriptName)} >> ${JSON.stringify(activationLog)}
 `
     );
   }
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "activate-space-automation-runtime-production.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_ACTIVATION:-}" != "approved-production-space-automation-runtime" ]]; then
+  exit 98
+fi
+printf '%s\n' "activate-space-automation-runtime-production.sh" >> ${JSON.stringify(
+      activationLog
+    )}
+`
+  );
   for (const scriptName of [
     "apply-erhua-morning-brief-production-config.sh",
     "apply-xiaoman-weekly-preview-production-config.sh",
@@ -242,29 +265,139 @@ exit 99
     );
   }
 
-  const failedPreviewRequestId = "deploy-20260809T000001Z-abcdef123456";
+  const spaceRuntimeRequestId = "deploy-20260809T000003Z-abcdef123456";
+  const spaceRuntimeRequestPath = path.join(
+    tmpRoot,
+    "space-runtime-activation-request.json"
+  );
+  fs.writeFileSync(
+    spaceRuntimeRequestPath,
+    `${JSON.stringify(
+      buildRequest({
+        request_id: spaceRuntimeRequestId,
+        activation: { targets: ["space-automation-runtime"] },
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  const spaceRuntimeActivation = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", spaceRuntimeRequestPath],
+    { cwd: stateDir, env, encoding: "utf8" }
+  );
+  if (spaceRuntimeActivation.status !== 0) {
+    throw new Error(
+      `Space runtime activation routing failed\n${spaceRuntimeActivation.stdout}\n${spaceRuntimeActivation.stderr}`
+    );
+  }
+  const spaceRuntimeResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${spaceRuntimeRequestId}.json`),
+      "utf8"
+    )
+  );
+  const spaceRuntimeCheck = spaceRuntimeResult.checks.find(
+    (check) => check.name === "production-timer-activation"
+  );
+  const spaceRuntimeDetail = JSON.parse(spaceRuntimeCheck.detail);
+  if (
+    spaceRuntimeDetail.targets[0].target !== "space-automation-runtime" ||
+    spaceRuntimeDetail.targets[0].status !== "passed"
+  ) {
+    throw new Error(
+      `unexpected Space runtime activation evidence ${spaceRuntimeCheck.detail}`
+    );
+  }
+
+  const failedActivationRequestId = "deploy-20260809T000001Z-abcdef123456";
+  const injectedSecret = "postgres://activation-secret@example.invalid/qintopia";
   writeExecutable(
     path.relative(
       tmpRoot,
-      path.join(scriptsDir, "activate-xiaoman-weekly-preview-production.sh")
+      path.join(scriptsDir, "activate-space-automation-runtime-production.sh")
     ),
     `#!/usr/bin/env bash
 set -euo pipefail
-echo "xiaoman weekly preview activation requires QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=1" >&2
+echo ${JSON.stringify(injectedSecret)} >&2
+echo "qintopia_activation_safe_failure=preflight_failed" >&2
+echo "qintopia_activation_safe_failure=${injectedSecret}" >&2
 exit 42
 `
   );
-  const failedPreviewRequestPath = path.join(
+  const failedActivationRequestPath = path.join(
     tmpRoot,
-    "failed-preview-activation-request.json"
+    "failed-space-runtime-activation-request.json"
   );
   fs.writeFileSync(
-    failedPreviewRequestPath,
+    failedActivationRequestPath,
     `${JSON.stringify(
       buildRequest({
-        request_id: failedPreviewRequestId,
+        request_id: failedActivationRequestId,
+        activation: { targets: ["space-automation-runtime"] },
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  const failedActivation = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", failedActivationRequestPath],
+    {
+      cwd: stateDir,
+      env,
+      encoding: "utf8",
+    }
+  );
+  if (failedActivation.status !== 42) {
+    throw new Error(
+      `expected failed activation to exit 42, got ${failedActivation.status}\nstdout:\n${failedActivation.stdout}\nstderr:\n${failedActivation.stderr}`
+    );
+  }
+  const failedActivationResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${failedActivationRequestId}.json`),
+      "utf8"
+    )
+  );
+  const failedActivationCheck = failedActivationResult.checks.find(
+    (check) => check.name === "production-timer-activation"
+  );
+  if (!failedActivationCheck || failedActivationCheck.status !== "failed") {
+    throw new Error("failed activation check was not recorded");
+  }
+  const failedActivationDetail = JSON.parse(failedActivationCheck.detail);
+  const failedActivationTarget = failedActivationDetail.targets[0];
+  if (
+    failedActivationTarget.status !== "failed" ||
+    failedActivationTarget.detail !== "exit 42: preflight_failed"
+  ) {
+    throw new Error(
+      `expected failed activation detail to contain only the safe marker, got ${JSON.stringify(
+        failedActivationTarget
+      )}`
+    );
+  }
+  const persistedFailure = JSON.stringify(failedActivationResult);
+  if (
+    persistedFailure.includes(injectedSecret) ||
+    `${failedActivation.stdout}\n${failedActivation.stderr}`.includes(injectedSecret)
+  ) {
+    throw new Error(
+      "production activation persisted or repeated injected child stderr"
+    );
+  }
+
+  const unsupportedTargetPath = path.join(tmpRoot, "unsupported-activation.json");
+  fs.writeFileSync(
+    unsupportedTargetPath,
+    `${JSON.stringify(
+      buildRequest({
+        request_id: "deploy-20260809T000004Z-abcdef123456",
         activation: {
-          targets: ["xiaoman-weekly-preview"],
+          targets: ["space-automation-runtime", "xiaoman-weekly-preview"],
         },
       }),
       null,
@@ -272,46 +405,67 @@ exit 42
     )}\n`,
     "utf8"
   );
-  const failedPreview = spawnSync(
+  const unsupportedTarget = spawnSync(
     "bash",
-    [runnerPath, "--request-file", failedPreviewRequestPath],
-    {
+    [runnerPath, "--request-file", unsupportedTargetPath],
+    { cwd: stateDir, env, encoding: "utf8" }
+  );
+  if (
+    unsupportedTarget.status === 0 ||
+    !unsupportedTarget.stderr.includes(
+      "space-automation-runtime must be the sole activation target when selected"
+    )
+  ) {
+    throw new Error("production activation accepted a non-Space runtime target");
+  }
+
+  const runRejectedTimestampRequest = (fileName, request, expectedMessage) => {
+    const requestPath = path.join(tmpRoot, fileName);
+    fs.writeFileSync(requestPath, `${JSON.stringify(request, null, 2)}\n`, "utf8");
+    const rejected = spawnSync("bash", [runnerPath, "--request-file", requestPath], {
       cwd: stateDir,
       env,
       encoding: "utf8",
+    });
+    if (rejected.status === 0 || !rejected.stderr.includes(expectedMessage)) {
+      throw new Error(
+        `expected timestamp rejection ${JSON.stringify(expectedMessage)}, got ${rejected.status}\n${rejected.stderr}`
+      );
     }
+  };
+
+  const staleCreatedAt = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+  runRejectedTimestampRequest(
+    "stale-activation-request.json",
+    buildRequest({
+      request_id: "deploy-20260809T000005Z-abcdef123456",
+      created_at: staleCreatedAt,
+      expires_at: new Date(Date.parse(staleCreatedAt) + 60 * 60 * 1000).toISOString(),
+    }),
+    "request is stale"
   );
-  if (failedPreview.status !== 42) {
-    throw new Error(
-      `expected failed preview activation to exit 42, got ${failedPreview.status}\nstdout:\n${failedPreview.stdout}\nstderr:\n${failedPreview.stderr}`
-    );
-  }
-  const failedPreviewResult = JSON.parse(
-    fs.readFileSync(
-      path.join(stateDir, "results", `${failedPreviewRequestId}.json`),
-      "utf8"
-    )
+
+  runRejectedTimestampRequest(
+    "long-lived-activation-request.json",
+    buildRequest({
+      request_id: "deploy-20260809T000006Z-abcdef123456",
+      expires_at: new Date(Date.parse(createdAt) + 61 * 60 * 1000).toISOString(),
+    }),
+    "request TTL exceeds 60 minutes"
   );
-  const failedPreviewCheck = failedPreviewResult.checks.find(
-    (check) => check.name === "production-timer-activation"
+
+  const signatureSkewRequest = buildRequest({
+    request_id: "deploy-20260809T000007Z-abcdef123456",
+  });
+  resignRequest(
+    signatureSkewRequest,
+    new Date(Date.parse(signatureSkewRequest.created_at) + 6 * 60 * 1000).toISOString()
   );
-  if (!failedPreviewCheck || failedPreviewCheck.status !== "failed") {
-    throw new Error("failed preview activation check was not recorded");
-  }
-  const failedPreviewDetail = JSON.parse(failedPreviewCheck.detail);
-  const failedPreviewTarget = failedPreviewDetail.targets[0];
-  if (
-    failedPreviewTarget.status !== "failed" ||
-    !failedPreviewTarget.detail.includes(
-      "exit 42: xiaoman weekly preview activation requires QINTOPIA_XIAOMAN_WEEKLY_PREVIEW_ENABLED=1"
-    )
-  ) {
-    throw new Error(
-      `expected failed preview detail to include target stderr, got ${JSON.stringify(
-        failedPreviewTarget
-      )}`
-    );
-  }
+  runRejectedTimestampRequest(
+    "signature-skew-activation-request.json",
+    signatureSkewRequest,
+    "signature.signed_at must be within 5 minutes of created_at"
+  );
 
   const ordinaryRequestPath = path.join(tmpRoot, "ordinary-request.json");
   fs.writeFileSync(

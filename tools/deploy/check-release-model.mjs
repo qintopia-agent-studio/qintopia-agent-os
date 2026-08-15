@@ -137,8 +137,9 @@ try {
     const unit = fs.readFileSync(unitPath, "utf8");
     const qiweBin =
       "/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar";
-    const qiweExecPrefix =
-      "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=m9f-check";
+    const releaseMigrations =
+      "/home/ubuntu/qintopia-agent-os-releases/current/runtime/postgres/migrations";
+    const qiweExecPrefix = `ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=m9f-check QINTOPIA_SIDECAR_MIGRATIONS_DIR=${releaseMigrations} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=m9f-check`;
     const expectedCommand = unitName.includes("preflight")
       ? "qiwe-image-send-production-preflight"
       : "run-qiwe-image-send-worker --once --apply";

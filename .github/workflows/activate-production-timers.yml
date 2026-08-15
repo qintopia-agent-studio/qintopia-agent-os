@@ -11,7 +11,7 @@ on:
         description: >-
           Comma-separated fixed targets: erhua-morning-brief,xiaoman-weekly-recruitment,
           xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,
-          xiaoman-daily-case-report-auto-publish.
+          xiaoman-daily-case-report-auto-publish,space-automation-runtime.
         required: true
         default: erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview
         type: string
@@ -31,7 +31,6 @@ env:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
-  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
 
 jobs:
   request-activation:
@@ -155,7 +154,11 @@ jobs:
           activation_targets="$(normalize_csv_allowlist \
             activation_targets \
             "$INPUT_ACTIVATION_TARGETS" \
-            "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish")"
+            "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish,space-automation-runtime")"
+          if [[ "$activation_targets" == *"space-automation-runtime"* && "$activation_targets" != "space-automation-runtime" ]]; then
+            echo "space-automation-runtime must be the sole activation target when selected." >&2
+            exit 2
+          fi
 
           notes_delimiter="activation_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {
@@ -216,7 +219,6 @@ jobs:
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
       - name: Wait for server activation result
-        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
         run:
           deploy/runner/wait-deploy-result.sh --request-file
           dist/deploy-requests/request.json
@@ -226,6 +228,8 @@ jobs:
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
           DEPLOY_RESULT_TIMEOUT_SECONDS:
             ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
           DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}
