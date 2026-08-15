@@ -224,6 +224,7 @@
               "xiaoman-daily-case-report-auto-publish-backfill",
               "xiaoman-daily-case-report-approval-repair",
               "xiaoman-daily-case-report-read-through-repair",
+              "xiaoman-daily-case-report-chat-id-repair",
               "xiaoman-creative-profile-candidates-apply"
             ]
           }
@@ -276,6 +277,32 @@
                 "type": "array",
                 "contains": {
                   "const": "xiaoman-daily-case-report-approval-repair"
+                }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "properties": {
+              "approval": {
+                "const": "approved-production-xiaoman-daily-case-report-config-v1"
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["backfill_date"] },
+                { "required": ["payload_sha256"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": {
+                  "const": "xiaoman-daily-case-report-chat-id-repair"
                 }
               }
             },

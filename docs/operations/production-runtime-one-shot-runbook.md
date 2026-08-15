@@ -16,6 +16,7 @@ runner accepts exactly one target per request:
 - `xiaoman-daily-case-report-auto-publish-backfill`
 - `xiaoman-daily-case-report-approval-repair`
 - `xiaoman-daily-case-report-read-through-repair`
+- `xiaoman-daily-case-report-chat-id-repair`
 - `xiaoman-creative-profile-candidates-apply`
 - `erhua-morning-brief`
 - `hermes-cron-snapshot-install`
@@ -100,6 +101,29 @@ The repair script validates the current release SHA and the fixed env file shape
 no-ops when the exact read-through key already exists, fails closed on duplicate or
 wrong values, and emits only sanitized runtime one-shot evidence.
 
+### Xiaoman Daily Case Report Chat-ID Repair
+
+Use only when Xiaoman daily case-report backfill or worker-run evidence reports the
+fixed safe failure `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID count invalid` after
+Hermes cutover. This target may add exactly one daily case-report chat id line copied
+from the fixed Xiaoman Hermes profile env `WECOM_HOME_CHANNEL`; it does not accept chat
+ids, group ids, database hashes, payload JSON, env values, or arbitrary config fields.
+
+Workflow inputs:
+
+```text
+release_sha=<current-production-release-sha>
+runtime_one_shot_target=xiaoman-daily-case-report-chat-id-repair
+backfill_date=
+payload_sha256=
+approval=approved-production-xiaoman-daily-case-report-config-v1
+```
+
+The repair script validates the current release SHA, the fixed persistent env file, and
+the fixed Xiaoman profile env file. It no-ops when the exact chat id already exists,
+fails closed on duplicate or wrong values, and emits only sanitized runtime one-shot
+evidence.
+
 ### Xiaoman Creative Profile Candidates Apply
 
 Use only after the daily case-report private review bundle has produced
@@ -169,7 +193,7 @@ script output, or raw logs. Verify with `Observe Production Runtime` using
 This workflow must not:
 
 - write persistent production config, except the single fixed Xiaoman daily case-report
-  production approval key through the dedicated approval-repair target;
+  production approval/read-through/chat-id keys through the dedicated repair targets;
 - enable, disable, or roll back business worker timers;
 - retire legacy Hermes cron files;
 - accept arbitrary commands, service names, payload paths, payload JSON, dates for

@@ -100,6 +100,15 @@
   the fixed read-through enable constant to `/etc/qintopia/message-sidecar.env`, must
   fail closed on duplicate/wrong values, and must never accept or expose chat ids, group
   ids, DB hashes, payload JSON, env values, or arbitrary config fields.
+- Xiaoman daily case-report production chat-id repair is the only reviewed one-shot path
+  for restoring a missing `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID` after Hermes
+  cutover. Use `Run Production Runtime One-Shot` with
+  `runtime_one_shot_target=xiaoman-daily-case-report-chat-id-repair` and
+  `approval=approved-production-xiaoman-daily-case-report-config-v1`; it may write only
+  the chat id copied from the fixed Xiaoman Hermes profile env `WECOM_HOME_CHANNEL` to
+  `/etc/qintopia/message-sidecar.env`, must fail closed on duplicate/wrong values, and
+  must never accept or expose chat ids, group ids, DB hashes, payload JSON, env values,
+  or arbitrary config fields.
 
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
@@ -569,7 +578,8 @@
   `xiaoman-daily-case-report-auto-publish-backfill` with
   `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
   backfill date, or `xiaoman-daily-case-report-approval-repair` /
-  `xiaoman-daily-case-report-read-through-repair` with
+  `xiaoman-daily-case-report-read-through-repair` /
+  `xiaoman-daily-case-report-chat-id-repair` with
   `approved-production-xiaoman-daily-case-report-config-v1`, or
   `xiaoman-creative-profile-candidates-apply` with
   `approved-production-xiaoman-creative-profile-candidates` and the 64-hex SHA-256 of
