@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.142](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.141...v0.2.142) (2026-08-15)
+
+
+### Bug Fixes
+
+* repair Xiaoman daily approval one-shot ([fc2c573](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/fc2c573ece5946615b21e5c68fd0928bb2787b65))
+* repair Xiaoman daily approval one-shot ([915737a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/915737a5aa8b5cb34ae6f3d477b0c083d8be79bc))
+
+
+### Maintenance
+
+* rerun ci after pr body fix ([3202ef7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3202ef7b0e0cb0c16448694be3dead2869adda2b))
+* rerun ci for PR body ([0703a7f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0703a7fc64eb7f031a39d3e63623198ed3c66cfd))
+
 ## [0.2.141](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.140...v0.2.141) (2026-08-15)
 
 
