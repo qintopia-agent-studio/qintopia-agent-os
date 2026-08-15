@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.145](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.144...v0.2.145) (2026-08-15)
+
+
+### Bug Fixes
+
+* repair Xiaoman daily target group id one-shot ([#588](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/588)) ([70716c4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/70716c4263e2f3e2277fdbf41c8ab562753a7c97))
+
 ## [0.2.144](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.143...v0.2.144) (2026-08-15)
 
 
