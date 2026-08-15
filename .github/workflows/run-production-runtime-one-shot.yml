@@ -16,6 +16,7 @@ on:
           - xiaoman-daily-case-report-auto-publish-backfill
           - xiaoman-daily-case-report-approval-repair
           - xiaoman-daily-case-report-read-through-repair
+          - xiaoman-daily-case-report-chat-id-repair
           - xiaoman-creative-profile-candidates-apply
           - erhua-morning-brief
           - hermes-cron-snapshot-install
@@ -135,7 +136,7 @@ jobs:
           runtime_one_shot_target="$(require_allowed_value \
             runtime_one_shot_target \
             "$INPUT_RUNTIME_ONE_SHOT_TARGET" \
-            "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install")"
+            "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install")"
 
           require_single_line backfill_date "$INPUT_BACKFILL_DATE"
           require_single_line payload_sha256 "$INPUT_PAYLOAD_SHA256"
@@ -181,6 +182,20 @@ jobs:
               fi
               if [[ "$INPUT_APPROVAL" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
                 echo "approval does not match Xiaoman daily report read-through repair." >&2
+                exit 2
+              fi
+              ;;
+            xiaoman-daily-case-report-chat-id-repair)
+              if [[ -n "$INPUT_BACKFILL_DATE" ]]; then
+                echo "backfill_date must be empty for Xiaoman daily report chat-id repair." >&2
+                exit 2
+              fi
+              if [[ -n "$INPUT_PAYLOAD_SHA256" ]]; then
+                echo "payload_sha256 must be empty for Xiaoman daily report chat-id repair." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
+                echo "approval does not match Xiaoman daily report chat-id repair." >&2
                 exit 2
               fi
               ;;

@@ -3172,6 +3172,8 @@ const xiaomanDailyCaseReportApprovalRepairPath =
   "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-production-approval.sh";
 const xiaomanDailyCaseReportReadThroughRepairPath =
   "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-read-through-production.sh";
+const xiaomanDailyCaseReportChatIdRepairPath =
+  "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-chat-id-production.sh";
 const xiaomanDailyCaseReportActivationPath =
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh";
 const xiaomanDailyCaseReportRollbackPath =
@@ -3183,6 +3185,7 @@ for (const scriptPath of [
   xiaomanDailyCaseReportBackfillPath,
   xiaomanDailyCaseReportApprovalRepairPath,
   xiaomanDailyCaseReportReadThroughRepairPath,
+  xiaomanDailyCaseReportChatIdRepairPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,
@@ -3367,6 +3370,32 @@ if (exists(xiaomanDailyCaseReportApprovalRepairPath)) {
     'SYSTEMCTL="systemctl"',
   ]) {
     forbidFragment(xiaomanDailyCaseReportApprovalRepairPath, repair, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportChatIdRepairPath)) {
+  const chatIdRepair = readText(xiaomanDailyCaseReportChatIdRepairPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID_REPAIR",
+    "approved-production-xiaoman-daily-case-report-config-v1",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'PROFILE_ENV_FILE="/home/ubuntu/.hermes/profiles/xiaoman/.env"',
+    'KEY="QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID"',
+    'SOURCE_KEY="WECOM_HOME_CHANNEL"',
+    "profile chat id source is not singleton",
+    "chat id key is duplicated",
+    "chat id key value invalid",
+    "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report chat id repair:",
+  ]) {
+    requireFragment(xiaomanDailyCaseReportChatIdRepairPath, chatIdRepair, fragment);
+  }
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CONFIG_CHAT_ID",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID",
+    "DATABASE_URL",
+    "payload-json",
+    "curl ",
+  ]) {
+    forbidFragment(xiaomanDailyCaseReportChatIdRepairPath, chatIdRepair, fragment);
   }
 }
 if (exists(xiaomanDailyCaseReportObservationPath)) {
