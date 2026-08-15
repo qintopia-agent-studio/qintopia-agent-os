@@ -795,6 +795,9 @@ def _extract_mixed_content(payload: Dict[str, Any], raw_event: Dict[str, Any]) -
                 or sub_data.get("userName")
                 or sub_data.get("nickName")
                 or sub_data.get("nickname")
+                or sub_data.get("fromUsername")
+                or sub_data.get("senderusername")
+                or sub_data.get("username")
             ),
             "sender_id": _text(
                 sub_data.get("senderId")

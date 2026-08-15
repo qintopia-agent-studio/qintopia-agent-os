@@ -2018,6 +2018,30 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIn("无法解析其中内容", dispatch_text)
         self.assertNotIn("识别能力尚未启用", dispatch_text)
 
+    def test_extract_mixed_content_sender_name_fallback_order(self) -> None:
+        # P1 健壮性：合并转发子项的发言人显示字段在不同客户端版本下命名不一，
+        # 应优先用显示名候选，缺失时回退到 fromUsername/senderusername/username，避免「未知成员」。
+        raw_event = {
+            "msgType": 123,
+            "msgData": [
+                # 仅 fromUsername（企业微信合并转发常见子项字段）
+                {"subMsgType": 0, "subMsgData": {"content": "场地定了", "fromUsername": "erhua_wxid"}},
+                # 仅 username
+                {"subMsgType": 0, "subMsgData": {"content": "我来物料", "username": "aqiang"}},
+                # 什么都没有 -> 回退「未知成员」
+                {"subMsgType": 0, "subMsgData": {"content": "收到"}},
+            ],
+        }
+        items = adapter_module._extract_mixed_content({}, raw_event)
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["sender_name"], "erhua_wxid")
+        self.assertEqual(items[1]["sender_name"], "aqiang")
+        self.assertNotIn("sender_name", items[2])
+        formatted = adapter_module._format_mixed_content(items)
+        self.assertIn("- erhua_wxid：场地定了", formatted)
+        self.assertIn("- aqiang：我来物料", formatted)
+        self.assertIn("- 未知成员：收到", formatted)
+
     def test_dispatch_uses_persisted_identity_cache_without_qiwe_lookup(self) -> None:
         class RecordingAdapter(QiWeAdapter):
             def __init__(self) -> None:
