@@ -3174,6 +3174,8 @@ const xiaomanDailyCaseReportReadThroughRepairPath =
   "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-read-through-production.sh";
 const xiaomanDailyCaseReportChatIdRepairPath =
   "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-chat-id-production.sh";
+const xiaomanDailyCaseReportTargetGroupIdRepairPath =
+  "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-target-group-id-production.sh";
 const xiaomanDailyCaseReportActivationPath =
   "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh";
 const xiaomanDailyCaseReportRollbackPath =
@@ -3186,6 +3188,7 @@ for (const scriptPath of [
   xiaomanDailyCaseReportApprovalRepairPath,
   xiaomanDailyCaseReportReadThroughRepairPath,
   xiaomanDailyCaseReportChatIdRepairPath,
+  xiaomanDailyCaseReportTargetGroupIdRepairPath,
   xiaomanDailyCaseReportObservationPath,
   xiaomanDailyCaseReportActivationPath,
   xiaomanDailyCaseReportRollbackPath,
@@ -3396,6 +3399,42 @@ if (exists(xiaomanDailyCaseReportChatIdRepairPath)) {
     "curl ",
   ]) {
     forbidFragment(xiaomanDailyCaseReportChatIdRepairPath, chatIdRepair, fragment);
+  }
+}
+if (exists(xiaomanDailyCaseReportTargetGroupIdRepairPath)) {
+  const targetGroupIdRepair = readText(xiaomanDailyCaseReportTargetGroupIdRepairPath);
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID_REPAIR",
+    "approved-production-xiaoman-daily-case-report-config-v1",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'KEY="QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID"',
+    'SOURCE_KEY="QINTOPIA_XIAOMAN_ACTIVITY_TARGET_GROUP_ID"',
+    'ALLOWED_GROUPS_KEY="QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS"',
+    "target group id source is not singleton",
+    "operations allowed group ids is not singleton",
+    "target group id source is not allowlisted",
+    "target group id key is duplicated",
+    "target group id key value invalid",
+    "qintopia_runtime_one_shot_safe_failure=xiaoman daily case report target group id repair:",
+  ]) {
+    requireFragment(
+      xiaomanDailyCaseReportTargetGroupIdRepairPath,
+      targetGroupIdRepair,
+      fragment
+    );
+  }
+  for (const fragment of [
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CONFIG_CHAT_ID",
+    "WECOM_HOME_CHANNEL",
+    "DATABASE_URL",
+    "payload-json",
+    "curl ",
+  ]) {
+    forbidFragment(
+      xiaomanDailyCaseReportTargetGroupIdRepairPath,
+      targetGroupIdRepair,
+      fragment
+    );
   }
 }
 if (exists(xiaomanDailyCaseReportObservationPath)) {

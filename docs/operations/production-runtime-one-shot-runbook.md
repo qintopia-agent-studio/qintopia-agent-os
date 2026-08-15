@@ -124,6 +124,32 @@ the fixed Xiaoman profile env file. It no-ops when the exact chat id already exi
 fails closed on duplicate or wrong values, and emits only sanitized runtime one-shot
 evidence.
 
+### Xiaoman Daily Case Report Target-Group-ID Repair
+
+Use only when Xiaoman daily case-report backfill, worker-run evidence, or production
+observation reports the fixed safe failure
+`QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID count invalid` after Hermes cutover.
+This target may add exactly one daily case-report target group id line copied from the
+reviewed Xiaoman activity target `QINTOPIA_XIAOMAN_ACTIVITY_TARGET_GROUP_ID`; it first
+proves the value is present in `QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS`. It does not
+accept chat ids, group ids, database hashes, payload JSON, env values, or arbitrary
+config fields.
+
+Workflow inputs:
+
+```text
+release_sha=<current-production-release-sha>
+runtime_one_shot_target=xiaoman-daily-case-report-target-group-id-repair
+backfill_date=
+payload_sha256=
+approval=approved-production-xiaoman-daily-case-report-config-v1
+```
+
+The repair script validates the current release SHA and the fixed persistent env file.
+It no-ops when the exact target group id already exists, fails closed on duplicate,
+wrong, missing, or non-allowlisted values, and emits only sanitized runtime one-shot
+evidence.
+
 ### Xiaoman Creative Profile Candidates Apply
 
 Use only after the daily case-report private review bundle has produced
