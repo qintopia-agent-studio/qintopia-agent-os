@@ -91,6 +91,15 @@
   the fixed approval constant to `/etc/qintopia/message-sidecar.env`, must fail closed
   on duplicate/wrong values, and must never accept or expose chat ids, group ids, DB
   hashes, payload JSON, env values, or arbitrary config fields.
+- Xiaoman daily case-report production read-through repair is the only reviewed one-shot
+  path for restoring a missing
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1` after Hermes cutover. Use
+  `Run Production Runtime One-Shot` with
+  `runtime_one_shot_target=xiaoman-daily-case-report-read-through-repair` and
+  `approval=approved-production-xiaoman-daily-case-report-config-v1`; it may write only
+  the fixed read-through enable constant to `/etc/qintopia/message-sidecar.env`, must
+  fail closed on duplicate/wrong values, and must never accept or expose chat ids, group
+  ids, DB hashes, payload JSON, env values, or arbitrary config fields.
 
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
@@ -559,7 +568,10 @@
   `approved-production-erhua-morning-brief-one-shot`, or
   `xiaoman-daily-case-report-auto-publish-backfill` with
   `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
-  backfill date, or `xiaoman-creative-profile-candidates-apply` with
+  backfill date, or `xiaoman-daily-case-report-approval-repair` /
+  `xiaoman-daily-case-report-read-through-repair` with
+  `approved-production-xiaoman-daily-case-report-config-v1`, or
+  `xiaoman-creative-profile-candidates-apply` with
   `approved-production-xiaoman-creative-profile-candidates` and the 64-hex SHA-256 of
   the fixed server-local reviewed payload, or `hermes-cron-snapshot-install` with
   `approved-production-hermes-cron-snapshot` and empty `backfill_date` when
