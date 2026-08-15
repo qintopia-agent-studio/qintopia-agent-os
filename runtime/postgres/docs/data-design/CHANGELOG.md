@@ -1,5 +1,25 @@
 # Data Design Changelog
 
+## `2026-08-15.001`
+
+Migration: `migrations/202608150001_space_execution_runner_contract.sql` Design note:
+`docs/data-design/2026-08-15-space-execution-runner-contract.md`
+
+Registers declarative deterministic execution recipes and the default-disabled,
+authenticated broker contract for business-owned `agent_turn` output. It adds no table,
+does not enable a capability or automation, and accepts no caller-provided Space,
+destination, URL, or executable input.
+
+## `2026-08-14.001`
+
+Migration: `migrations/202608140001_erhua_conversational_self_extension.sql` Design
+note: `docs/data-design/2026-08-14-erhua-conversational-self-extension.md`
+
+Adds Space links and four versioned definition tables for Erhua conversational
+self-extension. It reuses AgentOS work items, artifacts, and audit events for approval,
+adds a default-disabled fixed catalog for isolated ordinary QiWe group turns, starts
+with no active automation, and does not send externally.
+
 ## `2026-08-08.001`
 
 Migration: `migrations/202608080001_xiaoman_daily_case_report_auto_publish.sql` Design note:

@@ -592,22 +592,29 @@
 - Production timer activation should use the `Activate Production Timers` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-activation` deploy-runner request and accepts only these
-  fixed targets: `erhua-morning-brief`, `xiaoman-weekly-recruitment`,
-  `xiaoman-weekly-plan-confirmation`, `xiaoman-weekly-preview`, and
-  `xiaoman-daily-case-report-auto-publish`. The activation request does not retire
-  legacy cron files, write persistent production config, or promise automatic rollback;
-  each selected target requires its owner-approved production config to have been
-  applied first. Legacy cron retirement must be handled through the explicit
-  `production-legacy-cron-retirement` request and evidenced before activation retries.
-  The `xiaoman-weekly-recruitment` and `xiaoman-weekly-plan-confirmation` target
-  additions are a 2026-08-09 owner-approved fixed-boundary expansion for the Xiaoman
-  weekly minimum loop; they may enable only their own release-managed systemd timers and
-  must not send, publish, write Feishu, call Erhua, or call QiWe.
+  fixed targets: `erhua-morning-brief`, `space-automation-runtime`,
+  `xiaoman-weekly-recruitment`, `xiaoman-weekly-plan-confirmation`,
+  `xiaoman-weekly-preview`, and `xiaoman-daily-case-report-auto-publish`. The activation
+  request does not retire legacy cron files, write persistent production config, or
+  promise automatic rollback; each selected target requires its owner-approved
+  production config to have been applied first. Legacy cron retirement must be handled
+  through the explicit `production-legacy-cron-retirement` request and evidenced before
+  activation retries. The `xiaoman-weekly-recruitment` and
+  `xiaoman-weekly-plan-confirmation` target additions are a 2026-08-09 owner-approved
+  fixed-boundary expansion for the Xiaoman weekly minimum loop; they may enable only
+  their own release-managed systemd timers and must not send, publish, write Feishu,
+  call Erhua, or call QiWe. `space-automation-runtime` must be the only target in its
+  activation request. It may enable only the generic dispatcher timer and Space
+  execution worker after the fixed production approval, database hash, Qiwe host,
+  companion artifact, authenticated ingress, and exact-unit observation checks pass. A
+  release installation disables and stops both units; every new release therefore
+  requires a fresh explicit activation.
 - Production runtime observation should use the `Observe Production Runtime` GitHub
   workflow after the reviewed release containing the runner support is deployed. It
   creates a signed `production-observation` deploy-runner request and accepts only these
-  fixed targets: `qiwe-image-send`, `xiaoman-daily-case-report-auto-publish`,
-  `hermes-cron-snapshot`, `hermes-cron-live-parity`, and the worker-run evidence targets
+  fixed targets: `qiwe-image-send`, `space-automation-runtime`,
+  `xiaoman-daily-case-report-auto-publish`, `hermes-cron-snapshot`,
+  `hermes-cron-live-parity`, and the worker-run evidence targets
   `erhua-morning-brief-worker-run`, `xiaoman-daily-case-report-worker-run`,
   `xiaoman-weekly-recruitment-worker-run`,
   `xiaoman-weekly-plan-confirmation-worker-run`, and
@@ -634,13 +641,18 @@
   timers, write persistent config, retire legacy cron files, call QiWe/Feishu/Postgres
   mutation commands, or run activation/rollback scripts, and must not print live
   `jobs.json`, group ids, prompts, env values, snapshot contents, or raw script output.
+  `space-automation-runtime` additionally verifies the exact release-bound unit bytes,
+  enabled/active state, scheduled timer value, and that the live worker PID resolves to
+  the current immutable Qiwe companion binary; it never reports process arguments or
+  environment values.
 - Production immediate worker/backfill runs should use the
   `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
   containing the runner support is deployed. Erhua one-shots still require the
   corresponding release-managed timer to be enabled; Xiaoman daily case-report backfill
   is the reviewed Hermes-cutover exception and must not require the retired systemd
-  timer to be enabled. It creates a signed `production-runtime-one-shot` deploy-runner
-  request and accepts exactly one fixed target per request: `erhua-morning-brief` with
+  timer to be enabled. Control targets enforce their fixed target-specific preconditions.
+  It creates a signed `production-runtime-one-shot` deploy-runner request and accepts
+  exactly one fixed target per request: `erhua-morning-brief` with
   `approved-production-erhua-morning-brief-one-shot`, or
   `xiaoman-daily-case-report-auto-publish-backfill` with
   `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
@@ -655,7 +667,12 @@
   the fixed server-local reviewed payload, or `hermes-cron-snapshot-install` with
   `approved-production-hermes-cron-snapshot` and empty `backfill_date` when
   `hermes-cron-snapshot` observation reports
-  `hermes_cron_snapshot_observation_error=unit_missing`. The snapshot target installs
+  `hermes_cron_snapshot_observation_error=unit_missing`, or `qiwe-webhook-ingress-apply`
+  with `approved-production-qiwe-webhook-ingress-apply`, or
+  `qiwe-webhook-ingress-rollback` with
+  `approved-production-qiwe-webhook-ingress-rollback`, or
+  `space-automation-runtime-rollback` with
+  `approved-production-space-automation-runtime-rollback`. The snapshot target installs
   only the fixed server-local snapshot timer and baseline snapshot repo, then should be
   followed by observation with `hermes-cron-snapshot,hermes-cron-live-parity`. This path
   may create real production publish/send side effects through the reviewed worker
@@ -945,11 +962,33 @@ Use `rg` and `rg --files` for search.
   `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
 - Do not manually edit root `CHANGELOG.md` in ordinary feature or fix PRs. Release
   Please owns routine release changelog updates from merged Conventional Commits.
-- Merging a Release Please PR prepares a version and draft GitHub Release. Production
-  deployment still requires the owner to manually publish that draft Release.
-- Release Please PRs and draft GitHub Releases must be merged or published only through
-  an explicit manual owner decision. Do not enable or use auto-merge, automatic release
-  publishing, or bot/agent-driven release merging.
+- Merging a Release Please PR prepares a version and draft GitHub Release. Manual owner
+  publication remains the default production boundary.
+- The sole automated merge/publication exception is the default-disabled
+  `Low-Risk Auto Release` workflow for a same-repository, fixed-actor, fixed-label,
+  single-commit, append-only QiWe event-mapping bundle with at most one declarative
+  restricted-parser recipe. It must revalidate required checks and exact heads at every
+  stage, audit the complete unpublished range before candidate merge, Release Please
+  merge, and draft publication, and reject any file outside the classifier allowlist. It
+  must never activate production configuration, credentials, permissions, adapters,
+  services, timers, automations, or external sends. Enabling this exception requires the
+  explicit repository variables and dedicated token documented in
+  `docs/engineering/ci-cd-gates.md`; all other release merging and publication requires
+  an explicit manual owner decision.
+- The initial Space schema, callback authentication, and release-policy rollout is not
+  eligible for that exception and must be manually reviewed and published by the owner.
+- Authenticated QiWe event provenance is transport-owned. The sidecar may set
+  `ingress_auth_verified=true` only because it actually received the event on the exact
+  configured authenticated NATS subject while the trusted-subject gate is enabled;
+  publisher JSON, headers, or a legacy raw subject can never assert that trust.
+- Keep QiWe adapter and sidecar NATS identities separate. NATS URLs must not contain
+  userinfo; load producer and consumer credentials only from their distinct fixed
+  private auth files. The producer may publish the authenticated raw subject but must
+  not consume it, while the consumer may consume/ack the fixed durable stream but must
+  not publish application events. Production Space automation activation must prove
+  anonymous denial and these ACLs before any systemd mutation. That protocol preflight
+  proves the configured subject/JetStream ACL only; a real shadow callback remains the
+  required end-to-end consumption evidence.
 - If any earlier Release Please version or draft GitHub Release in the current release
   sequence was not published, do not publish the newest version. Stop, reconcile or
   delete the unpublished drafts as an explicit release decision, then regenerate and
