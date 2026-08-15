@@ -567,6 +567,11 @@ def configure(
         if normalized["desired_state"] == "enabled":
             require_enabled_boundaries(sidecar.values, normalized)
         replacements = desired_values(normalized)
+        if normalized["desired_state"] == "disabled":
+            for key in sorted(ACTIVE_KEYS - {"QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED"}):
+                value = sidecar.values.get(key, "").strip()
+                if value:
+                    replacements[key] = value
         next_text = render_env_text(sidecar.text, replacements)
         change_required = next_text.encode("utf-8") != sidecar.text.encode("utf-8")
         if apply and change_required:

@@ -466,8 +466,11 @@
   job; the rollback script requires
   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0` in the sidecar env while
   the worker requires `1`, so the wrapper exports that flag itself and the env file
-  keeps `0` for the retired systemd path. Production configuration still goes through
-  the fixed release-local config entrypoint:
+  keeps `0` for the retired systemd path. Disabled production config must preserve the
+  reviewed chat id, target group, read-through, storage backend, and message text keys
+  already present in the sidecar env; only the retired systemd enablement flag should
+  stay `0`, otherwise the Hermes worker fires on time but fails before render/upload.
+  Production configuration still goes through the fixed release-local config entrypoint:
   `deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py --stdin --apply --approval approved-production-xiaoman-daily-case-report-config-v1`.
   Observation and rollback for the retired systemd path are
   `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh` and
@@ -642,7 +645,11 @@
   `QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON=approved-production-erhua-morning-brief-hermes-cron`
   plus `apply-erhua-morning-brief-hermes-cron.sh --install` then `--enable`. Disable the
   old timer with `rollback-erhua-morning-brief-production.sh` before enabling the job;
-  the auto-publish approvals `approved-production-erhua-morning-brief-auto-publish` and
+  the wrapper must export `QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1` and
+  `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1` only for the Hermes worker
+  process, so the retired systemd path can remain disabled in persistent env without
+  blocking the Hermes run; the auto-publish approvals
+  `approved-production-erhua-morning-brief-auto-publish` and
   `approved-production-qiwe-text-send` are unchanged. Before enabling the Hermes job,
   activate the reviewed `hermes-profile-erhua` overlay so the Erhua profile has
   `channel.wecom.enabled=true`; the overlay may manage only that boolean under

@@ -39,12 +39,15 @@ emits only its SHA-256 in evidence. It also preserves the Erhua `jobs.json` enve
   `/home/ubuntu/.hermes/profiles/erhua/config.yaml` has `channel.wecom.enabled=true`.
   The profile evidence may report only changed paths and hashes, never channel
   credentials or runtime field values.
-- The existing auto-publish chain is already enabled in
+- The existing auto-publish chain boundaries are present in
   `/etc/qintopia/message-sidecar.env`:
   `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1`,
   `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL=approved-production-erhua-morning-brief-auto-publish`,
   `QINTOPIA_QIWE_TEXT_SEND_ENABLED=1`, and
   `QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL=approved-production-qiwe-text-send`.
+- After Hermes cutover, the wrapper exports `QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1` and
+  `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1` only for that worker process;
+  the retired systemd path may stay disabled in persistent env.
 - The systemd timer is still the active scheduler until step 4.
 
 ## Cutover Steps

@@ -204,7 +204,9 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
         self.assertFalse(report["auto_publish_enabled"])
         text = self.env_path.read_text(encoding="utf-8")
         self.assertIn("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0", text)
-        self.assertNotIn("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID", text)
+        self.assertIn("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1", text)
+        self.assertIn("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND=feishu-base", text)
+        self.assertIn("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID=group-alpha", text)
 
     def test_apply_requires_exact_owner_approval_and_root(self) -> None:
         with self.assertRaisesRegex(MODULE.ConfigError, "exact owner approval"):

@@ -54,6 +54,8 @@ End state after cutover:
 - The remaining worker gates (production approval, database URL, source chat id, target
   group id, storage backend, read-through switch) still come from the reviewed sidecar
   env file and must stay set.
+- Applying disabled production config must not remove those remaining worker gates; it
+  should only preserve the retired systemd enablement flag at `0`.
 
 ## Wrapper Release Binding (read before executing)
 
