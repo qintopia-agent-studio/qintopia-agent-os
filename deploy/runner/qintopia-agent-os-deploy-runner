@@ -137,6 +137,7 @@ allowed_runtime_one_shot_targets = {
     "xiaoman-daily-case-report-read-through-repair",
     "xiaoman-daily-case-report-chat-id-repair",
     "xiaoman-daily-case-report-target-group-id-repair",
+    "xiaoman-daily-case-report-storage-backend-repair",
     "xiaoman-creative-profile-candidates-apply",
 }
 allowed_targets = {
@@ -348,6 +349,7 @@ if "production-runtime-one-shot" in release_scope:
         "xiaoman-daily-case-report-read-through-repair": "approved-production-xiaoman-daily-case-report-config-v1",
         "xiaoman-daily-case-report-chat-id-repair": "approved-production-xiaoman-daily-case-report-config-v1",
         "xiaoman-daily-case-report-target-group-id-repair": "approved-production-xiaoman-daily-case-report-config-v1",
+        "xiaoman-daily-case-report-storage-backend-repair": "approved-production-xiaoman-daily-case-report-config-v1",
         "xiaoman-creative-profile-candidates-apply": "approved-production-xiaoman-creative-profile-candidates",
     }
     if approval != expected_approvals[target]:
@@ -1093,6 +1095,9 @@ runtime_one_shot_success_detail() {
     xiaoman-daily-case-report-target-group-id-repair)
       printf 'xiaoman_daily_case_report_target_group_id_repair=completed'
       ;;
+    xiaoman-daily-case-report-storage-backend-repair)
+      printf 'xiaoman_daily_case_report_storage_backend_repair=completed'
+      ;;
     xiaoman-creative-profile-candidates-apply)
       printf 'xiaoman_creative_profile_candidates_apply=completed; payload_sha256=%s' \
         "$runtime_one_shot_payload_sha256"
@@ -1399,6 +1404,12 @@ run_runtime_one_shot_target() {
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID_REPAIR=approved-production-xiaoman-daily-case-report-config-v1 \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TARGET_GROUP_ID_REPAIR_RELEASE_SHA="$release_sha" \
         "${script_dir}/repair-xiaoman-daily-case-report-target-group-id-production.sh" >/dev/null || return $?
+      ;;
+    xiaoman-daily-case-report-storage-backend-repair)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND_REPAIR=approved-production-xiaoman-daily-case-report-config-v1 \
+        QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND_REPAIR_RELEASE_SHA="$release_sha" \
+        "${script_dir}/repair-xiaoman-daily-case-report-storage-backend-production.sh" >/dev/null || return $?
       ;;
     hermes-cron-snapshot-install)
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \

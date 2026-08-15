@@ -226,6 +226,7 @@
               "xiaoman-daily-case-report-read-through-repair",
               "xiaoman-daily-case-report-chat-id-repair",
               "xiaoman-daily-case-report-target-group-id-repair",
+              "xiaoman-daily-case-report-storage-backend-repair",
               "xiaoman-creative-profile-candidates-apply"
             ]
           }
