@@ -3844,6 +3844,8 @@ if (!exists(erhuaMorningBriefWrapperPath)) {
     'ENV_FILE="/etc/qintopia/message-sidecar.env"',
     'RELEASE_LINK="/home/ubuntu/qintopia-agent-os-releases/current"',
     'export PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    "export QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1",
+    "export QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1",
     'release_dir="$(cd "$RELEASE_LINK" && pwd -P)"',
     'release_sha="${release_dir##*/}"',
     'export QINTOPIA_DEPLOYED_COMMIT_SHA="$release_sha"',

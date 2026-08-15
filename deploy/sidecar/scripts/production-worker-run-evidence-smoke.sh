@@ -60,6 +60,79 @@ fail_evidence() {
   exit 1
 }
 
+classify_failed_worker_run() {
+  "$PYTHON_BIN" - "$log_path" "$task_name" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+task = sys.argv[2]
+sentinel = re.compile(
+    r"^(?P<ts>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) "
+    + re.escape(task)
+    + r" run=(?P<status>ok|failed)(?: exit=[0-9]+)?$"
+)
+any_sentinel = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z "
+    r"[A-Za-z0-9_.-]+ run=(?:ok|failed)(?: exit=[0-9]+)?$"
+)
+
+try:
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+except OSError:
+    print("worker_failed")
+    raise SystemExit(0)
+
+latest_index = None
+latest_status = None
+for index, line in enumerate(lines):
+    match = sentinel.fullmatch(line.strip())
+    if match:
+        latest_index = index
+        latest_status = match.group("status")
+
+if latest_index is None or latest_status != "failed":
+    print("worker_failed")
+    raise SystemExit(0)
+
+body = lines[latest_index + 1 :]
+next_sentinel = next(
+    (index for index, line in enumerate(body) if any_sentinel.fullmatch(line.strip())),
+    len(body),
+)
+text = "\n".join(body[:next_sentinel]).lower()
+
+patterns = [
+    (r"persistent enablement is not 1", "auto_publish_disabled"),
+    (r"erhua morning brief is not enabled", "morning_brief_disabled"),
+    (r"production approval is missing|auto-publish approval is missing|explicit owner approval", "approval_missing"),
+    (r"requires [a-z0-9_]+|missing [a-z0-9_]+", "missing_required_env"),
+    (r"read-through .*not enabled|read-through must be explicitly enabled", "read_through_disabled"),
+    (r"activity wrappers are not enabled", "activity_wrappers_disabled"),
+    (r"feishu base mode is not enabled", "feishu_base_disabled"),
+    (r"storage backend is not reviewed|reviewed storage backend", "storage_backend_not_reviewed"),
+    (r"reviewed qiwe production sidecar companion is missing|reviewed qiwe sidecar companion", "qiwe_companion_missing"),
+    (r"reviewed primary sidecar binary is missing", "sidecar_binary_missing"),
+    (r"workflow is missing", "release_workflow_missing"),
+    (r"target group id is not allowlisted", "target_group_not_allowlisted"),
+    (r"pillow is required", "pillow_unavailable"),
+    (r"psql is required", "psql_unavailable"),
+    (r"python3 is required|python_unavailable|hermes python validator", "python_environment_invalid"),
+    (r"render did not produce|rendered daily report image", "render_failed"),
+    (r"media upload did not return|operations-daily-case-report-media-upload", "media_upload_failed"),
+    (r"auto-publish-create|operations-daily-case-report-auto-publish-create", "auto_publish_create_failed"),
+]
+
+for pattern, reason in patterns:
+    if re.search(pattern, text):
+        print(reason)
+        break
+else:
+    print("worker_failed")
+PY
+}
+
 if [[ ! -f "$log_path" ]]; then
   echo "${evidence_key}_worker_run_result=not_started"
   exit 0
@@ -116,6 +189,9 @@ case "$parse_status" in
   2)
     echo "${evidence_key}_worker_run_result=not_started"
     exit 0
+    ;;
+  1)
+    fail_evidence "$(classify_failed_worker_run)"
     ;;
   *)
     fail_evidence "worker_failed"

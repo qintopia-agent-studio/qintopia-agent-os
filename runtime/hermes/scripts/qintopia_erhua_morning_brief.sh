@@ -17,6 +17,11 @@ set -a
 set +a
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Enablement moved to the Hermes job's enabled field after cutover. Keep the
+# retired systemd path inert in persistent env while making this Hermes run explicit.
+export QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1
+export QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1
+
 # The release binding must win over any stale persistent env value; resolve
 # release/current once and use that immutable path for both identity and execution.
 release_dir="$(cd "$RELEASE_LINK" && pwd -P)"

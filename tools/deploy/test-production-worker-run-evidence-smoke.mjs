@@ -494,6 +494,24 @@ check(
 writeFile(
   "state/erhua-morning-brief/hermes-cron.log",
   [
+    "2026-08-10T01:30:00Z erhua-morning-brief run=failed exit=1",
+    "erhua morning brief worker failed: Erhua morning brief is not enabled",
+    "QIWE_TOKEN=secret-token",
+    "",
+  ].join("\n")
+);
+result = run("erhua-morning-brief-worker-run");
+expectStatus(result, 1, "Erhua failed run classification");
+expectNoLeak(result, "Erhua failed run classification");
+check(
+  result.stdout.trim() ===
+    "erhua_morning_brief_worker_run_error=morning_brief_disabled",
+  `Erhua failed run emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/erhua-morning-brief/hermes-cron.log",
+  [
     "raw worker output with postgres://secret@example.invalid/qintopia",
     "2026-08-10T01:30:00Z erhua-morning-brief run=ok",
     JSON.stringify(
@@ -585,6 +603,42 @@ expectNoLeak(result, "latest failed sentinel");
 check(
   result.stdout.trim() === "xiaoman_weekly_recruitment_worker_run_error=worker_failed",
   `latest failed sentinel emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=failed exit=1",
+    "xiaoman daily case report auto-publish requires QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_STORAGE_BACKEND",
+    "postgres://secret@example.invalid/qintopia",
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 1, "daily failed run missing env classification");
+expectNoLeak(result, "daily failed run missing env classification");
+check(
+  result.stdout.trim() ===
+    "xiaoman_daily_case_report_worker_run_error=missing_required_env",
+  `daily failed run missing env emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-10T01:30:00Z xiaoman-daily-case-report run=failed exit=1",
+    "xiaoman daily case report storage backend is not reviewed",
+    "group-id-fixture",
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 1, "daily failed run storage classification");
+expectNoLeak(result, "daily failed run storage classification");
+check(
+  result.stdout.trim() ===
+    "xiaoman_daily_case_report_worker_run_error=storage_backend_not_reviewed",
+  `daily failed run storage emitted unexpected evidence\n${result.stdout}`
 );
 
 writeFile(
