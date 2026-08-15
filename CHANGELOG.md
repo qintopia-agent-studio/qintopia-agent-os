@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.144](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.143...v0.2.144) (2026-08-15)
+
+
+### Bug Fixes
+
+* repair Xiaoman daily chat id one-shot ([#586](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/586)) ([abf48e8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/abf48e8fdca1530d4f2e41382f2fc2c9b63a9c7e))
+
 ## [0.2.143](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.142...v0.2.143) (2026-08-15)
 
 
