@@ -1,8 +1,10 @@
 #![recursion_limit = "256"]
 
 mod activity_lifecycle;
+mod automation_dispatcher;
 #[allow(dead_code)]
 mod bounded_http;
+mod channel_event_mapping;
 mod collaboration;
 mod config;
 mod consumer;
@@ -63,6 +65,7 @@ mod media_identity;
 mod media_upload;
 mod member_profile;
 mod message_search;
+mod nats_connection;
 mod operations;
 mod operations_intake;
 #[cfg_attr(not(feature = "xiaoman-feishu-poster-adapter"), allow(dead_code))]
@@ -77,7 +80,19 @@ mod qiwe_image_send;
 pub mod qiwe_image_send_state;
 mod qiwe_text_send;
 mod raw_archive;
+#[cfg(test)]
+mod registry_build_support;
 mod smoke;
+mod space_agent_turn;
+mod space_agent_turn_broker;
+mod space_automation_execution;
+mod space_capability_recipe;
+mod space_configuration;
+#[cfg(test)]
+mod space_configuration_integration_tests;
+mod space_programming_extension;
+mod space_turn_policy;
+mod strict_json;
 mod url_policy;
 mod workbench;
 mod xiaoman_activity;
@@ -193,6 +208,47 @@ async fn main() -> Result<()> {
                 },
             )
             .await
+        }
+        Command::RunAutomationDispatcher {
+            once,
+            apply,
+            dry_run,
+            batch_size,
+            poll_seconds,
+        } => {
+            automation_dispatcher::run(
+                &cli,
+                automation_dispatcher::DispatcherOptions {
+                    once,
+                    apply,
+                    dry_run,
+                    batch_size,
+                    poll_seconds,
+                },
+            )
+            .await
+        }
+        Command::RunSpaceAutomationExecutionWorker {
+            once,
+            apply,
+            dry_run,
+            work_item_id,
+            poll_seconds,
+        } => {
+            space_automation_execution::run(
+                &cli,
+                space_automation_execution::ExecutionWorkerOptions {
+                    once,
+                    apply,
+                    dry_run,
+                    work_item_id,
+                    poll_seconds,
+                },
+            )
+            .await
+        }
+        Command::RunSpaceAgentTurnBroker { socket_path } => {
+            space_agent_turn_broker::run(&cli, socket_path).await
         }
         Command::Smoke {
             timeout_seconds,

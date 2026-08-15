@@ -156,6 +156,20 @@ pub(crate) fn tool_definitions() -> Value {
                     "sender_id": {"type": "string", "description": "Current QiWe sender/user id."},
                     "referenced_sender_id": {"type": "string", "description": "Optional QiWe sender/user id from a referenced or replied-to message, used for pronoun identity questions such as 他是谁."},
                     "message_text": {"type": "string", "description": "Current inbound message text."},
+                    "mentioned_member_refs": {
+                        "type": "array",
+                        "maxItems": 32,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "channel_user_id": {"type": "string", "description": "Exact current-room channel user id supplied by the channel mention structure."},
+                                "mention_text": {"type": "string", "description": "Optional display text carried beside the exact channel user id."}
+                            },
+                            "required": ["channel_user_id"],
+                            "additionalProperties": false
+                        },
+                        "description": "Exact mentioned-member references extracted from QiWe atList. These take precedence over display-name lookup."
+                    },
                     "mentioned_member_names": {"type": "array", "items": {"type": "string"}, "description": "Optional high-confidence member display names or aliases extracted by the channel adapter, including QiWe atList display text."},
                     "purpose": {"type": "string", "description": "Why answer context is needed."}
                 },
@@ -413,13 +427,61 @@ async fn qintopia_answer_context_prepare(
         referenced_identity.member_safe_identity_row_scope(),
     )
     .await?;
+    let mentioned_member_refs = request.mentioned_member_refs()?;
+    let exact_mention_texts = mentioned_member_refs
+        .iter()
+        .map(|reference| reference.mention_text.clone())
+        .filter(|text| !text.is_empty())
+        .collect::<BTreeSet<_>>();
+    let mut mentioned_members = Vec::new();
+    for reference in mentioned_member_refs {
+        let person_id = resolve_person_id_by_channel_exact(
+            pool,
+            &platform,
+            &chat_id,
+            &reference.channel_user_id,
+        )
+        .await?;
+        let resolution = person_id.map_or_else(MemberNameResolution::unresolved, |person_id| {
+            MemberNameResolution::resolved(person_id, 1)
+        });
+        let context = if resolution.status.is_resolved() {
+            member_safe_context(
+                pool,
+                &platform,
+                &chat_id,
+                Some(&reference.channel_user_id),
+                resolution.person_id,
+                MemberSafeIdentityRowScope::ExactChat,
+            )
+            .await?
+        } else {
+            None
+        };
+        let mention_text = if reference.mention_text.is_empty() {
+            "channel mention"
+        } else {
+            &reference.mention_text
+        };
+        write_mentioned_member_context_audit(
+            pool,
+            &caller,
+            &platform,
+            &chat_id,
+            &purpose,
+            mention_text,
+            &resolution,
+        )
+        .await?;
+        mentioned_members.push(member_context_json(mention_text, resolution, context));
+    }
     let mut mention_texts = request.mentioned_member_names();
     mention_texts.extend(mentioned_member_names(
         &message_text,
         speaker_context.as_ref(),
     ));
     mention_texts = unique_member_mentions(mention_texts);
-    let mut mentioned_members = Vec::new();
+    mention_texts.retain(|mention_text| !exact_mention_texts.contains(mention_text));
     for mention_text in mention_texts {
         let resolution = resolve_member_by_name(pool, &platform, &chat_id, &mention_text)
             .await
@@ -3361,12 +3423,49 @@ struct AnswerContextPrepareRequest {
     #[serde(default)]
     message_text: String,
     #[serde(default)]
+    mentioned_member_refs: Vec<MentionedMemberRef>,
+    #[serde(default)]
     mentioned_member_names: Vec<String>,
     #[serde(default)]
     purpose: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MentionedMemberRef {
+    channel_user_id: String,
+    #[serde(default)]
+    mention_text: String,
+}
+
 impl AnswerContextPrepareRequest {
+    fn mentioned_member_refs(&self) -> Result<Vec<MentionedMemberRef>> {
+        if self.mentioned_member_refs.len() > 32 {
+            bail!("mentioned_member_refs exceeds the 32 item limit");
+        }
+        let mut seen = BTreeSet::new();
+        let mut refs = Vec::new();
+        for reference in &self.mentioned_member_refs {
+            let channel_user_id = reference.channel_user_id.trim();
+            if channel_user_id.is_empty()
+                || channel_user_id.len() > 120
+                || channel_user_id
+                    .chars()
+                    .any(|character| character.is_control())
+            {
+                bail!("mentioned_member_refs contains an invalid channel_user_id");
+            }
+            if !seen.insert(channel_user_id.to_string()) {
+                continue;
+            }
+            refs.push(MentionedMemberRef {
+                channel_user_id: channel_user_id.to_string(),
+                mention_text: clean_text(&reference.mention_text, 120),
+            });
+        }
+        Ok(refs)
+    }
+
     fn mentioned_member_names(&self) -> Vec<String> {
         self.mentioned_member_names
             .iter()
@@ -3421,10 +3520,10 @@ mod tests {
         select_member_name_resolution, select_member_safe_identity_candidate,
         select_scoped_member_name_resolution, speaker_context_json, tool_definitions,
         training_source_kind, validate_context_caller, AnswerContextIdentityResolution,
-        AnswerRouteKind, ChannelIdentityCandidate, ContextConfig, GisLocationLookupRequest,
-        IdentityResolutionScope, MemberNameCandidate, MemberNameResolution,
-        MemberNameResolutionStatus, MemberSafeContext, MemberSafeIdentityRowScope,
-        TrainingSourceKind,
+        AnswerContextPrepareRequest, AnswerRouteKind, ChannelIdentityCandidate, ContextConfig,
+        GisLocationLookupRequest, IdentityResolutionScope, MemberNameCandidate,
+        MemberNameResolution, MemberNameResolutionStatus, MemberSafeContext,
+        MemberSafeIdentityRowScope, TrainingSourceKind,
     };
     use crate::message_search::SearchConfig;
     use chrono::{TimeZone, Utc};
@@ -3861,7 +3960,7 @@ mod tests {
     }
 
     #[test]
-    fn answer_context_tool_advertises_referenced_sender_id() {
+    fn answer_context_tool_advertises_exact_member_references() {
         let tools = tool_definitions();
         let answer_context_tool = tools
             .as_array()
@@ -3873,6 +3972,33 @@ mod tests {
             .as_object()
             .unwrap()
             .contains_key("referenced_sender_id"));
+        assert_eq!(
+            answer_context_tool["inputSchema"]["properties"]["mentioned_member_refs"]["maxItems"],
+            32
+        );
+        assert_eq!(
+            answer_context_tool["inputSchema"]["properties"]["mentioned_member_refs"]["items"]
+                ["additionalProperties"],
+            false
+        );
+    }
+
+    #[test]
+    fn exact_member_references_are_bounded_and_deduplicated_by_channel_id() {
+        let request: AnswerContextPrepareRequest = serde_json::from_value(serde_json::json!({
+            "mentioned_member_refs": [
+                {"channel_user_id": " member-a ", "mention_text": "同名成员"},
+                {"channel_user_id": "member-a", "mention_text": "另一个显示文本"},
+                {"channel_user_id": "member-b", "mention_text": "同名成员"}
+            ]
+        }))
+        .unwrap();
+
+        let refs = request.mentioned_member_refs().unwrap();
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0].channel_user_id, "member-a");
+        assert_eq!(refs[1].channel_user_id, "member-b");
+        assert_eq!(refs[0].mention_text, "同名成员");
     }
 
     #[test]
