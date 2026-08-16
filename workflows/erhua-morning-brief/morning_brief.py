@@ -58,12 +58,14 @@ class UnsafeNewsFeedXml(RuntimeError):
 
 class NoNewsFeedRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Pass None instead of fp to avoid ResourceWarning about an unclosed
+        # response object when urllib re-raises the HTTPError.
         raise urllib.error.HTTPError(
             req.full_url,
             code,
             "news feed redirects are not allowed",
             headers,
-            fp,
+            None,
         )
 
 
