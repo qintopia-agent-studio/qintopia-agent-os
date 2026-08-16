@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.152](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.151...v0.2.152) (2026-08-16)
+
+
+### Bug Fixes
+
+* **workflows:** translate English RSS news for Erhua morning brief ([#607](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/607)) ([820fd8c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/820fd8ce55bfb8e5a23abd17e4dc14ac7209e244))
+
 ## [0.2.151](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.150...v0.2.151) (2026-08-16)
 
 
