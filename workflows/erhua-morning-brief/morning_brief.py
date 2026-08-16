@@ -104,6 +104,30 @@ def _parse_args() -> argparse.Namespace:
             )
         ),
     )
+    parser.add_argument(
+        "--news-llm-base-url",
+        default=os.environ.get(
+            "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL",
+            os.environ.get("QINTOPIA_LLM_BASE_URL", ""),
+        ),
+        help="Optional OpenAI-compatible endpoint used to translate English RSS items for the community brief.",
+    )
+    parser.add_argument(
+        "--news-llm-api-key",
+        default=os.environ.get(
+            "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_API_KEY",
+            os.environ.get("QINTOPIA_LLM_API_KEY", ""),
+        ),
+        help="Optional API key for the news translation endpoint.",
+    )
+    parser.add_argument(
+        "--news-llm-model",
+        default=os.environ.get(
+            "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_MODEL",
+            os.environ.get("QINTOPIA_LLM_MODEL", ""),
+        ),
+        help="Optional model name for the news translation endpoint.",
+    )
     parser.add_argument("--news-limit", type=int, default=DEFAULT_NEWS_LIMIT)
     parser.add_argument(
         "--allow-news-unavailable",
@@ -301,7 +325,63 @@ def _child_text(element: ET.Element, names: tuple[str, ...]) -> str:
     return ""
 
 
-def _extract_feed_news_items(xml_text: str, limit: int) -> list[AiNewsItem]:
+def _translate_news_item_with_llm(
+    item: AiNewsItem, args: argparse.Namespace
+) -> AiNewsItem | None:
+    """Translate an English news item into Chinese via an OpenAI-compatible
+    endpoint.  Returns the item with bilingual fields filled, or None when no
+    translation endpoint is configured or the call fails (so the RSS fallback
+    never blocks the morning brief)."""
+    base_url = str(getattr(args, "news_llm_base_url", "") or "").strip()
+    api_key = str(getattr(args, "news_llm_api_key", "") or "").strip()
+    model = str(getattr(args, "news_llm_model", "") or "").strip()
+    if not base_url or not api_key or not model:
+        return None
+    try:
+        import httpx
+
+        prompt = (
+            "Translate the following AI news item into Chinese for a community "
+            "group chat. Return ONLY a JSON object with keys \"title_zh\" and "
+            "\"summary_zh\". Keep it concise and natural.\n\n"
+            f"English title: {item.title}\n"
+            f"English summary: {item.summary}"
+        )
+        endpoint = base_url.rstrip("/") + "/chat/completions"
+        response = httpx.post(
+            endpoint,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.2,
+                "max_tokens": 500,
+            },
+            timeout=args.news_feed_timeout_seconds,
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = (data["choices"][0]["message"]["content"] or "").strip()
+        translated = json.loads(content)
+        title_zh = _sanitize_public_line(str(translated.get("title_zh") or ""), max_len=90)
+        summary_zh = _sanitize_public_line(
+            str(translated.get("summary_zh") or ""), max_len=180
+        )
+        if not title_zh or not summary_zh:
+            return None
+        return AiNewsItem(
+            title=item.title,
+            summary=item.summary,
+            title_zh=title_zh,
+            summary_zh=summary_zh,
+        )
+    except Exception:
+        return None
+
+
+def _extract_feed_news_items(
+    xml_text: str, limit: int, args: argparse.Namespace | None = None
+) -> list[AiNewsItem]:
     if limit <= 0:
         raise RuntimeError("news limit must be positive")
     if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml_text, flags=re.IGNORECASE):
@@ -337,14 +417,19 @@ def _extract_feed_news_items(xml_text: str, limit: int) -> list[AiNewsItem]:
         if not title or key in seen:
             continue
         seen.add(key)
-        item = _news_item_or_none(
-            title=title[:90],
-            summary=summary,
-            strict_translation=False,
-        )
-        if item is None:
+        candidate = AiNewsItem(title=title[:90], summary=summary)
+        if _needs_chinese_translation(candidate):
+            if args is not None:
+                translated = _translate_news_item_with_llm(candidate, args)
+                if translated is not None:
+                    items.append(translated)
+                    if len(items) >= limit:
+                        break
+                    continue
+            # No translation available: skip the English-only item rather than
+            # sending untranslated English to the community group.
             continue
-        items.append(item)
+        items.append(candidate)
         if len(items) >= limit:
             break
     return items
@@ -367,7 +452,7 @@ def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
                 if not _is_allowed_news_feed_url(final_url):
                     continue
                 xml_text = response.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
-            for item in _extract_feed_news_items(xml_text, args.news_limit):
+            for item in _extract_feed_news_items(xml_text, args.news_limit, args):
                 key = item.title.casefold()
                 if key in seen:
                     continue
