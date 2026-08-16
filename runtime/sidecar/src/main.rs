@@ -8,6 +8,7 @@ mod context_mcp_server;
 mod context_tools;
 mod conversation_ingress;
 mod conversation_policy;
+mod daily_case_report_mcp;
 mod daily_digest_publisher;
 mod db;
 mod embedding_worker;

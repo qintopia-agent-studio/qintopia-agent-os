@@ -5602,7 +5602,7 @@ impl DailyCaseReportStorageBackend {
         }
     }
 
-    fn from_env() -> Result<Self> {
+    pub(crate) fn from_env() -> Result<Self> {
         let value = std::env::var(DAILY_CASE_REPORT_STORAGE_BACKEND_ENV)
             .ok()
             .filter(|value| !value.trim().is_empty())
