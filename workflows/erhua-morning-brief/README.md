@@ -67,9 +67,12 @@ non-zero instead of silently retrying or sending a fallback.
 The default behavior fails closed if neither QunMind nor the public feed fallback can
 produce usable AI news. English QunMind items must carry explicit Chinese title and
 summary translations; otherwise the run fails instead of sending untranslated English.
-RSS fallback items without Chinese text are skipped. Operators may use
-`--allow-news-unavailable` for an explicit degraded preview, but production scheduling
-should not silently send a "news missing" fallback.
+RSS fallback English items are translated through the optional news LLM endpoint when
+configured (`QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL` / `_API_KEY` / `_MODEL`);
+without that endpoint, English-only RSS items are skipped so the community group never
+receives untranslated English. Operators may use `--allow-news-unavailable` for an
+explicit degraded preview, but production scheduling should not silently send a "news
+missing" fallback.
 
 ## Running it
 

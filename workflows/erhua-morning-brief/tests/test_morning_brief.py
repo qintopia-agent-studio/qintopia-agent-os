@@ -283,6 +283,119 @@ class ErhuaMorningBriefTests(unittest.TestCase):
 
         self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
 
+    def test_rss_fallback_translates_english_items_when_llm_configured(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>OpenAI launches a new agent guide</title>
+      <description>Teams can use the guide before connecting agents to production systems.</description>
+    </item>
+  </channel>
+</rss>"""
+        args = SimpleNamespace(
+            news_llm_base_url="https://llm.example.test/v1",
+            news_llm_api_key="fixture-key",
+            news_llm_model="gpt-5.2",
+            news_feed_timeout_seconds=12,
+        )
+        captured = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    '{"title_zh": "OpenAI 发布新的智能体指南", '
+                                    '"summary_zh": "团队可以在连接生产系统前使用该指南。"}'
+                                )
+                            }
+                        }
+                    ]
+                }
+
+        def fake_post(url, headers=None, json=None, timeout=None):
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["payload"] = json
+            return FakeResponse()
+
+        original_httpx = sys.modules.get("httpx")
+        sys.modules["httpx"] = SimpleNamespace(post=fake_post)
+        try:
+            items = module._extract_feed_news_items(rss, 5, args)
+        finally:
+            if original_httpx is None:
+                sys.modules.pop("httpx", None)
+            else:
+                sys.modules["httpx"] = original_httpx
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].title, "OpenAI launches a new agent guide")
+        self.assertEqual(items[0].title_zh, "OpenAI 发布新的智能体指南")
+        self.assertIn("连接生产系统", items[0].summary_zh)
+        self.assertTrue(captured["url"].endswith("/chat/completions"))
+        self.assertEqual(captured["payload"]["model"], "gpt-5.2")
+
+    def test_rss_fallback_translation_failure_keeps_english_item_skipped(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>OpenAI launches a new agent guide</title>
+      <description>Teams can use the guide before connecting agents to production systems.</description>
+    </item>
+  </channel>
+</rss>"""
+        args = SimpleNamespace(
+            news_llm_base_url="https://llm.example.test/v1",
+            news_llm_api_key="fixture-key",
+            news_llm_model="gpt-5.2",
+            news_feed_timeout_seconds=12,
+        )
+
+        def failing_post(url, headers=None, json=None, timeout=None):
+            raise RuntimeError("translation endpoint unavailable")
+
+        original_httpx = sys.modules.get("httpx")
+        sys.modules["httpx"] = SimpleNamespace(post=failing_post)
+        try:
+            items = module._extract_feed_news_items(rss, 5, args)
+        finally:
+            if original_httpx is None:
+                sys.modules.pop("httpx", None)
+            else:
+                sys.modules["httpx"] = original_httpx
+
+        self.assertEqual(items, [])
+
+    def test_rss_fallback_without_llm_config_skips_english(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>OpenAI launches a new agent guide</title>
+      <description>Teams can use the guide before connecting agents to production systems.</description>
+    </item>
+  </channel>
+</rss>"""
+        args = SimpleNamespace(
+            news_llm_base_url="",
+            news_llm_api_key="",
+            news_llm_model="",
+            news_feed_timeout_seconds=12,
+        )
+        items = module._extract_feed_news_items(rss, 5, args)
+        self.assertEqual(items, [])
+
     def test_rss_fallback_parser_rejects_dtd_and_entities(self):
         module = load_module()
 
@@ -419,7 +532,7 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         handler = module.NoNewsFeedRedirect()
         request = module.urllib.request.Request("https://openai.com/news/rss.xml")
 
-        with self.assertRaises(module.urllib.error.HTTPError) as context:
+        try:
             handler.redirect_request(
                 request,
                 None,
@@ -428,11 +541,9 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 {},
                 "https://127.0.0.1/internal",
             )
-
-        try:
-            self.assertEqual(context.exception.code, 302)
-        finally:
-            context.exception.close()
+            self.fail("redirect_request must raise HTTPError")
+        except module.urllib.error.HTTPError as exc:
+            self.assertEqual(exc.code, 302)
 
     def test_feed_urls_reject_non_allowlisted_hosts(self):
         module = load_module()
