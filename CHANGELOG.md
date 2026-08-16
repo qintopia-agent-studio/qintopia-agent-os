@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.148](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.147...v0.2.148) (2026-08-16)
+
+
+### Features
+
+* **qiwe:** read forwarded chat-record (mixed) content for dispatch (P1) ([#595](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/595)) ([d23e424](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d23e424304e1784c96c237cd7391dc16de926fe9))
+* **sidecar:** add daily case report generate MCP tool ([#600](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/600)) ([410120f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/410120f4a2d8bad565644cff47c398a67ccc1243))
+
+
+### Bug Fixes
+
+* **hermes:** switch erhua default model to gpt-5.2 ([#597](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/597)) ([5a02245](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5a02245a8d504c2dda81b08f9241a4e3f5a024f3))
+* **skills:** soften xiaoman activity copy for unconfirmed fields ([#599](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/599)) ([46c788d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/46c788d890bc9eed81e7def266561d8cb0af3cb0))
+
+
+### Refactoring
+
+* **workflows:** split daily case report into package modules ([#598](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/598)) ([211ff47](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/211ff4734b4c0541f5ea2b046fd238a03dd820d4))
+
 ## [0.2.147](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.146...v0.2.147) (2026-08-15)
 
 
