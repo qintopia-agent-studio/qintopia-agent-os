@@ -391,6 +391,7 @@ validation = manifest.get("validation", {})
 if validation.get("cargo_features") != [
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
+    "huabaosi-wecom-canary-gateway",
 ]:
     raise SystemExit("staging artifact Cargo features are not approved")
 if validation.get("staging_only") is not True:
