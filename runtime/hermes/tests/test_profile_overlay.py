@@ -67,7 +67,7 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertEqual(original["channel"]["qiwe"], rendered["channel"]["qiwe"])
             self.assertTrue(rendered["channel"]["wecom"]["enabled"])
             self.assertEqual(original["unrelated_flag"], rendered["unrelated_flag"])
-            self.assertEqual("gpt-5.6-luna", rendered["model"]["default"])
+            self.assertEqual("gpt-5.2", rendered["model"]["default"])
             self.assertEqual(original["model"]["default"], rendered["model"]["default"])
             self.assertEqual(0.3, rendered["model"]["temperature"])
             self.assertEqual(original["custom_providers"][0], rendered["custom_providers"][0])
