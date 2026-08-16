@@ -1,0 +1,77 @@
+{
+  "success": true,
+  "worker": "daily-case-report-collect-preview",
+  "action_status": "collect_preview_ok",
+  "protocol": "daily_case_report_collect_preview_v1",
+  "safe_for_chat": false,
+  "window": {
+    "start_rfc3339": "2026-08-14T16:00:00+00:00",
+    "end_rfc3339": "2026-08-15T16:00:00+00:00",
+    "chat_id_sha256": "be605824e2c249bd391f42bcd5ee3716945cfc71f6baf8af7ac4698ff058961e",
+    "memory_lookback_days": 90
+  },
+  "messages": {
+    "count": 3,
+    "distinct_sender_count": 2,
+    "senders_with_person_id_count": 2,
+    "total_text_byte_count": 47,
+    "first_report_time": "2026-08-15T01:00:00+00:00",
+    "last_report_time": "2026-08-15T03:00:00+00:00",
+    "items_truncated": false,
+    "items": [
+      {
+        "id_sha256": "72cad190ed71ed0309138ac14e9982dbc21abd357ff0820da9326212a320d177",
+        "text_byte_count": 15,
+        "report_time": "2026-08-15T01:00:00+00:00",
+        "sender_person_id_present": true
+      },
+      {
+        "id_sha256": "24904f5c0ed719757fddd7d16866a0be19c4e091fab9106c98216de5cc9bdb2a",
+        "text_byte_count": 15,
+        "report_time": "2026-08-15T02:00:00+00:00",
+        "sender_person_id_present": false
+      },
+      {
+        "id_sha256": "88f3c265d8fb9d8afc628a02be289e8e5b0617e9b340feb2ba2fcc4e9858f50e",
+        "text_byte_count": 17,
+        "report_time": "2026-08-15T03:00:00+00:00",
+        "sender_person_id_present": true
+      }
+    ]
+  },
+  "character_memory": {
+    "person_count": 2,
+    "total_recent_fact_count": 2,
+    "total_lifetime_fact_count": 12,
+    "persons": [
+      {
+        "person_id_sha256": "7cac378a57876d6285d1282bed208c8c0c092addf0ac7bb351415354862e7cd0",
+        "recent_fact_count": 2,
+        "lifetime_fact_count": 9,
+        "dominant_fact_type": "activity_organizer"
+      },
+      {
+        "person_id_sha256": "9c9c92612cf7ab6f9955b515814be2f7d35d1f547c536492b6a018d592236e61",
+        "recent_fact_count": 0,
+        "lifetime_fact_count": 3,
+        "dominant_fact_type": "service_need"
+      }
+    ]
+  },
+  "creative_profile_memory": {
+    "person_count": 1,
+    "persons": [
+      {
+        "person_id_sha256": "7cac378a57876d6285d1282bed208c8c0c092addf0ac7bb351415354862e7cd0",
+        "communication_style_present": true,
+        "safe_reply_hints_key_count": 4
+      }
+    ]
+  },
+  "limitations": [
+    "preview emits counts, hashes, and byte sizes only; raw text and identifiers never leave the process",
+    "message items are capped at 200 with items_truncated marking the remainder",
+    "collection mirrors collector.py semantics; analysis and rendering are later migration phases",
+    "no user-visible output; safe_for_chat is always false"
+  ]
+}

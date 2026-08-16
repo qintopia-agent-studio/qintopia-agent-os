@@ -1072,6 +1072,20 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Preview daily case-report collection sources with sanitized output.
+    DailyCaseReportCollectPreview {
+        /// Restrict collection to one chat id.
+        #[arg(long)]
+        chat_id: Option<String>,
+
+        /// Window start (RFC 3339, e.g. 2026-08-15T00:00:00+08:00).
+        #[arg(long)]
+        start: String,
+
+        /// Window end (RFC 3339, exclusive).
+        #[arg(long)]
+        end: String,
+    },
     /// List AgentOS capabilities available for governed cross-Agent work.
     OperationsCapabilityList {
         /// Load capabilities from Postgres instead of the built-in offline registry.
