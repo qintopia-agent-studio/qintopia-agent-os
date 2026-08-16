@@ -4369,11 +4369,11 @@ def _xiaoman_activity_time_text(record: dict[str, str]) -> str:
         return start
     if end:
         return f"截至 {end}"
-    return "时间待确认"
+    return "时间稍后公布"
 
 
 def _xiaoman_activity_owner_text(record: dict[str, str]) -> str:
-    return record.get("owner_name") or record.get("initiator_name") or "负责人待确认"
+    return record.get("owner_name") or record.get("initiator_name") or "负责人稍后公布"
 
 
 def _xiaoman_activity_missing_fields(record: dict[str, str], mode: str) -> list[str]:
@@ -4396,12 +4396,9 @@ def _xiaoman_activity_announcement_line(record: dict[str, str], index: int) -> s
     pieces = [
         f"{index}. {title}",
         f"时间：{_xiaoman_activity_time_text(record)}",
-        f"地点：{record.get('location') or '待确认'}",
+        f"地点：{record.get('location') or '稍后公布'}",
         f"负责人：{_xiaoman_activity_owner_text(record)}",
     ]
-    status = record.get("promotion_status") or record.get("status")
-    if status:
-        pieces.append(f"状态：{status}")
     notes = record.get("notes")
     if notes:
         pieces.append(f"备注：{notes}")
