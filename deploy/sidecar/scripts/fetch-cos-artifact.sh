@@ -217,7 +217,7 @@ case "$artifact_type" in
         ;;
       combined-staging)
         artifact_name="${ARTIFACT_NAME:-qintopia-message-sidecar-staging-linux-x86_64-gnu}"
-        expected_cargo_features='["huabaosi-staging-adapter","qiwe-staging-adapter"]'
+        expected_cargo_features='["huabaosi-staging-adapter","qiwe-staging-adapter","huabaosi-wecom-canary-gateway"]'
         ;;
       *)
         echo "QINTOPIA_SIDECAR_ARTIFACT_PROFILE must be huabaosi-production, qiwe-production, or combined-staging" >&2

@@ -48,7 +48,11 @@ const sha256File = (filePath) =>
 const writeFixtureArtifact = (
   name,
   {
-    cargoFeatures = ["huabaosi-staging-adapter", "qiwe-staging-adapter"],
+    cargoFeatures = [
+      "huabaosi-staging-adapter",
+      "qiwe-staging-adapter",
+      "huabaosi-wecom-canary-gateway",
+    ],
     stagingOnly = true,
     productionEligible = false,
     includeTarballChecksum = true,

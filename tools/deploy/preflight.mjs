@@ -319,6 +319,7 @@ if (exists("deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh")) {
     "qintopia-message-sidecar-staging-linux-x86_64-gnu",
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
+    "huabaosi-wecom-canary-gateway",
     "staging_only",
     "production_eligible",
     "/home/ubuntu/qintopia-agent-os-staging-releases",
@@ -466,6 +467,7 @@ if (exists("deploy/sidecar/scripts/fetch-cos-artifact.sh")) {
     "huabaosi-image-generation-staging-smoke.sh",
     "qiwe-image-send-staging-smoke.sh",
     "huabaosi-production-adapter",
+    "huabaosi-wecom-canary-gateway",
     "sha256sum -c SHA256SUMS",
   ]) {
     if (!cosFetchScript.includes(requiredFragment)) {
@@ -568,6 +570,7 @@ if (exists("tools/deploy/build-sidecar-artifact.mjs")) {
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
     "qiwe-production-adapter",
+    "huabaosi-wecom-canary-gateway",
     '"--all-features"',
   ]) {
     if (buildArtifactScript.includes(forbiddenFragment)) {
@@ -585,6 +588,7 @@ if (exists("tools/deploy/build-staging-sidecar-artifact.mjs")) {
   const approvedStagingCargoFeatures = [
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
+    "huabaosi-wecom-canary-gateway",
   ];
   const cargoFeaturesMatch = stagingArtifactScript.match(
     /const cargoFeatures = \[([\s\S]*?)\];/
