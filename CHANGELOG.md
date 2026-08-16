@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.151](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.150...v0.2.151) (2026-08-16)
+
+
+### Bug Fixes
+
+* **sidecar:** force private 0700 mode on MCP render temp dir ([#605](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/605)) ([cae07b0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cae07b00ca05be3f4f116a0488f82df8726d4a9b))
+
 ## [0.2.150](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.149...v0.2.150) (2026-08-16)
 
 
