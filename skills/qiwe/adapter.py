@@ -769,6 +769,77 @@ def _attachments(payload: Dict[str, Any], raw_event: Dict[str, Any], kind: str) 
     return [_attachment_from_data(kind, data, raw_event)]
 
 
+def _extract_mixed_content(payload: Dict[str, Any], raw_event: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """读取合并转发（聊天记录）内部的子消息，提取每条的发言人与可读内容。
+
+    仅依赖仓库既有 mixed 契约：子项为 {subMsgType, subMsgData}，文本子项的
+    正文字段与常规消息一致走 `content`。发言人与媒体摘要字段在不同客户端版本
+    下命名可能变化（senderName/senderNickname/userName；fileName 等），此处做
+    防御式多候选读取。字段名需以一条真实合并转发 payload 样本复核（见 P1 备忘）。
+    """
+    data = _msg_data(payload, raw_event)
+    if not isinstance(data, list):
+        return []
+    items: List[Dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        sub_type = item.get("subMsgType")
+        sub_data = item.get("subMsgData") if isinstance(item.get("subMsgData"), dict) else {}
+        sub_kind = _message_kind({"msgType": sub_type}, {"msgType": sub_type, "msgData": sub_data})
+        entry: Dict[str, Any] = {
+            "kind": sub_kind,
+            "sender_name": _display_text(
+                sub_data.get("senderName")
+                or sub_data.get("senderNickname")
+                or sub_data.get("userName")
+                or sub_data.get("nickName")
+                or sub_data.get("nickname")
+                or sub_data.get("fromUsername")
+                or sub_data.get("senderusername")
+                or sub_data.get("username")
+            ),
+            "sender_id": _text(
+                sub_data.get("senderId")
+                or sub_data.get("userId")
+                or sub_data.get("wxid")
+                or sub_data.get("fromUserId")
+            ),
+        }
+        if sub_kind == "text":
+            entry["text"] = _display_text(sub_data.get("content"))
+        elif sub_kind in {"image", "gif"}:
+            entry["summary"] = "图片"
+        elif sub_kind == "voice":
+            entry["summary"] = "语音消息"
+        elif sub_kind == "video":
+            entry["summary"] = "视频"
+        elif sub_kind == "file":
+            entry["summary"] = f"文件：{_display_text(sub_data.get("fileName") or sub_data.get("filename"))}"
+        elif sub_kind == "link":
+            entry["summary"] = f"链接：{_display_text(sub_data.get("title"))}"
+        elif sub_kind == "location":
+            entry["summary"] = f"位置：{_display_text(sub_data.get("title") or sub_data.get("address"))}"
+        items.append({key: value for key, value in entry.items() if value not in ("", None)})
+    return items
+
+
+def _format_mixed_content(items: List[Dict[str, Any]]) -> str:
+    if not items:
+        return ""
+    lines = [f"用户转发了一条聊天记录（合并转发），共 {len(items)} 条子消息："]
+    for entry in items:
+        sender = entry.get("sender_name") or entry.get("sender_id") or "未知成员"
+        if entry.get("kind") == "text":
+            text = entry.get("text") or ""
+            if text:
+                lines.append(f"- {sender}：{text}")
+                continue
+        summary = entry.get("summary") or f"{entry.get('kind')}消息"
+        lines.append(f"- {sender}：（{summary}）")
+    return "\n".join(lines)
+
+
 def _message_context_from_parsed(parsed: ParsedQiWeMessage) -> Dict[str, Any]:
     context: Dict[str, Any] = {
         "message_id": parsed.message_id,
@@ -2361,11 +2432,19 @@ class QiWeAdapter(BasePlatformAdapter):
                     return f"{guidance}\n\n{reference_text}\n\n当前消息：{parsed.text}"
                 return f"{reference_text}\n\n当前消息：{parsed.text}"
             return parsed.text
+        if parsed.message_kind == "mixed":
+            items = _extract_mixed_content(parsed.payload, parsed.raw_event)
+            formatted = _format_mixed_content(items)
+            if formatted and parsed.text:
+                return f"{formatted}\n\n当前消息：{parsed.text}"
+            if formatted:
+                return formatted
+            return "用户转发了一条聊天记录（合并转发），但当前无法解析其中内容。请提示用户补充文字说明或将聊天文本直接发给我。"
         if not self.qiwe.active_attachment_preprocess_enabled:
             return parsed.text
         if parsed.message_kind == "solitaire":
             return parsed.text or "用户发送了一条接龙消息，但当前无法解析接龙内容。"
-        if parsed.message_kind in {"voice", "image", "quote", "mixed"}:
+        if parsed.message_kind in {"voice", "image", "quote"}:
             return f"用户发送了一条{parsed.message_kind}消息，但当前这个消息类型的识别能力尚未启用。请提示用户补充文字说明。"
         return parsed.text
 

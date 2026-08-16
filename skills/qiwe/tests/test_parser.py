@@ -1950,6 +1950,98 @@ class QiWeParserTests(unittest.TestCase):
         # 占位符本身不应作为原文泄露给模型。
         self.assertNotIn("该消息类型暂不能展示", dispatch_text)
 
+    def test_extract_mixed_content_reads_text_subitems(self) -> None:
+        # P1：用户直接转发聊天记录时，应能读取内部子消息的发言人与正文。
+        raw_event = {
+            "msgType": 123,
+            "msgData": [
+                {"subMsgType": 0, "subMsgData": {"content": "今天活动场地定下来了", "senderName": "二花"}},
+                {"subMsgType": 0, "subMsgData": {"content": "收到，那我负责物料", "senderName": "阿强"}},
+                {"subMsgType": 7, "subMsgData": {"fileName": "poster.png", "senderName": "小美"}},
+                {"subMsgType": 16, "subMsgData": {"senderName": "小美"}},
+            ],
+        }
+        items = adapter_module._extract_mixed_content({}, raw_event)
+        self.assertEqual(len(items), 4)
+        self.assertEqual(items[0]["kind"], "text")
+        self.assertEqual(items[0]["text"], "今天活动场地定下来了")
+        self.assertEqual(items[0]["sender_name"], "二花")
+        self.assertEqual(items[2]["kind"], "image")
+        self.assertEqual(items[2]["summary"], "图片")
+        self.assertEqual(items[3]["kind"], "voice")
+        self.assertEqual(items[3]["summary"], "语音消息")
+        formatted = adapter_module._format_mixed_content(items)
+        self.assertIn("共 4 条子消息", formatted)
+        self.assertIn("- 二花：今天活动场地定下来了", formatted)
+        self.assertIn("- 阿强：收到，那我负责物料", formatted)
+        self.assertIn("- 小美：（图片）", formatted)
+
+    def test_dispatch_text_mixed_forward_reads_content(self) -> None:
+        # 转发聊天记录（mixed）应被读取为可读内容，而非「识别能力尚未启用」。
+        raw_event = {
+            "msgType": 123,
+            "msgData": [
+                {"subMsgType": 0, "subMsgData": {"content": "二花：这段很跳脱", "senderName": "二花"}},
+                {"subMsgType": 0, "subMsgData": {"content": "对，加一点吐槽", "senderName": "阿强"}},
+            ],
+        }
+        parsed = ParsedQiWeMessage(
+            accepted=True,
+            reason="ok",
+            should_trigger=True,
+            text="提炼一下风格",
+            message_kind="mixed",
+            payload={},
+            raw_event=raw_event,
+        )
+        adapter = QiWeAdapter(type("Config", (), {"extra": {"active_attachment_preprocess_enabled": False}})())
+        dispatch_text = adapter._active_dispatch_text(parsed)
+        self.assertIn("聊天记录（合并转发）", dispatch_text)
+        self.assertIn("- 二花：二花：这段很跳脱", dispatch_text)
+        self.assertIn("当前消息：提炼一下风格", dispatch_text)
+        self.assertNotIn("识别能力尚未启用", dispatch_text)
+
+    def test_dispatch_text_mixed_forward_empty_falls_back(self) -> None:
+        # 合并转发内部无法解析时，给出兜底而非崩溃。
+        raw_event = {"msgType": 123, "msgData": []}
+        parsed = ParsedQiWeMessage(
+            accepted=True,
+            reason="ok",
+            should_trigger=True,
+            text="",
+            message_kind="mixed",
+            payload={},
+            raw_event=raw_event,
+        )
+        adapter = QiWeAdapter(type("Config", (), {"extra": {"active_attachment_preprocess_enabled": False}})())
+        dispatch_text = adapter._active_dispatch_text(parsed)
+        self.assertIn("无法解析其中内容", dispatch_text)
+        self.assertNotIn("识别能力尚未启用", dispatch_text)
+
+    def test_extract_mixed_content_sender_name_fallback_order(self) -> None:
+        # P1 健壮性：合并转发子项的发言人显示字段在不同客户端版本下命名不一，
+        # 应优先用显示名候选，缺失时回退到 fromUsername/senderusername/username，避免「未知成员」。
+        raw_event = {
+            "msgType": 123,
+            "msgData": [
+                # 仅 fromUsername（企业微信合并转发常见子项字段）
+                {"subMsgType": 0, "subMsgData": {"content": "场地定了", "fromUsername": "erhua_wxid"}},
+                # 仅 username
+                {"subMsgType": 0, "subMsgData": {"content": "我来物料", "username": "aqiang"}},
+                # 什么都没有 -> 回退「未知成员」
+                {"subMsgType": 0, "subMsgData": {"content": "收到"}},
+            ],
+        }
+        items = adapter_module._extract_mixed_content({}, raw_event)
+        self.assertEqual(len(items), 3)
+        self.assertEqual(items[0]["sender_name"], "erhua_wxid")
+        self.assertEqual(items[1]["sender_name"], "aqiang")
+        self.assertNotIn("sender_name", items[2])
+        formatted = adapter_module._format_mixed_content(items)
+        self.assertIn("- erhua_wxid：场地定了", formatted)
+        self.assertIn("- aqiang：我来物料", formatted)
+        self.assertIn("- 未知成员：收到", formatted)
+
     def test_dispatch_uses_persisted_identity_cache_without_qiwe_lookup(self) -> None:
         class RecordingAdapter(QiWeAdapter):
             def __init__(self) -> None:
