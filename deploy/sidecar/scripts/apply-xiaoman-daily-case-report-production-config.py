@@ -52,6 +52,10 @@ ACTIVE_KEYS = {
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS",
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_ALLOWED_CALLER",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_PYTHON_BIN",
+    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_RENDER_TIMEOUT_SECONDS",
 }
 REQUIRED_SHARED_BOUNDARY_KEYS = {
     "QINTOPIA_SIDECAR_DATABASE_URL",
@@ -192,6 +196,10 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
         "media_public_base_url",
         "media_allowed_hosts",
         "message_text",
+        "mcp_workflow_py",
+        "mcp_allowed_caller",
+        "mcp_python_bin",
+        "mcp_render_timeout_seconds",
     }
     if set(value) - allowed:
         raise ConfigError("configuration input contains unsupported fields")
@@ -281,6 +289,68 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
             raise ConfigError("feishu-base storage must not carry HTTPS media fields")
     if message_text is not None:
         normalized["message_text"] = message_text
+
+    mcp_workflow_py = value.get("mcp_workflow_py")
+    if mcp_workflow_py is not None:
+        if not isinstance(mcp_workflow_py, str):
+            raise ConfigError("mcp_workflow_py must be a string")
+        mcp_workflow_py = mcp_workflow_py.strip()
+        release_current = "/home/ubuntu/qintopia-agent-os-releases/current/"
+        is_absolute_release_path = mcp_workflow_py.startswith(release_current)
+        is_relative_release_path = (
+            not mcp_workflow_py.startswith("/")
+            and not mcp_workflow_py.startswith("~")
+            and ".." not in mcp_workflow_py
+        )
+        if (
+            not mcp_workflow_py
+            or CONTROL_RE.search(mcp_workflow_py)
+            or "$(" in mcp_workflow_py
+            or "`" in mcp_workflow_py
+            or not mcp_workflow_py.endswith("daily_case_report.py")
+            or not (is_absolute_release_path or is_relative_release_path)
+        ):
+            raise ConfigError(
+                "mcp_workflow_py must be the release workflow daily_case_report.py "
+                "under /home/ubuntu/qintopia-agent-os-releases/current/ "
+                "(absolute) or a relative release path"
+            )
+        normalized["mcp_workflow_py"] = mcp_workflow_py
+
+    mcp_allowed_caller = value.get("mcp_allowed_caller")
+    if mcp_allowed_caller is not None:
+        if not isinstance(mcp_allowed_caller, str):
+            raise ConfigError("mcp_allowed_caller must be a string")
+        mcp_allowed_caller = mcp_allowed_caller.strip()
+        if (
+            not mcp_allowed_caller
+            or CONTROL_RE.search(mcp_allowed_caller)
+            or "$(" in mcp_allowed_caller
+            or "`" in mcp_allowed_caller
+        ):
+            raise ConfigError("mcp_allowed_caller value is invalid")
+        normalized["mcp_allowed_caller"] = mcp_allowed_caller
+
+    mcp_python_bin = value.get("mcp_python_bin")
+    if mcp_python_bin is not None:
+        if not isinstance(mcp_python_bin, str):
+            raise ConfigError("mcp_python_bin must be a string")
+        mcp_python_bin = mcp_python_bin.strip()
+        if (
+            not mcp_python_bin
+            or CONTROL_RE.search(mcp_python_bin)
+            or "$(" in mcp_python_bin
+            or "`" in mcp_python_bin
+        ):
+            raise ConfigError("mcp_python_bin value is invalid")
+        normalized["mcp_python_bin"] = mcp_python_bin
+
+    mcp_timeout = value.get("mcp_render_timeout_seconds")
+    if mcp_timeout is not None:
+        if not isinstance(mcp_timeout, int) or mcp_timeout < 1 or mcp_timeout > 3600:
+            raise ConfigError("mcp_render_timeout_seconds must be an integer between 1 and 3600")
+        normalized["mcp_render_timeout_seconds"] = str(mcp_timeout)
+
     return normalized
 
 
@@ -476,6 +546,22 @@ def desired_values(request: dict[str, str]) -> dict[str, str]:
         )
     if "message_text" in request:
         values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT"] = request["message_text"]
+    if "mcp_workflow_py" in request:
+        values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY"] = request[
+            "mcp_workflow_py"
+        ]
+    if "mcp_allowed_caller" in request:
+        values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_ALLOWED_CALLER"] = request[
+            "mcp_allowed_caller"
+        ]
+    if "mcp_python_bin" in request:
+        values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_PYTHON_BIN"] = request[
+            "mcp_python_bin"
+        ]
+    if "mcp_render_timeout_seconds" in request:
+        values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_RENDER_TIMEOUT_SECONDS"] = request[
+            "mcp_render_timeout_seconds"
+        ]
     return values
 
 

@@ -277,6 +277,69 @@ class XiaomanDailyCaseReportProductionConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.ConfigError, "unsafe tracked values"):
             self.configure(self.enabled_request())
 
+    def test_enable_apply_writes_reviewed_mcp_keys_when_requested(self) -> None:
+        request = self.enabled_request()
+        request.update(
+            {
+                "mcp_workflow_py": "workflows/xiaoman-daily-case-report/daily_case_report.py",
+                "mcp_allowed_caller": "wenyuange",
+                "mcp_python_bin": "/usr/bin/python3",
+                "mcp_render_timeout_seconds": 300,
+            }
+        )
+        report = self.configure(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        self.assertTrue(report["success"])
+
+        values = MODULE.parse_env_text(self.env_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY"],
+            "workflows/xiaoman-daily-case-report/daily_case_report.py",
+        )
+        self.assertEqual(
+            values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_ALLOWED_CALLER"],
+            "wenyuange",
+        )
+        self.assertEqual(
+            values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_PYTHON_BIN"],
+            "/usr/bin/python3",
+        )
+        self.assertEqual(
+            values["QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_RENDER_TIMEOUT_SECONDS"],
+            "300",
+        )
+
+        second = self.configure(request, apply=True, approval=MODULE.APPLY_APPROVAL)
+        self.assertTrue(second["deduped"])
+
+    def test_mcp_keys_are_omitted_when_not_requested(self) -> None:
+        report = self.configure(
+            self.enabled_request(),
+            apply=True,
+            approval=MODULE.APPLY_APPROVAL,
+        )
+        self.assertTrue(report["success"])
+        text = self.env_path.read_text(encoding="utf-8")
+        self.assertNotIn("DAILY_CASE_REPORT_MCP_", text)
+
+    def test_mcp_workflow_path_must_be_relative_release_path(self) -> None:
+        for bad in (
+            "/etc/passwd",
+            "~/daily_case_report.py",
+            "../x/daily_case_report.py",
+            "workflows/x/daily_case_report.txt",
+        ):
+            request = self.enabled_request()
+            request["mcp_workflow_py"] = bad
+            with self.assertRaisesRegex(MODULE.ConfigError, "mcp_workflow_py"):
+                self.configure(request)
+
+    def test_mcp_timeout_must_be_bounded_integer(self) -> None:
+        for bad in (0, 3601, -5):
+            request = self.enabled_request()
+            request["mcp_render_timeout_seconds"] = bad
+            with self.assertRaisesRegex(MODULE.ConfigError, "mcp_render_timeout_seconds"):
+                self.configure(request)
+
 
 if __name__ == "__main__":
     unittest.main()
