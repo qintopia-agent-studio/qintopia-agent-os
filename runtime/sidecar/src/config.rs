@@ -118,6 +118,30 @@ pub struct Cli {
     #[arg(long, env = "QINTOPIA_CONTEXT_MCP_ALLOWED_CALLERS")]
     pub context_mcp_allowed_callers: Option<String>,
 
+    #[arg(
+        long,
+        env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_ALLOWED_CALLER",
+        default_value = "wenyuange"
+    )]
+    pub daily_case_report_mcp_allowed_caller: String,
+
+    #[arg(
+        long,
+        env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_PYTHON_BIN",
+        default_value = "/usr/bin/python3"
+    )]
+    pub daily_case_report_mcp_python_bin: String,
+
+    #[arg(long, env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY")]
+    pub daily_case_report_mcp_workflow_py: Option<String>,
+
+    #[arg(
+        long,
+        env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_RENDER_TIMEOUT_SECONDS",
+        default_value_t = 300
+    )]
+    pub daily_case_report_mcp_render_timeout_seconds: u64,
+
     #[arg(long, env = "QINTOPIA_ERHUA_TRAINER_USER_IDS", default_value = "")]
     pub erhua_trainer_user_ids: String,
 
