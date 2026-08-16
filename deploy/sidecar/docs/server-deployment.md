@@ -761,6 +761,24 @@ printf '%s\n' \
   | ./target/release/qintopia-message-sidecar mcp-message-store
 ```
 
+The message store MCP also exposes `qintopia_daily_case_report_generate` for on-demand
+Xiaoman daily case-report previews. It renders via the Python workflow and uploads
+through the same governed media boundary as the scheduled worker. A preview call needs
+`QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY` pointing at the reviewed release
+workflow and the caller must match
+`QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_ALLOWED_CALLER` (defaults to `wenyuange`):
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"qintopia_daily_case_report_generate","arguments":{"date":"2026-08-08","template":"v3","dry_run":true,"caller":"wenyuange"}}}' \
+  | ./target/release/qintopia-message-sidecar mcp-message-store
+```
+
+`dry_run` defaults to true and only validates the rendered JPEG identity without
+uploading or creating the QiWe send work item; set `dry_run:false` to run the full
+reviewed auto-publish chain (media upload + automatic publish create).
+
 ## Context MCP Smoke
 
 The context MCP server is also stdio-only. It exposes Agent-facing context tools and

@@ -3,9 +3,11 @@ use std::io::{self, BufRead, Write};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::postgres::PgPool;
 
 use crate::{
     config::Cli,
+    daily_case_report_mcp::{self, DailyCaseReportMcpConfig},
     db,
     message_search::{self, request_from_json, SearchConfig, TOOL_NAME},
 };
@@ -14,6 +16,7 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 
 pub(crate) async fn run(cli: &Cli) -> Result<()> {
     let config = SearchConfig::from_cli(cli)?;
+    let daily_report_config = DailyCaseReportMcpConfig::from_cli(cli)?;
     let pool = db::connect(&config.database_url, config.db_max_connections).await?;
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -23,7 +26,7 @@ pub(crate) async fn run(cli: &Cli) -> Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let response = handle_message(&pool, &config, &line).await;
+        let response = handle_message(&pool, &config, &daily_report_config, &line).await;
         if let Some(response) = response {
             writeln!(stdout, "{response}").context("write MCP stdout")?;
             stdout.flush().context("flush MCP stdout")?;
@@ -33,8 +36,9 @@ pub(crate) async fn run(cli: &Cli) -> Result<()> {
 }
 
 async fn handle_message(
-    pool: &sqlx::postgres::PgPool,
+    pool: &PgPool,
     config: &SearchConfig,
+    daily_report_config: &DailyCaseReportMcpConfig,
     line: &str,
 ) -> Option<String> {
     let message = match serde_json::from_str::<RpcMessage>(line) {
@@ -73,15 +77,9 @@ async fn handle_message(
             }
         })),
         "tools/list" => Ok(json!({
-            "tools": [
-                {
-                    "name": TOOL_NAME,
-                    "description": "Search Qintopia QiWe message store evidence with controlled semantic, keyword, and recent-message retrieval.",
-                    "inputSchema": message_search::tool_input_schema()
-                }
-            ]
+            "tools": tool_definitions()
         })),
-        "tools/call" => call_tool(pool, config, message.params).await,
+        "tools/call" => call_tool(pool, config, daily_report_config, message.params).await,
         _ => Err(RpcError {
             code: -32601,
             message: format!("Method not found: {}", message.method),
@@ -99,9 +97,25 @@ async fn handle_message(
     })
 }
 
+fn tool_definitions() -> Value {
+    json!([
+        {
+            "name": TOOL_NAME,
+            "description": "Search Qintopia QiWe message store evidence with controlled semantic, keyword, and recent-message retrieval.",
+            "inputSchema": message_search::tool_input_schema()
+        },
+        {
+            "name": daily_case_report_mcp::TOOL_NAME,
+            "description": "Generate a Xiaoman daily case-report preview (on-demand or backfill). dry_run previews render + media identity validation; set dry_run=false to run the reviewed auto-publish chain.",
+            "inputSchema": daily_case_report_mcp::tool_input_schema()
+        }
+    ])
+}
+
 async fn call_tool(
-    pool: &sqlx::postgres::PgPool,
+    pool: &PgPool,
     config: &SearchConfig,
+    daily_report_config: &DailyCaseReportMcpConfig,
     params: Option<Value>,
 ) -> std::result::Result<Value, RpcError> {
     let params = params.unwrap_or_else(|| json!({}));
@@ -109,16 +123,36 @@ async fn call_tool(
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    if name == daily_case_report_mcp::TOOL_NAME {
+        let result = daily_case_report_mcp::call_tool(pool, daily_report_config, arguments)
+            .await
+            .map_err(|error| RpcError {
+                code: -32000,
+                message: error.to_string(),
+            })?;
+        return Ok(json!({
+            "content": [
+                {
+                    "type": "text",
+                    "text": serde_json::to_string_pretty(&result).map_err(|error| RpcError {
+                        code: -32000,
+                        message: error.to_string(),
+                    })?
+                }
+            ],
+            "isError": false
+        }));
+    }
     if name != TOOL_NAME {
         return Err(RpcError {
             code: -32602,
             message: format!("Unknown tool: {name}"),
         });
     }
-    let arguments = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
     let request = request_from_json(arguments).map_err(|error| RpcError {
         code: -32602,
         message: error.to_string(),
