@@ -124,6 +124,8 @@ publish_report="${tmp_dir}/publish.json"
 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --render image \
   --image-format jpeg \
+  --template "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TEMPLATE:-roast-long-image}" \
+  --narrative "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_NARRATIVE:-roast}" \
   "${report_date_args[@]}" \
   --chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID" \
   --output-dir "$tmp_dir" \
