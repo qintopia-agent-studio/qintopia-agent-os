@@ -26,7 +26,6 @@ validation:
       workflows/erhua-morning-brief/tests -v
 dependencies:
   - skills/qintopia-tools
-  - workflows/xiaoman-weekly-preview
   - runtime/sidecar
   - agents/erhua
   - agents/xiaoman

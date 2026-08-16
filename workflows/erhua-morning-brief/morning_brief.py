@@ -58,12 +58,14 @@ class UnsafeNewsFeedXml(RuntimeError):
 
 class NoNewsFeedRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Pass None instead of fp to avoid ResourceWarning about an unclosed
+        # response object when urllib re-raises the HTTPError.
         raise urllib.error.HTTPError(
             req.full_url,
             code,
             "news feed redirects are not allowed",
             headers,
-            fp,
+            None,
         )
 
 
@@ -937,17 +939,26 @@ def _artifact_create_command(args: argparse.Namespace, payload: dict[str, Any]) 
     ]
 
 
-def _artifact_create_action(args: argparse.Namespace, payload: dict[str, Any]) -> dict[str, Any]:
-    command = _artifact_create_command(args, payload)
+def _run_sidecar_action(
+    command: list[str],
+    *,
+    args: argparse.Namespace,
+    execute_flag: str,
+    apply_flag: str,
+    error_message: str,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    execute_requested = bool(getattr(args, execute_flag))
+    apply_requested = bool(getattr(args, apply_flag))
     action: dict[str, Any] = {
         "payload": payload,
         "command": command,
         "shell_preview": " ".join(shlex.quote(part) for part in command),
-        "execute_requested": args.execute_artifact_create,
-        "apply_requested": args.apply_artifact_create,
+        "execute_requested": execute_requested,
+        "apply_requested": apply_requested,
         "external_send_executed": False,
     }
-    if not args.execute_artifact_create:
+    if not execute_requested:
         return action
 
     completed = subprocess.run(command, check=False, capture_output=True, text=True)
@@ -955,30 +966,32 @@ def _artifact_create_action(args: argparse.Namespace, payload: dict[str, Any]) -
     action["stdout"] = completed.stdout
     action["stderr"] = completed.stderr
     if completed.returncode != 0:
-        raise RuntimeError("operations-text-announcement-artifact-create failed")
+        raise RuntimeError(error_message)
     return action
+
+
+def _artifact_create_action(args: argparse.Namespace, payload: dict[str, Any]) -> dict[str, Any]:
+    command = _artifact_create_command(args, payload)
+    return _run_sidecar_action(
+        command,
+        args=args,
+        execute_flag="execute_artifact_create",
+        apply_flag="apply_artifact_create",
+        error_message="operations-text-announcement-artifact-create failed",
+        payload=payload,
+    )
 
 
 def _send_request_action(args: argparse.Namespace, payload: dict[str, Any]) -> dict[str, Any]:
     command = _operations_create_command(args, payload)
-    action: dict[str, Any] = {
-        "payload": payload,
-        "command": command,
-        "shell_preview": " ".join(shlex.quote(part) for part in command),
-        "execute_requested": args.execute_send_request,
-        "apply_requested": args.apply_send_request,
-        "external_send_executed": False,
-    }
-    if not args.execute_send_request:
-        return action
-
-    completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    action["returncode"] = completed.returncode
-    action["stdout"] = completed.stdout
-    action["stderr"] = completed.stderr
-    if completed.returncode != 0:
-        raise RuntimeError("operations-work-item-create failed for Erhua morning brief send request")
-    return action
+    return _run_sidecar_action(
+        command,
+        args=args,
+        execute_flag="execute_send_request",
+        apply_flag="apply_send_request",
+        error_message="operations-work-item-create failed for Erhua morning brief send request",
+        payload=payload,
+    )
 
 
 def _stdout_json_field(action: dict[str, Any] | None, field: str) -> str:

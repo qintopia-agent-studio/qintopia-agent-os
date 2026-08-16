@@ -693,6 +693,50 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn("二花早报来啦", plan["manual_post_text"])
         self.assertFalse(plan["external_send_executed"])
 
+    def test_run_sidecar_action_returns_preview_when_not_executed(self):
+        module = load_module()
+        args = SimpleNamespace(execute_artifact_create=False, apply_artifact_create=False)
+        command = ["echo", "hello"]
+        action = module._run_sidecar_action(
+            command,
+            args=args,
+            execute_flag="execute_artifact_create",
+            apply_flag="apply_artifact_create",
+            error_message="sidecar action failed",
+        )
+        self.assertEqual(action["command"], command)
+        self.assertEqual(action["shell_preview"], "echo hello")
+        self.assertFalse(action["execute_requested"])
+        self.assertFalse(action["apply_requested"])
+        self.assertNotIn("returncode", action)
+
+    def test_run_sidecar_action_executes_command_when_requested(self):
+        module = load_module()
+        args = SimpleNamespace(execute_artifact_create=True, apply_artifact_create=True)
+        command = [sys.executable, "-c", "print('{\"ok\": true}')"]
+        action = module._run_sidecar_action(
+            command,
+            args=args,
+            execute_flag="execute_artifact_create",
+            apply_flag="apply_artifact_create",
+            error_message="sidecar action failed",
+        )
+        self.assertEqual(action["returncode"], 0)
+        self.assertIn("ok", action["stdout"])
+
+    def test_run_sidecar_action_raises_on_failure(self):
+        module = load_module()
+        args = SimpleNamespace(execute_artifact_create=True, apply_artifact_create=True)
+        command = [sys.executable, "-c", "import sys; sys.exit(1)"]
+        with self.assertRaisesRegex(RuntimeError, "sidecar action failed"):
+            module._run_sidecar_action(
+                command,
+                args=args,
+                execute_flag="execute_artifact_create",
+                apply_flag="apply_artifact_create",
+                error_message="sidecar action failed",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
