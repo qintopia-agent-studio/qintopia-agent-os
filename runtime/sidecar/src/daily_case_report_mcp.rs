@@ -654,11 +654,60 @@ mod e2e_tests {
     use super::*;
     use std::fs;
 
-    #[test]
-    fn render_report_invokes_workflow_with_template_and_parses_summary() {
+    /// Minimal stand-in workflow that writes a real 1x1 JPEG and emits the
+    /// render summary JSON the orchestrator expects.  Rendered inline so the
+    /// test never depends on an external fixture path.
+    const FAKE_WORKFLOW_PY: &str = r#"#!/usr/bin/env python3
+import argparse, base64, hashlib, json, pathlib
+
+JPEG_B64 = "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
+
+p = argparse.ArgumentParser()
+p.add_argument("--render"); p.add_argument("--image-format"); p.add_argument("--template")
+p.add_argument("--json", action="store_true"); p.add_argument("--json-summary-only", action="store_true")
+p.add_argument("--output-dir"); p.add_argument("--date")
+a = p.parse_args()
+out = pathlib.Path(a.output_dir)
+out.mkdir(parents=True, exist_ok=True)
+jpg = out / "daily-report.jpg"
+jpeg_bytes = base64.b64decode(JPEG_B64)
+jpg.write_bytes(jpeg_bytes)
+sha = hashlib.sha256(jpeg_bytes).hexdigest()
+md5 = hashlib.md5(jpeg_bytes).hexdigest()
+print(json.dumps({
+    "success": True,
+    "skill": "xiaoman_daily_case_report",
+    "report_date": a.date or "2026-08-08",
+    "time_range": "00:00-23:59",
+    "message_count": 3, "participant_count": 2,
+    "case_count": 1, "character_count": 1,
+    "image_path": str(jpg),
+    "template_version": "xiaoman-daily-case-report-v3",
+    "artifact_candidate": {
+        "artifact_type": "generated_image", "workflow_type": "daily_case_report",
+        "template_version": "xiaoman-daily-case-report-v3",
+        "mime_type": "image/jpeg", "filename": "daily-report.jpg",
+        "content_hash": f"sha256:{sha}", "file_md5": md5,
+        "byte_size": len(jpeg_bytes), "render": {"image_format": "jpeg", "width": 1},
+        "report_window": {"start": "2026-08-07T00:00:00+08:00", "end": "2026-08-08T00:00:00+08:00",
+                          "display": "2026年08月08日", "time_range": "00:00-23:59", "timezone": "Asia/Shanghai"},
+        "content_metrics": {"message_count": 3, "participant_count": 2, "case_count": 1, "character_count": 1},
+        "source_chat_ref": {"kind": "sha256", "value": "sha256:xyz"},
+        "retained_source_policy": "sanitized_metadata_only"
+    }
+}, ensure_ascii=False))
+"#;
+
+    fn fake_workflow_dir() -> (TempDir, PathBuf) {
         let tmp = tempfile::tempdir().expect("tmp");
         let workflow = tmp.path().join("workflow.py");
-        fs::copy("/tmp/dcr-fake-workflow.py", &workflow).expect("copy fake workflow");
+        fs::write(&workflow, FAKE_WORKFLOW_PY).expect("write fake workflow");
+        (tmp, workflow)
+    }
+
+    #[test]
+    fn render_report_invokes_workflow_with_template_and_parses_summary() {
+        let (_tmp, workflow) = fake_workflow_dir();
         let config = DailyCaseReportMcpConfig {
             database_url: "postgresql://unit".to_string(),
             allowed_caller: "wenyuange".to_string(),
@@ -685,9 +734,7 @@ mod e2e_tests {
 
     #[test]
     fn call_tool_dry_run_returns_preview_without_db() {
-        let tmp = tempfile::tempdir().expect("tmp");
-        let workflow = tmp.path().join("workflow.py");
-        fs::copy("/tmp/dcr-fake-workflow.py", &workflow).expect("copy fake workflow");
+        let (_tmp, workflow) = fake_workflow_dir();
         let config = DailyCaseReportMcpConfig {
             database_url: "postgresql://unit".to_string(),
             allowed_caller: "wenyuange".to_string(),
