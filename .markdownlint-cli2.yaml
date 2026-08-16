@@ -11,6 +11,7 @@ globs:
   - "**/*.md"
 ignores:
   - "node_modules"
+  - ".pnpm-store"
   - ".git"
   - ".workbuddy"
   - "dist"

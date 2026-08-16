@@ -25,6 +25,13 @@ daily_case_report = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = daily_case_report
 SPEC.loader.exec_module(daily_case_report)
 
+# Refactored sibling modules (imported for direct unit-test references).
+import analyzer  # noqa: E402
+import collector  # noqa: E402
+import models  # noqa: E402
+import renderer  # noqa: E402
+import report_builder  # noqa: E402
+
 
 class DailyCaseReportTest(unittest.TestCase):
     def test_report_date_without_date_uses_latest_rolling_24_hours(self) -> None:
@@ -127,14 +134,14 @@ class DailyCaseReportTest(unittest.TestCase):
             def cursor(self):
                 return FakeCursor()
 
-        old_database_url = daily_case_report._database_url
+        old_database_url = collector.database_url
         old_psycopg = sys.modules.get("psycopg")
-        daily_case_report._database_url = lambda: "postgresql://unit"
+        collector.database_url = lambda: "postgresql://unit"
         sys.modules["psycopg"] = types.SimpleNamespace(connect=lambda _url: FakeConnection())
         try:
-            messages = daily_case_report._fetch_messages("chat-1", report_time, report_time)
+            messages = collector.fetch_messages("chat-1", report_time, report_time)
         finally:
-            daily_case_report._database_url = old_database_url
+            collector.database_url = old_database_url
             if old_psycopg is None:
                 sys.modules.pop("psycopg", None)
             else:
@@ -178,17 +185,17 @@ class DailyCaseReportTest(unittest.TestCase):
                 stderr="",
             )
 
-        old_run = daily_case_report.subprocess.run
-        daily_case_report.subprocess.run = fake_run
+        old_run = collector.subprocess.run
+        collector.subprocess.run = fake_run
         try:
-            messages = daily_case_report._fetch_messages_with_psql(
+            messages = collector._fetch_messages_with_psql(
                 "postgresql://user:p%40ss@db.example:5433/qintopia?sslmode=require",
                 "chat-1",
                 report_time,
                 report_time + timedelta(hours=1),
             )
         finally:
-            daily_case_report.subprocess.run = old_run
+            collector.subprocess.run = old_run
             if old_psql_override is None:
                 os.environ.pop("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_PSQL", None)
             else:
@@ -220,18 +227,18 @@ class DailyCaseReportTest(unittest.TestCase):
                 stderr="psql: error: postgresql://user:pass@db.example/qintopia failed",
             )
 
-        old_run = daily_case_report.subprocess.run
-        daily_case_report.subprocess.run = fake_run
+        old_run = collector.subprocess.run
+        collector.subprocess.run = fake_run
         try:
             with self.assertRaisesRegex(RuntimeError, "^message store query failed$"):
-                daily_case_report._fetch_messages_with_psql(
+                collector._fetch_messages_with_psql(
                     "postgresql://user:pass@db.example/qintopia",
                     "chat-1",
                     datetime(2026, 8, 8, tzinfo=timezone.utc),
                     datetime(2026, 8, 9, tzinfo=timezone.utc),
                 )
         finally:
-            daily_case_report.subprocess.run = old_run
+            collector.subprocess.run = old_run
 
     def test_database_url_ignores_generic_database_url(self) -> None:
         old_message_store = os.environ.pop("QINTOPIA_MESSAGE_STORE_DATABASE_URL", None)
@@ -239,7 +246,7 @@ class DailyCaseReportTest(unittest.TestCase):
         old_generic = os.environ.get("DATABASE_URL")
         os.environ["DATABASE_URL"] = "postgresql://wrong"
         try:
-            self.assertIsNone(daily_case_report._database_url())
+            self.assertIsNone(collector.database_url())
         finally:
             if old_message_store is not None:
                 os.environ["QINTOPIA_MESSAGE_STORE_DATABASE_URL"] = old_message_store
@@ -373,6 +380,8 @@ class DailyCaseReportTest(unittest.TestCase):
                 timezone="Asia/Shanghai",
                 group_name="group",
                 report_title="case file",
+                template="v3",
+                narrative="none",
             )
             old_parse_args = daily_case_report._parse_args
             old_render_image = daily_case_report._render_image
@@ -412,6 +421,8 @@ class DailyCaseReportTest(unittest.TestCase):
                 image_format="jpeg",
                 json=True,
                 chat_id="chat-1",
+                template="v3",
+                narrative="none",
             )
             report = daily_case_report.ReportData(
                 group_name="group",
@@ -451,15 +462,15 @@ class DailyCaseReportTest(unittest.TestCase):
 
     def test_clean_text_removes_mention_token_without_dropping_body(self) -> None:
         self.assertEqual(
-            daily_case_report._clean_text("@张三 今天活动几点开始"),
+            models.clean_text("@张三 今天活动几点开始"),
             "今天活动几点开始",
         )
         self.assertEqual(
-            daily_case_report._clean_text("请 @zhangsan 看一下报名表"),
+            models.clean_text("请 @zhangsan 看一下报名表"),
             "请 看一下报名表",
         )
         self.assertEqual(
-            daily_case_report._clean_text("@张三今天活动几点开始"),
+            models.clean_text("@张三今天活动几点开始"),
             "@张三今天活动几点开始",
         )
 
@@ -488,11 +499,11 @@ class DailyCaseReportTest(unittest.TestCase):
         ]
 
         messages = [promo, *discussion]
-        filtered = daily_case_report._discussion_messages(messages)
-        cases = daily_case_report._cluster_cases(filtered)
-        suspects = daily_case_report._compute_suspects(filtered)
-        characters = daily_case_report._compute_characters(filtered)
-        highlight = daily_case_report._extract_highlight(filtered)
+        filtered = analyzer.discussion_messages(messages)
+        cases = analyzer.cluster_cases(filtered)
+        suspects = analyzer.compute_suspects(filtered)
+        characters = analyzer.compute_characters(filtered)
+        highlight = analyzer.extract_highlight(filtered)
 
         self.assertNotIn(promo, filtered)
         self.assertNotIn("订单在30分钟内有效", highlight)
@@ -530,7 +541,7 @@ class DailyCaseReportTest(unittest.TestCase):
             ),
         ]
 
-        characters = daily_case_report._compute_characters(messages)
+        characters = analyzer.compute_characters(messages)
 
         self.assertTrue(characters)
         self.assertEqual(characters[0].name, "小雨")
@@ -569,7 +580,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )
         }
 
-        characters = daily_case_report._compute_characters(messages, memory)
+        characters = analyzer.compute_characters(messages, memory)
 
         self.assertEqual(characters[0].memory_label, "近90天 7 次角色复现 · 长期偏「活动推进者」")
         self.assertEqual(characters[0].memory_weight_label, "近90天稳定复现 · 长期线索可用")
@@ -616,7 +627,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )
         }
 
-        characters = daily_case_report._compute_characters(
+        characters = analyzer.compute_characters(
             messages,
             {},
             creative_memory,
@@ -680,7 +691,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn("profile_text", json.dumps(universe, ensure_ascii=False))
 
     def test_creative_profile_rows_keep_only_safe_reviewed_fields(self) -> None:
-        memory = daily_case_report._creative_profile_memory_from_rows(
+        memory = collector._creative_profile_memory_from_rows(
             [
                 (
                     "11111111-1111-1111-1111-111111111111",
@@ -715,7 +726,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(profile.recurrence_evidence_count, 4)
 
     def test_unreviewed_expressive_labels_do_not_enter_public_memory(self) -> None:
-        memory = daily_case_report._creative_profile_memory_from_rows(
+        memory = collector._creative_profile_memory_from_rows(
             [
                 (
                     "11111111-1111-1111-1111-111111111111",
@@ -756,7 +767,7 @@ class DailyCaseReportTest(unittest.TestCase):
             ),
         ]
 
-        characters = daily_case_report._compute_characters(messages)
+        characters = analyzer.compute_characters(messages)
         universe = daily_case_report._build_character_universe(
             [],
             [],
@@ -822,7 +833,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )
         }
 
-        characters = daily_case_report._compute_characters(messages, memory)
+        characters = analyzer.compute_characters(messages, memory)
         universe = daily_case_report._build_character_universe([], [], characters, "2026年08月08日")
 
         self.assertEqual([character.name for character in characters].count("小雨"), 2)
@@ -837,7 +848,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertNotIn(second_person_id, json.dumps(universe, ensure_ascii=False))
 
     def test_character_memory_rows_map_only_allowed_role_labels(self) -> None:
-        memory = daily_case_report._character_memory_from_rows(
+        memory = collector._character_memory_from_rows(
             [
                 (
                     "11111111-1111-1111-1111-111111111111",
@@ -891,25 +902,25 @@ class DailyCaseReportTest(unittest.TestCase):
                 person_id="11111111-1111-1111-1111-111111111111",
             ),
         ]
-        old_require = daily_case_report._require_read_through
-        old_fetch_messages = daily_case_report._fetch_messages
-        old_fetch_memory = daily_case_report._fetch_character_memory
-        old_fetch_creative_memory = daily_case_report._fetch_creative_profile_memory
-        daily_case_report._require_read_through = lambda: True
-        daily_case_report._fetch_messages = lambda *_args: messages
-        daily_case_report._fetch_character_memory = lambda *_args: (_ for _ in ()).throw(
+        old_require = report_builder.require_read_through
+        old_fetch_messages = report_builder.fetch_messages
+        old_fetch_memory = report_builder.fetch_character_memory
+        old_fetch_creative_memory = report_builder.fetch_creative_profile_memory
+        report_builder.require_read_through = lambda: True
+        report_builder.fetch_messages = lambda *_args: messages
+        report_builder.fetch_character_memory = lambda *_args: (_ for _ in ()).throw(
             RuntimeError("member profile memory query failed")
         )
-        daily_case_report._fetch_creative_profile_memory = lambda *_args: (_ for _ in ()).throw(
+        report_builder.fetch_creative_profile_memory = lambda *_args: (_ for _ in ()).throw(
             RuntimeError("creative profile memory query failed")
         )
         try:
             report = daily_case_report._build_report(args)
         finally:
-            daily_case_report._require_read_through = old_require
-            daily_case_report._fetch_messages = old_fetch_messages
-            daily_case_report._fetch_character_memory = old_fetch_memory
-            daily_case_report._fetch_creative_profile_memory = old_fetch_creative_memory
+            report_builder.require_read_through = old_require
+            report_builder.fetch_messages = old_fetch_messages
+            report_builder.fetch_character_memory = old_fetch_memory
+            report_builder.fetch_creative_profile_memory = old_fetch_creative_memory
 
         self.assertEqual(report.message_count, 2)
         self.assertEqual(report.character_count, 1)
@@ -918,7 +929,7 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertEqual(report.characters[0].creative_profile_status, "")
 
     def test_character_universe_uses_curated_second_pass_nodes(self) -> None:
-        case = daily_case_report.CaseCard(
+        case = models.CaseCard(
             case_no="CASE 01",
             title="活动讨论",
             time_label="10:00-11:00",
@@ -1069,7 +1080,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )
         }
 
-        characters = daily_case_report._compute_characters(messages, memory)
+        characters = analyzer.compute_characters(messages, memory)
         universe = daily_case_report._build_character_universe([], [], characters, "2026年08月08日")
         report = daily_case_report.ReportData(
             group_name="group",
@@ -1127,7 +1138,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )
         )
         self.assertTrue(any(edge["relation"] == "co_discusses_topic" for edge in universe["edges"]))
-        self.assertIn("同场关系", daily_case_report._render_html(report, 750))
+        self.assertIn("同场关系", daily_case_report._render_html(report, 750, template="v3"))
         markdown = daily_case_report._render_daily_markdown(report)
         self.assertIn("## 同场关系", markdown)
         self.assertIn("## 可审核人物画像候选", markdown)
@@ -1139,7 +1150,7 @@ class DailyCaseReportTest(unittest.TestCase):
 
     def test_private_review_bundle_exports_quote_map_wiki_and_run_manifest(self) -> None:
         person_id = "11111111-1111-1111-1111-111111111111"
-        case = daily_case_report.CaseCard(
+        case = models.CaseCard(
             case_no="CASE 01",
             title="活动讨论",
             time_label="10:00-11:00",
@@ -1332,7 +1343,7 @@ class DailyCaseReportTest(unittest.TestCase):
 
     def test_missing_highlight_is_omitted_instead_of_synthesized(self) -> None:
         self.assertIsNone(
-            daily_case_report._extract_highlight([
+            analyzer.extract_highlight([
                 daily_case_report.ReportMessage(
                     id="short",
                     sender_id="u1",
@@ -1363,7 +1374,7 @@ class DailyCaseReportTest(unittest.TestCase):
             ])
         ]
 
-        topics = daily_case_report._hot_topics(messages)
+        topics = analyzer.hot_topics(messages)
 
         self.assertTrue(topics)
         self.assertEqual(topics[0].keyword, "自动化工作流")
@@ -1389,7 +1400,7 @@ class DailyCaseReportTest(unittest.TestCase):
             ])
         ]
 
-        topics = daily_case_report._hot_topics(messages)
+        topics = analyzer.hot_topics(messages)
 
         self.assertFalse(any("群里" in topic.keyword for topic in topics))
 
@@ -1397,9 +1408,9 @@ class DailyCaseReportTest(unittest.TestCase):
         messages = daily_case_report._sample_messages(
             datetime(2026, 8, 8, tzinfo=timezone.utc)
         )
-        cases = daily_case_report._cluster_cases(messages)
+        cases = analyzer.cluster_cases(messages)
 
-        topics = daily_case_report._hot_topics(messages, cases)
+        topics = analyzer.hot_topics(messages, cases)
         topic_names = {topic.keyword for topic in topics}
 
         self.assertIn("资源分享", topic_names)
@@ -1442,7 +1453,7 @@ class DailyCaseReportTest(unittest.TestCase):
             ),
         ]
 
-        clusters = daily_case_report._detect_topic_markers(messages)
+        clusters = analyzer._detect_topic_markers(messages)
 
         self.assertEqual(list(clusters), ["活动讨论"])
         self.assertEqual([msg.id for msg in clusters["活动讨论"]], ["m1", "m2"])
@@ -1462,7 +1473,7 @@ class DailyCaseReportTest(unittest.TestCase):
                     )
                 )
 
-        cases = daily_case_report._cluster_cases(messages)
+        cases = analyzer.cluster_cases(messages)
 
         self.assertEqual(len(cases), 2)
         self.assertTrue(all("呲牙" not in case.title for case in cases))
@@ -1498,7 +1509,7 @@ class DailyCaseReportTest(unittest.TestCase):
             ),
         ]
 
-        cases = daily_case_report._cluster_cases(messages)
+        cases = analyzer.cluster_cases(messages)
 
         self.assertEqual(len(cases), 1)
         self.assertEqual(cases[0].message_count, 3)
@@ -1520,7 +1531,7 @@ class DailyCaseReportTest(unittest.TestCase):
             highlight=None,
         )
 
-        rendered = daily_case_report._render_html(report, 750)
+        rendered = daily_case_report._render_html(report, 750, template="v3")
 
         self.assertNotIn("fonts.googleapis.com", rendered)
         self.assertNotIn("@import", rendered)
@@ -1542,7 +1553,7 @@ class DailyCaseReportTest(unittest.TestCase):
             case_count=1,
             suspect_count=1,
             hourly_counts=[0] * 24,
-            cases=[daily_case_report.CaseCard(
+            cases=[models.CaseCard(
                 case_no="CASE 01",
                 title="讨论主题",
                 time_label="10:00-11:00",
@@ -1580,7 +1591,7 @@ class DailyCaseReportTest(unittest.TestCase):
             )],
         )
 
-        rendered = daily_case_report._render_html(report, 750)
+        rendered = daily_case_report._render_html(report, 750, template="v3")
 
         self.assertIn("XIAOMAN CHARACTER DAILY", rendered)
         self.assertIn("小满群聊日报", rendered)
@@ -1723,7 +1734,7 @@ class DailyCaseReportTest(unittest.TestCase):
             highlight="done",
         )
         old_import = builtins.__import__
-        old_pillow = daily_case_report._render_image_with_pillow
+        old_pillow = renderer._render_image_with_pillow
 
         def fake_import(name, *args, **kwargs):
             if name.startswith("playwright"):
@@ -1735,7 +1746,7 @@ class DailyCaseReportTest(unittest.TestCase):
             Path(output_path).write_bytes(b"pillow-jpeg")
 
         builtins.__import__ = fake_import
-        daily_case_report._render_image_with_pillow = fake_pillow
+        renderer._render_image_with_pillow = fake_pillow
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 html_path = Path(tmpdir) / "preview.html"
@@ -1747,7 +1758,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 self.assertEqual(output_path.read_bytes(), b"pillow-jpeg")
         finally:
             builtins.__import__ = old_import
-            daily_case_report._render_image_with_pillow = old_pillow
+            renderer._render_image_with_pillow = old_pillow
 
     def test_pillow_renderer_keeps_character_daily_story_order(self) -> None:
         captured_text: list[str] = []
@@ -1797,11 +1808,11 @@ class DailyCaseReportTest(unittest.TestCase):
         old_pil = sys.modules.get("PIL")
         old_image = sys.modules.get("PIL.Image")
         old_image_draw = sys.modules.get("PIL.ImageDraw")
-        old_pil_font = daily_case_report._pil_font
+        old_pil_font = renderer._pil_font
         sys.modules["PIL"] = fake_pil
         sys.modules["PIL.Image"] = fake_image
         sys.modules["PIL.ImageDraw"] = fake_image_draw
-        daily_case_report._pil_font = lambda size, **_kwargs: FakeFont(size)
+        renderer._pil_font = lambda size, **_kwargs: FakeFont(size)
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 report = daily_case_report.ReportData(
@@ -1816,7 +1827,7 @@ class DailyCaseReportTest(unittest.TestCase):
                     suspect_count=1,
                     hourly_counts=[0] * 24,
                     cases=[
-                        daily_case_report.CaseCard(
+                        models.CaseCard(
                             case_no="CASE 01",
                             title="讨论主题",
                             time_label="10:00-11:00",
@@ -1860,14 +1871,14 @@ class DailyCaseReportTest(unittest.TestCase):
                         )
                     ],
                 )
-                daily_case_report._render_image_with_pillow(
+                renderer._render_image_with_pillow(
                     report,
                     Path(tmpdir) / "preview.jpg",
                     750,
                     "jpeg",
                 )
         finally:
-            daily_case_report._pil_font = old_pil_font
+            renderer._pil_font = old_pil_font
             if old_pil is None:
                 sys.modules.pop("PIL", None)
             else:
@@ -1925,7 +1936,7 @@ class DailyCaseReportTest(unittest.TestCase):
 
         old_playwright = sys.modules.get("playwright")
         old_sync_api = sys.modules.get("playwright.sync_api")
-        old_pillow = daily_case_report._render_image_with_pillow
+        old_pillow = renderer._render_image_with_pillow
         fake_playwright = types.ModuleType("playwright")
         fake_sync_api = types.ModuleType("playwright.sync_api")
         fake_sync_api.sync_playwright = lambda: FakeSyncPlaywright()
@@ -1936,7 +1947,7 @@ class DailyCaseReportTest(unittest.TestCase):
             self.assertEqual(image_format, "jpeg")
             Path(output_path).write_bytes(b"pillow-jpeg")
 
-        daily_case_report._render_image_with_pillow = fake_pillow
+        renderer._render_image_with_pillow = fake_pillow
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 html_path = Path(tmpdir) / "preview.html"
@@ -1947,7 +1958,7 @@ class DailyCaseReportTest(unittest.TestCase):
 
                 self.assertEqual(output_path.read_bytes(), b"pillow-jpeg")
         finally:
-            daily_case_report._render_image_with_pillow = old_pillow
+            renderer._render_image_with_pillow = old_pillow
             if old_playwright is None:
                 sys.modules.pop("playwright", None)
             else:
@@ -1968,6 +1979,8 @@ class DailyCaseReportTest(unittest.TestCase):
                     "--dry-run",
                     "--render",
                     "html",
+                    "--template",
+                    "v3",
                     "--json",
                     "--output-dir",
                     tmpdir,
@@ -2134,6 +2147,7 @@ class DailyCaseReportTest(unittest.TestCase):
                 "jpeg",
                 output_width=750,
                 source_chat_id="chat-1",
+                template="v3",
             )
 
             self.assertEqual(result["image_path"], str(image_path))
@@ -2175,6 +2189,8 @@ class DailyCaseReportTest(unittest.TestCase):
                 timezone="Asia/Shanghai",
                 group_name="group",
                 report_title="case file",
+                template="v3",
+                narrative="none",
             )
             old_parse_args = daily_case_report._parse_args
             old_render_image = daily_case_report._render_image
@@ -2251,6 +2267,8 @@ class DailyCaseReportTest(unittest.TestCase):
                 timezone="Asia/Shanghai",
                 group_name="group",
                 report_title="case file",
+                template="v3",
+                narrative="none",
             )
             old_parse_args = daily_case_report._parse_args
             old_render_image = daily_case_report._render_image

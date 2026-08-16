@@ -29,9 +29,19 @@ const requireNotIncludes = (text, fragment, label) => {
   }
 };
 
-const workflow = requireFile(
-  "workflows/xiaoman-daily-case-report/daily_case_report.py"
-);
+const workflow = [
+  "workflows/xiaoman-daily-case-report/daily_case_report.py",
+  "workflows/xiaoman-daily-case-report/models.py",
+  "workflows/xiaoman-daily-case-report/collector.py",
+  "workflows/xiaoman-daily-case-report/analyzer.py",
+  "workflows/xiaoman-daily-case-report/report_builder.py",
+  "workflows/xiaoman-daily-case-report/renderer.py",
+  "workflows/xiaoman-daily-case-report/narrative_generator.py",
+  "workflows/xiaoman-daily-case-report/roast_long_image.py",
+  "workflows/xiaoman-daily-case-report/newspaper_elegant.py",
+]
+  .map(requireFile)
+  .join("\n");
 const workflowTests = requireFile(
   "workflows/xiaoman-daily-case-report/tests/test_daily_case_report.py"
 );
@@ -75,10 +85,10 @@ const cronRunbook = requireFile(
 for (const [fragment, label] of [
   ["MEMORY_FACT_ROLE_LABELS", "daily workflow role-memory labels"],
   ["m.sender_person_id::text AS sender_person_id", "daily workflow person binding"],
-  ["def _fetch_character_memory(", "daily workflow character memory query"],
+  ["def fetch_character_memory(", "daily workflow character memory query"],
   ["class CreativeProfileMemory:", "daily workflow reviewed creative-profile memory"],
   [
-    "def _fetch_creative_profile_memory(",
+    "def fetch_creative_profile_memory(",
     "daily workflow reviewed creative-profile query",
   ],
   [
@@ -90,7 +100,7 @@ for (const [fragment, label] of [
     "daily workflow reads the reviewed creative-profile version",
   ],
   ["s.safe_reply_hints", "daily workflow reads only safe creative-profile hints"],
-  ["def _compute_characters(", "daily workflow character cards"],
+  ["def compute_characters(", "daily workflow character cards"],
   ["def _build_character_universe(", "daily workflow universe builder"],
   ["def _build_quote_map(", "daily workflow wx-cli-style quote map"],
   ["def _build_wiki_bundle(", "daily workflow wx-cli-style wiki bundle"],
