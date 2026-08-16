@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.149](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.148...v0.2.149) (2026-08-16)
+
+
+### Documentation
+
+* **deploy:** add on-demand daily case report MCP verification step ([#601](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/601)) ([5e544f9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/5e544f9a3a1245b139234b7217ecaec0bfcf7b7b))
+
 ## [0.2.148](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.147...v0.2.148) (2026-08-16)
 
 
