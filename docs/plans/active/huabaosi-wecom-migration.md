@@ -1,6 +1,7 @@
 # Huabaosi WeCom Migration Plan
 
-Status: phase 5 code merged; server patch extracted; staging canary and phase 6 pending
+Status: phase 5 code merged; server patch extracted; staging artifact now compiles the
+canary gateway; staging canary and phase 6 pending
 
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
@@ -264,6 +265,12 @@ this planning PR.
 - The extracted Python patch does not recognize the incident's busy/fallback strings.
   The merged Rust policy does, with negative coverage for ordinary inbound `plain text`
   requests. Production still needs canary evidence and the phase-6 routing PR.
+- The staging-only sidecar artifact now also compiles `huabaosi-wecom-canary-gateway`
+  alongside `huabaosi-staging-adapter` and `qiwe-staging-adapter`, so the owner-approved
+  staging canary command can run from the fixed immutable staging release root. The
+  feature remains forbidden in every production artifact, and default/production builds
+  still fail closed. The staging canary itself still requires a newly published staging
+  artifact, owner-provided endpoint/token/allowlists, and the explicit approval phrase.
 
 ## Success Criteria
 

@@ -18,7 +18,11 @@ const binaryName = "qintopia-message-sidecar";
 const targetTriple = resolveApprovedTarget();
 const outputRoot = path.join(repoRoot, "dist", "sidecar-artifacts");
 const artifactName = `${binaryName}-staging-${targetTriple}`;
-const cargoFeatures = ["huabaosi-staging-adapter", "qiwe-staging-adapter"];
+const cargoFeatures = [
+  "huabaosi-staging-adapter",
+  "qiwe-staging-adapter",
+  "huabaosi-wecom-canary-gateway",
+];
 const artifactDir = resolveContainedArtifactDir(outputRoot, artifactName);
 const binaryPath = path.join(
   repoRoot,

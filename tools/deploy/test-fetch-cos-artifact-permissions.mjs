@@ -490,7 +490,11 @@ exec ${JSON.stringify(systemTar)} "$@"
           sha256: sha256File(path.join(fixtureRoot, fileName)),
         })),
         validation: {
-          cargo_features: ["huabaosi-staging-adapter", "qiwe-staging-adapter"],
+          cargo_features: [
+            "huabaosi-staging-adapter",
+            "qiwe-staging-adapter",
+            "huabaosi-wecom-canary-gateway",
+          ],
           staging_only: true,
           production_eligible: false,
         },

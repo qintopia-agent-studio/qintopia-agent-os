@@ -267,6 +267,7 @@ if (!exists(stagingArtifactProvisionPath)) {
     "qiwe-image-send-staging-smoke.sh",
     "huabaosi-staging-adapter",
     "qiwe-staging-adapter",
+    "huabaosi-wecom-canary-gateway",
     "staging_only",
     "production_eligible",
     "/home/ubuntu/qintopia-agent-os-staging-releases",
@@ -5029,6 +5030,7 @@ if (!exists(stagingSidecarArtifactBuilderPath)) {
     "staging-${targetTriple}",
     '"huabaosi-staging-adapter"',
     '"qiwe-staging-adapter"',
+    '"huabaosi-wecom-canary-gateway"',
     '"--no-default-features"',
     '"--features"',
     'cargoFeatures.join(",")',
@@ -5072,6 +5074,7 @@ if (exists(productionSidecarArtifactBuilderPath)) {
     '"qiwe-production-adapter"',
     '"qiwe-staging-adapter"',
     '"huabaosi-staging-adapter"',
+    '"huabaosi-wecom-canary-gateway"',
   ]) {
     forbidFragment(productionSidecarArtifactBuilderPath, builder, fragment);
   }
@@ -5118,6 +5121,7 @@ if (exists(qiweProductionSidecarArtifactBuilderPath)) {
     '"huabaosi-production-adapter"',
     '"qiwe-staging-adapter"',
     '"huabaosi-staging-adapter"',
+    '"huabaosi-wecom-canary-gateway"',
   ]) {
     forbidFragment(qiweProductionSidecarArtifactBuilderPath, builder, fragment);
   }
