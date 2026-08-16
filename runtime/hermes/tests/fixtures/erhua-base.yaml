@@ -1,5 +1,5 @@
 model:
-  default: gpt-5.6-luna
+  default: gpt-5.2
   provider: custom:ark.cn-beijing.volces.com
   base_url: ""
   temperature: 0.3
