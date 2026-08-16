@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -555,6 +556,36 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         )
 
         self.assertEqual(module._feed_urls(args), ["https://openai.com/news/rss.xml"])
+
+    def test_news_llm_args_fall_back_to_shared_llm_env(self):
+        module = load_module()
+        old_base = os.environ.get("QINTOPIA_LLM_BASE_URL")
+        old_key = os.environ.get("QINTOPIA_LLM_API_KEY")
+        old_model = os.environ.get("QINTOPIA_LLM_MODEL")
+        old_news = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL")
+        os.environ["QINTOPIA_LLM_BASE_URL"] = "https://llm.example.test/v1"
+        os.environ["QINTOPIA_LLM_API_KEY"] = "shared-key"
+        os.environ["QINTOPIA_LLM_MODEL"] = "gpt-5.2"
+        os.environ.pop("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL", None)
+        old_argv = sys.argv
+        sys.argv = ["morning_brief.py", "--date", "2026-08-08"]
+        try:
+            args = module._parse_args()
+        finally:
+            sys.argv = old_argv
+            for key, old in (
+                ("QINTOPIA_LLM_BASE_URL", old_base),
+                ("QINTOPIA_LLM_API_KEY", old_key),
+                ("QINTOPIA_LLM_MODEL", old_model),
+                ("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL", old_news),
+            ):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+        self.assertEqual(args.news_llm_base_url, "https://llm.example.test/v1")
+        self.assertEqual(args.news_llm_api_key, "shared-key")
+        self.assertEqual(args.news_llm_model, "gpt-5.2")
 
     def test_ai_section_parser_handles_qunmind_headings(self):
         module = load_module()

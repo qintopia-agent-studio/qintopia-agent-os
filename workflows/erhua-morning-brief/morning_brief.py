@@ -106,17 +106,26 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--news-llm-base-url",
-        default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL", ""),
+        default=os.environ.get(
+            "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL",
+            os.environ.get("QINTOPIA_LLM_BASE_URL", ""),
+        ),
         help="Optional OpenAI-compatible endpoint used to translate English RSS items for the community brief.",
     )
     parser.add_argument(
         "--news-llm-api-key",
-        default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_API_KEY", ""),
+        default=os.environ.get(
+            "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_API_KEY",
+            os.environ.get("QINTOPIA_LLM_API_KEY", ""),
+        ),
         help="Optional API key for the news translation endpoint.",
     )
     parser.add_argument(
         "--news-llm-model",
-        default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_MODEL", ""),
+        default=os.environ.get(
+            "QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_MODEL",
+            os.environ.get("QINTOPIA_LLM_MODEL", ""),
+        ),
         help="Optional model name for the news translation endpoint.",
     )
     parser.add_argument("--news-limit", type=int, default=DEFAULT_NEWS_LIMIT)
