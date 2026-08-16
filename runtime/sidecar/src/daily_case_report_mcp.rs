@@ -168,6 +168,9 @@ pub(crate) async fn render_report(
         .prefix("xiaoman-daily-case-report-mcp-")
         .tempdir()
         .context("create render temp dir")?;
+    // The workflow requires a dedicated private 0700 output directory; the
+    // default tempdir mode (0755 under a normal umask) is rejected.
+    set_dir_mode_private(tmp.path())?;
     let workflow = config
         .workflow_py
         .as_ref()
@@ -228,6 +231,15 @@ fn run_render_command(mut command: Command) -> Result<std::process::Output> {
         bail!("daily case report render output exceeded safety limit");
     }
     Ok(output)
+}
+
+/// Set a directory to private 0700 mode (Unix).  The daily report workflow
+/// refuses output directories that are not dedicated private 0700 dirs.
+fn set_dir_mode_private(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let permissions = std::fs::Permissions::from_mode(0o700);
+    std::fs::set_permissions(path, permissions)
+        .with_context(|| format!("chmod 0700 render dir {}", path.display()))
 }
 
 fn truncate(text: &str, max: usize) -> String {
@@ -662,6 +674,19 @@ mod tests {
             "/home/ubuntu/qintopia-agent-os-releases/current/workflows/x/daily_case_report.py",
         );
         assert_eq!(resolve_workflow_path(path), path);
+    }
+
+    #[test]
+    fn render_dir_is_forced_to_private_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().expect("tmp");
+        set_dir_mode_private(tmp.path()).expect("chmod");
+        let mode = std::fs::metadata(tmp.path())
+            .expect("metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o700);
     }
 
     #[test]
