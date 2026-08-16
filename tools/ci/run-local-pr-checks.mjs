@@ -304,6 +304,14 @@ function runPostgresChecks() {
       "--ignored",
       "--exact",
     ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "daily_case_report::tests::postgres_collection_matches_python_semantics",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
   ];
 
   for (const args of postgresTests) {

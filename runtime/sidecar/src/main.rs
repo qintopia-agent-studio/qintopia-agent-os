@@ -8,6 +8,7 @@ mod context_mcp_server;
 mod context_tools;
 mod conversation_ingress;
 mod conversation_policy;
+mod daily_case_report;
 mod daily_case_report_mcp;
 mod daily_digest_publisher;
 mod db;
@@ -609,6 +610,11 @@ async fn main() -> Result<()> {
         } => {
             operations::run_daily_case_report_media_upload(&cli, payload_json, apply, dry_run).await
         }
+        Command::DailyCaseReportCollectPreview {
+            chat_id,
+            start,
+            end,
+        } => daily_case_report::run_collect_preview_cli(&cli, chat_id, &start, &end).await,
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await
         }

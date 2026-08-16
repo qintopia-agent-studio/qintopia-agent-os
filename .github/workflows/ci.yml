@@ -520,6 +520,13 @@ jobs:
             qiwe_image_send_state::tests::postgres_qiwe_send_state_terminalizes_legacy_unrecorded_claim \
             -- --ignored --exact
 
+      - name: Daily case-report collection preview PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          daily_case_report::tests::postgres_collection_matches_python_semantics --
+          --ignored --exact
+
       - name: Xiaoman downstream apply smoke
         run: deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh
 
