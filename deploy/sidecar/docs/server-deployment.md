@@ -887,6 +887,13 @@ the WenYuanGe profile has confirmed tool discovery and successful
     write Feishu, or send messages.
 12. Mount `qintopia-context` MCP into the WenYuanGe Hermes profile first. Keep
     the 二花 profile unchanged until the WenYuanGe MCP path is validated.
+13. If on-demand daily case-report previews are wanted through the message-store MCP,
+    configure `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY` (release workflow
+    `workflows/xiaoman-daily-case-report/daily_case_report.py`) and optionally
+    `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_ALLOWED_CALLER` in
+    `/etc/qintopia/message-sidecar.env`. Then run the daily case-report MCP smoke call
+    from the Message Store MCP Smoke section with `dry_run:true` and confirm it returns
+    a preview (`media_upload_validated`) without uploading or creating a send work item.
 
 Hermes publisher failures must remain best-effort only. NATS, sidecar, or Postgres
 failures must not affect QiWe webhook ACK or 二花 replies.
