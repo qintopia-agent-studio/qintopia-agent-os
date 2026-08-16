@@ -295,18 +295,25 @@ def validate_request(value: dict[str, Any]) -> dict[str, str]:
         if not isinstance(mcp_workflow_py, str):
             raise ConfigError("mcp_workflow_py must be a string")
         mcp_workflow_py = mcp_workflow_py.strip()
+        release_current = "/home/ubuntu/qintopia-agent-os-releases/current/"
+        is_absolute_release_path = mcp_workflow_py.startswith(release_current)
+        is_relative_release_path = (
+            not mcp_workflow_py.startswith("/")
+            and not mcp_workflow_py.startswith("~")
+            and ".." not in mcp_workflow_py
+        )
         if (
             not mcp_workflow_py
-            or mcp_workflow_py.startswith("/")
-            or mcp_workflow_py.startswith("~")
-            or ".." in mcp_workflow_py
             or CONTROL_RE.search(mcp_workflow_py)
             or "$(" in mcp_workflow_py
             or "`" in mcp_workflow_py
             or not mcp_workflow_py.endswith("daily_case_report.py")
+            or not (is_absolute_release_path or is_relative_release_path)
         ):
             raise ConfigError(
-                "mcp_workflow_py must be a relative release workflow path ending in daily_case_report.py"
+                "mcp_workflow_py must be the release workflow daily_case_report.py "
+                "under /home/ubuntu/qintopia-agent-os-releases/current/ "
+                "(absolute) or a relative release path"
             )
         normalized["mcp_workflow_py"] = mcp_workflow_py
 

@@ -130,6 +130,36 @@ impl GenerateArguments {
 
 /// Render the daily report to JPEG via the Python workflow and return the
 /// parsed render summary JSON (paths, counts, flags; no raw message rows).
+/// Resolve the configured workflow path to a concrete file.  Absolute paths
+/// are used as-is; relative paths resolve against the release root the sidecar
+/// runs from (QINTOPIA_AGENT_OS_RELEASE_CURRENT, or the sidecar binary's
+/// release directory when that env is absent).
+fn resolve_workflow_path(workflow: &Path) -> PathBuf {
+    if workflow.is_absolute() {
+        return workflow.to_path_buf();
+    }
+    if let Some(release_current) = std::env::var_os("QINTOPIA_AGENT_OS_RELEASE_CURRENT") {
+        let root = PathBuf::from(release_current);
+        let candidate = root.join(workflow);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    // Fall back to the release layout that owns this binary:
+    // <release_root>/<sha>/sidecar/qintopia-message-sidecar -> <release_root>/<sha>/<workflow>
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(sidecar_dir) = current_exe.parent() {
+            if let Some(release_dir) = sidecar_dir.parent() {
+                let candidate = release_dir.join(workflow);
+                if candidate.is_file() {
+                    return candidate;
+                }
+            }
+        }
+    }
+    workflow.to_path_buf()
+}
+
 pub(crate) async fn render_report(
     config: &DailyCaseReportMcpConfig,
     arguments: &GenerateArguments,
@@ -142,6 +172,7 @@ pub(crate) async fn render_report(
         .workflow_py
         .as_ref()
         .context("daily case report workflow script is not configured")?;
+    let workflow = resolve_workflow_path(workflow);
     if !workflow.is_file() {
         bail!(
             "daily case report workflow script is missing: {}",
@@ -151,7 +182,7 @@ pub(crate) async fn render_report(
 
     let mut command = Command::new(&config.python_bin);
     command
-        .arg(workflow)
+        .arg(&workflow)
         .arg("--render")
         .arg("image")
         .arg("--image-format")
@@ -623,6 +654,30 @@ mod tests {
     fn truncate_shortens_long_text() {
         assert_eq!(truncate("abc", 2), "ab…");
         assert_eq!(truncate("abc", 5), "abc");
+    }
+
+    #[test]
+    fn absolute_workflow_path_is_used_as_is() {
+        let path = Path::new(
+            "/home/ubuntu/qintopia-agent-os-releases/current/workflows/x/daily_case_report.py",
+        );
+        assert_eq!(resolve_workflow_path(path), path);
+    }
+
+    #[test]
+    fn relative_workflow_path_resolves_against_release_current_env() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let release = tmp.path().join("release");
+        std::fs::create_dir_all(release.join("workflows/xiaoman-daily-case-report"))
+            .expect("mkdir");
+        let workflow = release.join("workflows/xiaoman-daily-case-report/daily_case_report.py");
+        std::fs::write(&workflow, "print('ok')").expect("write");
+        std::env::set_var("QINTOPIA_AGENT_OS_RELEASE_CURRENT", &release);
+        let resolved = resolve_workflow_path(Path::new(
+            "workflows/xiaoman-daily-case-report/daily_case_report.py",
+        ));
+        std::env::remove_var("QINTOPIA_AGENT_OS_RELEASE_CURRENT");
+        assert_eq!(resolved, workflow);
     }
 
     #[test]
