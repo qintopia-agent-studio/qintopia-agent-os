@@ -412,6 +412,14 @@ for (const cosScriptPath of [
       );
     }
     if (
+      cosScriptPath === "deploy/sidecar/scripts/upload-cos-artifact.sh" &&
+      !script.includes("huabaosi-wecom-canary-gateway")
+    ) {
+      addError(
+        `${cosScriptPath}: must validate the approved combined-staging Cargo feature list including the canary gateway`
+      );
+    }
+    if (
       cosScriptPath !== "deploy/sidecar/scripts/prune-cos-artifacts.sh" &&
       !script.includes("TENCENT_COS_ARTIFACT_PAYLOAD")
     ) {
