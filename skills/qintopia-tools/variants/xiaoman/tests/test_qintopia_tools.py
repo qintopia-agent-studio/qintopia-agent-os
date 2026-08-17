@@ -389,6 +389,61 @@ class QintopiaToolsTest(unittest.TestCase):
             sidecar_dir.chmod(0o755)
             trusted_sidecar.chmod(0o755)
 
+    def test_xiaoman_activity_read_through_rejects_current_symlink_dotdot_target(self):
+        release_root = self.index_dir.resolve() / "releases"
+        release_dir = release_root / ("a" * 40)
+        sidecar_dir = release_dir / "sidecar"
+        sidecar_dir.mkdir(parents=True)
+        trusted_sidecar = sidecar_dir / "qintopia-message-sidecar"
+        trusted_sidecar.write_text("#!/bin/sh\nprintf '{}'\n", encoding="utf-8")
+        # A relative target that walks up the tree must be rejected up front, not
+        # silently normalized into the downstream structural checks.
+        current_link = release_root / "current"
+        current_link.symlink_to("../" + "b" * 40)
+        self.module.XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = release_root
+
+        try:
+            release_root.chmod(0o555)
+            release_dir.chmod(0o555)
+            sidecar_dir.chmod(0o555)
+            trusted_sidecar.chmod(0o555)
+            with self.assertRaises(PermissionError):
+                self.module._xiaoman_activity_validate_read_through_worker(
+                    str(current_link / "sidecar" / "qintopia-message-sidecar")
+                )
+        finally:
+            release_root.chmod(0o755)
+            release_dir.chmod(0o755)
+            sidecar_dir.chmod(0o755)
+            trusted_sidecar.chmod(0o755)
+
+    def test_xiaoman_activity_read_through_rejects_current_symlink_absolute_escape(self):
+        release_root = self.index_dir.resolve() / "releases"
+        release_dir = release_root / ("a" * 40)
+        sidecar_dir = release_dir / "sidecar"
+        sidecar_dir.mkdir(parents=True)
+        trusted_sidecar = sidecar_dir / "qintopia-message-sidecar"
+        trusted_sidecar.write_text("#!/bin/sh\nprintf '{}'\n", encoding="utf-8")
+        # An absolute pointer outside the releases root must be rejected.
+        current_link = release_root / "current"
+        current_link.symlink_to("/tmp/" + "c" * 40)
+        self.module.XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = release_root
+
+        try:
+            release_root.chmod(0o555)
+            release_dir.chmod(0o555)
+            sidecar_dir.chmod(0o555)
+            trusted_sidecar.chmod(0o555)
+            with self.assertRaises(PermissionError):
+                self.module._xiaoman_activity_validate_read_through_worker(
+                    str(current_link / "sidecar" / "qintopia-message-sidecar")
+                )
+        finally:
+            release_root.chmod(0o755)
+            release_dir.chmod(0o755)
+            sidecar_dir.chmod(0o755)
+            trusted_sidecar.chmod(0o755)
+
     def test_xiaoman_activity_read_through_allows_root_owned_release_modes(self):
         info = SimpleNamespace(st_uid=0, st_mode=0o755)
 

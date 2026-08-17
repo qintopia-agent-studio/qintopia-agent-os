@@ -4101,6 +4101,14 @@ def _xiaoman_activity_resolve_release_current(worker_path: Path):
     readable, otherwise ``None``. Only the reviewed deploy pointer is resolved; any
     other symlink in the path is left intact so the stricter checks below still
     reject it.
+
+    The ``current`` pointer may only repoint at a sibling release directory under the
+    same ``releases`` parent (i.e. ``releases/<hash>``). Targets that escape that
+    boundary are rejected here rather than relying on the downstream structural
+    checks to catch them: an absolute target must stay under the ``current`` link's
+    parent, and a relative target is limited to a single sibling directory name (no
+    ``..`` segments, no sub-path traversal). The resolved path is normalized so any
+    ``..`` cannot survive into the checks below.
     """
     parts = list(worker_path.parts)
     for i, part in enumerate(parts):
@@ -4111,10 +4119,24 @@ def _xiaoman_activity_resolve_release_current(worker_path: Path):
                 target = os.readlink(link_path)
             except OSError:
                 return None
+
             target_path = Path(target)
-            if not target_path.is_absolute():
-                target_path = prefix / target_path
-            resolved = target_path / Path(*parts[i + 1:])
+            if target_path.is_absolute():
+                normalized = Path(os.path.normpath(str(target_path)))
+                if normalized.parent != prefix:
+                    raise PermissionError(
+                        "xiaoman activity read-through current deploy pointer escapes releases root"
+                    )
+                resolved = normalized / Path(*parts[i + 1:])
+            else:
+                # Relative targets must be a single sibling directory name; reject
+                # ``..`` walk-ups and any sub-path traversal up front.
+                if ".." in target_path.parts or len(target_path.parts) != 1:
+                    raise PermissionError(
+                        "xiaoman activity read-through current deploy pointer must be a single sibling directory"
+                    )
+                resolved = Path(os.path.normpath(str(prefix / target_path))) / Path(*parts[i + 1:])
+
             return (link_path, resolved)
     return None
 
