@@ -737,6 +737,122 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 error_message="sidecar action failed",
             )
 
+    def test_weather_fixture_appears_in_brief_and_blocks(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--date",
+                "2026-08-08",
+                "--activity-fixture",
+                str(FIXTURES / "activity-empty.json"),
+                "--news-fixture",
+                str(FIXTURES / "qunmind-ai-report.md"),
+                "--weather-fixture",
+                str(FIXTURES / "weather.json"),
+                "--json",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["weather_available"])
+        self.assertIn("今日天气", payload["morning_brief_text"])
+        self.assertIn("阴", payload["morning_brief_text"])
+        self.assertEqual(payload["brief_blocks"][1]["title"], "今日天气")
+        self.assertIn("23.1°", payload["brief_blocks"][1]["body"])
+        self.assertTrue(payload["highlight"].startswith("今日氛围"))
+
+    def test_missing_weather_degrades_gracefully(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--date",
+                "2026-08-08",
+                "--activity-fixture",
+                str(FIXTURES / "activity-empty.json"),
+                "--news-fixture",
+                str(FIXTURES / "qunmind-ai-report.md"),
+                "--weather-fixture",
+                str(FIXTURES / "missing.json"),
+                "--json",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["weather_available"])
+        self.assertIn("今日天气稍后补充", payload["morning_brief_text"])
+        self.assertIsNone(payload["highlight"])
+
+    def test_render_image_produces_poster_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "card.png"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--date",
+                    "2026-08-08",
+                    "--activity-fixture",
+                    str(FIXTURES / "activity-one.json"),
+                    "--news-fixture",
+                    str(FIXTURES / "qunmind-ai-report.md"),
+                    "--weather-fixture",
+                    str(FIXTURES / "weather.json"),
+                    "--render-image",
+                    str(image_path),
+                    "--render-image-format",
+                    "png",
+                    "--json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["rendered_image_path"], str(image_path.resolve()))
+            self.assertTrue(image_path.exists())
+            self.assertGreater(image_path.stat().st_size, 4096)
+
+    def test_publish_plan_records_rendered_image_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "card.png"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--date",
+                    "2026-08-08",
+                    "--activity-fixture",
+                    str(FIXTURES / "activity-one.json"),
+                    "--news-fixture",
+                    str(FIXTURES / "qunmind-ai-report.md"),
+                    "--weather-fixture",
+                    str(FIXTURES / "weather.json"),
+                    "--render-image",
+                    str(image_path),
+                    "--prepare-artifact",
+                    "--publish-plan",
+                    "--json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            plan = payload["publish_plan"]
+            self.assertEqual(plan["rendered_image_path"], str(image_path.resolve()))
+            step_names = [step["name"] for step in plan["steps"]]
+            self.assertIn("render_card_image", step_names)
+
 
 if __name__ == "__main__":
     unittest.main()

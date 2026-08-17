@@ -25,6 +25,15 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+# Make sibling workflow modules importable both when run as a script and when
+# loaded via importlib (tests).
+_WORKFLOW_DIR = Path(__file__).resolve().parent
+if str(_WORKFLOW_DIR) not in sys.path:
+    sys.path.insert(0, str(_WORKFLOW_DIR))
+
+import morning_brief_renderer
+from weather import WeatherInfo, fetch_weather
+
 
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OPERATOR_NAME = "刘珊"
@@ -77,6 +86,29 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--audience", default=DEFAULT_AUDIENCE)
     parser.add_argument("--activity-fixture", help="JSON fixture with Xiaoman announcement output.")
     parser.add_argument("--news-fixture", help="QunMind markdown fixture for tests or demos.")
+    parser.add_argument("--weather-fixture", help="Open-Meteo JSON fixture for tests or demos.")
+    parser.add_argument(
+        "--weather-latitude",
+        type=float,
+        default=float(os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_WEATHER_LATITUDE", "22.78")),
+        help="Latitude for Open-Meteo weather (default Pu'er, Yunnan).",
+    )
+    parser.add_argument(
+        "--weather-longitude",
+        type=float,
+        default=float(os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_WEATHER_LONGITUDE", "101.04")),
+        help="Longitude for Open-Meteo weather (default Pu'er, Yunnan).",
+    )
+    parser.add_argument(
+        "--weather-timeout-seconds",
+        type=int,
+        default=int(
+            os.environ.get(
+                "QINTOPIA_ERHUA_MORNING_BRIEF_WEATHER_TIMEOUT_SECONDS",
+                "8",
+            )
+        ),
+    )
     parser.add_argument(
         "--qunmind-bin",
         default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_QUNMIND_BIN", "qunmind"),
@@ -161,6 +193,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--confirmer-id", default="<human-confirmer-id>")
     parser.add_argument("--priority", choices=["low", "normal", "high", "urgent"], default="normal")
     parser.add_argument(
+        "--render-image",
+        default="",
+        help="Path to write the card poster image (PNG/JPEG). Empty means no image rendering.",
+    )
+    parser.add_argument(
+        "--render-image-format",
+        choices=["png", "jpeg"],
+        default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_RENDER_FORMAT", "png"),
+    )
+    parser.add_argument(
         "--sidecar-bin",
         default=os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_SIDECAR_BIN", "qintopia-message-sidecar"),
     )
@@ -204,6 +246,11 @@ def _date_for(args: argparse.Namespace) -> str:
     return datetime.now(zone).strftime("%Y-%m-%d")
 
 
+def _weekday_label(date: str) -> str:
+    weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
+    return weekdays[datetime.strptime(date, "%Y-%m-%d").date().weekday()]
+
+
 def _load_xiaoman_variant():
     variant = _VARIANT
     if not variant.exists():
@@ -222,6 +269,16 @@ def _load_activity_fixture(path: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError("activity fixture must be a JSON object")
     return value
+
+
+def _prepare_weather(args: argparse.Namespace) -> Optional[WeatherInfo]:
+    return fetch_weather(
+        latitude=args.weather_latitude,
+        longitude=args.weather_longitude,
+        timezone=args.timezone,
+        timeout_seconds=args.weather_timeout_seconds,
+        fixture_path=args.weather_fixture,
+    )
 
 
 def _prepare_activity(date: str, args: argparse.Namespace) -> dict[str, Any]:
@@ -801,24 +858,37 @@ def _news_item_lines(index: int, item: AiNewsItem) -> list[str]:
 def _compose_brief(
     *,
     date: str,
+    weekday_label: str,
+    weather: Optional[WeatherInfo],
     activity_text: str,
     activity_count: int,
     news_items: list[AiNewsItem],
     news_unavailable: bool,
-) -> str:
+) -> tuple[str, list[dict[str, str]], Optional[str]]:
+    weather_body = weather.summary if weather else "今日天气稍后补充。"
+
+    # Build the AI-news body (plain text for the text fallback and renderer).
+    news_lines: list[str] = []
+    if news_unavailable:
+        news_lines.append("今天 QunMind 的公开新闻源暂时没读到，二花先不硬编。")
+    else:
+        for index, item in enumerate(news_items, start=1):
+            news_lines.extend(_news_item_lines(index, item))
+    news_body = "\n".join(news_lines)
+
+    # Text serialization keeps the existing human-review / send-fallback shape.
     lines = [
-        f"早上好，二花早报来啦。今天是 {date}。",
+        f"早上好，二花早报来啦。今天是 {date} {weekday_label}。",
+        "",
+        "今日天气：",
+        weather_body,
         "",
         "今天活动：",
         activity_text,
         "",
         "AI 新闻：",
     ]
-    if news_unavailable:
-        lines.append("今天 QunMind 的公开新闻源暂时没读到，二花先不硬编。")
-    else:
-        for index, item in enumerate(news_items, start=1):
-            lines.extend(_news_item_lines(index, item))
+    lines.extend(news_lines)
     lines.extend(
         [
             "",
@@ -827,7 +897,29 @@ def _compose_brief(
     )
     if activity_count <= 0:
         lines.append("今天没活动也没关系，群里的活动就是从一句“有人一起吗”开始的。")
-    return "\n".join(lines).strip()
+
+    message_text = "\n".join(lines).strip()
+
+    brief_blocks: list[dict[str, str]] = [
+        {"title": "问候", "body": f"早上好，二花早报来啦。今天是 {date} {weekday_label}。"},
+        {"title": "今日天气", "body": weather_body},
+        {"title": "今天活动", "body": activity_text},
+        {"title": "AI 新闻", "body": news_body},
+    ]
+
+    highlight = None
+    if weather and weather.current_temp is not None:
+        if any(word in weather.condition for word in ("雨", "雷")):
+            tip = "出门记得带伞。"
+        elif "雪" in weather.condition:
+            tip = "注意保暖。"
+        elif weather.condition in ("晴", "晴间多云"):
+            tip = "适合出门走走。"
+        else:
+            tip = "出门记得看天。"
+        highlight = f"今日氛围：{weather.condition}，约 {int(round(weather.current_temp))}°，{tip}"
+
+    return message_text, brief_blocks, highlight
 
 
 def _validate_uuid(value: str, field: str) -> str:
@@ -1072,21 +1164,31 @@ def _publish_plan(args: argparse.Namespace, result: dict[str, Any]) -> dict[str,
         )
         send_request_command = _command_preview(_operations_create_command(args, send_payload))
 
-    return {
-        "manual_post_text": result["morning_brief_text"],
-        "steps": [
+    image_path = result.get("rendered_image_path")
+    steps: list[dict[str, Any]] = [
+        {
+            "name": "create_or_preview_text_artifact",
+            "command": result.get("artifact_create", {}).get(
+                "shell_preview",
+                "rerun with --prepare-artifact --execute-artifact-create --apply-artifact-create",
+            ),
+        },
+        {
+            "name": "approve_text_artifact",
+            "artifact_id": artifact_id,
+            "command": _command_preview(_artifact_review_command(args, artifact_id)),
+        },
+    ]
+    if image_path:
+        steps.append(
             {
-                "name": "create_or_preview_text_artifact",
-                "command": result.get("artifact_create", {}).get(
-                    "shell_preview",
-                    "rerun with --prepare-artifact --execute-artifact-create --apply-artifact-create",
-                ),
-            },
-            {
-                "name": "approve_text_artifact",
-                "artifact_id": artifact_id,
-                "command": _command_preview(_artifact_review_command(args, artifact_id)),
-            },
+                "name": "render_card_image",
+                "image_path": image_path,
+                "command": "image already rendered; sending it as a QiWe image requires a reviewed image-send capability boundary",
+            }
+        )
+    steps.extend(
+        [
             {
                 "name": "create_awaiting_publish_group_message_request",
                 "approved_artifact_id": approved_artifact_id,
@@ -1107,16 +1209,53 @@ def _publish_plan(args: argparse.Namespace, result: dict[str, Any]) -> dict[str,
                 "name": "manual_qiwe_post_if_adapter_unavailable",
                 "command": "copy manual_post_text into the approved group channel",
             },
-        ],
+        ]
+    )
+    note = "send-ready only records AgentOS readiness; use the manual post text if no reviewed QiWe text sender is active."
+    if image_path:
+        note += (
+            " To actually post the card image to the group, wire the rendered_image_path "
+            "through the reviewed QiWe image-send boundary (separate production-side change)."
+        )
+    return {
+        "manual_post_text": result["morning_brief_text"],
+        "rendered_image_path": image_path,
+        "steps": steps,
         "external_send_executed": False,
-        "note": "send-ready only records AgentOS readiness; use the manual post text if no reviewed QiWe text sender is active.",
+        "note": note,
     }
+
+
+def _build_card(
+    *,
+    date: str,
+    weekday_label: str,
+    weather: Optional[WeatherInfo],
+    activity_text: str,
+    brief_blocks: list[dict[str, str]],
+    highlight: Optional[str],
+) -> morning_brief_renderer.MorningBriefCard:
+    ai_items = [
+        line for line in (brief_blocks[3]["body"] or "").splitlines() if line.strip()
+    ] or ["今天暂时没有读到 AI 新闻。"]
+    return morning_brief_renderer.MorningBriefCard(
+        greeting="早上好，二花早报来啦",
+        date_label=f"{date} {weekday_label}",
+        weather=weather,
+        activity_title=brief_blocks[2]["title"],
+        activity_body=activity_text,
+        ai_news_title=brief_blocks[3]["title"],
+        ai_news_items=ai_items,
+        highlight=highlight,
+    )
 
 
 def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
     date = _date_for(args)
+    weekday_label = _weekday_label(date)
     activity_result = _prepare_activity(date, args)
     activity_text, activity_count, sunday_no_publishable_activity_followup = _activity_section(date, activity_result)
+    weather = _prepare_weather(args)
 
     news_unavailable = False
     news_items: list[AiNewsItem] = []
@@ -1135,26 +1274,52 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
             news_unavailable = True
             ai_news_source = "unavailable"
 
-    brief = _compose_brief(
+    message_text, brief_blocks, highlight = _compose_brief(
         date=date,
+        weekday_label=weekday_label,
+        weather=weather,
         activity_text=activity_text,
         activity_count=activity_count,
         news_items=news_items,
         news_unavailable=news_unavailable,
     )
-    _validate_chat_facing_brief(brief)
+    _validate_chat_facing_brief(message_text)
+
+    rendered_image_path: Optional[str] = None
+    if args.render_image:
+        card = _build_card(
+            date=date,
+            weekday_label=weekday_label,
+            weather=weather,
+            activity_text=activity_text,
+            brief_blocks=brief_blocks,
+            highlight=highlight,
+        )
+        output_path = Path(args.render_image)
+        morning_brief_renderer.render(
+            card,
+            output_path,
+            image_format=args.render_image_format,
+        )
+        rendered_image_path = str(output_path.resolve())
+
     result: dict[str, Any] = {
         "success": True,
         "workflow": WORKFLOW_ID,
         "date": date,
+        "weekday_label": weekday_label,
+        "weather_available": weather is not None,
         "activity_publishable_count": activity_count,
         "sunday_no_publishable_activity_followup": sunday_no_publishable_activity_followup,
         "ai_news_item_count": len(news_items),
         "ai_news_source": ai_news_source,
-        "morning_brief_text": brief,
+        "morning_brief_text": message_text,
+        "brief_blocks": brief_blocks,
+        "highlight": highlight,
+        "rendered_image_path": rendered_image_path,
         "operator_review_message": (
             "二花早报草稿已生成，未发送。\n\n"
-            f"{brief}\n\n"
+            f"{message_text}\n\n"
             "确认后才能进入单独审核过的 Erhua/QiWe 发送边界。"
         ),
         "requires_human_confirmation": True,
@@ -1163,6 +1328,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         "guardrails": [
             "reads Xiaoman activity preview only",
             "uses QunMind public-only daily report or public RSS fallback for AI news",
+            "uses Open-Meteo free public forecast for weather; degrades gracefully when unavailable",
             "does not publish, call Erhua, call QiWe, create work items, or send by default",
         ],
     }
@@ -1171,7 +1337,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
             raise RuntimeError("approved_artifact_id is required with --prepare-send-request")
         send_payload = _send_request_payload(
             date=date,
-            message_text=brief,
+            message_text=message_text,
             approved_artifact_id=args.approved_artifact_id,
             args=args,
         )
@@ -1183,7 +1349,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
             "prepared group_message_request remains awaiting_publish and requires final confirmation"
         )
     if args.prepare_artifact:
-        artifact_payload = _artifact_create_payload(date=date, message_text=brief, args=args)
+        artifact_payload = _artifact_create_payload(date=date, message_text=message_text, args=args)
         result["artifact_create"] = _artifact_create_action(args, artifact_payload)
         result["database_writes"] = bool(
             result["database_writes"] or (args.execute_artifact_create and args.apply_artifact_create)
