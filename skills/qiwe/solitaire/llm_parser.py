@@ -9,7 +9,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Protocol
 from zoneinfo import ZoneInfo
 
-from .parser import ActivityRecord, build_activity_record_from_fields, strip_locale_header
+from .parser import (
+    ActivityRecord,
+    build_activity_record_from_fields,
+    solitaire_created_at_from_event,
+    strip_locale_header,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -165,16 +170,30 @@ def _invalid_activity_reason(fields: Dict[str, Any]) -> str:
 
 def _event_context(event: Any) -> str:
     timezone_name = os.getenv("QIWE_ACTIVITY_TIMEZONE", "Asia/Shanghai")
-    timestamp = getattr(event, "timestamp", None)
-    local_timestamp = _format_event_time(timestamp, timezone_name)
-    return "\n".join(
-        [
-            "解析上下文：",
-            f"- 消息发送时间：{local_timestamp or '未知'}",
-            f"- 时区：{timezone_name}",
-            "- 如果接龙正文出现相对时间，请以消息发送时间为基准补全。",
-        ]
-    )
+    # Anchor relative times ("明晚八点") to the solitaire's FIRST creation time,
+    # not the current forward's send time. A solitaire is re-forwarded by many
+    # people over several days; using each forward's timestamp would push the
+    # computed date later and later. solitaire_created_at_from_event takes the
+    # earliest timestamp in the solitaire thread (its origin).
+    anchor = _solitaire_anchor_time(event)
+    local_anchor = _format_event_time(anchor, timezone_name)
+    lines = [
+        "解析上下文：",
+        f"- 接龙首次发起时间：{local_anchor or '未知'}",
+        f"- 时区：{timezone_name}",
+        "- 如果接龙正文出现相对时间（如“今晚”“明晚”“明天”），一律以接龙首次发起时间为基准补全年月日；不要用当前转发消息的时间。",
+    ]
+    return "\n".join(lines)
+
+
+def _solitaire_anchor_time(event: Any) -> Any:
+    created = solitaire_created_at_from_event(event)
+    if created:
+        try:
+            return datetime.fromisoformat(created)
+        except ValueError:
+            pass
+    return getattr(event, "timestamp", None)
 
 
 def _format_event_time(value: Any, timezone_name: str) -> str:

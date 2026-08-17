@@ -1403,9 +1403,53 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(activity.activity_type, "运动娱乐")
         self.assertEqual(activity.start_time, "2026-06-13 15:30")
         user_message = content_parser.llm.calls[0]["messages"][1]["content"]
-        self.assertIn("消息发送时间：2026-06-13 09:00:00", user_message)
+        # 相对时间基准 = 接龙首次发起时间（solitaireInfo 最早 timestamp 2026-06-11
+        # 19:10:32 +08:00），不是当前转发消息的发送时间。
+        self.assertIn("接龙首次发起时间：2026-06-11 19:10:32", user_message)
         self.assertIn("时区：Asia/Shanghai", user_message)
         self.assertIn("下午3点半去开卡丁车", user_message)
+
+    def test_llm_solitaire_parser_anchors_relative_time_to_first_solitaire_creation(self) -> None:
+        # Regression for the 2026-08-17 wrong-reminder bug: a solitaire created on
+        # 08-15 with text "明晚八点" was re-forwarded on 08-16, and the LLM anchored
+        # "明晚" to the forward's date (08-16) instead of the solitaire's origin
+        # (08-15), producing 08-17 instead of the correct 08-16.
+        payload = copy.deepcopy(load_fixture("group_solitaire.json"))
+        raw_event = json.loads(payload["data"])
+        # Forward lands on 2026-08-16, but the solitaire was created on 2026-08-15.
+        raw_event["timestamp"] = 1786867200  # 2026-08-16 16:00:00 +08:00
+        raw_event["msgData"]["title"] = "#接龙\n明晚八点多功能室分享\n\n1. 德昭"
+        raw_event["msgData"]["solitaireInfo"]["items"] = [
+            {"range": "1-1", "timestamp": 1786723200, "userId": 7881302006036777}  # 2026-08-15 00:00 +08:00
+        ]
+        payload["data"] = json.dumps(raw_event, ensure_ascii=False)
+        parsed = parse_qiwe_payload(payload, bot_names=["二花"], bot_user_id="1688857683805864")
+        content_parser = HermesSolitaireContentParser(
+            FakeHermesLlm(
+                {
+                    "is_activity": True,
+                    "activity_subject": "分享",
+                    "activity_type": "学习分享",
+                    "activity_detail": "明晚八点多功能室分享",
+                    "start_time": "2026-08-16 20:00",
+                    "participant_names": ["德昭"],
+                    "promo_text": "明晚八点来听分享",
+                }
+            )
+        )
+        old_env = dict(os.environ)
+        try:
+            os.environ["QIWE_ACTIVITY_TIMEZONE"] = "Asia/Shanghai"
+            asyncio.run(parse_activity_record(normalized_event_from_parsed(parsed), content_parser))
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
+        user_message = content_parser.llm.calls[0]["messages"][1]["content"]
+        # The LLM must be told to anchor "明晚" to the solitaire's first creation
+        # (2026-08-15), not to the 08-16 forward.
+        self.assertIn("接龙首次发起时间：2026-08-15", user_message)
+        self.assertIn("以接龙首次发起时间为基准", user_message)
 
     def test_llm_solitaire_parser_rejects_invalid_or_non_activity_json(self) -> None:
         parsed = parse_qiwe_payload(
