@@ -9,6 +9,7 @@ mod context_tools;
 mod conversation_ingress;
 mod conversation_policy;
 mod daily_case_report;
+mod daily_case_report_analyze;
 mod daily_case_report_mcp;
 mod daily_digest_publisher;
 mod db;
@@ -615,6 +616,9 @@ async fn main() -> Result<()> {
             start,
             end,
         } => daily_case_report::run_collect_preview_cli(&cli, chat_id, &start, &end).await,
+        Command::DailyCaseReportAnalyzePreview => {
+            daily_case_report_analyze::run_analyze_preview_cli().await
+        }
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await
         }
