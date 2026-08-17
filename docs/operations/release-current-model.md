@@ -57,23 +57,23 @@ must enforce this same ownership and write boundary instead of assuming mode `05
 
 ## Read-Through Deploy Pointer Trust Boundary
 
-The Xiaoman activity read-through validator resolves the `releases/current` deploy pointer
-before applying its structural, ownership, and symlink checks. `current` is a reviewed,
-non-writable deploy pointer (see Promotion Sequence), so the validator treats it as trusted
-and does not reject a worker path merely for containing that symlink.
+The Xiaoman activity read-through validator resolves the `releases/current` deploy
+pointer before applying its structural, ownership, and symlink checks. `current` is a
+reviewed, non-writable deploy pointer (see Promotion Sequence), so the validator treats
+it as trusted and does not reject a worker path merely for containing that symlink.
 
-The resolver enforces the pointer boundary directly rather than relying on the downstream
-checks to catch escapes:
+The resolver enforces the pointer boundary directly rather than relying on the
+downstream checks to catch escapes:
 
 - An absolute target must stay under the `current` link's own parent directory.
 - A relative target must be a single sibling directory name; targets containing `..`
   segments or any sub-path traversal are rejected up front.
 
-After resolution the validator still requires the resolved path to be release-local (release
-root prefix + a 40-hex SHA component + `sidecar/qintopia-message-sidecar`), canonical via
-`resolve(strict=True)`, and owned by `root` or the runtime user without group/world write
-bits. Other symlinks anywhere else in the worker path remain rejected. The resolver is
-defense-in-depth, not a widening of the trusted surface.
+After resolution the validator still requires the resolved path to be release-local
+(release root prefix + a 40-hex SHA component + `sidecar/qintopia-message-sidecar`),
+canonical via `resolve(strict=True)`, and owned by `root` or the runtime user without
+group/world write bits. Other symlinks anywhere else in the worker path remain rejected.
+The resolver is defense-in-depth, not a widening of the trusted surface.
 
 ## Release Payloads
 
