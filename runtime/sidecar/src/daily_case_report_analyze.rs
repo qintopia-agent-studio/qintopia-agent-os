@@ -397,7 +397,7 @@ pub struct AnalyzeReport {
 // Text cleaning / noise filtering
 // ---------------------------------------------------------------------------
 
-fn clean_text(text: &str) -> String {
+pub(crate) fn clean_text(text: &str) -> String {
     let text = URL_RE.replace_all(text, "");
     let text = MENTION_RE.replace_all(&text, "$1");
     let text = WHITESPACE_RE.replace_all(&text, " ");
@@ -645,7 +645,7 @@ fn _detect_topic_markers(messages: &[InputMessage]) -> HashMap<String, Vec<usize
     clusters
 }
 
-fn case_storyline_label(case: &CaseCard) -> String {
+pub(crate) fn case_storyline_label(case: &CaseCard) -> String {
     let label = case
         .title
         .replace("关于「", "")
@@ -1314,7 +1314,7 @@ fn _relation_group_key(message: &InputMessage) -> String {
     }
 }
 
-fn node_key(label: &str) -> String {
+pub(crate) fn node_key(label: &str) -> String {
     let cleaned = clean_text(label);
     let cleaned = WHITESPACE_RE.replace_all(&cleaned, "-");
     let cleaned = NODE_KEY_RE.replace_all(&cleaned, "");

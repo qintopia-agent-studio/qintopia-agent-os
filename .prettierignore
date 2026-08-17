@@ -10,3 +10,4 @@ CHANGELOG.md
 *.gif
 *.webp
 *.pdf
+runtime/sidecar/fixtures/daily_case_report_render_preview_*
