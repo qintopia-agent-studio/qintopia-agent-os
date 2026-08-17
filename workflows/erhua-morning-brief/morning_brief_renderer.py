@@ -9,12 +9,15 @@ case-report renderer so the morning brief stays independently reviewable.
 from __future__ import annotations
 
 import html
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 from weather import WeatherInfo
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_WIDTH = 720
 DEFAULT_IMAGE_FORMAT = "png"
@@ -372,11 +375,12 @@ def render(
             html_path.write_text(_render_html(card, width), encoding="utf-8")
             _render_with_playwright(html_path, output_path, width, image_format)
             return
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Playwright render failed; falling back to Pillow: %s", exc)
     try:
         _render_with_pillow(card, output_path, width, image_format)
-    except Exception:
+    except Exception as exc:
         # Fail closed: no garbled or half-drawn image rather than a crash that
         # would abort the whole morning brief.
+        logger.warning("Pillow fallback also failed; skipping card image: %s", exc)
         return
