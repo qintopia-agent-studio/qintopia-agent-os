@@ -52,7 +52,7 @@ const reviewedJobs = [
   [
     "xiaoman",
     "小满·每日案例日报",
-    "0 8 * * *",
+    "0 9 * * *",
     "qintopia_xiaoman_daily_case_report.sh",
   ],
   ["erhua", "二花·每日早报", "10 8 * * *", "qintopia_erhua_morning_brief.sh"],

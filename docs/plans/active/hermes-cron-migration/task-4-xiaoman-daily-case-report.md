@@ -49,12 +49,12 @@ Follow "Per-Task Shape" in `README.md`. Concrete names:
    ```
 
 2. `runtime/hermes/cron/xiaoman/daily-case-report.job.json` - same shape as task 1, with
-   name `小满·每日案例日报`, expr `0 8 * * *`, script
+   name `小满·每日案例日报`, expr `0 9 * * *`, script
    `qintopia_xiaoman_daily_case_report.sh`.
 3. `deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh`, approval
    gate
    `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON=approved-production-xiaoman-daily-case-report-hermes-cron`.
-4. Registry entry: profile `xiaoman`, expr `0 8 * * *`.
+4. Registry entry: profile `xiaoman`, expr `0 9 * * *`.
 5. `docs/operations/xiaoman-daily-case-report-hermes-cron-runbook.md`.
 6. Apply-script tests (same case list as task 1) plus a wrapper test asserting the SHA
    binding lines exist and PATH is fixed.

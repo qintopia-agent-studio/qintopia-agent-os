@@ -35,7 +35,7 @@ const fixedReleaseCurrent = "/home/ubuntu/qintopia-agent-os-releases/current";
 const approval = "approved-production-xiaoman-daily-case-report-hermes-cron";
 
 const jobName = "小满·每日案例日报";
-const jobExpr = "0 8 * * *";
+const jobExpr = "0 9 * * *";
 const jobScript = "qintopia_xiaoman_daily_case_report.sh";
 const chatIdFixture = "chatIdFixtureValueTestOnly000";
 

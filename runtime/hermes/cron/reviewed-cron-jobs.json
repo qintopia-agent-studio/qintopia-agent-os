@@ -37,7 +37,7 @@
     {
       "profile": "xiaoman",
       "name": "小满·每日案例日报",
-      "schedule_expr": "0 8 * * *",
+      "schedule_expr": "0 9 * * *",
       "script": "qintopia_xiaoman_daily_case_report.sh",
       "no_agent": true,
       "deliver": "origin",
