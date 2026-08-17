@@ -1290,7 +1290,11 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
             output_path,
             image_format=args.render_image_format,
         )
-        rendered_image_path = str(output_path.resolve())
+        # render() fails closed (leaves no file) when neither Playwright nor
+        # Pillow can produce the poster; only record the path if an image was
+        # actually written, so downstream never advertises a missing artifact.
+        if output_path.exists():
+            rendered_image_path = str(output_path.resolve())
 
     result: dict[str, Any] = {
         "success": True,

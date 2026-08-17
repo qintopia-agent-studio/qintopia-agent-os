@@ -870,6 +870,8 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         renderer = importlib.util.module_from_spec(renderer_spec)
         sys.modules[renderer_spec.name] = renderer
         renderer_spec.loader.exec_module(renderer)
+        if not any(Path(p).exists() for p in renderer._font_candidates()):
+            self.skipTest("no CJK-capable font installed")
 
         # A long activity plus five bilingual news items can push the real
         # content height past the old fixed 4000px Pillow canvas. The fallback
@@ -906,6 +908,59 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 # was truncated and the footer never reached the canvas bottom.
                 footer_pixel = bottom.getpixel((width // 2, 20))
             self.assertEqual(footer_pixel, (26, 26, 26), "truncated poster missing dark footer band")
+
+    def _load_renderer_module(self):
+        sys.path.insert(0, str(WORKFLOW_DIR))
+        renderer_spec = importlib.util.spec_from_file_location(
+            "erhua_morning_brief_renderer", WORKFLOW_DIR / "morning_brief_renderer.py"
+        )
+        renderer = importlib.util.module_from_spec(renderer_spec)
+        sys.modules[renderer_spec.name] = renderer
+        renderer_spec.loader.exec_module(renderer)
+        return renderer
+
+    def test_pil_font_fails_closed_without_cjk_font(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        renderer = self._load_renderer_module()
+        original = renderer._font_candidates
+        # No real font exists at this stub path; the renderer must refuse to
+        # fall back to a bitmap default that cannot render Chinese.
+        renderer._font_candidates = lambda *a, **k: ["/nonexistent-cjk-font.ttf"]
+        try:
+            with self.assertRaises(RuntimeError):
+                renderer._pil_font(20)
+        finally:
+            renderer._font_candidates = original
+
+    def test_render_degrades_to_none_without_font(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        renderer = self._load_renderer_module()
+        original_candidates = renderer._font_candidates
+        original_playwright = renderer._render_with_playwright
+        renderer._font_candidates = lambda *a, **k: ["/nonexistent-cjk-font.ttf"]
+        # Force the Playwright path to fail so we exercise the Pillow fallback,
+        # which must also fail closed when no CJK font is available.
+        renderer._render_with_playwright = lambda *a, **k: next(
+            _ for _ in ()
+        ).throw(RuntimeError("playwright unavailable"))
+        try:
+            card = renderer.MorningBriefCard(
+                greeting="二花早报",
+                date_label="2026-08-17 周一",
+                activity_body="社区路跑训练营报名现已开启。",
+                ai_news_items=["OpenAI 发布新模型。", "Anthropic 更新企业安全评估。"],
+                highlight="今日氛围：社区共建日。",
+            )
+            with tempfile.TemporaryDirectory() as temp_dir:
+                out = Path(temp_dir) / "x.png"
+                # render() must not raise; the image is a derived artifact.
+                renderer.render(card, out)
+                self.assertFalse(out.exists(), "fail-closed render must leave no file")
+        finally:
+            renderer._font_candidates = original_candidates
+            renderer._render_with_playwright = original_playwright
 
 
 if __name__ == "__main__":

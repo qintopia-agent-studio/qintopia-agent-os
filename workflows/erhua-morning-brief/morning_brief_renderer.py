@@ -149,9 +149,12 @@ def _render_with_playwright(html_path: Path, output_path: Path, width: int, imag
         browser.close()
 
 
-def _pil_font(size: int, *, bold: bool = False) -> Any:
-    from PIL import ImageFont
+def _font_candidates(*, bold: bool = False) -> list[str]:
+    """Ordered CJK-capable font paths to try, honoring the deploy override.
 
+    Existence is checked by the caller; separating resolution from loading lets
+    tests stub the list without touching the real filesystem.
+    """
     candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/PingFang.ttc",
@@ -161,10 +164,28 @@ def _pil_font(size: int, *, bold: bool = False) -> Any:
     configured = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_FONT")
     if configured:
         candidates.insert(0, configured)
-    for candidate in candidates:
+    return candidates
+
+
+def _pil_font(size: int, *, bold: bool = False) -> Any:
+    """Load a CJK-capable TrueType font, or fail closed.
+
+    Pillow's ``ImageFont.load_default()`` is a bitmap font with no ``.size``
+    attribute and no CJK glyphs: silently falling back to it either raised
+    AttributeError while measuring lines or produced garbled posters. When no
+    usable font exists we raise so the caller can drop the image instead of
+    shipping mojibake.
+    """
+    from PIL import ImageFont
+
+    for candidate in _font_candidates(bold=bold):
         if candidate and Path(candidate).exists():
             return ImageFont.truetype(candidate, size=size)
-    return ImageFont.load_default()
+    raise RuntimeError(
+        "No CJK-capable font available for the morning-brief Pillow fallback. "
+        "Install Noto Sans CJK / PingFang or set QINTOPIA_ERHUA_MORNING_BRIEF_FONT "
+        "to a .ttf/.ttc path. Refusing to render garbled text."
+    )
 
 
 def _wrap(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
@@ -287,7 +308,11 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
     d.text((pad, y + 12 * scale), "二花早报 · 由小满自动整理，仅供社区群内参考", font=_pil_font(11 * scale), fill=_PALE)
     y += 40 * scale + 20 * scale
 
-    cropped = img.crop((0, 0, W, min(y, img.height)))
+    # H is derived from the measured wrapped-line heights, so the drawn content
+    # fits exactly (final y == img.height). Crop to the real drawn height rather
+    # than clamping to the canvas, so a measurement drift can never silently drop
+    # content the way the old fixed-4000px path did.
+    cropped = img.crop((0, 0, W, y))
     save_kwargs: dict[str, Any] = {}
     if image_format == "jpeg":
         save_kwargs["quality"] = 88
@@ -305,7 +330,13 @@ def render(
     width: int = DEFAULT_WIDTH,
     image_format: str = DEFAULT_IMAGE_FORMAT,
 ) -> None:
-    """Render the morning brief card to an image file (PNG/JPEG)."""
+    """Render the morning brief card to an image file (PNG/JPEG).
+
+    Playwright (HTML screenshot) is preferred; a self-contained Pillow drawing
+    is the fallback. The card image is a derived artifact and the morning-brief
+    text stays the canonical deliverable, so any rendering failure is non-fatal:
+    this returns leaving no file rather than raising and taking down the brief.
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -317,4 +348,10 @@ def render(
             _render_with_playwright(html_path, output_path, width, image_format)
             return
     except Exception:
+        pass
+    try:
         _render_with_pillow(card, output_path, width, image_format)
+    except Exception:
+        # Fail closed: no garbled or half-drawn image rather than a crash that
+        # would abort the whole morning brief.
+        return
