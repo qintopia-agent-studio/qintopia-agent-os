@@ -396,7 +396,6 @@ jobs:
             releases_json="$(cat "$releases_file")"
             previous_release_tag=""
             if [[ "$releases_fetched" == "true" ]]; then
-              releases_json="$(cat "$releases_file")"
               previous_release_tag="$(printf '%s' "$releases_json" | node -e '
                 const fs = require("node:fs");
                 const current = process.argv[1];
@@ -426,10 +425,16 @@ jobs:
             if [[ -z "$previous_release_tag" ]]; then
               # Fallback: resolve the previous tag from local git refs (all
               # tags are fetched by checkout), so a transient API anomaly in
-              # the releases list cannot block production deploys.
+              # the releases list cannot block production deploys.  Keep the
+              # same semantics as the API path: only stable vX.Y.Z release
+              # tags are eligible (prerelease/draft tags like vX.Y.Z-rc.1 are
+              # excluded).
               previous_release_tag="$(git tag -l "v[0-9]*" --sort=-version:refname \
                 | while read -r tag; do
                     if [[ "$tag" == "$RELEASE_TAG_NAME" ]]; then
+                      continue
+                    fi
+                    if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                       continue
                     fi
                     tag_commit="$(git rev-list -n 1 "${tag}^{commit}" 2>/dev/null || true)"
