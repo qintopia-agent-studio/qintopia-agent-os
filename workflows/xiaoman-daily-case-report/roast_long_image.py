@@ -636,11 +636,15 @@ def render_pillow(input_data: dict[str, Any], output_path: str) -> str:
 
         # war report card
         if parsed.get("war_report"):
-            card_h = 24 * scale + 40 * scale + 24 * scale
+            war_lines = wrap(draw, parsed["war_report"], war_f, content_w - 60 * scale)
+            card_h = 24 * scale + len(war_lines) * 40 * scale + 24 * scale
             if render:
                 draw.rectangle([padding, y, canvas_w - padding, y + card_h], fill=card_bg)
                 draw.rectangle([padding, y, padding + 5 * scale, y + card_h], fill=accent)
-            center(y + 26 * scale, parsed["war_report"], war_f, accent)
+            yy = y + 24 * scale
+            for ln in war_lines:
+                center(yy, ln, war_f, accent)
+                yy += 40 * scale
             y += card_h + section_gap
 
         # chapters
