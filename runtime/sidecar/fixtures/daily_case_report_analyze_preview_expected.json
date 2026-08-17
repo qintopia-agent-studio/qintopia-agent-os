@@ -1,0 +1,208 @@
+{
+  "success": true,
+  "worker": "daily-case-report-analyze-preview",
+  "action_status": "analyze_preview_ok",
+  "protocol": "daily_case_report_analyze_preview_v1",
+  "safe_for_chat": false,
+  "message_count": 8,
+  "participant_count": 4,
+  "case_count": 1,
+  "suspect_count": 4,
+  "character_count": 4,
+  "cases": [
+    {
+      "case_no": "CASE 01",
+      "title": "本周活动预告",
+      "time_label": "09:00–11:35",
+      "summary": "8 条消息，4 人参与",
+      "bullets": [
+        "本周活动预告：周六晚 8 点有 AMA，我来收集大家的问题。",
+        "我把报名表发群里了，大家填一下，明天提醒一次。",
+        "收到，我准备一个 RWA 合规边界的问题。"
+      ],
+      "message_count": 8,
+      "participant_count": 4,
+      "top_speaker": "小雨",
+      "color_bg": "#fef3c7",
+      "color_text": "#92400e"
+    }
+  ],
+  "suspects": [
+    {
+      "rank": 1,
+      "name": "小雨",
+      "message_count": 3,
+      "word_count": 72,
+      "avatar_emoji": "🕵️"
+    },
+    {
+      "rank": 2,
+      "name": "阿杰",
+      "message_count": 2,
+      "word_count": 36,
+      "avatar_emoji": "🕵️‍♀️"
+    },
+    {
+      "rank": 3,
+      "name": "王五",
+      "message_count": 2,
+      "word_count": 28,
+      "avatar_emoji": "🥷"
+    },
+    {
+      "rank": 4,
+      "name": "赵六",
+      "message_count": 1,
+      "word_count": 13,
+      "avatar_emoji": "🦹"
+    }
+  ],
+  "characters": [
+    {
+      "rank": 1,
+      "name": "小雨",
+      "role_label": "活动推进者",
+      "one_liner": "把松散聊天推成下一步行动",
+      "evidence": "本周活动预告：周六晚 8 点有 AMA，我来收集大家的问题。",
+      "message_count": 3,
+      "topic_count": 15,
+      "node_key": "小雨",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "推进剧情 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「活动推进者」回调",
+      "arc_label": "今日新鲜出场，暂记「活动推进者」",
+      "relationship_hint": "和王五围绕「报名表」同场接力",
+      "relationship_target_key": "王五",
+      "relationship_topic": "报名表",
+      "meme_seed": "多话题串场的「活动推进者」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:小雨",
+      "expressive_label": "",
+      "profile_evidence_count": 2,
+      "profile_upgrade_status": "eligible_for_review",
+      "profile_upgrade_reason": "今日同一身份 3 条发言支撑；今日跨 15 个公开话题出现；今日存在同场关系候选",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#fef3c7",
+      "color_text": "#92400e"
+    },
+    {
+      "rank": 2,
+      "name": "王五",
+      "role_label": "活动推进者",
+      "one_liner": "把松散聊天推成下一步行动",
+      "evidence": "活动问题收集也放到报名表里。",
+      "message_count": 2,
+      "topic_count": 8,
+      "node_key": "王五",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "推进剧情 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「活动推进者」回调",
+      "arc_label": "今日新鲜出场，暂记「活动推进者」",
+      "relationship_hint": "和小雨围绕「报名表」同场接力",
+      "relationship_target_key": "小雨",
+      "relationship_topic": "报名表",
+      "meme_seed": "多话题串场的「活动推进者」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:王五",
+      "expressive_label": "",
+      "profile_evidence_count": 2,
+      "profile_upgrade_status": "eligible_for_review",
+      "profile_upgrade_reason": "今日同一身份 2 条发言支撑；今日跨 8 个公开话题出现；今日存在同场关系候选",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#fee2e2",
+      "color_text": "#991b1b"
+    },
+    {
+      "rank": 3,
+      "name": "阿杰",
+      "role_label": "活动推进者",
+      "one_liner": "把松散聊天推成下一步行动",
+      "evidence": "报名问题可以先按活动主题分组。",
+      "message_count": 2,
+      "topic_count": 7,
+      "node_key": "阿杰",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "推进剧情 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「活动推进者」回调",
+      "arc_label": "今日新鲜出场，暂记「活动推进者」",
+      "relationship_hint": "和赵六围绕「问题」同场接力",
+      "relationship_target_key": "赵六",
+      "relationship_topic": "问题",
+      "meme_seed": "多话题串场的「活动推进者」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:阿杰",
+      "expressive_label": "",
+      "profile_evidence_count": 2,
+      "profile_upgrade_status": "eligible_for_review",
+      "profile_upgrade_reason": "今日同一身份 2 条发言支撑；今日跨 7 个公开话题出现；今日存在同场关系候选",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#dbeafe",
+      "color_text": "#1e40af"
+    },
+    {
+      "rank": 4,
+      "name": "赵六",
+      "role_label": "气氛承包人",
+      "one_liner": "负责让一天的聊天不只是信息流",
+      "evidence": "问题表发群里了，欢迎补充。",
+      "message_count": 1,
+      "topic_count": 4,
+      "node_key": "赵六",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "接气口 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「气氛承包人」回调",
+      "arc_label": "今日新鲜出场，暂记「气氛承包人」",
+      "relationship_hint": "和阿杰围绕「问题」同场接力",
+      "relationship_target_key": "阿杰",
+      "relationship_topic": "问题",
+      "meme_seed": "多话题串场的「气氛承包人」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:赵六",
+      "expressive_label": "",
+      "profile_evidence_count": 1,
+      "profile_upgrade_status": "daily_note_only",
+      "profile_upgrade_reason": "只有单日轻量信号，不能升级为长期人物画像",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#dcfce7",
+      "color_text": "#166534"
+    }
+  ],
+  "hot_topics": [
+    {
+      "rank": 1,
+      "keyword": "本周活动预告",
+      "message_count": 8,
+      "participant_count": 4
+    },
+    {
+      "rank": 2,
+      "keyword": "报名表",
+      "message_count": 3,
+      "participant_count": 2
+    },
+    {
+      "rank": 3,
+      "keyword": "活动报名",
+      "message_count": 2,
+      "participant_count": 1
+    },
+    {
+      "rank": 4,
+      "keyword": "的问题",
+      "message_count": 2,
+      "participant_count": 2
+    }
+  ],
+  "highlight": "本周活动预告：周六晚 8 点有 AMA，我来收集大家的问题。",
+  "hourly_counts": [
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+  ]
+}

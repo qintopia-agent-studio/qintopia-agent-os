@@ -56,7 +56,7 @@ hermes_scripts_dir = Path(sys.argv[5])
 mode = sys.argv[6]
 
 JOB_NAME = "小满·每日案例日报"
-JOB_SCHEDULE_EXPR = "0 8 * * *"
+JOB_SCHEDULE_EXPR = "0 9 * * *"
 JOB_SCRIPT = "qintopia_xiaoman_daily_case_report.sh"
 CHAT_ID_KEY = "WECOM_HOME_CHANNEL"
 MAX_CRON_BYTES = 1024 * 1024
