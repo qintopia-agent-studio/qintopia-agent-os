@@ -55,10 +55,17 @@ def _render_html(card: MorningBriefCard, width: int) -> str:
     activity_html = "".join(
         f"<p>{_esc(line)}</p>" for line in (card.activity_body or "今天暂时没有安排好的活动。").splitlines() if line.strip()
     )
-    news_html = "".join(
-        f'<li><span class="num">{idx}</span><div>{_esc(item)}</div></li>'
-        for idx, item in enumerate(card.ai_news_items, start=1)
-    ) or '<li class="empty">今天暂时没有读到 AI 新闻。</li>'
+    news_html_parts = []
+    for idx, item in enumerate(card.ai_news_items, start=1):
+        inner = "".join(
+            f'<div class="zh">{_esc(line)}</div>'
+            if line.strip().startswith("中文：")
+            else f"<div>{_esc(line)}</div>"
+            for line in item.splitlines()
+            if line.strip()
+        )
+        news_html_parts.append(f'<li><span class="num">{idx}</span>{inner}</li>')
+    news_html = "".join(news_html_parts) or '<li class="empty">今天暂时没有读到 AI 新闻。</li>'
     highlight_html = (
         f'<section class="highlight"><span class="kicker">今日亮点</span>'
         f'<p>{_esc(card.highlight)}</p></section>'
@@ -88,6 +95,7 @@ def _render_html(card: MorningBriefCard, width: int) -> str:
   .section.news li {{ display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.6; color: #222; padding: 8px 0; border-bottom: 1px dashed #d8c7a2; }}
   .section.news li:last-child {{ border-bottom: 0; }}
   .section.news li.empty {{ color: #777; }}
+  .section.news li .zh {{ color: #555; font-size: 13px; margin-top: 3px; line-height: 1.5; }}
   .section.news .num {{ flex: 0 0 22px; height: 22px; display: grid; place-items: center; background: {_PALE}; border: 2px solid {_INK}; border-radius: 50%; font-size: 12px; font-weight: 900; }}
   .highlight {{ margin: 18px 22px 0; padding: 16px 18px; background: {_ORANGE}; border: 3px solid {_INK}; border-radius: 16px; }}
   .highlight .kicker {{ font-size: 12px; font-weight: 900; letter-spacing: 1px; color: {_YELLOW}; }}
@@ -152,14 +160,16 @@ def _render_with_playwright(html_path: Path, output_path: Path, width: int, imag
 def _font_candidates(*, bold: bool = False) -> list[str]:
     """Ordered CJK-capable font paths to try, honoring the deploy override.
 
-    Existence is checked by the caller; separating resolution from loading lets
-    tests stub the list without touching the real filesystem.
+    Every candidate must carry CJK glyphs: the caller fails closed when none of
+    them load, so a Latin-only font (e.g. DejaVu Sans) must never appear here or
+    the fallback would silently ship tofu blocks on minimal hosts. Existence is
+    checked by the caller; separating resolution from loading lets tests stub the
+    list without touching the real filesystem.
     """
     candidates = [
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc" if bold else "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/STHeiti Light.ttc",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     configured = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_FONT")
     if configured:
@@ -239,11 +249,21 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
     activity_src = [ln for ln in (card.activity_body or "今天暂时没有安排好的活动。").splitlines() if ln.strip()]
     activity_lines = [ln for src in activity_src for ln in _wrap(measure, src, body, inner_w)]
     news_src = card.ai_news_items or ["今天暂时没有读到 AI 新闻。"]
-    news_lines = [
-        ln
-        for idx, item in enumerate(news_src, start=1)
-        for ln in _wrap(measure, f"{idx}. {item}", body_sm, inner_w)
-    ]
+    # Number each *item* once; a bilingual item wraps to multiple physical lines
+    # and its continuation lines indent under the number gutter. Never prepend a
+    # number to every wrapped line, or the card double-numbers the block that the
+    # text brief already prefixed with a list index.
+    num_gutter = 30 * scale
+    news_blocks: list[tuple[str, str]] = []
+    for idx, item in enumerate(news_src, start=1):
+        first = True
+        for src in item.splitlines():
+            if not src.strip():
+                continue
+            for ln in _wrap(measure, src, body_sm, inner_w - num_gutter):
+                news_blocks.append((f"{idx}." if first else "", ln))
+                first = False
+    news_lines = [ln for _, ln in news_blocks]
     highlight_lines = _wrap(measure, card.highlight, hi, inner_w) if card.highlight else []
 
     def section_height(top_pad: int, lines: list[str], line_h: int, *, min_h: int = 0) -> int:
@@ -294,7 +314,12 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
     # ai news
     rect(pad, y, cw, nh, "#ffffff")
     d.text((pad + 16 * scale, y + 14 * scale), card.ai_news_title, font=kicker, fill="#1f6f54")
-    _draw_lines(d, (pad + 16 * scale, y + 44 * scale), news_lines, body_sm, "#222222", news_lh)
+    ny = y + 44 * scale
+    for num, ln in news_blocks:
+        if num:
+            d.text((pad + 16 * scale, ny), num, font=kicker, fill="#1f6f54")
+        d.text((pad + 16 * scale + num_gutter, ny), ln, font=body_sm, fill="#222222")
+        ny += news_lh
     y += nh + gap_after
 
     # highlight

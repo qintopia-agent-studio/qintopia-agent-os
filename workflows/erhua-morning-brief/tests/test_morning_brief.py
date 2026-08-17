@@ -24,6 +24,40 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 APPROVED_ARTIFACT_ID = "02dd5f47-81f8-4b8c-898d-b4c926fcf9b5"
 
 
+def _renderer_module_for_check():
+    sys.path.insert(0, str(WORKFLOW_DIR))
+    spec = importlib.util.spec_from_file_location(
+        "erhua_morning_brief_renderer_guard", WORKFLOW_DIR / "morning_brief_renderer.py"
+    )
+    renderer = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = renderer
+    spec.loader.exec_module(renderer)
+    return renderer
+
+
+def _render_is_supported() -> bool:
+    """Whether ``render()`` can actually produce an image on this host.
+
+    render() prefers Playwright; the Pillow fallback fails closed unless a
+    CJK-capable font exists. A minimal host with neither a browser nor a CJK
+    font would fail closed and leave no file, so the render-output assertions
+    must skip there instead of asserting a file that never gets written.
+    """
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: F401
+
+        return True
+    except Exception:
+        pass
+    if not _PIL_AVAILABLE:
+        return False
+    try:
+        renderer = _renderer_module_for_check()
+    except Exception:
+        return False
+    return any(Path(p).exists() for p in renderer._font_candidates())
+
+
 def load_module():
     spec = importlib.util.spec_from_file_location("erhua_morning_brief", SCRIPT)
     module = importlib.util.module_from_spec(spec)
@@ -798,6 +832,8 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIsNone(payload["highlight"])
 
     def test_render_image_produces_poster_file(self):
+        if not _render_is_supported():
+            self.skipTest("no renderer backend available (need Playwright or Pillow + CJK font)")
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "card.png"
             result = subprocess.run(
@@ -829,6 +865,8 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             self.assertGreater(image_path.stat().st_size, 4096)
 
     def test_publish_plan_records_rendered_image_path(self):
+        if not _render_is_supported():
+            self.skipTest("no renderer backend available (need Playwright or Pillow + CJK font)")
         with tempfile.TemporaryDirectory() as temp_dir:
             image_path = Path(temp_dir) / "card.png"
             result = subprocess.run(
@@ -859,6 +897,47 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             self.assertEqual(plan["rendered_image_path"], str(image_path.resolve()))
             step_names = [step["name"] for step in plan["steps"]]
             self.assertIn("render_card_image", step_names)
+
+    def test_build_card_news_not_double_numbered(self):
+        module = load_module()
+        news_items = [
+            module.AiNewsItem(
+                title="OpenAI ships GPT-5.6",
+                summary="Faster agents for startups.",
+                title_zh="GPT-5.6 发布",
+                summary_zh="面向初创公司的更快智能体。",
+            ),
+            module.AiNewsItem(title="社区共读招募", summary="本周六下午在客厅。"),
+        ]
+        card = module._build_card(
+            date="2026-08-17",
+            weekday_label="周一",
+            weather=None,
+            news_items=news_items,
+            brief_blocks=[
+                {"title": "问候", "body": "hi"},
+                {"title": "今日天气", "body": "晴。"},
+                {"title": "今天活动", "body": "无活动。"},
+                {"title": "AI 新闻", "body": "1. 英文：OpenAI ships GPT-5.6：Faster agents.\n    中文：GPT-5.6 发布：面向初创公司的更快智能体。"},
+            ],
+            highlight=None,
+        )
+        # One card entry per news item, each carrying the bilingual lines but no
+        # leading list index (the renderer owns the numbering).
+        self.assertEqual(len(card.ai_news_items), 2)
+        self.assertFalse(
+            card.ai_news_items[0].startswith("1."),
+            "card news entries must not carry a leading list index",
+        )
+        self.assertIn("英文：", card.ai_news_items[0])
+        self.assertIn("中文：", card.ai_news_items[0])
+        self.assertIn("社区共读招募", card.ai_news_items[1])
+        # The HTML renderer must number each item once, never "1. 1. 英文".
+        renderer = self._load_renderer_module()
+        html = renderer._render_html(card, 720)
+        self.assertNotIn("1. 1. 英文", html)
+        self.assertIn('<span class="num">1</span>', html)
+        self.assertIn('<span class="num">2</span>', html)
 
     def test_pillow_fallback_renders_full_height_without_truncation(self):
         if not _PIL_AVAILABLE:

@@ -821,13 +821,28 @@ def _activity_section(date: str, activity_result: dict[str, Any]) -> tuple[str, 
     return announcement, count, False
 
 
-def _news_item_lines(index: int, item: AiNewsItem) -> list[str]:
+def _news_item_display(item: AiNewsItem) -> str:
+    """Single-item display text for the card, without a leading number.
+
+    Bilingual items stack the English line above the Chinese translation. The
+    renderer owns the item numbering so the card never double-numbers a block
+    that the text brief already prefixed with a list index.
+    """
     if not _needs_chinese_translation(item):
-        return [f"{index}. {item.title}：{item.summary}"]
-    return [
-        f"{index}. 英文：{item.title}：{item.summary}",
-        f"   中文：{_chinese_title_for(item)}：{_chinese_summary_for(item)}",
-    ]
+        return f"{item.title}：{item.summary}"
+    return (
+        f"英文：{item.title}：{item.summary}\n"
+        f"中文：{_chinese_title_for(item)}：{_chinese_summary_for(item)}"
+    )
+
+
+def _news_item_lines(index: int, item: AiNewsItem) -> list[str]:
+    """Numbered plain-text lines for the chat-facing brief (one index prefix)."""
+    display = _news_item_display(item)
+    first, sep, rest = display.partition("\n")
+    if not sep:
+        return [f"{index}. {first}"]
+    return [f"{index}. {first}", *[f"    {line}" for line in rest.splitlines()]]
 
 
 def _activity_block(activity_text: str, activity_count: int) -> str:
@@ -1222,12 +1237,15 @@ def _build_card(
     date: str,
     weekday_label: str,
     weather: Optional[WeatherInfo],
+    news_items: list[AiNewsItem],
     brief_blocks: list[dict[str, str]],
     highlight: Optional[str],
 ) -> morning_brief_renderer.MorningBriefCard:
-    ai_items = [
-        line for line in (brief_blocks[3]["body"] or "").splitlines() if line.strip()
-    ] or ["今天暂时没有读到 AI 新闻。"]
+    if news_items:
+        ai_items = [_news_item_display(item) for item in news_items]
+    else:
+        fallback = (brief_blocks[3]["body"] or "").strip() or "今天暂时没有读到 AI 新闻。"
+        ai_items = [fallback]
     return morning_brief_renderer.MorningBriefCard(
         greeting="早上好，二花早报来啦",
         date_label=f"{date} {weekday_label}",
@@ -1281,6 +1299,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
             date=date,
             weekday_label=weekday_label,
             weather=weather,
+            news_items=news_items,
             brief_blocks=brief_blocks,
             highlight=highlight,
         )
