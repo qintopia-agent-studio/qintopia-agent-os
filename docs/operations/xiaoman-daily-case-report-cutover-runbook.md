@@ -60,7 +60,7 @@ Timer:
 
 ```ini
 [Timer]
-OnCalendar=*-*-* 08:00:00
+OnCalendar=*-*-* 09:00:00
 AccuracySec=1min
 Persistent=true
 Unit=qintopia-agentos-xiaoman-daily-case-report-auto-publish.service

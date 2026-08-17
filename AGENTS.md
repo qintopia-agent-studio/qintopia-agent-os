@@ -486,7 +486,7 @@
   release-managed daily timer. The reviewed declaration is
   `runtime/hermes/cron/xiaoman/daily-case-report.job.json`, the wrapper is
   `runtime/hermes/scripts/qintopia_xiaoman_daily_case_report.sh`, and the registry entry
-  pins expr `0 8 * * *`. Install and enable the Hermes job with
+  pins expr `0 9 * * *`. Install and enable the Hermes job with
   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON=approved-production-xiaoman-daily-case-report-hermes-cron`
   plus `apply-xiaoman-daily-case-report-hermes-cron.sh --install` then `--enable`.
   Disable the old timer with

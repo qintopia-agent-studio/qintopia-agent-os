@@ -1,6 +1,6 @@
 {
   "name": "小满·每日案例日报",
-  "schedule": { "kind": "cron", "expr": "0 8 * * *", "display": "0 8 * * *" },
+  "schedule": { "kind": "cron", "expr": "0 9 * * *", "display": "0 9 * * *" },
   "no_agent": true,
   "script": "qintopia_xiaoman_daily_case_report.sh",
   "deliver": "origin",

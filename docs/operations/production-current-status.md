@@ -84,7 +84,7 @@ URLs, tokens, raw logs, or raw script output.
   `qintopia_xiaoman_weekly_recruitment.sh`.
 - `xiaoman` / `xiaoman-weekly-plan-confirmation`: `0 20 * * 0`,
   `qintopia_xiaoman_weekly_plan_confirmation.sh`.
-- `xiaoman` / `xiaoman-daily-case-report`: `0 8 * * *`,
+- `xiaoman` / `xiaoman-daily-case-report`: `0 9 * * *`,
   `qintopia_xiaoman_daily_case_report.sh`.
 - `erhua` / `erhua-morning-brief`: `10 8 * * *`, `qintopia_erhua_morning_brief.sh`.
 
