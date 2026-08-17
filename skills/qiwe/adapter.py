@@ -815,11 +815,11 @@ def _extract_mixed_content(payload: Dict[str, Any], raw_event: Dict[str, Any]) -
         elif sub_kind == "video":
             entry["summary"] = "视频"
         elif sub_kind == "file":
-            entry["summary"] = f"文件：{_display_text(sub_data.get("fileName") or sub_data.get("filename"))}"
+            entry["summary"] = f"文件：{_display_text(sub_data.get('fileName') or sub_data.get('filename'))}"
         elif sub_kind == "link":
-            entry["summary"] = f"链接：{_display_text(sub_data.get("title"))}"
+            entry["summary"] = f"链接：{_display_text(sub_data.get('title'))}"
         elif sub_kind == "location":
-            entry["summary"] = f"位置：{_display_text(sub_data.get("title") or sub_data.get("address"))}"
+            entry["summary"] = f"位置：{_display_text(sub_data.get('title') or sub_data.get('address'))}"
         items.append({key: value for key, value in entry.items() if value not in ("", None)})
     return items
 
