@@ -428,7 +428,10 @@ jobs:
               # the releases list cannot block production deploys.  Keep the
               # same semantics as the API path: only stable vX.Y.Z release
               # tags are eligible (prerelease/draft tags like vX.Y.Z-rc.1 are
-              # excluded).
+              # excluded).  Fetch tags explicitly (with objects) because the
+              # checkout fetch uses --no-tags and may not materialize tag
+              # commits outside the checked-out branch.
+              git fetch --tags --force origin 2>/dev/null || true
               previous_release_tag="$(git tag -l "v[0-9]*" --sort=-version:refname \
                 | while read -r tag; do
                     if [[ "$tag" == "$RELEASE_TAG_NAME" ]]; then

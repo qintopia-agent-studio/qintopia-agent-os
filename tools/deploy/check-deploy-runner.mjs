@@ -985,6 +985,7 @@ if (exists(".github/workflows/deploy-production.yml")) {
     "releases?per_page=",
     "releases_fetched",
     "releases API returned empty/invalid body",
+    "git fetch --tags --force origin",
     'git tag -l "v[0-9]*" --sort=-version:refname',
     "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=30&event=release&status=completed",
     "collect-release-deploy-results.mjs",
