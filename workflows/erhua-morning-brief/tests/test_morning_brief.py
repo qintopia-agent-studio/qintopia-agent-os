@@ -10,11 +10,52 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+try:
+    from PIL import Image as _PILImage
+
+    _PIL_AVAILABLE = True
+except Exception:  # pragma: no cover - exercised only without Pillow
+    _PIL_AVAILABLE = False
+
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = WORKFLOW_DIR / "morning_brief.py"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 APPROVED_ARTIFACT_ID = "02dd5f47-81f8-4b8c-898d-b4c926fcf9b5"
+
+
+def _renderer_module_for_check():
+    sys.path.insert(0, str(WORKFLOW_DIR))
+    spec = importlib.util.spec_from_file_location(
+        "erhua_morning_brief_renderer_guard", WORKFLOW_DIR / "morning_brief_renderer.py"
+    )
+    renderer = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = renderer
+    spec.loader.exec_module(renderer)
+    return renderer
+
+
+def _render_is_supported() -> bool:
+    """Whether ``render()`` can actually produce an image on this host.
+
+    render() prefers Playwright; the Pillow fallback fails closed unless a
+    CJK-capable font exists. A minimal host with neither a browser nor a CJK
+    font would fail closed and leave no file, so the render-output assertions
+    must skip there instead of asserting a file that never gets written.
+    """
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: F401
+
+        return True
+    except Exception:
+        pass
+    if not _PIL_AVAILABLE:
+        return False
+    try:
+        renderer = _renderer_module_for_check()
+    except Exception:
+        return False
+    return any(Path(p).exists() for p in renderer._font_candidates())
 
 
 def load_module():
@@ -736,6 +777,269 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 apply_flag="apply_artifact_create",
                 error_message="sidecar action failed",
             )
+
+    def test_weather_fixture_appears_in_brief_and_blocks(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--date",
+                "2026-08-08",
+                "--activity-fixture",
+                str(FIXTURES / "activity-empty.json"),
+                "--news-fixture",
+                str(FIXTURES / "qunmind-ai-report.md"),
+                "--weather-fixture",
+                str(FIXTURES / "weather.json"),
+                "--json",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["weather_available"])
+        self.assertIn("今日天气", payload["morning_brief_text"])
+        self.assertIn("阴", payload["morning_brief_text"])
+        self.assertEqual(payload["brief_blocks"][1]["title"], "今日天气")
+        self.assertIn("23.1°", payload["brief_blocks"][1]["body"])
+        self.assertTrue(payload["highlight"].startswith("今日氛围"))
+
+    def test_missing_weather_degrades_gracefully(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--date",
+                "2026-08-08",
+                "--activity-fixture",
+                str(FIXTURES / "activity-empty.json"),
+                "--news-fixture",
+                str(FIXTURES / "qunmind-ai-report.md"),
+                "--weather-fixture",
+                str(FIXTURES / "missing.json"),
+                "--json",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["weather_available"])
+        self.assertIn("今日天气稍后补充", payload["morning_brief_text"])
+        self.assertIsNone(payload["highlight"])
+
+    def test_render_image_produces_poster_file(self):
+        if not _render_is_supported():
+            self.skipTest("no renderer backend available (need Playwright or Pillow + CJK font)")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "card.png"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--date",
+                    "2026-08-08",
+                    "--activity-fixture",
+                    str(FIXTURES / "activity-one.json"),
+                    "--news-fixture",
+                    str(FIXTURES / "qunmind-ai-report.md"),
+                    "--weather-fixture",
+                    str(FIXTURES / "weather.json"),
+                    "--render-image",
+                    str(image_path),
+                    "--render-image-format",
+                    "png",
+                    "--json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["rendered_image_path"], str(image_path.resolve()))
+            self.assertTrue(image_path.exists())
+            self.assertGreater(image_path.stat().st_size, 4096)
+
+    def test_publish_plan_records_rendered_image_path(self):
+        if not _render_is_supported():
+            self.skipTest("no renderer backend available (need Playwright or Pillow + CJK font)")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "card.png"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--date",
+                    "2026-08-08",
+                    "--activity-fixture",
+                    str(FIXTURES / "activity-one.json"),
+                    "--news-fixture",
+                    str(FIXTURES / "qunmind-ai-report.md"),
+                    "--weather-fixture",
+                    str(FIXTURES / "weather.json"),
+                    "--render-image",
+                    str(image_path),
+                    "--prepare-artifact",
+                    "--publish-plan",
+                    "--json",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            payload = json.loads(result.stdout)
+            plan = payload["publish_plan"]
+            self.assertEqual(plan["rendered_image_path"], str(image_path.resolve()))
+            step_names = [step["name"] for step in plan["steps"]]
+            self.assertIn("render_card_image", step_names)
+
+    def test_build_card_news_not_double_numbered(self):
+        module = load_module()
+        news_items = [
+            module.AiNewsItem(
+                title="OpenAI ships GPT-5.6",
+                summary="Faster agents for startups.",
+                title_zh="GPT-5.6 发布",
+                summary_zh="面向初创公司的更快智能体。",
+            ),
+            module.AiNewsItem(title="社区共读招募", summary="本周六下午在客厅。"),
+        ]
+        card = module._build_card(
+            date="2026-08-17",
+            weekday_label="周一",
+            weather=None,
+            news_items=news_items,
+            brief_blocks=[
+                {"title": "问候", "body": "hi"},
+                {"title": "今日天气", "body": "晴。"},
+                {"title": "今天活动", "body": "无活动。"},
+                {"title": "AI 新闻", "body": "1. 英文：OpenAI ships GPT-5.6：Faster agents.\n    中文：GPT-5.6 发布：面向初创公司的更快智能体。"},
+            ],
+            highlight=None,
+        )
+        # One card entry per news item, each carrying the bilingual lines but no
+        # leading list index (the renderer owns the numbering).
+        self.assertEqual(len(card.ai_news_items), 2)
+        self.assertFalse(
+            card.ai_news_items[0].startswith("1."),
+            "card news entries must not carry a leading list index",
+        )
+        self.assertIn("英文：", card.ai_news_items[0])
+        self.assertIn("中文：", card.ai_news_items[0])
+        self.assertIn("社区共读招募", card.ai_news_items[1])
+        # The HTML renderer must number each item once, never "1. 1. 英文".
+        renderer = self._load_renderer_module()
+        html = renderer._render_html(card, 720)
+        self.assertNotIn("1. 1. 英文", html)
+        self.assertIn('<span class="num">1</span>', html)
+        self.assertIn('<span class="num">2</span>', html)
+
+    def test_pillow_fallback_renders_full_height_without_truncation(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        sys.path.insert(0, str(WORKFLOW_DIR))
+        renderer_spec = importlib.util.spec_from_file_location(
+            "erhua_morning_brief_renderer", WORKFLOW_DIR / "morning_brief_renderer.py"
+        )
+        renderer = importlib.util.module_from_spec(renderer_spec)
+        sys.modules[renderer_spec.name] = renderer
+        renderer_spec.loader.exec_module(renderer)
+        if not any(Path(p).exists() for p in renderer._font_candidates()):
+            self.skipTest("no CJK-capable font installed")
+
+        # A long activity plus five bilingual news items can push the real
+        # content height past the old fixed 4000px Pillow canvas. The fallback
+        # must grow the canvas instead of silently cropping at min(y, 4000).
+        long_activity = "\n".join(
+            "社区路跑训练营报名现已开启，请提前到栗峪口集合并带好补给。" * 3 for _ in range(20)
+        )
+        bilingual_news = [
+            "OpenAI released a new long-context model.  OpenAI 发布新模型，主打长上下文与多模态推理能力，已向开发者开放。"
+            for _ in range(5)
+        ]
+        card = renderer.MorningBriefCard(
+            greeting="二花早报",
+            date_label="2026-08-17 周一",
+            activity_body=long_activity,
+            ai_news_items=bilingual_news,
+            highlight="今日氛围：社区共建日。",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "tall.png"
+            renderer._render_with_pillow(card, image_path, 720, "png")
+            self.assertTrue(image_path.exists())
+            with _PILImage.open(image_path) as img:
+                width, height = img.size
+            self.assertGreater(height, 4000, "Pillow canvas must grow past the old 4000px cap")
+            # The footer band (last 80px) is the dark ink rectangle. If the poster
+            # had been truncated, that band would be missing and the bottom would
+            # read as paper-colored instead of ink.
+            with _PILImage.open(image_path) as img:
+                bottom = img.crop((0, height - 80, width, height)).convert("RGB")
+                # The footer band sits ~40-80px from the bottom (a short paper
+                # margin is below it). Its text only covers the top ~22px, so a
+                # paper-colored pixel near the band's lower half means the poster
+                # was truncated and the footer never reached the canvas bottom.
+                footer_pixel = bottom.getpixel((width // 2, 20))
+            self.assertEqual(footer_pixel, (26, 26, 26), "truncated poster missing dark footer band")
+
+    def _load_renderer_module(self):
+        sys.path.insert(0, str(WORKFLOW_DIR))
+        renderer_spec = importlib.util.spec_from_file_location(
+            "erhua_morning_brief_renderer", WORKFLOW_DIR / "morning_brief_renderer.py"
+        )
+        renderer = importlib.util.module_from_spec(renderer_spec)
+        sys.modules[renderer_spec.name] = renderer
+        renderer_spec.loader.exec_module(renderer)
+        return renderer
+
+    def test_pil_font_fails_closed_without_cjk_font(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        renderer = self._load_renderer_module()
+        original = renderer._font_candidates
+        # No real font exists at this stub path; the renderer must refuse to
+        # fall back to a bitmap default that cannot render Chinese.
+        renderer._font_candidates = lambda *a, **k: ["/nonexistent-cjk-font.ttf"]
+        try:
+            with self.assertRaises(RuntimeError):
+                renderer._pil_font(20)
+        finally:
+            renderer._font_candidates = original
+
+    def test_render_degrades_to_none_without_font(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        renderer = self._load_renderer_module()
+        original_candidates = renderer._font_candidates
+        original_playwright = renderer._render_with_playwright
+        renderer._font_candidates = lambda *a, **k: ["/nonexistent-cjk-font.ttf"]
+        # Force the Playwright path to fail so we exercise the Pillow fallback,
+        # which must also fail closed when no CJK font is available.
+        renderer._render_with_playwright = lambda *a, **k: next(
+            _ for _ in ()
+        ).throw(RuntimeError("playwright unavailable"))
+        try:
+            card = renderer.MorningBriefCard(
+                greeting="二花早报",
+                date_label="2026-08-17 周一",
+                activity_body="社区路跑训练营报名现已开启。",
+                ai_news_items=["OpenAI 发布新模型。", "Anthropic 更新企业安全评估。"],
+                highlight="今日氛围：社区共建日。",
+            )
+            with tempfile.TemporaryDirectory() as temp_dir:
+                out = Path(temp_dir) / "x.png"
+                # render() must not raise; the image is a derived artifact.
+                renderer.render(card, out)
+                self.assertFalse(out.exists(), "fail-closed render must leave no file")
+        finally:
+            renderer._font_candidates = original_candidates
+            renderer._render_with_playwright = original_playwright
 
 
 if __name__ == "__main__":
