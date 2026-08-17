@@ -6,6 +6,45 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.153](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.152...v0.2.153) (2026-08-17)
+
+
+### Features
+
+* **deploy:** compile Huabaosi WeCom canary gateway into staging artifact ([#612](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/612)) ([a6fc0ed](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a6fc0edc210cbe8bb18b041f64dcf47999fec9ef))
+* **erhua-morning-brief:** card-style poster with weather and 4-block structure ([#616](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/616)) ([7633e2a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7633e2ab686a3275694dc6ce5b84ff57aa0b89ae))
+* **runtime:** add daily case-report collection preview command ([#615](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/615)) ([e8573ac](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e8573ac82c0cc636c05c82a4bf210f02915693b4))
+* **sidecar:** add daily case report Rust analyzer (PR 3) ([#621](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/621)) ([8ff19fd](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8ff19fddd918e88402ee3ad6d9d957b2019465cc))
+* **sidecar:** add daily case report Rust narrative (PR 4) ([#630](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/630)) ([755f30a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/755f30a83876dc02b27ffb3dea9f1d75d9dc6106))
+* **xiaoman:** add send quality gate to daily report auto-publish worker ([#620](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/620)) ([1f94613](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1f946135f6ba8d51f59df95ceed9ac578fc6b5f2))
+* **xiaoman:** roast daily report via Pillow + LLM failover + deterministic fallback ([#627](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/627)) ([b241798](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b241798d84c34d1d4244fd354eb69ba1fce80e4f))
+
+
+### Bug Fixes
+
+* **deploy:** accept canary feature in COS staging upload validation ([#613](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/613)) ([1d424dc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1d424dcd067c9437f7c262750aa606903c5afa3a))
+* log swallowed render/weather exceptions instead of failing silently ([#624](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/624)) ([0836fae](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0836fae2594e90e45c1919b72484a405987f03dc))
+* **qintopia-weather:** resolve shadowed exc in weatheralert HTTP error handler ([#628](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/628)) ([f787ed2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f787ed2ffe91c8b3d8f1aeb778b922517f087b1c))
+* **qiwe:** restore Py3.11 f-strings + move daily report to 09:00 ([#619](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/619)) ([3516bbf](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3516bbfc2b99e3bed0d161b4c3907193d293c752))
+* **xiaoman:** accept canonical releases/current symlink in read-through validator ([#618](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/618)) ([3bb1b4b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3bb1b4bba96ce2fc19cc45de1b07c99823b60e92))
+* **xiaoman:** align daily report 09:00 across Hermes cron, registry, and docs ([#622](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/622)) ([9fbd18c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9fbd18cc3f5d691ccfc5994e04476ff8e628801c))
+* **xiaoman:** fail closed when no CJK font instead of tofu fallback ([#625](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/625)) ([675a86a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/675a86a6b1e6f9510e00e3595adb40e230df35df))
+* **xiaoman:** honor image_format in Pillow render + catch all render errors ([#629](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/629)) ([afa00af](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/afa00af886e0d2ecd6f331332383ce193a4fcfd4))
+* **xiaoman:** pin daily report window to completed calendar day + restore reasoning token budget ([#617](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/617)) ([43f6f2a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/43f6f2a2726d5f8636c27814e4e7ec4c774f6d0d))
+* **xiaoman:** prevent Pillow canvas truncation and roast-template crash ([#623](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/623)) ([f764ee9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f764ee973d873699e8d2686e9e9c5cd2edf0bc61))
+* **xiaoman:** render all suspects in the Pillow poster, not just the first five ([#626](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/626)) ([fb5fca3](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/fb5fca3b0ac7975a13b124869bdba7b2238c74a0))
+
+
+### Refactoring
+
+* **workflows:** clean up Erhua morning brief internals ([#609](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/609)) ([06ed296](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/06ed296bd433c5d03e1307806efff258eebbecde))
+
+
+### Documentation
+
+* **plans:** archive completed Erhua morning brief cleanup plan ([#610](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/610)) ([433e651](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/433e6515c32a99a6ca4fd92b4683a1434e481c73))
+* **plans:** draft Xiaoman daily case report Rust migration plan ([#614](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/614)) ([52b262c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/52b262cbd8853b793f547cf572a4e10a2a86eefd))
+
 ## [0.2.152](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.151...v0.2.152) (2026-08-16)
 
 
