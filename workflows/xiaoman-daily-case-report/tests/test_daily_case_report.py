@@ -34,7 +34,7 @@ import report_builder  # noqa: E402
 
 
 class DailyCaseReportTest(unittest.TestCase):
-    def test_report_date_without_date_uses_latest_rolling_24_hours(self) -> None:
+    def test_report_date_without_date_uses_previous_completed_calendar_day(self) -> None:
         args = argparse.Namespace(date=None, timezone="Asia/Shanghai")
 
         start, end, display = daily_case_report._report_date_at(
@@ -51,15 +51,17 @@ class DailyCaseReportTest(unittest.TestCase):
             ),
         )
 
+        # Without --date the window is the most recently completed calendar day
+        # (2026-08-07 00:00+08:00 .. 2026-08-08 00:00+08:00), not a rolling window.
         self.assertEqual(
             start.astimezone(timezone.utc).isoformat(),
-            "2026-08-07T10:30:45+00:00",
+            "2026-08-06T16:00:00+00:00",
         )
         self.assertEqual(
             end.astimezone(timezone.utc).isoformat(),
-            "2026-08-08T10:30:45+00:00",
+            "2026-08-07T16:00:00+00:00",
         )
-        self.assertEqual(display, "过去24小时（截至 2026年08月08日 18:30）")
+        self.assertEqual(display, "2026年08月07日")
 
     def test_report_date_with_date_uses_requested_timezone_calendar_day(self) -> None:
         args = argparse.Namespace(date="2026-08-08", timezone="America/Los_Angeles")

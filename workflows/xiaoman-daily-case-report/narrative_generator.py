@@ -57,7 +57,10 @@ class NarrativeConfig:
     api_key: str
     model: str
     temperature: float = 0.8
-    max_tokens: int = 4000
+    # gpt-5.2 is a reasoning model: it can spend the entire token budget on
+    # reasoning and return an empty assistant message (finish_reason=length).
+    # 12000 leaves ample room for the final answer after reasoning.
+    max_tokens: int = 12000
 
     @classmethod
     def from_env(cls, *, base_url: str | None = None, api_key: str | None = None,
@@ -275,7 +278,7 @@ NORMAL_USER_TEMPLATE = """以下是今日群聊的确定性聚类结果（全部
 每章可引用真实语录。可以省略发言榜，优先讲故事。只输出 Markdown。"""
 
 
-def _chat_completion(config: NarrativeConfig, system: str, user: str) -> str:
+def _chat_completion(config: NarrativeConfig, system: str, user: str, *, _attempt: int = 0) -> str:
     # config.base_url already includes the provider prefix (e.g. .../v1), so the
     # chat completions path is just /chat/completions appended.
     url = f"{config.base_url}/chat/completions"
@@ -283,6 +286,9 @@ def _chat_completion(config: NarrativeConfig, system: str, user: str) -> str:
         "Authorization": f"Bearer {config.api_key}",
         "Content-Type": "application/json",
     }
+    # Reasoning models (e.g. gpt-5.2) can spend the entire token budget on
+    # reasoning and return an empty assistant message. Each retry grants a larger
+    # budget so the final answer still has room to be produced.
     payload = {
         "model": config.model,
         "messages": [
@@ -290,11 +296,11 @@ def _chat_completion(config: NarrativeConfig, system: str, user: str) -> str:
             {"role": "user", "content": user},
         ],
         "temperature": config.temperature,
-        "max_tokens": config.max_tokens,
+        "max_tokens": config.max_tokens + _attempt * 4000,
     }
-    with httpx.Client(timeout=120.0) as client:
+    with httpx.Client(timeout=180.0) as client:
         resp = client.post(url, json=payload, headers=headers)
-        if resp.status_code == 400:
+        if resp.status_code == 400 and _attempt == 0:
             # Some OpenAI-compatible proxies reject the `system` role. Fold the
             # system instructions into the first user turn and retry once.
             retry_payload = dict(payload)
@@ -307,9 +313,17 @@ def _chat_completion(config: NarrativeConfig, system: str, user: str) -> str:
     if "choices" not in data or not data["choices"]:
         raise RuntimeError(f"no choices in response: {data.keys()}")
     message = data["choices"][0].get("message", {})
-    if "content" not in message:
-        raise RuntimeError(f"no content in message; keys={list(message.keys())}; response_keys={list(data.keys())}")
-    return message["content"].strip()
+    content = message.get("content")
+    if not content or not content.strip():
+        # Empty assistant message: retry with a bigger budget before giving up.
+        finish = (data.get("choices") or [{}])[0].get("finish_reason")
+        if _attempt < 2:
+            return _chat_completion(config, system, user, _attempt=_attempt + 1)
+        raise RuntimeError(
+            f"empty content in message; keys={list(message.keys())}; "
+            f"finish={finish}; response_keys={list(data.keys())}"
+        )
+    return content.strip()
 
 
 def generate_narrative(style: str, report: Any, config: NarrativeConfig,
