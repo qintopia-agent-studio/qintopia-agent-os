@@ -781,6 +781,14 @@ def _font_candidates() -> list[str]:
 
 
 def _pil_font(size: int, *, bold: bool = False) -> Any:
+    """Load a CJK-capable TrueType font, or fail closed.
+
+    Pillow's ``ImageFont.load_default()`` is a bitmap font with no ``.size``
+    attribute and no CJK glyphs: it either raised AttributeError while measuring
+    lines or shipped garbled (tofu) posters. When no usable font exists we raise
+    so the caller can drop the image instead of shipping mojibake. This matches
+    the erhua morning-brief renderer's policy.
+    """
     from PIL import ImageFont
 
     candidates = _font_candidates()
@@ -792,7 +800,12 @@ def _pil_font(size: int, *, bold: bool = False) -> Any:
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return ImageFont.truetype(candidate, size=size)
-    return ImageFont.load_default()
+    raise RuntimeError(
+        "No CJK-capable font available for the xiaoman daily-case-report Pillow "
+        "fallback. Install Noto Sans CJK / PingFang or set "
+        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_FONT to a .ttf/.ttc path. "
+        "Refusing to render garbled text."
+    )
 
 
 def _wrap_for_draw(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
