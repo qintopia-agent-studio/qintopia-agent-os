@@ -328,9 +328,9 @@ def _qweather_weather_alert_current(location: str) -> dict[str, Any]:
         detail = ""
         try:
             detail = exc.read(10_000).decode("utf-8", errors="replace")
-        except Exception as exc:
+        except Exception as read_exc:
             detail = ""
-            logging.warning("failed to read weatheralert error response body: %s", exc)
+            logging.warning("failed to read weatheralert error response body: %s", read_exc)
         return {
             "success": False,
             "source": "weatheralert_v1",
