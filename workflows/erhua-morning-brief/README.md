@@ -46,9 +46,9 @@ using a small public RSS fallback.
    and composes the final morning brief.
 4. It fetches today's weather through the canonical `qintopia_weather` capability
    (`skills/qintopia-weather`): QWeather is the primary source with an Open-Meteo
-   fallback, pinned to the Qintopia location. Any failure degrades to a
-   "天气稍后补充" note, so the brief never blocks on weather. Tests and demos can
-   bypass the network with `--weather-fixture`.
+   fallback, pinned to the Qintopia location. Any failure degrades to a "天气稍后补充"
+   note, so the brief never blocks on weather. Tests and demos can bypass the network
+   with `--weather-fixture`.
 
 When the run date is Sunday and the activity preview returns zero publishable
 activities, the activity section switches from the generic "no confirmed activity today"
@@ -210,10 +210,10 @@ QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256=<approved-production-data
 
 The brief can also render a card-style poster. By default no image is produced; pass
 `--render-image <path>` to write a PNG or JPEG to disk. The render path builds a styled
-HTML card and screenshots it with Playwright; when Playwright is unavailable (e.g. a host
-without a browser runtime) it falls back to a self-contained Pillow drawing. The Pillow
-fallback sizes the canvas to the real content height, so long activity copy or several
-wrapped bilingual news items are never silently truncated.
+HTML card and screenshots it with Playwright; when Playwright is unavailable (e.g. a
+host without a browser runtime) it falls back to a self-contained Pillow drawing. The
+Pillow fallback sizes the canvas to the real content height, so long activity copy or
+several wrapped bilingual news items are never silently truncated.
 
 ```bash
 python workflows/erhua-morning-brief/morning_brief.py \
