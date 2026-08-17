@@ -506,6 +506,34 @@ def _result_json(
     }
 
 
+def _render_html_with_roast_fallback(
+    report: ReportData,
+    width: int,
+    template: str,
+    narrative_md: str | None,
+) -> str:
+    """Render the deliverable HTML, degrading a roast template to the newspaper
+    template when the LLM narrative layer is unavailable.
+
+    The narrative layer is intentionally best-effort (see the comment above the
+    generation block in main()): an LLM/config error must never abort the
+    otherwise-deterministic report. Without this fallback, requesting the roast
+    template while narrative generation failed raised RuntimeError from
+    renderer._render_html and crashed the whole job, dropping every artifact.
+    """
+    try:
+        return _render_html(report, width, template, narrative_md)
+    except RuntimeError as exc:
+        if template == ROAST_LONG_IMAGE_TEMPLATE and not narrative_md:
+            print(
+                f"WARN: roast narrative unavailable ({exc}); "
+                f"falling back to {NEWSPAPER_ELEGANT_TEMPLATE} template",
+                file=sys.stderr,
+            )
+            return _render_html(report, width, NEWSPAPER_ELEGANT_TEMPLATE, None)
+        raise
+
+
 def main() -> int:
     args = _parse_args()
     _normalize_render_args(args)
@@ -578,7 +606,7 @@ def main() -> int:
     if narrative_path is not None and narrative_md:
         _write_private_text(narrative_path, narrative_md)
 
-    html_content = _render_html(report, args.output_width, args.template, narrative_md)
+    html_content = _render_html_with_roast_fallback(report, args.output_width, args.template, narrative_md)
     quote_map = _build_quote_map(report)
     wiki_bundle = _build_wiki_bundle(report, quote_map)
     draft_bundle = _build_draft_bundle(report, quote_map, wiki_bundle)
