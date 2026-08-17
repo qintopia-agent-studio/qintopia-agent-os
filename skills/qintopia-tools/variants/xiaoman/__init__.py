@@ -4094,10 +4094,51 @@ def _xiaoman_activity_run_bounded_read_through(command: list[str]) -> tuple[int,
     return returncode, stdout.decode("utf-8", errors="replace").strip(), timed_out, output_too_large
 
 
+def _xiaoman_activity_resolve_release_current(worker_path: Path):
+    """Resolve the canonical ``releases/current`` deploy symlink, if present.
+
+    Returns ``(link_path, resolved_path)`` when a ``current`` component is found and
+    readable, otherwise ``None``. Only the reviewed deploy pointer is resolved; any
+    other symlink in the path is left intact so the stricter checks below still
+    reject it.
+    """
+    parts = list(worker_path.parts)
+    for i, part in enumerate(parts):
+        if part == "current":
+            prefix = Path(*parts[:i])
+            link_path = prefix / "current"
+            try:
+                target = os.readlink(link_path)
+            except OSError:
+                return None
+            target_path = Path(target)
+            if not target_path.is_absolute():
+                target_path = prefix / target_path
+            resolved = target_path / Path(*parts[i + 1:])
+            return (link_path, resolved)
+    return None
+
+
 def _xiaoman_activity_validate_read_through_worker(worker_bin: str) -> Path:
     worker_path = Path(worker_bin)
     if not worker_path.is_absolute():
         raise PermissionError("xiaoman activity read-through worker must be absolute")
+
+    # The canonical deploy pointer `releases/current` is a reviewed symlink that the
+    # deploy process repoints at each released artifact directory. Resolve it up front
+    # so the structural and ownership checks below validate the underlying release
+    # artifact. The `current` symlink is itself treated as a trusted, non-writable
+    # deploy pointer: only a root- or runtime-owned symlink is accepted, and its
+    # parent directory is still validated as a protected component below.
+    current_resolution = _xiaoman_activity_resolve_release_current(worker_path)
+    if current_resolution is not None:
+        current_link, resolved_path = current_resolution
+        link_info = current_link.lstat()
+        if not stat.S_ISLNK(link_info.st_mode):
+            raise PermissionError("xiaoman activity read-through current deploy pointer is not a symlink")
+        if link_info.st_uid not in {0, os.getuid()}:
+            raise PermissionError("xiaoman activity read-through current deploy pointer is not trusted")
+        worker_path = resolved_path
 
     release_root = XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT
     parts = worker_path.parts

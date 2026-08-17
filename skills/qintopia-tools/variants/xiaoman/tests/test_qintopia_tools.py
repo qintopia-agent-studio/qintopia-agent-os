@@ -355,6 +355,40 @@ class QintopiaToolsTest(unittest.TestCase):
             release_dir.parent.chmod(0o700)
             release_root.chmod(0o700)
 
+    def test_xiaoman_activity_read_through_allows_current_symlink_worker_path(self):
+        # Resolve the temp dir so the path contains no incidental symlinks (macOS
+        # exposes /var, /tmp as symlinks); the validator lstat-checks every path
+        # component, so only the intended `current` deploy pointer may be a symlink.
+        release_root = self.index_dir.resolve() / "releases"
+        release_dir = release_root / ("a" * 40)
+        sidecar_dir = release_dir / "sidecar"
+        sidecar_dir.mkdir(parents=True)
+        trusted_sidecar = sidecar_dir / "qintopia-message-sidecar"
+        trusted_sidecar.write_text("#!/bin/sh\nprintf '{}'\n", encoding="utf-8")
+        # The canonical deploy pointer that the worker scripts are contractually
+        # required to reference.
+        current_link = release_root / "current"
+        current_link.symlink_to(release_dir.name)
+        self.module.XIAOMAN_ACTIVITY_READ_THROUGH_RELEASE_ROOT = release_root
+
+        try:
+            # `releases/` and the release directory are owned by the runtime user in
+            # tests; drop user-write so the component ownership checks mirror a
+            # root-owned production release.
+            release_root.chmod(0o555)
+            release_dir.chmod(0o555)
+            sidecar_dir.chmod(0o555)
+            trusted_sidecar.chmod(0o555)
+            resolved = self.module._xiaoman_activity_validate_read_through_worker(
+                str(current_link / "sidecar" / "qintopia-message-sidecar")
+            )
+            self.assertEqual(resolved, trusted_sidecar)
+        finally:
+            release_root.chmod(0o755)
+            release_dir.chmod(0o755)
+            sidecar_dir.chmod(0o755)
+            trusted_sidecar.chmod(0o755)
+
     def test_xiaoman_activity_read_through_allows_root_owned_release_modes(self):
         info = SimpleNamespace(st_uid=0, st_mode=0o755)
 
