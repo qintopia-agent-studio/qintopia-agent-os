@@ -2056,6 +2056,117 @@ class DailyCaseReportTest(unittest.TestCase):
         finally:
             daily_case_report._render_html = old
 
+    def test_pillow_renderer_image_includes_all_suspects(self) -> None:
+        # Regression: the Pillow image path used to slice suspects to
+        # DEFAULT_SUSPECT_LIMIT (5) while the HTML/MD paths rendered all of
+        # them, so the poster silently lost people. It must now match the
+        # text report and render every suspect.
+        captured_text: list[str] = []
+
+        class FakeFont:
+            def __init__(self, size: int):
+                self.size = size
+
+        class FakeImageObject:
+            height = 20000
+
+            def crop(self, _box):
+                return self
+
+            def save(self, output_path, format=None, **_kwargs):
+                Path(output_path).write_bytes(str(format or "").encode("utf-8"))
+
+        class FakeImageModule(types.SimpleNamespace):
+            def new(self, *_args, **_kwargs):
+                return FakeImageObject()
+
+        class FakeDraw:
+            def text(self, _xy, text, **_kwargs):
+                captured_text.append(str(text))
+
+            def textbbox(self, _xy, text, **_kwargs):
+                return (0, 0, len(str(text)) * 8, 16)
+
+            def textlength(self, text, **_kwargs):
+                return len(str(text)) * 8
+
+            def rectangle(self, *_args, **_kwargs):
+                pass
+
+            def rounded_rectangle(self, *_args, **_kwargs):
+                pass
+
+            def ellipse(self, *_args, **_kwargs):
+                pass
+
+            def line(self, *_args, **_kwargs):
+                pass
+
+        fake_pil = types.ModuleType("PIL")
+        fake_image = FakeImageModule()
+        fake_image_draw = types.SimpleNamespace(Draw=lambda _image: FakeDraw())
+        old_pil = sys.modules.get("PIL")
+        old_image = sys.modules.get("PIL.Image")
+        old_image_draw = sys.modules.get("PIL.ImageDraw")
+        old_pil_font = renderer._pil_font
+        sys.modules["PIL"] = fake_pil
+        sys.modules["PIL.Image"] = fake_image
+        sys.modules["PIL.ImageDraw"] = fake_image_draw
+        renderer._pil_font = lambda size, **_kwargs: FakeFont(size)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                report = daily_case_report.ReportData(
+                    group_name="group",
+                    report_title="群聊战报",
+                    report_date="2026-08-08",
+                    time_range="00:00-23:59",
+                    member_count=8,
+                    message_count=20,
+                    participant_count=8,
+                    case_count=0,
+                    suspect_count=8,
+                    hourly_counts=[0] * 24,
+                    cases=[],
+                    suspects=[
+                        daily_case_report.Suspect(
+                            rank=i + 1,
+                            name=f"成员{i + 1}",
+                            message_count=2 + i,
+                            word_count=12 + i,
+                            avatar_emoji="*",
+                        )
+                        for i in range(8)
+                    ],
+                    highlight="",
+                    hot_topics=[],
+                    character_count=0,
+                    characters=[],
+                )
+                renderer._render_image_with_pillow(
+                    report,
+                    Path(tmpdir) / "preview.jpg",
+                    750,
+                    "jpeg",
+                )
+        finally:
+            renderer._pil_font = old_pil_font
+            if old_pil is None:
+                sys.modules.pop("PIL", None)
+            else:
+                sys.modules["PIL"] = old_pil
+            if old_image is None:
+                sys.modules.pop("PIL.Image", None)
+            else:
+                sys.modules["PIL.Image"] = old_image
+            if old_image_draw is None:
+                sys.modules.pop("PIL.ImageDraw", None)
+            else:
+                sys.modules["PIL.ImageDraw"] = old_image_draw
+
+        rendered = "\n".join(captured_text)
+        for i in range(8):
+            self.assertIn(f"成员{i + 1}", rendered)
+
     def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:
         report = daily_case_report.ReportData(
             group_name="group",

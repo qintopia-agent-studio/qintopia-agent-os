@@ -20,7 +20,6 @@ from models import (
     CASE_CARD_COLORS,
     DEFAULT_CASE_LIMIT,
     DEFAULT_JPEG_QUALITY,
-    DEFAULT_SUSPECT_LIMIT,
     DEFAULT_TEMPLATE,
     NEWSPAPER_ELEGANT_TEMPLATE,
     ROAST_LONG_IMAGE_TEMPLATE,
@@ -781,6 +780,14 @@ def _font_candidates() -> list[str]:
 
 
 def _pil_font(size: int, *, bold: bool = False) -> Any:
+    """Load a CJK-capable TrueType font, or fail closed.
+
+    Pillow's ``ImageFont.load_default()`` is a bitmap font with no ``.size``
+    attribute and no CJK glyphs: it either raised AttributeError while measuring
+    lines or shipped garbled (tofu) posters. When no usable font exists we raise
+    so the caller can drop the image instead of shipping mojibake. This matches
+    the erhua morning-brief renderer's policy.
+    """
     from PIL import ImageFont
 
     candidates = _font_candidates()
@@ -792,7 +799,12 @@ def _pil_font(size: int, *, bold: bool = False) -> Any:
     for candidate in candidates:
         if candidate and Path(candidate).exists():
             return ImageFont.truetype(candidate, size=size)
-    return ImageFont.load_default()
+    raise RuntimeError(
+        "No CJK-capable font available for the xiaoman daily-case-report Pillow "
+        "fallback. Install Noto Sans CJK / PingFang or set "
+        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_FONT to a .ttf/.ttc path. "
+        "Refusing to render garbled text."
+    )
 
 
 def _wrap_for_draw(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
@@ -1250,7 +1262,7 @@ def _render_image_with_pillow(
             y += 54 * scale
         else:
             row_height = 72 * scale
-            for index, suspect in enumerate(report.suspects[:DEFAULT_SUSPECT_LIMIT]):
+            for index, suspect in enumerate(report.suspects):
                 x = padding + (index % 2) * ((content_width - gutter) // 2 + gutter)
                 row_y = y + (index // 2) * (row_height + 10 * scale)
                 row_width = (content_width - gutter) // 2
@@ -1259,7 +1271,7 @@ def _render_image_with_pillow(
                 draw.text((x + 58 * scale, row_y + 14 * scale), suspect.name, font=body_font, fill=ink)
                 draw.text((x + 58 * scale, row_y + 42 * scale), f"{suspect.message_count} 条 / {suspect.word_count} 字", font=tiny_font, fill="#555555")
                 text_right(x + row_width - 16 * scale, row_y + 21 * scale, f"{suspect.message_count}", stat_font, ink)
-            y += ((min(len(report.suspects), DEFAULT_SUSPECT_LIMIT) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
+            y += ((len(report.suspects) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
 
         draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
         draw.text((padding, y + 14 * scale), "本报告由小满根据最新群聊窗口自动整理 · 长期画像仅以角色复现计数参与", font=tiny_font, fill=yellow)
