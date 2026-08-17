@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.154](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.153...v0.2.154) (2026-08-17)
+
+
+### Bug Fixes
+
+* **qiwe:** anchor solitaire relative time to first creation, not forward time ([#631](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/631)) ([e6ed4b6](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e6ed4b66d13f64710e8dde47ce8c7a19cdf5f6af))
+
 ## [0.2.153](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.152...v0.2.153) (2026-08-17)
 
 
