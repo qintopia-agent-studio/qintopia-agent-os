@@ -384,7 +384,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
     "utf8"
   );
   for (const required of [
-    "OnCalendar=*-*-* 08:00:00",
+    "OnCalendar=*-*-* 09:00:00",
     "Persistent=true",
     "Unit=qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
   ]) {
