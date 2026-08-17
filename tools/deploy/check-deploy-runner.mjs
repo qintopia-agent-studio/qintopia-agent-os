@@ -2807,7 +2807,7 @@ if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "xiaoman-daily-case-report-auto-publish-worker.sh",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
-    "*-*-* 08:00:00",
+    "*-*-* 09:00:00",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope direct",
     "run-xiaoman-feishu-poster-delivery --once --apply --conversation-scope group",
     "xiaoman-feishu-poster-preflight --conversation-scope direct",
