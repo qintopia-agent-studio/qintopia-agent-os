@@ -81,8 +81,7 @@ PY
 fi
 
 report_date_args=()
-if [[ -n "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE:-}" ]]; then
-  if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL:-}" != "$BACKFILL_APPROVAL" ]]; then
+if [[ -n "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_DATE:-}" ]]; then  if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_BACKFILL_APPROVAL:-}" != "$BACKFILL_APPROVAL" ]]; then
     echo "xiaoman daily case report date override requires explicit backfill approval" >&2
     exit 1
   fi
@@ -131,6 +130,43 @@ publish_report="${tmp_dir}/publish.json"
   --output-dir "$tmp_dir" \
   --json \
   --json-summary-only >"$render_report"
+
+# Send quality gate: refuse to auto-publish a report that should never reach the
+# group. A render that is empty or off-template must stop here instead of being
+# uploaded and sent. This prevents blank/wrong-template reports from being
+# flushed to the group after an outage. Override only for an explicitly approved
+# recovery: ..._SEND_GATE_BYPASS=1.
+if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_SEND_GATE_BYPASS:-}" != "1" ]]; then
+  SEND_GATE_TEMPLATE="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TEMPLATE:-roast-long-image}" \
+  "$PYTHON_BIN" - "$render_report" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    rendered = json.load(fh)
+
+if not rendered.get("success"):
+    raise SystemExit("send gate: render did not succeed")
+
+template = os.environ.get("SEND_GATE_TEMPLATE", "roast-long-image")
+message_count = int(rendered.get("message_count") or 0)
+participant_count = int(rendered.get("participant_count") or 0)
+
+# Only the roast long-image (吐槽日报) is an approved public deliverable.
+# roast-long-image requires a non-empty LLM narrative to render at all, so a
+# successfully rendered roast image always has narrative content; anything that
+# fell back to another layout would not reach this point as roast-long-image.
+if template != "roast-long-image":
+    raise SystemExit(f"send gate: template {template!r} is not the approved roast-long-image")
+
+# Never publish an empty report.
+if message_count <= 0:
+    raise SystemExit("send gate: report has 0 messages; refusing to publish a blank report")
+if participant_count <= 0:
+    raise SystemExit("send gate: report has 0 participants; refusing to publish a blank report")
+PY
+fi
 
 upload_payload="$("$PYTHON_BIN" - "$render_report" <<'PY'
 import json
