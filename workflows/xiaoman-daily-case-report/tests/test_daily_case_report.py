@@ -1909,6 +1909,131 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertLess(rendered.index("待解决问题"), rendered.index("故事线候选"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
 
+    def test_pillow_renderer_renders_full_height_without_truncation(self) -> None:
+        # Regression: the old fixed 7600px canvas silently dropped any report
+        # taller than that. The renderer must measure the true content height and
+        # size the canvas to fit, so the footer (last element) is never clipped.
+        char = daily_case_report.CharacterCard(
+            rank=1,
+            name="成员",
+            role_label="活动推进者",
+            one_liner="把松散聊天推成下一步行动",
+            evidence="活动安排已经确认",
+            message_count=2,
+            topic_count=1,
+        )
+        case = models.CaseCard(
+            case_no="CASE 01",
+            title="讨论主题",
+            time_label="10:00-11:00",
+            summary="3 条消息，2 人参与",
+            bullets=["活动安排已经确认"],
+            message_count=3,
+            participant_count=2,
+            color_bg="#fff0a6",
+            color_text="#111111",
+            top_speaker="成员",
+        )
+        suspect = daily_case_report.Suspect(
+            rank=1,
+            name="成员",
+            message_count=2,
+            word_count=12,
+            avatar_emoji="*",
+        )
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="群聊战报",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=60,
+            message_count=200,
+            participant_count=60,
+            case_count=20,
+            suspect_count=40,
+            hourly_counts=[0] * 24,
+            cases=[case] * 20,
+            suspects=[suspect] * 40,
+            highlight="活动安排已经确认",
+            hot_topics=[
+                daily_case_report.HotTopic(rank=1, keyword="讨论主题", message_count=2, participant_count=2)
+            ] * 20,
+            character_count=60,
+            characters=[char] * 60,
+        )
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "preview.jpg"
+            renderer._render_image_with_pillow(report, output_path, 750, "jpeg")
+            with Image.open(output_path) as img:
+                self.assertGreater(
+                    img.height,
+                    7600,
+                    "tall report was truncated to the old fixed 7600px canvas cap",
+                )
+
+    def test_render_html_with_roast_fallback_degrades_when_narrative_missing(self) -> None:
+        calls: list[tuple[object, object]] = []
+
+        def fake_render(_report, _width, template, narrative_md):
+            calls.append((template, narrative_md))
+            if template == daily_case_report.ROAST_LONG_IMAGE_TEMPLATE and not narrative_md:
+                raise RuntimeError("roast requires narrative")
+            return f"html:{template}"
+
+        old = daily_case_report._render_html
+        daily_case_report._render_html = fake_render
+        try:
+            out = daily_case_report._render_html_with_roast_fallback(
+                report=object(),
+                width=750,
+                template=daily_case_report.ROAST_LONG_IMAGE_TEMPLATE,
+                narrative_md=None,
+            )
+        finally:
+            daily_case_report._render_html = old
+        self.assertEqual(out, f"html:{daily_case_report.NEWSPAPER_ELEGANT_TEMPLATE}")
+        self.assertEqual(calls[0], (daily_case_report.ROAST_LONG_IMAGE_TEMPLATE, None))
+        self.assertEqual(calls[1], (daily_case_report.NEWSPAPER_ELEGANT_TEMPLATE, None))
+
+    def test_render_html_with_roast_fallback_passes_through_when_narrative_present(self) -> None:
+        def fake_render(_report, _width, template, narrative_md):
+            return f"html:{template}:{narrative_md is not None}"
+
+        old = daily_case_report._render_html
+        daily_case_report._render_html = fake_render
+        try:
+            out = daily_case_report._render_html_with_roast_fallback(
+                report=object(),
+                width=750,
+                template=daily_case_report.ROAST_LONG_IMAGE_TEMPLATE,
+                narrative_md="some narrative",
+            )
+        finally:
+            daily_case_report._render_html = old
+        self.assertEqual(
+            out,
+            f"html:{daily_case_report.ROAST_LONG_IMAGE_TEMPLATE}:True",
+        )
+
+    def test_render_html_with_roast_fallback_reraises_non_roast_error(self) -> None:
+        def fake_render(_report, _width, _template, _narrative_md):
+            raise RuntimeError("boom")
+
+        old = daily_case_report._render_html
+        daily_case_report._render_html = fake_render
+        try:
+            with self.assertRaises(RuntimeError):
+                daily_case_report._render_html_with_roast_fallback(
+                    report=object(),
+                    width=750,
+                    template="v3",
+                    narrative_md=None,
+                )
+        finally:
+            daily_case_report._render_html = old
+
     def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:
         report = daily_case_report.ReportData(
             group_name="group",

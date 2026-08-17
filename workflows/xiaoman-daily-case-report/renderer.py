@@ -862,411 +862,423 @@ def _render_image_with_pillow(
     padding = 44 * scale
     gutter = 18 * scale
     content_width = canvas_width - padding * 2
-    image = Image.new("RGB", (canvas_width, 7600), "#fff8df")
-    draw = ImageDraw.Draw(image)
+    def _layout(draw):
 
-    title_font = _pil_font(44 * scale, bold=True)
-    hero_font = _pil_font(26 * scale, bold=True)
-    section_font = _pil_font(24 * scale, bold=True)
-    card_title_font = _pil_font(18 * scale, bold=True)
-    stat_font = _pil_font(31 * scale, bold=True)
-    body_font = _pil_font(16 * scale)
-    small_font = _pil_font(12 * scale)
-    tiny_font = _pil_font(10 * scale)
-    mono_font = _pil_font(15 * scale, bold=True)
+        title_font = _pil_font(44 * scale, bold=True)
+        hero_font = _pil_font(26 * scale, bold=True)
+        section_font = _pil_font(24 * scale, bold=True)
+        card_title_font = _pil_font(18 * scale, bold=True)
+        stat_font = _pil_font(31 * scale, bold=True)
+        body_font = _pil_font(16 * scale)
+        small_font = _pil_font(12 * scale)
+        tiny_font = _pil_font(10 * scale)
+        mono_font = _pil_font(15 * scale, bold=True)
 
-    ink = "#111111"
-    yellow = "#ffd92e"
-    orange = "#f25a18"
-    cream = "#fff8df"
-    pale_yellow = "#fff0a6"
-    blue = "#88d7ff"
-    main_storyline = _main_storyline_label(report)
-    opening_line = _daily_opening_line(report)
-    callback_candidates = _meme_callback_candidates(report)
-    relationship_candidates = _relationship_candidates(report)
-    local_life_notes = _ordinary_digest_local_life_notes(report)
-    open_questions = _ordinary_digest_open_questions(report)
+        ink = "#111111"
+        yellow = "#ffd92e"
+        orange = "#f25a18"
+        cream = "#fff8df"
+        pale_yellow = "#fff0a6"
+        blue = "#88d7ff"
+        main_storyline = _main_storyline_label(report)
+        opening_line = _daily_opening_line(report)
+        callback_candidates = _meme_callback_candidates(report)
+        relationship_candidates = _relationship_candidates(report)
+        local_life_notes = _ordinary_digest_local_life_notes(report)
+        open_questions = _ordinary_digest_open_questions(report)
 
-    def text_right(x: int, y: int, text: str, font: Any, fill: str) -> None:
-        box = draw.textbbox((0, 0), text, font=font)
-        draw.text((x - (box[2] - box[0]), y), text, font=font, fill=fill)
+        def text_right(x: int, y: int, text: str, font: Any, fill: str) -> None:
+            box = draw.textbbox((0, 0), text, font=font)
+            draw.text((x - (box[2] - box[0]), y), text, font=font, fill=fill)
 
-    def section_label(y_pos: int, kicker: str, title: str) -> int:
-        draw.text((padding, y_pos), kicker, font=tiny_font, fill=orange)
-        y_pos += 20 * scale
-        draw.text((padding, y_pos), title, font=section_font, fill=ink)
-        return y_pos + 42 * scale
+        def section_label(y_pos: int, kicker: str, title: str) -> int:
+            draw.text((padding, y_pos), kicker, font=tiny_font, fill=orange)
+            y_pos += 20 * scale
+            draw.text((padding, y_pos), title, font=section_font, fill=ink)
+            return y_pos + 42 * scale
 
-    def reference_list(y_pos: int, kicker: str, title: str, rows: list[str], fill: str) -> int:
-        if not rows:
-            return y_pos
-        top = y_pos
-        height = (54 + 42 * len(rows)) * scale
-        draw.rectangle(
-            (outer, top, canvas_width - outer, top + height),
-            fill=fill,
-            outline=ink,
-            width=3 * scale,
-        )
-        draw.text((padding, top + 14 * scale), kicker, font=tiny_font, fill=orange)
-        draw.text((padding + 128 * scale, top + 10 * scale), title, font=body_font, fill=ink)
-        for index, row in enumerate(rows):
-            row_top = top + (44 + index * 38) * scale
+        def reference_list(y_pos: int, kicker: str, title: str, rows: list[str], fill: str) -> int:
+            if not rows:
+                return y_pos
+            top = y_pos
+            height = (54 + 42 * len(rows)) * scale
             draw.rectangle(
-                (padding, row_top, padding + content_width, row_top + 30 * scale),
-                fill=cream,
+                (outer, top, canvas_width - outer, top + height),
+                fill=fill,
                 outline=ink,
-                width=2 * scale,
+                width=3 * scale,
             )
-            draw.rectangle(
-                (padding, row_top, padding + 28 * scale, row_top + 30 * scale),
-                fill=blue,
-                outline=ink,
-                width=2 * scale,
-            )
-            draw.text((padding + 10 * scale, row_top + 8 * scale), str(index + 1), font=tiny_font, fill=ink)
-            _draw_wrapped_text(
-                draw,
-                (padding + 40 * scale, row_top + 7 * scale),
-                row,
-                tiny_font,
-                ink,
-                content_width - 52 * scale,
-                max_lines=1,
-                line_gap=0,
-            )
-        return top + height + 38 * scale
-
-    y = outer
-    draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
-    draw.text((padding, y + 12 * scale), "XIAOMAN CHARACTER DAILY", font=tiny_font, fill=yellow)
-    text_right(canvas_width - padding, y + 12 * scale, report.report_date, tiny_font, yellow)
-    y += 42 * scale
-
-    hero_top = y
-    hero_height = 206 * scale
-    draw.rectangle((outer, hero_top, canvas_width - outer, hero_top + hero_height), fill=yellow, outline=ink, width=3 * scale)
-    draw.text((padding, hero_top + 20 * scale), report.group_name, font=hero_font, fill=ink)
-    draw.text((padding, hero_top + 60 * scale), "小满群聊日报", font=title_font, fill=ink)
-    _draw_wrapped_text(
-        draw,
-        (padding, hero_top + 112 * scale),
-        f"今日主线：{main_storyline}",
-        body_font,
-        ink,
-        content_width - 132 * scale,
-        max_lines=1,
-    )
-    _draw_wrapped_text(
-        draw,
-        (padding, hero_top + 142 * scale),
-        opening_line,
-        small_font,
-        "#2b2b2b",
-        content_width - 132 * scale,
-        max_lines=2,
-        line_gap=2 * scale,
-    )
-    draw.rectangle((padding, hero_top + 184 * scale, canvas_width - padding - 126 * scale, hero_top + 188 * scale), fill=ink)
-    draw.text((padding, hero_top + 192 * scale), report.time_range, font=tiny_font, fill=ink)
-    badge_box = (canvas_width - padding - 106 * scale, hero_top + 24 * scale, canvas_width - padding, hero_top + 130 * scale)
-    draw.rounded_rectangle(badge_box, radius=12 * scale, fill=blue, outline=ink, width=3 * scale)
-    draw.text((badge_box[0] + 22 * scale, badge_box[1] + 30 * scale), "人物", font=hero_font, fill=ink)
-    draw.text((badge_box[0] + 22 * scale, badge_box[1] + 66 * scale), "主线", font=hero_font, fill=ink)
-    y = hero_top + hero_height
-
-    story_index_cases = report.cases[:4]
-    if story_index_cases:
-        story_index_top = y
-        story_index_height = 136 * scale
-        draw.rectangle((outer, story_index_top, canvas_width - outer, story_index_top + story_index_height), fill=ink)
-        draw.text((padding, story_index_top + 16 * scale), "DAILY WORKSHOP INDEX", font=tiny_font, fill=yellow)
-        text_right(
-            canvas_width - padding,
-            story_index_top + 16 * scale,
-            (
-                f"{report.message_count} 条素材 / {report.participant_count} 位出场 / "
-                f"{report.case_count} 条主线 / {report.character_count} 张人物卡"
-            ),
-            tiny_font,
-            pale_yellow,
-        )
-        index_card_width = (content_width - gutter) // 2
-        for index, case in enumerate(story_index_cases):
-            column = index % 2
-            row = index // 2
-            x = padding + column * (index_card_width + gutter)
-            row_top = story_index_top + (44 + row * 42) * scale
-            draw.rectangle(
-                (x, row_top, x + index_card_width, row_top + 34 * scale),
-                fill="#1c1c1c",
-                outline=cream,
-                width=2 * scale,
-            )
-            draw.ellipse(
-                (x + 8 * scale, row_top + 6 * scale, x + 30 * scale, row_top + 28 * scale),
-                outline=yellow,
-                width=2 * scale,
-            )
-            draw.text((x + 12 * scale, row_top + 9 * scale), f"{index + 1:02d}", font=tiny_font, fill=yellow)
-            draw.text((x + 40 * scale, row_top + 6 * scale), case_storyline_label(case)[:10], font=small_font, fill=cream)
-            text_right(x + index_card_width - 10 * scale, row_top + 10 * scale, case.summary, tiny_font, "#c9c9c9")
-        y = story_index_top + story_index_height
-
-    if report.characters:
-        character_top = y
-        character_rows = (len(report.characters) + 1) // 2
-        character_height = (58 + 138 * character_rows) * scale
-        draw.rectangle((outer, character_top, canvas_width - outer, character_top + character_height), fill="#ffffff", outline=ink, width=3 * scale)
-        draw.text((padding, character_top + 16 * scale), "CAST NOTES", font=tiny_font, fill=orange)
-        draw.text((padding + 112 * scale, character_top + 12 * scale), "人物出场表", font=body_font, fill=ink)
-        card_width = (content_width - gutter) // 2
-        card_height = 116 * scale
-        for index, character in enumerate(report.characters):
-            column = index % 2
-            row = index // 2
-            x = padding + column * (card_width + gutter)
-            card_y = character_top + (48 + row * 128) * scale
-            draw.rectangle((x, card_y, x + card_width, card_y + card_height), fill=cream, outline=ink, width=2 * scale)
-            draw.rectangle((x, card_y, x + 34 * scale, card_y + card_height), fill=blue, outline=ink, width=2 * scale)
-            draw.text((x + 12 * scale, card_y + 42 * scale), str(character.rank), font=tiny_font, fill=ink)
-            copy_x = x + 46 * scale
-            draw.text((copy_x, card_y + 10 * scale), character.name, font=body_font, fill=ink)
-            draw.text((copy_x, card_y + 34 * scale), f"{character.role_label} · {character.story_function}", font=tiny_font, fill=orange)
-            _draw_wrapped_text(
-                draw,
-                (copy_x, card_y + 54 * scale),
-                (
-                    f"已审核标签：{character.expressive_label}｜"
-                    if character.expressive_label
-                    else ""
+            draw.text((padding, top + 14 * scale), kicker, font=tiny_font, fill=orange)
+            draw.text((padding + 128 * scale, top + 10 * scale), title, font=body_font, fill=ink)
+            for index, row in enumerate(rows):
+                row_top = top + (44 + index * 38) * scale
+                draw.rectangle(
+                    (padding, row_top, padding + content_width, row_top + 30 * scale),
+                    fill=cream,
+                    outline=ink,
+                    width=2 * scale,
                 )
-                + f"{character.arc_label or character.one_liner}｜{character.evidence}",
-                tiny_font,
-                ink,
-                card_width - 58 * scale,
-                max_lines=3,
-                line_gap=2 * scale,
-            )
-            text_right(
-                x + card_width - 10 * scale,
-                card_y + 92 * scale,
-                f"{character.message_count} 条 · {character.topic_count} 触点",
-                tiny_font,
-                "#555555",
-            )
-            if character.memory_label:
+                draw.rectangle(
+                    (padding, row_top, padding + 28 * scale, row_top + 30 * scale),
+                    fill=blue,
+                    outline=ink,
+                    width=2 * scale,
+                )
+                draw.text((padding + 10 * scale, row_top + 8 * scale), str(index + 1), font=tiny_font, fill=ink)
                 _draw_wrapped_text(
                     draw,
-                    (copy_x, card_y + 92 * scale),
-                    character.memory_label,
+                    (padding + 40 * scale, row_top + 7 * scale),
+                    row,
                     tiny_font,
-                    "#555555",
-                    card_width - 104 * scale,
+                    ink,
+                    content_width - 52 * scale,
                     max_lines=1,
                     line_gap=0,
                 )
-        y = character_top + character_height + 38 * scale
+            return top + height + 38 * scale
 
-    if report.highlight:
-        highlight_top = y
-        highlight_height = 138 * scale
-        draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
-        draw.text((padding, highlight_top + 22 * scale), "QUOTE ANCHOR", font=tiny_font, fill=yellow)
-        draw.text((padding, highlight_top + 46 * scale), "今日台词", font=section_font, fill=cream)
+        y = outer
+        draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
+        draw.text((padding, y + 12 * scale), "XIAOMAN CHARACTER DAILY", font=tiny_font, fill=yellow)
+        text_right(canvas_width - padding, y + 12 * scale, report.report_date, tiny_font, yellow)
+        y += 42 * scale
+
+        hero_top = y
+        hero_height = 206 * scale
+        draw.rectangle((outer, hero_top, canvas_width - outer, hero_top + hero_height), fill=yellow, outline=ink, width=3 * scale)
+        draw.text((padding, hero_top + 20 * scale), report.group_name, font=hero_font, fill=ink)
+        draw.text((padding, hero_top + 60 * scale), "小满群聊日报", font=title_font, fill=ink)
         _draw_wrapped_text(
             draw,
-            (padding + 180 * scale, highlight_top + 30 * scale),
-            f"“{report.highlight}”",
+            (padding, hero_top + 112 * scale),
+            f"今日主线：{main_storyline}",
             body_font,
-            cream,
-            content_width - 180 * scale,
-            max_lines=3,
+            ink,
+            content_width - 132 * scale,
+            max_lines=1,
         )
-        y += highlight_height + 38 * scale
+        _draw_wrapped_text(
+            draw,
+            (padding, hero_top + 142 * scale),
+            opening_line,
+            small_font,
+            "#2b2b2b",
+            content_width - 132 * scale,
+            max_lines=2,
+            line_gap=2 * scale,
+        )
+        draw.rectangle((padding, hero_top + 184 * scale, canvas_width - padding - 126 * scale, hero_top + 188 * scale), fill=ink)
+        draw.text((padding, hero_top + 192 * scale), report.time_range, font=tiny_font, fill=ink)
+        badge_box = (canvas_width - padding - 106 * scale, hero_top + 24 * scale, canvas_width - padding, hero_top + 130 * scale)
+        draw.rounded_rectangle(badge_box, radius=12 * scale, fill=blue, outline=ink, width=3 * scale)
+        draw.text((badge_box[0] + 22 * scale, badge_box[1] + 30 * scale), "人物", font=hero_font, fill=ink)
+        draw.text((badge_box[0] + 22 * scale, badge_box[1] + 66 * scale), "主线", font=hero_font, fill=ink)
+        y = hero_top + hero_height
 
-    if callback_candidates:
-        hotlist_top = y
-        hotlist_rows = (len(callback_candidates) + 1) // 2
-        hotlist_height = (54 + 50 * hotlist_rows) * scale
-        draw.rectangle((outer, hotlist_top, canvas_width - outer, hotlist_top + hotlist_height), fill=cream, outline=ink, width=3 * scale)
-        draw.text((padding, hotlist_top + 14 * scale), "MEME MAP", font=tiny_font, fill=orange)
-        draw.text((padding + 102 * scale, hotlist_top + 10 * scale), "梗和回调候选", font=body_font, fill=ink)
-        topic_width = (content_width - gutter) // 2
-        for index, candidate in enumerate(callback_candidates):
-            label, _, detail = candidate.partition("：")
-            column = index % 2
-            row = index // 2
-            x = padding + column * (topic_width + gutter)
-            row_top = hotlist_top + (44 + row * 46) * scale
-            draw.rectangle((x, row_top, x + topic_width, row_top + 34 * scale), fill=pale_yellow, outline=ink, width=2 * scale)
-            draw.ellipse((x + 8 * scale, row_top + 7 * scale, x + 30 * scale, row_top + 29 * scale), fill=yellow, outline=ink, width=2 * scale)
-            draw.text((x + 14 * scale, row_top + 10 * scale), str(index + 1), font=tiny_font, fill=ink)
-            draw.text((x + 40 * scale, row_top + 8 * scale), label[:8], font=small_font, fill=ink)
-            _draw_wrapped_text(
-                draw,
-                (x + 120 * scale, row_top + 8 * scale),
-                detail,
+        story_index_cases = report.cases[:4]
+        if story_index_cases:
+            story_index_top = y
+            story_index_height = 136 * scale
+            draw.rectangle((outer, story_index_top, canvas_width - outer, story_index_top + story_index_height), fill=ink)
+            draw.text((padding, story_index_top + 16 * scale), "DAILY WORKSHOP INDEX", font=tiny_font, fill=yellow)
+            text_right(
+                canvas_width - padding,
+                story_index_top + 16 * scale,
+                (
+                    f"{report.message_count} 条素材 / {report.participant_count} 位出场 / "
+                    f"{report.case_count} 条主线 / {report.character_count} 张人物卡"
+                ),
                 tiny_font,
-                "#555555",
-                topic_width - 130 * scale,
-                max_lines=1,
-                line_gap=0,
+                pale_yellow,
             )
-        y = hotlist_top + hotlist_height + 38 * scale
+            index_card_width = (content_width - gutter) // 2
+            for index, case in enumerate(story_index_cases):
+                column = index % 2
+                row = index // 2
+                x = padding + column * (index_card_width + gutter)
+                row_top = story_index_top + (44 + row * 42) * scale
+                draw.rectangle(
+                    (x, row_top, x + index_card_width, row_top + 34 * scale),
+                    fill="#1c1c1c",
+                    outline=cream,
+                    width=2 * scale,
+                )
+                draw.ellipse(
+                    (x + 8 * scale, row_top + 6 * scale, x + 30 * scale, row_top + 28 * scale),
+                    outline=yellow,
+                    width=2 * scale,
+                )
+                draw.text((x + 12 * scale, row_top + 9 * scale), f"{index + 1:02d}", font=tiny_font, fill=yellow)
+                draw.text((x + 40 * scale, row_top + 6 * scale), case_storyline_label(case)[:10], font=small_font, fill=cream)
+                text_right(x + index_card_width - 10 * scale, row_top + 10 * scale, case.summary, tiny_font, "#c9c9c9")
+            y = story_index_top + story_index_height
 
-    if relationship_candidates:
-        relationship_top = y
-        relationship_height = (54 + 42 * len(relationship_candidates)) * scale
-        draw.rectangle((outer, relationship_top, canvas_width - outer, relationship_top + relationship_height), fill=blue, outline=ink, width=3 * scale)
-        draw.text((padding, relationship_top + 14 * scale), "ENSEMBLE LINKS", font=tiny_font, fill=ink)
-        draw.text((padding + 132 * scale, relationship_top + 10 * scale), "同场关系", font=body_font, fill=ink)
-        row_width = content_width
-        for index, candidate in enumerate(relationship_candidates):
-            row_top = relationship_top + (44 + index * 38) * scale
-            draw.rectangle((padding, row_top, padding + row_width, row_top + 30 * scale), fill="#ffffff", outline=ink, width=2 * scale)
-            draw.rectangle((padding, row_top, padding + 28 * scale, row_top + 30 * scale), fill=yellow, outline=ink, width=2 * scale)
-            draw.text((padding + 10 * scale, row_top + 8 * scale), str(index + 1), font=tiny_font, fill=ink)
+        if report.characters:
+            character_top = y
+            character_rows = (len(report.characters) + 1) // 2
+            character_height = (58 + 138 * character_rows) * scale
+            draw.rectangle((outer, character_top, canvas_width - outer, character_top + character_height), fill="#ffffff", outline=ink, width=3 * scale)
+            draw.text((padding, character_top + 16 * scale), "CAST NOTES", font=tiny_font, fill=orange)
+            draw.text((padding + 112 * scale, character_top + 12 * scale), "人物出场表", font=body_font, fill=ink)
+            card_width = (content_width - gutter) // 2
+            card_height = 116 * scale
+            for index, character in enumerate(report.characters):
+                column = index % 2
+                row = index // 2
+                x = padding + column * (card_width + gutter)
+                card_y = character_top + (48 + row * 128) * scale
+                draw.rectangle((x, card_y, x + card_width, card_y + card_height), fill=cream, outline=ink, width=2 * scale)
+                draw.rectangle((x, card_y, x + 34 * scale, card_y + card_height), fill=blue, outline=ink, width=2 * scale)
+                draw.text((x + 12 * scale, card_y + 42 * scale), str(character.rank), font=tiny_font, fill=ink)
+                copy_x = x + 46 * scale
+                draw.text((copy_x, card_y + 10 * scale), character.name, font=body_font, fill=ink)
+                draw.text((copy_x, card_y + 34 * scale), f"{character.role_label} · {character.story_function}", font=tiny_font, fill=orange)
+                _draw_wrapped_text(
+                    draw,
+                    (copy_x, card_y + 54 * scale),
+                    (
+                        f"已审核标签：{character.expressive_label}｜"
+                        if character.expressive_label
+                        else ""
+                    )
+                    + f"{character.arc_label or character.one_liner}｜{character.evidence}",
+                    tiny_font,
+                    ink,
+                    card_width - 58 * scale,
+                    max_lines=3,
+                    line_gap=2 * scale,
+                )
+                text_right(
+                    x + card_width - 10 * scale,
+                    card_y + 92 * scale,
+                    f"{character.message_count} 条 · {character.topic_count} 触点",
+                    tiny_font,
+                    "#555555",
+                )
+                if character.memory_label:
+                    _draw_wrapped_text(
+                        draw,
+                        (copy_x, card_y + 92 * scale),
+                        character.memory_label,
+                        tiny_font,
+                        "#555555",
+                        card_width - 104 * scale,
+                        max_lines=1,
+                        line_gap=0,
+                    )
+            y = character_top + character_height + 38 * scale
+
+        if report.highlight:
+            highlight_top = y
+            highlight_height = 138 * scale
+            draw.rectangle((outer, highlight_top, canvas_width - outer, highlight_top + highlight_height), fill=orange, outline=ink, width=3 * scale)
+            draw.text((padding, highlight_top + 22 * scale), "QUOTE ANCHOR", font=tiny_font, fill=yellow)
+            draw.text((padding, highlight_top + 46 * scale), "今日台词", font=section_font, fill=cream)
             _draw_wrapped_text(
                 draw,
-                (padding + 40 * scale, row_top + 7 * scale),
-                candidate,
-                tiny_font,
-                ink,
-                row_width - 52 * scale,
-                max_lines=1,
-                line_gap=0,
-            )
-        y = relationship_top + relationship_height + 38 * scale
-
-    y = reference_list(
-        y,
-        "LOCAL THREADS",
-        "地点 / 本地生活线索",
-        [str(item.get("label", "")) for item in local_life_notes],
-        "#ffffff",
-    )
-    y = reference_list(
-        y,
-        "OPEN LOOPS",
-        "待解决问题",
-        open_questions,
-        pale_yellow,
-    )
-
-    y = section_label(y, "STORYLINE FILES", "故事线候选")
-    cases = report.cases[:DEFAULT_CASE_LIMIT]
-    if not cases:
-        draw.rectangle((padding, y, padding + content_width, y + 92 * scale), fill="#ffffff", outline=ink, width=3 * scale)
-        draw.text((padding + 22 * scale, y + 32 * scale), "过去 24 小时暂无可归档话题。", font=body_font, fill="#555555")
-        y += 116 * scale
-    else:
-        card_width = (content_width - gutter) // 2
-        card_height = 226 * scale
-        for index, case in enumerate(cases):
-            col = index % 2
-            row = index // 2
-            x = padding + col * (card_width + gutter)
-            card_y = y + row * (card_height + gutter)
-            draw.rectangle((x, card_y, x + card_width, card_y + card_height), fill="#ffffff", outline=ink, width=3 * scale)
-            draw.ellipse((x + 18 * scale, card_y + 18 * scale, x + 58 * scale, card_y + 58 * scale), fill=yellow, outline=ink, width=3 * scale)
-            draw.text((x + 28 * scale, card_y + 26 * scale), f"{index + 1:02d}", font=tiny_font, fill=ink)
-            draw.text((x + 72 * scale, card_y + 22 * scale), case.time_label, font=tiny_font, fill=orange)
-            title_y = _draw_wrapped_text(
-                draw,
-                (x + 18 * scale, card_y + 72 * scale),
-                case_storyline_label(case),
-                card_title_font,
-                ink,
-                card_width - 36 * scale,
-                max_lines=2,
-                line_gap=4 * scale,
-            )
-            _draw_wrapped_text(
-                draw,
-                (x + 18 * scale, title_y + 4 * scale),
-                case.summary,
-                small_font,
-                "#444444",
-                card_width - 36 * scale,
-                max_lines=1,
-            )
-            note_top = card_y + 150 * scale
-            draw.rectangle((x + 18 * scale, note_top, x + card_width - 18 * scale, card_y + card_height - 18 * scale), fill=pale_yellow)
-            bullet_text = " / ".join(case.bullets[:2])
-            _draw_wrapped_text(
-                draw,
-                (x + 30 * scale, note_top + 12 * scale),
-                bullet_text,
-                tiny_font,
-                ink,
-                card_width - 60 * scale,
+                (padding + 180 * scale, highlight_top + 30 * scale),
+                f"“{report.highlight}”",
+                body_font,
+                cream,
+                content_width - 180 * scale,
                 max_lines=3,
-                line_gap=3 * scale,
             )
-        y += ((len(cases) + 1) // 2) * (card_height + gutter) + 18 * scale
+            y += highlight_height + 38 * scale
 
-    stats = [
-        ("消息", report.message_count, "当日素材"),
-        ("出场", report.participant_count, "活跃成员"),
-        ("主线", report.case_count, "可归档"),
-        ("人物", report.character_count, "群像卡"),
-    ]
-    stat_height = 70 * scale
-    stat_width = content_width // 4
-    draw.rectangle((padding, y, padding + content_width, y + stat_height), fill="#ffffff", outline=ink, width=3 * scale)
-    for index, (label, value, caption) in enumerate(stats):
-        x = padding + index * stat_width
-        if index:
-            draw.line((x, y, x, y + stat_height), fill=ink, width=2 * scale)
-        draw.text((x + 16 * scale, y + 11 * scale), label, font=tiny_font, fill=orange)
-        draw.text((x + 16 * scale, y + 31 * scale), str(value), font=section_font, fill=ink)
-        draw.text((x + 76 * scale, y + 38 * scale), caption, font=tiny_font, fill="#555555")
-    y += stat_height + 24 * scale
+        if callback_candidates:
+            hotlist_top = y
+            hotlist_rows = (len(callback_candidates) + 1) // 2
+            hotlist_height = (54 + 50 * hotlist_rows) * scale
+            draw.rectangle((outer, hotlist_top, canvas_width - outer, hotlist_top + hotlist_height), fill=cream, outline=ink, width=3 * scale)
+            draw.text((padding, hotlist_top + 14 * scale), "MEME MAP", font=tiny_font, fill=orange)
+            draw.text((padding + 102 * scale, hotlist_top + 10 * scale), "梗和回调候选", font=body_font, fill=ink)
+            topic_width = (content_width - gutter) // 2
+            for index, candidate in enumerate(callback_candidates):
+                label, _, detail = candidate.partition("：")
+                column = index % 2
+                row = index // 2
+                x = padding + column * (topic_width + gutter)
+                row_top = hotlist_top + (44 + row * 46) * scale
+                draw.rectangle((x, row_top, x + topic_width, row_top + 34 * scale), fill=pale_yellow, outline=ink, width=2 * scale)
+                draw.ellipse((x + 8 * scale, row_top + 7 * scale, x + 30 * scale, row_top + 29 * scale), fill=yellow, outline=ink, width=2 * scale)
+                draw.text((x + 14 * scale, row_top + 10 * scale), str(index + 1), font=tiny_font, fill=ink)
+                draw.text((x + 40 * scale, row_top + 8 * scale), label[:8], font=small_font, fill=ink)
+                _draw_wrapped_text(
+                    draw,
+                    (x + 120 * scale, row_top + 8 * scale),
+                    detail,
+                    tiny_font,
+                    "#555555",
+                    topic_width - 130 * scale,
+                    max_lines=1,
+                    line_gap=0,
+                )
+            y = hotlist_top + hotlist_height + 38 * scale
 
-    timeline_top = y
-    timeline_height = 145 * scale
-    draw.rectangle((outer, timeline_top, canvas_width - outer, timeline_top + timeline_height), fill=yellow, outline=ink, width=3 * scale)
-    draw.text((padding, timeline_top + 28 * scale), "24H 活跃节奏", font=section_font, fill=ink)
-    peak_count = max(report.hourly_counts or [0])
-    max_count = peak_count or 1
-    peak_idx = report.hourly_counts.index(peak_count) if report.hourly_counts and peak_count else 0
-    text_right(canvas_width - padding, timeline_top + 34 * scale, f"峰值 {peak_count} 条 / {peak_idx:02d}:00", small_font, ink)
-    bar_left = padding + 200 * scale
-    bar_width_area = canvas_width - padding - bar_left
-    bar_gap = 5 * scale
-    bar_width = max(4 * scale, (bar_width_area - bar_gap * 23) // 24)
-    base_y = timeline_top + 112 * scale
-    for index, count in enumerate(report.hourly_counts[:24]):
-        height = int((count / max_count) * 72 * scale)
-        x = bar_left + index * (bar_width + bar_gap)
-        fill = orange if index == peak_idx and count else ink if count else "#e6c737"
-        draw.rectangle((x, base_y - height, x + bar_width, base_y), fill=fill)
-    y = timeline_top + timeline_height + 34 * scale
+        if relationship_candidates:
+            relationship_top = y
+            relationship_height = (54 + 42 * len(relationship_candidates)) * scale
+            draw.rectangle((outer, relationship_top, canvas_width - outer, relationship_top + relationship_height), fill=blue, outline=ink, width=3 * scale)
+            draw.text((padding, relationship_top + 14 * scale), "ENSEMBLE LINKS", font=tiny_font, fill=ink)
+            draw.text((padding + 132 * scale, relationship_top + 10 * scale), "同场关系", font=body_font, fill=ink)
+            row_width = content_width
+            for index, candidate in enumerate(relationship_candidates):
+                row_top = relationship_top + (44 + index * 38) * scale
+                draw.rectangle((padding, row_top, padding + row_width, row_top + 30 * scale), fill="#ffffff", outline=ink, width=2 * scale)
+                draw.rectangle((padding, row_top, padding + 28 * scale, row_top + 30 * scale), fill=yellow, outline=ink, width=2 * scale)
+                draw.text((padding + 10 * scale, row_top + 8 * scale), str(index + 1), font=tiny_font, fill=ink)
+                _draw_wrapped_text(
+                    draw,
+                    (padding + 40 * scale, row_top + 7 * scale),
+                    candidate,
+                    tiny_font,
+                    ink,
+                    row_width - 52 * scale,
+                    max_lines=1,
+                    line_gap=0,
+                )
+            y = relationship_top + relationship_height + 38 * scale
 
-    y = section_label(y, "VOICE INDEX", "发言出场榜")
-    if not report.suspects:
-        draw.text((padding, y), "暂无发言榜。", font=body_font, fill="#555555")
-        y += 54 * scale
-    else:
-        row_height = 72 * scale
-        for index, suspect in enumerate(report.suspects[:DEFAULT_SUSPECT_LIMIT]):
-            x = padding + (index % 2) * ((content_width - gutter) // 2 + gutter)
-            row_y = y + (index // 2) * (row_height + 10 * scale)
-            row_width = (content_width - gutter) // 2
-            draw.rectangle((x, row_y, x + row_width, row_y + row_height), fill="#ffffff", outline=ink, width=2 * scale)
-            draw.text((x + 16 * scale, row_y + 20 * scale), str(suspect.rank), font=mono_font, fill=ink)
-            draw.text((x + 58 * scale, row_y + 14 * scale), suspect.name, font=body_font, fill=ink)
-            draw.text((x + 58 * scale, row_y + 42 * scale), f"{suspect.message_count} 条 / {suspect.word_count} 字", font=tiny_font, fill="#555555")
-            text_right(x + row_width - 16 * scale, row_y + 21 * scale, f"{suspect.message_count}", stat_font, ink)
-        y += ((min(len(report.suspects), DEFAULT_SUSPECT_LIMIT) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
+        y = reference_list(
+            y,
+            "LOCAL THREADS",
+            "地点 / 本地生活线索",
+            [str(item.get("label", "")) for item in local_life_notes],
+            "#ffffff",
+        )
+        y = reference_list(
+            y,
+            "OPEN LOOPS",
+            "待解决问题",
+            open_questions,
+            pale_yellow,
+        )
 
-    draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
-    draw.text((padding, y + 14 * scale), "本报告由小满根据最新群聊窗口自动整理 · 长期画像仅以角色复现计数参与", font=tiny_font, fill=yellow)
-    y += 42 * scale + outer
+        y = section_label(y, "STORYLINE FILES", "故事线候选")
+        cases = report.cases[:DEFAULT_CASE_LIMIT]
+        if not cases:
+            draw.rectangle((padding, y, padding + content_width, y + 92 * scale), fill="#ffffff", outline=ink, width=3 * scale)
+            draw.text((padding + 22 * scale, y + 32 * scale), "过去 24 小时暂无可归档话题。", font=body_font, fill="#555555")
+            y += 116 * scale
+        else:
+            card_width = (content_width - gutter) // 2
+            card_height = 226 * scale
+            for index, case in enumerate(cases):
+                col = index % 2
+                row = index // 2
+                x = padding + col * (card_width + gutter)
+                card_y = y + row * (card_height + gutter)
+                draw.rectangle((x, card_y, x + card_width, card_y + card_height), fill="#ffffff", outline=ink, width=3 * scale)
+                draw.ellipse((x + 18 * scale, card_y + 18 * scale, x + 58 * scale, card_y + 58 * scale), fill=yellow, outline=ink, width=3 * scale)
+                draw.text((x + 28 * scale, card_y + 26 * scale), f"{index + 1:02d}", font=tiny_font, fill=ink)
+                draw.text((x + 72 * scale, card_y + 22 * scale), case.time_label, font=tiny_font, fill=orange)
+                title_y = _draw_wrapped_text(
+                    draw,
+                    (x + 18 * scale, card_y + 72 * scale),
+                    case_storyline_label(case),
+                    card_title_font,
+                    ink,
+                    card_width - 36 * scale,
+                    max_lines=2,
+                    line_gap=4 * scale,
+                )
+                _draw_wrapped_text(
+                    draw,
+                    (x + 18 * scale, title_y + 4 * scale),
+                    case.summary,
+                    small_font,
+                    "#444444",
+                    card_width - 36 * scale,
+                    max_lines=1,
+                )
+                note_top = card_y + 150 * scale
+                draw.rectangle((x + 18 * scale, note_top, x + card_width - 18 * scale, card_y + card_height - 18 * scale), fill=pale_yellow)
+                bullet_text = " / ".join(case.bullets[:2])
+                _draw_wrapped_text(
+                    draw,
+                    (x + 30 * scale, note_top + 12 * scale),
+                    bullet_text,
+                    tiny_font,
+                    ink,
+                    card_width - 60 * scale,
+                    max_lines=3,
+                    line_gap=3 * scale,
+                )
+            y += ((len(cases) + 1) // 2) * (card_height + gutter) + 18 * scale
 
-    cropped = image.crop((0, 0, canvas_width, min(y, image.height)))
+        stats = [
+            ("消息", report.message_count, "当日素材"),
+            ("出场", report.participant_count, "活跃成员"),
+            ("主线", report.case_count, "可归档"),
+            ("人物", report.character_count, "群像卡"),
+        ]
+        stat_height = 70 * scale
+        stat_width = content_width // 4
+        draw.rectangle((padding, y, padding + content_width, y + stat_height), fill="#ffffff", outline=ink, width=3 * scale)
+        for index, (label, value, caption) in enumerate(stats):
+            x = padding + index * stat_width
+            if index:
+                draw.line((x, y, x, y + stat_height), fill=ink, width=2 * scale)
+            draw.text((x + 16 * scale, y + 11 * scale), label, font=tiny_font, fill=orange)
+            draw.text((x + 16 * scale, y + 31 * scale), str(value), font=section_font, fill=ink)
+            draw.text((x + 76 * scale, y + 38 * scale), caption, font=tiny_font, fill="#555555")
+        y += stat_height + 24 * scale
+
+        timeline_top = y
+        timeline_height = 145 * scale
+        draw.rectangle((outer, timeline_top, canvas_width - outer, timeline_top + timeline_height), fill=yellow, outline=ink, width=3 * scale)
+        draw.text((padding, timeline_top + 28 * scale), "24H 活跃节奏", font=section_font, fill=ink)
+        peak_count = max(report.hourly_counts or [0])
+        max_count = peak_count or 1
+        peak_idx = report.hourly_counts.index(peak_count) if report.hourly_counts and peak_count else 0
+        text_right(canvas_width - padding, timeline_top + 34 * scale, f"峰值 {peak_count} 条 / {peak_idx:02d}:00", small_font, ink)
+        bar_left = padding + 200 * scale
+        bar_width_area = canvas_width - padding - bar_left
+        bar_gap = 5 * scale
+        bar_width = max(4 * scale, (bar_width_area - bar_gap * 23) // 24)
+        base_y = timeline_top + 112 * scale
+        for index, count in enumerate(report.hourly_counts[:24]):
+            height = int((count / max_count) * 72 * scale)
+            x = bar_left + index * (bar_width + bar_gap)
+            fill = orange if index == peak_idx and count else ink if count else "#e6c737"
+            draw.rectangle((x, base_y - height, x + bar_width, base_y), fill=fill)
+        y = timeline_top + timeline_height + 34 * scale
+
+        y = section_label(y, "VOICE INDEX", "发言出场榜")
+        if not report.suspects:
+            draw.text((padding, y), "暂无发言榜。", font=body_font, fill="#555555")
+            y += 54 * scale
+        else:
+            row_height = 72 * scale
+            for index, suspect in enumerate(report.suspects[:DEFAULT_SUSPECT_LIMIT]):
+                x = padding + (index % 2) * ((content_width - gutter) // 2 + gutter)
+                row_y = y + (index // 2) * (row_height + 10 * scale)
+                row_width = (content_width - gutter) // 2
+                draw.rectangle((x, row_y, x + row_width, row_y + row_height), fill="#ffffff", outline=ink, width=2 * scale)
+                draw.text((x + 16 * scale, row_y + 20 * scale), str(suspect.rank), font=mono_font, fill=ink)
+                draw.text((x + 58 * scale, row_y + 14 * scale), suspect.name, font=body_font, fill=ink)
+                draw.text((x + 58 * scale, row_y + 42 * scale), f"{suspect.message_count} 条 / {suspect.word_count} 字", font=tiny_font, fill="#555555")
+                text_right(x + row_width - 16 * scale, row_y + 21 * scale, f"{suspect.message_count}", stat_font, ink)
+            y += ((min(len(report.suspects), DEFAULT_SUSPECT_LIMIT) + 1) // 2) * (row_height + 10 * scale) + 28 * scale
+
+        draw.rectangle((outer, y, canvas_width - outer, y + 42 * scale), fill=ink)
+        draw.text((padding, y + 14 * scale), "本报告由小满根据最新群聊窗口自动整理 · 长期画像仅以角色复现计数参与", font=tiny_font, fill=yellow)
+        y += 42 * scale + outer
+        return y
+
+
+    # Measure pass: run the full layout once on a throwaway canvas to learn
+    # the true content height. PIL clips drawing outside the canvas bounds, so
+    # the computed y is unaffected by the throwaway size. This removes the old
+    # fixed 7600px cap that silently dropped any report taller than that.
+    measure_img = Image.new("RGB", (canvas_width, 100), "#fff8df")
+    final_y = _layout(ImageDraw.Draw(measure_img))
+
+    # Real pass: render onto a correctly-sized canvas. No fixed cap -> no truncation.
+    image = Image.new("RGB", (canvas_width, final_y), "#fff8df")
+    draw = ImageDraw.Draw(image)
+    _layout(draw)
+
     save_kwargs: dict[str, Any] = {}
     if image_format == "jpeg":
         save_kwargs["quality"] = DEFAULT_JPEG_QUALITY
@@ -1274,7 +1286,7 @@ def _render_image_with_pillow(
         save_format = "JPEG"
     else:
         save_format = "PNG"
-    cropped.save(output_path, format=save_format, **save_kwargs)
+    image.save(output_path, format=save_format, **save_kwargs)
 
 
 def _render_image(
