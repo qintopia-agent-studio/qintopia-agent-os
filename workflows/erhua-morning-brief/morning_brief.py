@@ -830,6 +830,29 @@ def _news_item_lines(index: int, item: AiNewsItem) -> list[str]:
     ]
 
 
+def _activity_block(activity_text: str, activity_count: int) -> str:
+    """Rich activity section shared by the text brief and the card.
+
+    Keeps the base activity preview/notice, then appends an engagement
+    call-to-action so the section reads complete on its own — the card shows
+    only this block, not the message-level footer, so it must not be thinner
+    than the text brief.
+    """
+    lines = [activity_text.rstrip()]
+    if activity_count <= 0:
+        lines.append(
+            "想办活动的话，直接在群里说主题、时间和地点；信息够了，二花就帮你整理成招募文案。"
+        )
+        lines.append("今天没活动也没关系，群里的活动就是从一句“有人一起吗”开始的。")
+        lines.append(
+            "比如直接在群里丢一句：“周六下午想组个共读局，有人一起吗？”二花收到就帮你把招募文案和接龙拉起来。"
+        )
+    else:
+        lines.append("想参加的话，在群里接龙或直接 @二花 报名，二花帮你把人凑齐。")
+        lines.append("想办活动的话，在群里说主题、时间和地点；二花帮你整理成招募文案。")
+    return "\n".join(line for line in lines if line)
+
+
 def _compose_brief(
     *,
     date: str,
@@ -852,6 +875,7 @@ def _compose_brief(
     news_body = "\n".join(news_lines)
 
     # Text serialization keeps the existing human-review / send-fallback shape.
+    activity_full = _activity_block(activity_text, activity_count)
     lines = [
         f"早上好，二花早报来啦。今天是 {date} {weekday_label}。",
         "",
@@ -859,26 +883,18 @@ def _compose_brief(
         weather_body,
         "",
         "今天活动：",
-        activity_text,
+        activity_full,
         "",
         "AI 新闻：",
     ]
     lines.extend(news_lines)
-    lines.extend(
-        [
-            "",
-            "想办活动的话，直接在群里说主题、时间和地点；信息够了，二花就帮你整理成招募文案。",
-        ]
-    )
-    if activity_count <= 0:
-        lines.append("今天没活动也没关系，群里的活动就是从一句“有人一起吗”开始的。")
 
     message_text = "\n".join(lines).strip()
 
     brief_blocks: list[dict[str, str]] = [
         {"title": "问候", "body": f"早上好，二花早报来啦。今天是 {date} {weekday_label}。"},
         {"title": "今日天气", "body": weather_body},
-        {"title": "今天活动", "body": activity_text},
+        {"title": "今天活动", "body": activity_full},
         {"title": "AI 新闻", "body": news_body},
     ]
 
@@ -1206,7 +1222,6 @@ def _build_card(
     date: str,
     weekday_label: str,
     weather: Optional[WeatherInfo],
-    activity_text: str,
     brief_blocks: list[dict[str, str]],
     highlight: Optional[str],
 ) -> morning_brief_renderer.MorningBriefCard:
@@ -1218,7 +1233,7 @@ def _build_card(
         date_label=f"{date} {weekday_label}",
         weather=weather,
         activity_title=brief_blocks[2]["title"],
-        activity_body=activity_text,
+        activity_body=brief_blocks[2]["body"],
         ai_news_title=brief_blocks[3]["title"],
         ai_news_items=ai_items,
         highlight=highlight,
@@ -1266,7 +1281,6 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
             date=date,
             weekday_label=weekday_label,
             weather=weather,
-            activity_text=activity_text,
             brief_blocks=brief_blocks,
             highlight=highlight,
         )
