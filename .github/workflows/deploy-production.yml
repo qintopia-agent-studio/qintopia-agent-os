@@ -359,8 +359,29 @@ jobs:
             releases_file="dist/deploy-resolution/releases.json"
             workflow_runs_file="dist/deploy-resolution/deploy-runs.json"
             deploy_results_file="dist/deploy-resolution/deploy-results.json"
-            gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
-              > "$releases_file"
+            # GitHub's releases API can intermittently return an empty array for
+            # per_page=100 (observed under rate limiting); retry with a smaller
+            # page and validate the body instead of trusting a 2xx status.
+            releases_fetched=false
+            for page_size in 100 50 30; do
+              gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=${page_size}" \
+                > "$releases_file"
+              if node -e '
+                const fs = require("node:fs");
+                const raw = fs.readFileSync(process.argv[1], "utf8").trim();
+                if (!raw) process.exit(1);
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed) || parsed.length === 0) process.exit(1);
+              ' "$releases_file"; then
+                releases_fetched=true
+                break
+              fi
+              echo "releases API returned empty/invalid body for per_page=${page_size}; retrying" >&2
+            done
+            if [[ "$releases_fetched" != "true" ]]; then
+              echo "GitHub releases API did not return a usable release list." >&2
+              exit 2
+            fi
             gh api \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy-production.yml/runs?per_page=30&event=release&status=completed" \
               > "$workflow_runs_file"
@@ -394,6 +415,22 @@ jobs:
                 break
               fi
             done)"
+            if [[ -z "$previous_release_tag" ]]; then
+              # Fallback: resolve the previous tag from local git refs (all
+              # tags are fetched by checkout), so a transient API anomaly in
+              # the releases list cannot block production deploys.
+              previous_release_tag="$(git tag -l "v[0-9]*" --sort=-version:refname \
+                | while read -r tag; do
+                    if [[ "$tag" == "$RELEASE_TAG_NAME" ]]; then
+                      continue
+                    fi
+                    tag_commit="$(git rev-list -n 1 "${tag}^{commit}" 2>/dev/null || true)"
+                    if [[ -n "$tag_commit" ]] && git merge-base --is-ancestor "$tag_commit" "$commit_sha"; then
+                      printf '%s\n' "$tag"
+                      break
+                    fi
+                  done)"
+            fi
             if [[ -z "$previous_release_tag" ]]; then
               echo "Could not resolve previous published Release tag for ${RELEASE_TAG_NAME}." >&2
               exit 2
