@@ -1973,29 +1973,51 @@ class DailyCaseReportTest(unittest.TestCase):
                     "tall report was truncated to the old fixed 7600px canvas cap",
                 )
 
-    def test_render_html_with_roast_fallback_degrades_when_narrative_missing(self) -> None:
-        calls: list[tuple[object, object]] = []
+    def test_roast_fallback_uses_deterministic_parsed_not_character_poster(self) -> None:
+        # When every LLM model fails, the roast report must fall back to the
+        # deterministic roast layout built from the report data — never to the
+        # character-poster (newspaper) template.
+        import roast_long_image
+        from models import CaseCard, CharacterCard, ReportData
 
-        def fake_render(_report, _width, template, narrative_md):
-            calls.append((template, narrative_md))
-            if template == daily_case_report.ROAST_LONG_IMAGE_TEMPLATE and not narrative_md:
-                raise RuntimeError("roast requires narrative")
-            return f"html:{template}"
-
-        old = daily_case_report._render_html
-        daily_case_report._render_html = fake_render
-        try:
-            out = daily_case_report._render_html_with_roast_fallback(
-                report=object(),
-                width=750,
-                template=daily_case_report.ROAST_LONG_IMAGE_TEMPLATE,
-                narrative_md=None,
-            )
-        finally:
-            daily_case_report._render_html = old
-        self.assertEqual(out, f"html:{daily_case_report.NEWSPAPER_ELEGANT_TEMPLATE}")
-        self.assertEqual(calls[0], (daily_case_report.ROAST_LONG_IMAGE_TEMPLATE, None))
-        self.assertEqual(calls[1], (daily_case_report.NEWSPAPER_ELEGANT_TEMPLATE, None))
+        report = ReportData(
+            group_name="秦托邦",
+            report_title="小满日报",
+            report_date="2026年08月16日",
+            time_range="00:00–23:59",
+            member_count=50,
+            message_count=26,
+            participant_count=11,
+            case_count=1,
+            suspect_count=2,
+            hourly_counts=[0] * 24,
+            cases=[
+                CaseCard(
+                    case_no="01", title="日报复更", time_label="全天",
+                    summary="日报一恢复就被催更。", bullets=["有人蹲点"],
+                    message_count=10, participant_count=5,
+                    color_bg="#fff", color_text="#000", top_speaker="白糖",
+                )
+            ],
+            suspects=[],
+            highlight="咋就 404 了",
+            characters=[
+                CharacterCard(
+                    rank=1, name="方桃子", role_label="嘴炮担当",
+                    one_liner="凌晨第一个发现 404 的人", evidence="",
+                    message_count=8, topic_count=2,
+                )
+            ],
+            character_count=1,
+        )
+        parsed = roast_long_image.build_fallback_parsed(report)
+        for key in ("kicker", "date_line", "title", "war_report", "chapters",
+                    "tomorrow", "characters", "final_quote"):
+            self.assertIn(key, parsed)
+        self.assertIn("吐槽日报", parsed["kicker"])
+        self.assertIn("条消息", parsed["war_report"])
+        self.assertGreaterEqual(len(parsed["chapters"]), 1)
+        self.assertEqual(parsed["final_quote"]["text"], "咋就 404 了")
 
     def test_render_html_with_roast_fallback_passes_through_when_narrative_present(self) -> None:
         def fake_render(_report, _width, template, narrative_md):

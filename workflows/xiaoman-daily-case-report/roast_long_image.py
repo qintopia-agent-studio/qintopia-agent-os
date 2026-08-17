@@ -469,3 +469,282 @@ def render(input_data: dict[str, Any]) -> str:
         "</body>\n"
         "</html>"
     )
+
+
+# ---------------------------------------------------------------------------
+# Pillow (no-browser) roast rendering + deterministic fallback
+# ---------------------------------------------------------------------------
+#
+# The roast long-image was previously rendered only as HTML -> Playwright JPEG,
+# which needs a browser (chromium). When the browser is missing the renderer
+# silently fell back to a Pillow routine that drew a completely different
+# character-poster layout. This module now renders the SAME roast layout
+# directly with Pillow, so no browser is required and the output is always the
+# roast daily report.
+
+
+def build_fallback_parsed(report: Any) -> dict[str, Any]:
+    """Build the roast parsed-section structure from the deterministic report.
+
+    Used when every LLM narrative model fails: we still emit the roast daily
+    report layout, but the chapter text is assembled from the deterministic
+    report data (cases, characters, war report) instead of LLM prose. The
+    layout, colors and structure are identical to the AI roast version — only
+    the wording is plainer. It never degrades to the character poster.
+    """
+    group = getattr(report, "group_name", "") or "秦托邦"
+    date = getattr(report, "report_date", "") or ""
+    war = (
+        f"{getattr(report, 'message_count', 0)}条消息 · "
+        f"{getattr(report, 'participant_count', 0)}人开口"
+    )
+
+    chapters: list[dict[str, Any]] = []
+    for case in (getattr(report, "cases", None) or [])[:5]:
+        paragraphs = [getattr(case, "summary", "") or ""]
+        paragraphs.extend([b for b in (getattr(case, "bullets", None) or []) if b])
+        paragraphs = [p for p in paragraphs if p]
+        if not paragraphs:
+            continue
+        chapters.append({
+            "title": getattr(case, "title", "") or "当日话题",
+            "paragraphs": paragraphs,
+            "golden_quote": "",
+        })
+
+    characters: list[dict[str, str]] = []
+    for c in (getattr(report, "characters", None) or [])[:6]:
+        desc = getattr(c, "one_liner", "") or getattr(c, "story_function", "") or ""
+        if getattr(c, "role_label", ""):
+            desc = f"{getattr(c, 'role_label')}｜{desc}" if desc else getattr(c, "role_label")
+        characters.append({"name": getattr(c, "name", ""), "desc": desc})
+
+    final_quote = {"text": "", "author": ""}
+    if getattr(report, "highlight", None):
+        final_quote = {"text": str(report.highlight), "author": ""}
+
+    return {
+        "kicker": f"{group}吐槽日报",
+        "date_line": date,
+        "title": "今日群聊观察",
+        "war_report": war,
+        "chapters": chapters,
+        "tomorrow": "",
+        "characters": characters,
+        "final_quote": final_quote,
+    }
+
+
+def render_pillow(input_data: dict[str, Any], output_path: str) -> str:
+    """Render the roast long-image directly with Pillow (no browser).
+
+    Accepts either `narrative_md` (AI roast text) or a pre-parsed structure via
+    `parsed`. Produces the same roast layout as the HTML/Playwright version.
+    Returns the output path.
+    """
+    from PIL import Image, ImageDraw
+
+    parsed = input_data.get("parsed")
+    if parsed is None:
+        md = input_data.get("narrative_md", "")
+        if not md:
+            raise RuntimeError("roast render_pillow requires narrative_md or parsed")
+        parsed = _parse_narrative(md)
+
+    width = int(input_data.get("width", 1080))
+    scale = 2
+    canvas_w = width * scale
+    padding = 110 * scale
+    content_w = canvas_w - padding * 2
+
+    # Palette mirrors the roast HTML CSS.
+    bg = "#fbfaf6"
+    ink = "#1a1a1a"
+    body_ink = "#2a2a2a"
+    accent = "#8b1f2f"
+    muted = "#999999"
+    card_bg = "#f5f0e8"
+    char_bg = "#ffffff"
+    char_border = "#e8e0d0"
+    quote_bg = "#8b1f2f"
+
+    # Fonts (CJK-capable, reuse the shared helper for cross-platform lookup).
+    from renderer import _pil_font  # sibling import; workflow dir is on sys.path
+
+    kicker_f = _pil_font(17 * scale)
+    title_f = _pil_font(38 * scale, bold=True)
+    date_f = _pil_font(17 * scale)
+    h2_f = _pil_font(24 * scale, bold=True)
+    body_f = _pil_font(18 * scale)
+    war_f = _pil_font(22 * scale, bold=True)
+    quote_f = _pil_font(24 * scale, bold=True)
+    char_name_f = _pil_font(20 * scale, bold=True)
+    small_f = _pil_font(14 * scale)
+    footer_f = _pil_font(14 * scale)
+
+    line_gap = 10 * scale
+    para_gap = 22 * scale
+    section_gap = 36 * scale
+
+    def wrap(draw: ImageDraw.ImageDraw, text: str, font: Any, max_w: int) -> list[str]:
+        """Greedy CJK-aware wrap: break on width, treating each char as a unit."""
+        lines: list[str] = []
+        for raw in text.split("\n"):
+            raw = raw.strip()
+            if not raw:
+                continue
+            cur = ""
+            for ch in raw:
+                trial = cur + ch
+                if draw.textlength(trial, font=font) <= max_w:
+                    cur = trial
+                else:
+                    if cur:
+                        lines.append(cur)
+                    cur = ch
+            if cur:
+                lines.append(cur)
+        return lines or [""]
+
+    # --- measure pass: compute total height on a throwaway canvas ---
+    def layout(draw: ImageDraw.ImageDraw, render: bool, image: Any = None) -> int:
+        y = 70 * scale
+
+        def text(x: int, yy: int, s: str, font: Any, fill: str) -> None:
+            if render:
+                draw.text((x, yy), s, font=font, fill=fill)
+
+        def center(yy: int, s: str, font: Any, fill: str) -> None:
+            if render:
+                w = draw.textlength(s, font=font)
+                draw.text(((canvas_w - w) / 2, yy), s, font=font, fill=fill)
+
+        # kicker / title / date
+        kicker = " ".join(parsed.get("kicker") or "秦托邦吐槽日报")
+        center(y, kicker, kicker_f, accent)
+        y += 40 * scale
+        for ln in wrap(draw, parsed.get("title") or "今日群聊观察", title_f, content_w):
+            center(y, ln, title_f, ink)
+            y += 52 * scale
+        if parsed.get("date_line"):
+            center(y, parsed["date_line"], date_f, muted)
+            y += 34 * scale
+        # divider
+        if render:
+            draw.rectangle([padding, y, canvas_w - padding, y + 4 * scale], fill=accent)
+        y += section_gap
+
+        # war report card
+        if parsed.get("war_report"):
+            card_h = 24 * scale + 40 * scale + 24 * scale
+            if render:
+                draw.rectangle([padding, y, canvas_w - padding, y + card_h], fill=card_bg)
+                draw.rectangle([padding, y, padding + 5 * scale, y + card_h], fill=accent)
+            center(y + 26 * scale, parsed["war_report"], war_f, accent)
+            y += card_h + section_gap
+
+        # chapters
+        for ch in parsed.get("chapters", []):
+            for ln in wrap(draw, ch.get("title", ""), h2_f, content_w - 20 * scale):
+                if render:
+                    draw.rectangle([padding, y + 4 * scale, padding + 5 * scale, y + 30 * scale], fill=accent)
+                text(padding + 20 * scale, y, ln, h2_f, accent)
+                y += 40 * scale
+            for para in ch.get("paragraphs", []):
+                for ln in wrap(draw, para, body_f, content_w):
+                    text(padding, y, ln, body_f, body_ink)
+                    y += 30 * scale + line_gap // 2
+                y += para_gap // 2
+            if ch.get("golden_quote"):
+                q = f"金句：{ch['golden_quote']}"
+                for ln in wrap(draw, q, body_f, content_w - 20 * scale):
+                    text(padding + 20 * scale, y, ln, body_f, accent)
+                    y += 30 * scale
+            y += section_gap
+
+        # tomorrow
+        if parsed.get("tomorrow"):
+            for ln in wrap(draw, "明日线索", h2_f, content_w - 20 * scale):
+                text(padding, y, ln, h2_f, accent)
+                y += 40 * scale
+            for ln in wrap(draw, parsed["tomorrow"], body_f, content_w):
+                text(padding, y, ln, body_f, body_ink)
+                y += 30 * scale + line_gap // 2
+            y += section_gap
+
+        # characters
+        chars = parsed.get("characters") or []
+        if chars:
+            for ln in wrap(draw, "今日人物速写", h2_f, content_w):
+                text(padding, y, ln, h2_f, accent)
+                y += 44 * scale
+            cols = 2
+            col_w = (content_w - 16 * scale) // cols
+            row_h = 0
+            x_col = 0
+            for c in chars:
+                name = c.get("name", "")
+                desc = c.get("desc", "")
+                name_lines = wrap(draw, name, char_name_f, col_w - 32 * scale)
+                desc_lines = wrap(draw, desc, small_f, col_w - 32 * scale)
+                card_h = 20 * scale + len(name_lines) * 30 * scale + len(desc_lines) * 22 * scale + 20 * scale
+                row_h = max(row_h, card_h)
+                if render:
+                    cx = padding + x_col * (col_w + 16 * scale)
+                    draw.rectangle([cx, y, cx + col_w, y + card_h], fill=char_bg, outline=char_border, width=scale)
+                    draw.rectangle([cx, y, cx + 5 * scale, y + card_h], fill=accent)
+                    yy = y + 16 * scale
+                    for ln in name_lines:
+                        text(cx + 18 * scale, yy, ln, char_name_f, accent)
+                        yy += 30 * scale
+                    for ln in desc_lines:
+                        text(cx + 18 * scale, yy, ln, small_f, "#444444")
+                        yy += 22 * scale
+                x_col += 1
+                if x_col >= cols:
+                    x_col = 0
+                    y += row_h + 16 * scale
+                    row_h = 0
+            if x_col != 0:
+                y += row_h + 16 * scale
+            y += section_gap
+
+        # final quote band
+        fq = parsed.get("final_quote") or {}
+        if fq.get("text"):
+            quote_text = f"“{fq['text']}”"
+            q_lines = wrap(draw, quote_text, quote_f, content_w - 60 * scale)
+            band_h = 40 * scale + 40 * scale + len(q_lines) * 44 * scale + 40 * scale
+            if render:
+                draw.rectangle([padding, y, canvas_w - padding, y + band_h], fill=quote_bg)
+            yy = y + 40 * scale
+            center(yy, "今 日 金 句", small_f, "#ffd92e")
+            yy += 44 * scale
+            for ln in q_lines:
+                center(yy, ln, quote_f, "#ffffff")
+                yy += 44 * scale
+            if fq.get("author"):
+                center(yy, f"—— {fq['author']}", small_f, "#ffd92e")
+                yy += 30 * scale
+            y += band_h + section_gap
+
+        # footer divider + footer
+        if render:
+            draw.rectangle([padding, y, canvas_w - padding, y + scale], fill=accent)
+        y += 28 * scale
+        center(y, "秦托邦 · 小满吐槽日报", footer_f, muted)
+        y += 28 * scale
+        center(y, "所有引用可回溯至当天 quote-map", footer_f, muted)
+        y += 60 * scale
+        return y
+
+    measure_img = Image.new("RGB", (canvas_w, 100), bg)
+    measure_draw = ImageDraw.Draw(measure_img)
+    total_h = layout(measure_draw, False)
+
+    image = Image.new("RGB", (canvas_w, total_h), bg)
+    draw = ImageDraw.Draw(image)
+    layout(draw, True, image)
+
+    image.save(output_path, "JPEG", quality=90)
+    return output_path
