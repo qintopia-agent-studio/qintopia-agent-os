@@ -544,7 +544,7 @@ def _render_roast_image(
             file=sys.stderr,
         )
         input_data = {"parsed": roast_long_image.build_fallback_parsed(report), "width": width}
-    roast_long_image.render_pillow(input_data, str(image_path))
+    roast_long_image.render_pillow(input_data, str(image_path), image_format)
 
 
 def main() -> int:
@@ -694,8 +694,13 @@ def main() -> int:
                         report,
                     )
                 image_generated = True
-            except RuntimeError as exc:
-                print(f"WARN: image rendering skipped: {exc}", file=sys.stderr)
+            except Exception as exc:  # noqa: BLE001 - rendering must never abort the job
+                # Catch all render-layer failures (RuntimeError from a missing
+                # narrative, _parse_narrative errors on malformed LLM output,
+                # build_fallback_parsed attribute errors, PIL ImportError/OSError,
+                # etc.). A render defect must degrade to "no image" — not abort the
+                # whole daily-report job.
+                print(f"WARN: image rendering skipped: {type(exc).__name__}: {exc}", file=sys.stderr)
                 if args.render in ("image", "png") or real_messages:
                     return 2
 

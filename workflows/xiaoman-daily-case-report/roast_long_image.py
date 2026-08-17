@@ -535,12 +535,13 @@ def build_fallback_parsed(report: Any) -> dict[str, Any]:
     }
 
 
-def render_pillow(input_data: dict[str, Any], output_path: str) -> str:
+def render_pillow(input_data: dict[str, Any], output_path: str, image_format: str = "jpeg") -> str:
     """Render the roast long-image directly with Pillow (no browser).
 
     Accepts either `narrative_md` (AI roast text) or a pre-parsed structure via
     `parsed`. Produces the same roast layout as the HTML/Playwright version.
-    Returns the output path.
+    `image_format` selects the encoded output ("jpeg" or "png") so the file
+    contents always match the caller-chosen extension. Returns the output path.
     """
     from PIL import Image, ImageDraw
 
@@ -750,5 +751,9 @@ def render_pillow(input_data: dict[str, Any], output_path: str) -> str:
     draw = ImageDraw.Draw(image)
     layout(draw, True, image)
 
-    image.save(output_path, "JPEG", quality=90)
+    fmt = (image_format or "jpeg").strip().lower()
+    if fmt == "png":
+        image.save(output_path, "PNG")
+    else:
+        image.save(output_path, "JPEG", quality=90)
     return output_path
