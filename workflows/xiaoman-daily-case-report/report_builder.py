@@ -19,7 +19,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from models import (
     DEFAULT_MIN_CASE_MESSAGES,
     DEFAULT_SUSPECT_LIMIT,
-    DEFAULT_WINDOW_HOURS,
     REVIEW_DRAFT_REVIEWED_BY,
     TEMPLATE_VERSION,
     CaseCard,
@@ -71,10 +70,15 @@ def _report_date_at(
         display = start.strftime("%Y年%m月%d日")
         return start, end, display
 
+    # Default (no --date): summarize the most recently *completed* calendar day in
+    # the report timezone. A daily report generated in the morning therefore always
+    # covers a fixed 00:00-24:00 period (yesterday) instead of a rolling window that
+    # slides with the run time.
     local_now = now.astimezone(report_zone) if now.tzinfo else now.replace(tzinfo=report_zone)
-    end = local_now.replace(microsecond=0)
-    start = end - timedelta(hours=DEFAULT_WINDOW_HOURS)
-    display = f"过去{DEFAULT_WINDOW_HOURS}小时（截至 {end.strftime('%Y年%m月%d日 %H:%M')}）"
+    report_day = (local_now - timedelta(days=1)).date()
+    start = datetime.combine(report_day, time.min, tzinfo=report_zone)
+    end = start + timedelta(days=1)
+    display = start.strftime("%Y年%m月%d日")
     return start, end, display
 
 
