@@ -142,6 +142,26 @@ pub struct Cli {
     )]
     pub daily_case_report_mcp_render_timeout_seconds: u64,
 
+    #[arg(long, env = "QINTOPIA_DAILY_CASE_REPORT_NARRATIVE_BASE_URL")]
+    pub daily_case_report_narrative_base_url: Option<String>,
+
+    #[arg(long, env = "QINTOPIA_DAILY_CASE_REPORT_NARRATIVE_MODEL")]
+    pub daily_case_report_narrative_model: Option<String>,
+
+    #[arg(
+        long,
+        env = "QINTOPIA_DAILY_CASE_REPORT_NARRATIVE_TIMEOUT_SECONDS",
+        default_value_t = 180
+    )]
+    pub daily_case_report_narrative_timeout_seconds: u64,
+
+    #[arg(
+        long,
+        env = "QINTOPIA_DAILY_CASE_REPORT_NARRATIVE_MAX_TOKENS",
+        default_value_t = 12000
+    )]
+    pub daily_case_report_narrative_max_tokens: usize,
+
     #[arg(long, env = "QINTOPIA_ERHUA_TRAINER_USER_IDS", default_value = "")]
     pub erhua_trainer_user_ids: String,
 
@@ -1088,6 +1108,12 @@ pub enum Command {
     },
     /// Preview daily case-report analysis with sanitized output (reads JSON from stdin).
     DailyCaseReportAnalyzePreview,
+    /// Preview daily case-report narrative generation from stdin JSON.
+    DailyCaseReportNarrativePreview {
+        /// Narrative style: roast or normal.
+        #[arg(long, default_value = "roast")]
+        style: String,
+    },
     /// List AgentOS capabilities available for governed cross-Agent work.
     OperationsCapabilityList {
         /// Load capabilities from Postgres instead of the built-in offline registry.

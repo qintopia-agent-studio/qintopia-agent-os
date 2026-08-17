@@ -11,6 +11,7 @@ mod conversation_policy;
 mod daily_case_report;
 mod daily_case_report_analyze;
 mod daily_case_report_mcp;
+mod daily_case_report_narrative;
 mod daily_digest_publisher;
 mod db;
 mod embedding_worker;
@@ -618,6 +619,9 @@ async fn main() -> Result<()> {
         } => daily_case_report::run_collect_preview_cli(&cli, chat_id, &start, &end).await,
         Command::DailyCaseReportAnalyzePreview => {
             daily_case_report_analyze::run_analyze_preview_cli().await
+        }
+        Command::DailyCaseReportNarrativePreview { style } => {
+            daily_case_report_narrative::run_preview_cli(&cli, &style).await
         }
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await

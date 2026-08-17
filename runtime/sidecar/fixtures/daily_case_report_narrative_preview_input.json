@@ -1,0 +1,49 @@
+{
+  "group_name": "秦托邦的小伙伴（新）",
+  "report_date": "2026年08月08日",
+  "time_range": "00:00-23:59",
+  "message_count": 42,
+  "participant_count": 7,
+  "cases": [
+    {
+      "case_no": "CASE 01",
+      "title": "Rust 迁移",
+      "time_label": "09:00-10:30",
+      "summary": "讨论把日报中间层迁到 Rust。",
+      "message_count": 12,
+      "participant_count": 3,
+      "top_speaker": "小满",
+      "bullets": ["先迁 analyzer", "再迁 narrative"]
+    }
+  ],
+  "characters": [
+    {
+      "name": "小满",
+      "role_label": "活动推进者",
+      "one_liner": "把松散聊天推成下一步行动",
+      "story_function": "推进剧情",
+      "evidence": "今天我们先把 analyzer 跑通。"
+    }
+  ],
+  "hot_topics": [
+    {
+      "keyword": "Rust",
+      "message_count": 15,
+      "participant_count": 4
+    }
+  ],
+  "messages": [
+    {
+      "sender_name": "小满",
+      "text": "今天我们先把 analyzer 跑通"
+    },
+    {
+      "sender_name": "阿亮",
+      "text": "赞同"
+    },
+    {
+      "sender_name": "匿名",
+      "text": "> 引用前文"
+    }
+  ]
+}
