@@ -1,0 +1,5 @@
+{
+  "success": false,
+  "skill": "qintopia_weather_lookup",
+  "error": "weather capability unavailable (fixture-driven degrade)"
+}
