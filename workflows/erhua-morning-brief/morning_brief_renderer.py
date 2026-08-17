@@ -181,16 +181,11 @@ def _wrap(draw: Any, text: str, font: Any, max_width: int) -> list[str]:
     return lines or [""]
 
 
-def _draw_wrapped(draw: Any, xy: tuple[int, int], text: str, font: Any, fill: str, max_width: int, *, gap: int = 6, max_lines: Optional[int] = None) -> int:
+def _draw_lines(d: Any, xy: tuple[int, int], lines: list[str], font: Any, fill: str, line_h: int) -> int:
     x, y = xy
-    lines = _wrap(draw, text, font, max_width)
-    if max_lines is not None and len(lines) > max_lines:
-        lines = lines[:max_lines]
-        lines[-1] = lines[-1].rstrip("，。；、 ") + "..."
-    lh = int(font.size * 1.4)
     for line in lines:
-        draw.text((x, y), line, font=font, fill=fill)
-        y += lh + gap
+        d.text((x, y), line, font=font, fill=fill)
+        y += line_h
     return y
 
 
@@ -201,8 +196,7 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
     W = width * scale
     pad = 28 * scale
     cw = W - pad * 2
-    img = Image.new("RGB", (W, 4000), _PAPER)
-    d = ImageDraw.Draw(img)
+    inner_w = cw - 32 * scale
 
     title = _pil_font(34 * scale, bold=True)
     sub = _pil_font(14 * scale)
@@ -210,6 +204,50 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
     body = _pil_font(16 * scale)
     body_sm = _pil_font(14 * scale)
     hi = _pil_font(17 * scale, bold=True)
+
+    body_lh = int(body.size * 1.4) + 2 * scale
+    news_lh = body_sm.size * 2 + 10 * scale
+    hi_lh = int(hi.size * 1.5)
+
+    # Measure pass: wrap every section up front so the canvas can grow to the
+    # real content height instead of a fixed cap. A long activity plus several
+    # bilingual news items can exceed the old 4000px floor and were previously
+    # silently cropped by `min(y, img.height)`.
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    weather_lines = _wrap(measure, _weather_line(card.weather), body, inner_w)
+    activity_src = [ln for ln in (card.activity_body or "今天暂时没有安排好的活动。").splitlines() if ln.strip()]
+    activity_lines = [ln for src in activity_src for ln in _wrap(measure, src, body, inner_w)]
+    news_src = card.ai_news_items or ["今天暂时没有读到 AI 新闻。"]
+    news_lines = [
+        ln
+        for idx, item in enumerate(news_src, start=1)
+        for ln in _wrap(measure, f"{idx}. {item}", body_sm, inner_w)
+    ]
+    highlight_lines = _wrap(measure, card.highlight, hi, inner_w) if card.highlight else []
+
+    def section_height(top_pad: int, lines: list[str], line_h: int, *, min_h: int = 0) -> int:
+        h = top_pad + len(lines) * line_h
+        return max(h, min_h) if min_h else h
+
+    wh = section_height(18 * scale, weather_lines, body_lh, min_h=54 * scale)
+    ah = section_height(44 * scale, activity_lines, body_lh, min_h=54 * scale)
+    nh = section_height(44 * scale, news_lines, news_lh, min_h=54 * scale)
+    hh = section_height(38 * scale, highlight_lines, hi_lh, min_h=50 * scale) if highlight_lines else 0
+
+    gap_after = 18 * scale
+    H = (
+        20 * scale
+        + 86 * scale + 18 * scale
+        + wh + gap_after
+        + ah + gap_after
+        + nh + gap_after
+        + (hh + gap_after if highlight_lines else 0)
+        + 40 * scale + 20 * scale
+    )
+    H = max(int(H), 1)
+
+    img = Image.new("RGB", (W, H), _PAPER)
+    d = ImageDraw.Draw(img)
 
     def rect(x: int, y: int, w: int, h: int, fill: str, outline: str = _INK, ow: int = 3 * scale, r: int = 16 * scale) -> None:
         d.rounded_rectangle((x, y, x + w, y + h), radius=r, fill=fill, outline=outline, width=ow)
@@ -222,42 +260,28 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
     y += 86 * scale + 18 * scale
 
     # weather chip
-    wlines = _wrap(d, _weather_line(card.weather), body, cw - 32 * scale)
-    wh = max(54 * scale, 18 * scale + len(wlines) * int(body.size * 1.4))
     rect(pad, y, cw, wh, _BLUE)
-    _draw_wrapped(d, (pad + 16 * scale, y + 14 * scale), _weather_line(card.weather), body, _INK, cw - 32 * scale, gap=2 * scale)
-    y += wh + 18 * scale
+    _draw_lines(d, (pad + 16 * scale, y + 18 * scale), weather_lines, body, _INK, body_lh)
+    y += wh + gap_after
 
     # activity
-    a_lines = [ln for ln in (card.activity_body or "今天暂时没有安排好的活动。").splitlines() if ln.strip()]
-    ah = 54 * scale + len(a_lines) * int(body.size * 1.7)
     rect(pad, y, cw, ah, "#ffffff")
     d.text((pad + 16 * scale, y + 14 * scale), card.activity_title, font=kicker, fill=_ORANGE)
-    ay = y + 44 * scale
-    for ln in a_lines:
-        ay = _draw_wrapped(d, (pad + 16 * scale, ay), ln, body, "#222222", cw - 32 * scale, gap=2 * scale)
-    y += ah + 18 * scale
+    _draw_lines(d, (pad + 16 * scale, y + 44 * scale), activity_lines, body, "#222222", body_lh)
+    y += ah + gap_after
 
     # ai news
-    n_lines = card.ai_news_items or ["今天暂时没有读到 AI 新闻。"]
-    nh = 54 * scale + len(n_lines) * (body_sm.size * 2 + 10 * scale)
     rect(pad, y, cw, nh, "#ffffff")
     d.text((pad + 16 * scale, y + 14 * scale), card.ai_news_title, font=kicker, fill="#1f6f54")
-    ny = y + 44 * scale
-    for idx, item in enumerate(n_lines, start=1):
-        prefix = f"{idx}. "
-        ny = _draw_wrapped(d, (pad + 16 * scale, ny), prefix + item, body_sm, "#222222", cw - 32 * scale, gap=2 * scale)
-        ny += 6 * scale
-    y += nh + 18 * scale
+    _draw_lines(d, (pad + 16 * scale, y + 44 * scale), news_lines, body_sm, "#222222", news_lh)
+    y += nh + gap_after
 
     # highlight
-    if card.highlight:
-        hlines = _wrap(d, card.highlight, hi, cw - 32 * scale)
-        hh = 50 * scale + len(hlines) * int(hi.size * 1.5)
+    if highlight_lines:
         rect(pad, y, cw, hh, _ORANGE)
         d.text((pad + 16 * scale, y + 12 * scale), "今日亮点", font=kicker, fill=_YELLOW)
-        _draw_wrapped(d, (pad + 16 * scale, y + 38 * scale), card.highlight, hi, _CREAM, cw - 32 * scale, gap=2 * scale)
-        y += hh + 18 * scale
+        _draw_lines(d, (pad + 16 * scale, y + 38 * scale), highlight_lines, hi, _CREAM, hi_lh)
+        y += hh + gap_after
 
     d.rectangle((0, y, W, y + 40 * scale), fill=_INK)
     d.text((pad, y + 12 * scale), "二花早报 · 由小满自动整理，仅供社区群内参考", font=_pil_font(11 * scale), fill=_PALE)

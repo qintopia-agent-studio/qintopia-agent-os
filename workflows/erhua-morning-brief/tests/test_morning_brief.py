@@ -10,6 +10,13 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+try:
+    from PIL import Image as _PILImage
+
+    _PIL_AVAILABLE = True
+except Exception:  # pragma: no cover - exercised only without Pillow
+    _PIL_AVAILABLE = False
+
 
 WORKFLOW_DIR = Path(__file__).resolve().parents[1]
 SCRIPT = WORKFLOW_DIR / "morning_brief.py"
@@ -852,6 +859,53 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             self.assertEqual(plan["rendered_image_path"], str(image_path.resolve()))
             step_names = [step["name"] for step in plan["steps"]]
             self.assertIn("render_card_image", step_names)
+
+    def test_pillow_fallback_renders_full_height_without_truncation(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        sys.path.insert(0, str(WORKFLOW_DIR))
+        renderer_spec = importlib.util.spec_from_file_location(
+            "erhua_morning_brief_renderer", WORKFLOW_DIR / "morning_brief_renderer.py"
+        )
+        renderer = importlib.util.module_from_spec(renderer_spec)
+        sys.modules[renderer_spec.name] = renderer
+        renderer_spec.loader.exec_module(renderer)
+
+        # A long activity plus five bilingual news items can push the real
+        # content height past the old fixed 4000px Pillow canvas. The fallback
+        # must grow the canvas instead of silently cropping at min(y, 4000).
+        long_activity = "\n".join(
+            "社区路跑训练营报名现已开启，请提前到栗峪口集合并带好补给。" * 3 for _ in range(20)
+        )
+        bilingual_news = [
+            "OpenAI released a new long-context model.  OpenAI 发布新模型，主打长上下文与多模态推理能力，已向开发者开放。"
+            for _ in range(5)
+        ]
+        card = renderer.MorningBriefCard(
+            greeting="二花早报",
+            date_label="2026-08-17 周一",
+            activity_body=long_activity,
+            ai_news_items=bilingual_news,
+            highlight="今日氛围：社区共建日。",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "tall.png"
+            renderer._render_with_pillow(card, image_path, 720, "png")
+            self.assertTrue(image_path.exists())
+            with _PILImage.open(image_path) as img:
+                width, height = img.size
+            self.assertGreater(height, 4000, "Pillow canvas must grow past the old 4000px cap")
+            # The footer band (last 80px) is the dark ink rectangle. If the poster
+            # had been truncated, that band would be missing and the bottom would
+            # read as paper-colored instead of ink.
+            with _PILImage.open(image_path) as img:
+                bottom = img.crop((0, height - 80, width, height)).convert("RGB")
+                # The footer band sits ~40-80px from the bottom (a short paper
+                # margin is below it). Its text only covers the top ~22px, so a
+                # paper-colored pixel near the band's lower half means the poster
+                # was truncated and the footer never reached the canvas bottom.
+                footer_pixel = bottom.getpixel((width // 2, 20))
+            self.assertEqual(footer_pixel, (26, 26, 26), "truncated poster missing dark footer band")
 
 
 if __name__ == "__main__":
