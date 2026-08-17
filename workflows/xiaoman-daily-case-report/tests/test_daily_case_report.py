@@ -1909,6 +1909,264 @@ class DailyCaseReportTest(unittest.TestCase):
         self.assertLess(rendered.index("待解决问题"), rendered.index("故事线候选"))
         self.assertLess(rendered.index("故事线候选"), rendered.index("24H 活跃节奏"))
 
+    def test_pillow_renderer_renders_full_height_without_truncation(self) -> None:
+        # Regression: the old fixed 7600px canvas silently dropped any report
+        # taller than that. The renderer must measure the true content height and
+        # size the canvas to fit, so the footer (last element) is never clipped.
+        char = daily_case_report.CharacterCard(
+            rank=1,
+            name="成员",
+            role_label="活动推进者",
+            one_liner="把松散聊天推成下一步行动",
+            evidence="活动安排已经确认",
+            message_count=2,
+            topic_count=1,
+        )
+        case = models.CaseCard(
+            case_no="CASE 01",
+            title="讨论主题",
+            time_label="10:00-11:00",
+            summary="3 条消息，2 人参与",
+            bullets=["活动安排已经确认"],
+            message_count=3,
+            participant_count=2,
+            color_bg="#fff0a6",
+            color_text="#111111",
+            top_speaker="成员",
+        )
+        suspect = daily_case_report.Suspect(
+            rank=1,
+            name="成员",
+            message_count=2,
+            word_count=12,
+            avatar_emoji="*",
+        )
+        report = daily_case_report.ReportData(
+            group_name="group",
+            report_title="群聊战报",
+            report_date="2026-08-08",
+            time_range="00:00-23:59",
+            member_count=60,
+            message_count=200,
+            participant_count=60,
+            case_count=20,
+            suspect_count=40,
+            hourly_counts=[0] * 24,
+            cases=[case] * 20,
+            suspects=[suspect] * 40,
+            highlight="活动安排已经确认",
+            hot_topics=[
+                daily_case_report.HotTopic(rank=1, keyword="讨论主题", message_count=2, participant_count=2)
+            ] * 20,
+            character_count=60,
+            characters=[char] * 60,
+        )
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "preview.jpg"
+            renderer._render_image_with_pillow(report, output_path, 750, "jpeg")
+            with Image.open(output_path) as img:
+                self.assertGreater(
+                    img.height,
+                    7600,
+                    "tall report was truncated to the old fixed 7600px canvas cap",
+                )
+
+    def test_roast_fallback_uses_deterministic_parsed_not_character_poster(self) -> None:
+        # When every LLM model fails, the roast report must fall back to the
+        # deterministic roast layout built from the report data — never to the
+        # character-poster (newspaper) template.
+        import roast_long_image
+        from models import CaseCard, CharacterCard, ReportData
+
+        report = ReportData(
+            group_name="秦托邦",
+            report_title="小满日报",
+            report_date="2026年08月16日",
+            time_range="00:00–23:59",
+            member_count=50,
+            message_count=26,
+            participant_count=11,
+            case_count=1,
+            suspect_count=2,
+            hourly_counts=[0] * 24,
+            cases=[
+                CaseCard(
+                    case_no="01", title="日报复更", time_label="全天",
+                    summary="日报一恢复就被催更。", bullets=["有人蹲点"],
+                    message_count=10, participant_count=5,
+                    color_bg="#fff", color_text="#000", top_speaker="白糖",
+                )
+            ],
+            suspects=[],
+            highlight="咋就 404 了",
+            characters=[
+                CharacterCard(
+                    rank=1, name="方桃子", role_label="嘴炮担当",
+                    one_liner="凌晨第一个发现 404 的人", evidence="",
+                    message_count=8, topic_count=2,
+                )
+            ],
+            character_count=1,
+        )
+        parsed = roast_long_image.build_fallback_parsed(report)
+        for key in ("kicker", "date_line", "title", "war_report", "chapters",
+                    "tomorrow", "characters", "final_quote"):
+            self.assertIn(key, parsed)
+        self.assertIn("吐槽日报", parsed["kicker"])
+        self.assertIn("条消息", parsed["war_report"])
+        self.assertGreaterEqual(len(parsed["chapters"]), 1)
+        self.assertEqual(parsed["final_quote"]["text"], "咋就 404 了")
+
+    def test_render_html_with_roast_fallback_passes_through_when_narrative_present(self) -> None:
+        def fake_render(_report, _width, template, narrative_md):
+            return f"html:{template}:{narrative_md is not None}"
+
+        old = daily_case_report._render_html
+        daily_case_report._render_html = fake_render
+        try:
+            out = daily_case_report._render_html_with_roast_fallback(
+                report=object(),
+                width=750,
+                template=daily_case_report.ROAST_LONG_IMAGE_TEMPLATE,
+                narrative_md="some narrative",
+            )
+        finally:
+            daily_case_report._render_html = old
+        self.assertEqual(
+            out,
+            f"html:{daily_case_report.ROAST_LONG_IMAGE_TEMPLATE}:True",
+        )
+
+    def test_render_html_with_roast_fallback_reraises_non_roast_error(self) -> None:
+        def fake_render(_report, _width, _template, _narrative_md):
+            raise RuntimeError("boom")
+
+        old = daily_case_report._render_html
+        daily_case_report._render_html = fake_render
+        try:
+            with self.assertRaises(RuntimeError):
+                daily_case_report._render_html_with_roast_fallback(
+                    report=object(),
+                    width=750,
+                    template="v3",
+                    narrative_md=None,
+                )
+        finally:
+            daily_case_report._render_html = old
+
+    def test_pillow_renderer_image_includes_all_suspects(self) -> None:
+        # Regression: the Pillow image path used to slice suspects to
+        # DEFAULT_SUSPECT_LIMIT (5) while the HTML/MD paths rendered all of
+        # them, so the poster silently lost people. It must now match the
+        # text report and render every suspect.
+        captured_text: list[str] = []
+
+        class FakeFont:
+            def __init__(self, size: int):
+                self.size = size
+
+        class FakeImageObject:
+            height = 20000
+
+            def crop(self, _box):
+                return self
+
+            def save(self, output_path, format=None, **_kwargs):
+                Path(output_path).write_bytes(str(format or "").encode("utf-8"))
+
+        class FakeImageModule(types.SimpleNamespace):
+            def new(self, *_args, **_kwargs):
+                return FakeImageObject()
+
+        class FakeDraw:
+            def text(self, _xy, text, **_kwargs):
+                captured_text.append(str(text))
+
+            def textbbox(self, _xy, text, **_kwargs):
+                return (0, 0, len(str(text)) * 8, 16)
+
+            def textlength(self, text, **_kwargs):
+                return len(str(text)) * 8
+
+            def rectangle(self, *_args, **_kwargs):
+                pass
+
+            def rounded_rectangle(self, *_args, **_kwargs):
+                pass
+
+            def ellipse(self, *_args, **_kwargs):
+                pass
+
+            def line(self, *_args, **_kwargs):
+                pass
+
+        fake_pil = types.ModuleType("PIL")
+        fake_image = FakeImageModule()
+        fake_image_draw = types.SimpleNamespace(Draw=lambda _image: FakeDraw())
+        old_pil = sys.modules.get("PIL")
+        old_image = sys.modules.get("PIL.Image")
+        old_image_draw = sys.modules.get("PIL.ImageDraw")
+        old_pil_font = renderer._pil_font
+        sys.modules["PIL"] = fake_pil
+        sys.modules["PIL.Image"] = fake_image
+        sys.modules["PIL.ImageDraw"] = fake_image_draw
+        renderer._pil_font = lambda size, **_kwargs: FakeFont(size)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                report = daily_case_report.ReportData(
+                    group_name="group",
+                    report_title="群聊战报",
+                    report_date="2026-08-08",
+                    time_range="00:00-23:59",
+                    member_count=8,
+                    message_count=20,
+                    participant_count=8,
+                    case_count=0,
+                    suspect_count=8,
+                    hourly_counts=[0] * 24,
+                    cases=[],
+                    suspects=[
+                        daily_case_report.Suspect(
+                            rank=i + 1,
+                            name=f"成员{i + 1}",
+                            message_count=2 + i,
+                            word_count=12 + i,
+                            avatar_emoji="*",
+                        )
+                        for i in range(8)
+                    ],
+                    highlight="",
+                    hot_topics=[],
+                    character_count=0,
+                    characters=[],
+                )
+                renderer._render_image_with_pillow(
+                    report,
+                    Path(tmpdir) / "preview.jpg",
+                    750,
+                    "jpeg",
+                )
+        finally:
+            renderer._pil_font = old_pil_font
+            if old_pil is None:
+                sys.modules.pop("PIL", None)
+            else:
+                sys.modules["PIL"] = old_pil
+            if old_image is None:
+                sys.modules.pop("PIL.Image", None)
+            else:
+                sys.modules["PIL.Image"] = old_image
+            if old_image_draw is None:
+                sys.modules.pop("PIL.ImageDraw", None)
+            else:
+                sys.modules["PIL.ImageDraw"] = old_image_draw
+
+        rendered = "\n".join(captured_text)
+        for i in range(8):
+            self.assertIn(f"成员{i + 1}", rendered)
+
     def test_render_image_falls_back_to_pillow_when_browser_is_missing(self) -> None:
         report = daily_case_report.ReportData(
             group_name="group",

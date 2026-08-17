@@ -857,6 +857,51 @@ class QintopiaWeatherTest(unittest.TestCase):
         self.assertIn("空气（鄠邑区）：AQI 暂未确认", payload["morning_broadcast"])
         self.assertNotIn("官方暂无秦托邦天气预警", payload["morning_broadcast"])
 
+    def test_weather_alert_http_error_body_read_failure_returns_graceful_dict(self):
+        """Regression: when reading the HTTPError response body fails, the handler
+        must still return a graceful error dict (status taken from the original
+        HTTPError) instead of crashing with UnboundLocalError from a shadowed `exc`.
+
+        PR #624 introduced `except Exception as exc:` nested inside
+        `except urlerror.HTTPError as exc:`; the inner binding deleted the outer
+        `exc`, so `exc.code` in the return dict raised UnboundLocalError on the
+        exact error path the change targeted.
+        """
+        import types
+
+        class _FakeHTTPError(self.module.urlerror.HTTPError):
+            code = 503
+
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def read(self, *args, **kwargs):
+                raise ValueError("simulated body read failure")
+
+        def _raise_http_error(request, timeout=None):
+            raise _FakeHTTPError()
+
+        class _FakeQweatherMain:
+            api_host = "api.example.com"
+            auth_header = {"Authorization": "Bearer token"}
+
+        original_urlopen = self.module.urlrequest.urlopen
+        original_importlib = self.module.importlib
+        try:
+            self.module.urlrequest.urlopen = _raise_http_error
+            self.module.importlib = types.SimpleNamespace(
+                import_module=lambda name: _FakeQweatherMain()
+            )
+            result = self.module._qweather_weather_alert_current("108.5666,34.0261")
+        finally:
+            self.module.urlrequest.urlopen = original_urlopen
+            self.module.importlib = original_importlib
+
+        self.assertEqual(result["success"], False)
+        self.assertEqual(result["source"], "weatheralert_v1")
+        self.assertEqual(result["status"], 503)
+        self.assertIn("error", result)
+
     def test_weather_lookup_rejects_non_fixed_location(self):
         os.environ["QINTOPIA_WEATHER_LOCATION"] = "西安"
 
