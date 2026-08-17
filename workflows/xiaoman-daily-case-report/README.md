@@ -2,9 +2,10 @@
 
 `workflows/xiaoman-daily-case-report` generates a character-driven daily community
 poster for Xiaoman community groups. The production recurrence is a Xiaoman Hermes cron
-job that reads the latest rolling 24 hours of QiWe group messages, calls the
-release-managed worker to render a JPEG poster, and publishes it automatically to the
-reviewed target group through the governed QiWe image-send boundary.
+job that reads the most recently completed calendar day (00:00–24:00) of QiWe group
+messages, calls the release-managed worker to render a JPEG poster, and publishes it
+automatically to the reviewed target group through the governed QiWe image-send
+boundary.
 
 The current script generates the report image locally and emits artifact identity. The
 sidecar has the reviewed binding command that turns a durable JPEG URI into an approved
@@ -14,8 +15,8 @@ observation, rollback, and send boundaries still run from the immutable release.
 
 ## Responsibility
 
-- Read QiWe group messages from `qintopia_messages.messages` for the latest rolling
-  24-hour window.
+- Read QiWe group messages from `qintopia_messages.messages` for the most recently
+  completed calendar day (00:00–24:00).
 - Count only text messages with non-empty `text`; image, emoji-only, system, and blank
   messages are excluded from activity statistics.
 - Keep raw text-message counts as the top-line activity metric, but filter obvious
@@ -188,9 +189,9 @@ python workflows/xiaoman-daily-case-report/daily_case_report.py \
 
 > Production read-through requires `--chat-id` or
 > `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID`; do not commit real QiWe group IDs to
-> git. Without `--date`, the query window is the latest rolling 24 hours ending at run
-> time. Use `--date YYYY-MM-DD` only for a specific calendar-day backfill in
-> `--timezone`.
+> git. Without `--date`, the query window is the most recently completed calendar day
+> (00:00–24:00) in the report timezone. Use `--date YYYY-MM-DD` only for a specific
+> calendar-day backfill in `--timezone`.
 
 ### Production auto-publish entrypoint
 
@@ -266,8 +267,7 @@ candidate text.
   auto-publish target.
 - Database mode fails closed (non-zero exit) if read-through is not enabled or the
   database URL is missing.
-- An empty rolling 24-hour window exits 0 with a report showing zero messages and no
-  cases.
+- An empty calendar-day window exits 0 with a report showing zero messages and no cases.
 - Local generation reports `requires_human_confirmation=false` and
   `auto_publish_ready=false`: per-day human confirmation is not part of the target
   design, but the local script has not uploaded or sent anything.
@@ -290,9 +290,9 @@ candidate text.
   one; no real QiWe group ID is committed as a source default.
 - Rendering happens locally in the runtime environment; no external image service,
   remote font, or other third-party network resource is called.
-- The default report window is the latest rolling 24 hours in the configured
-  `--timezone` (default `Asia/Shanghai`) before querying Postgres. `--date` is an
-  explicit calendar-day backfill mode.
+- The default report window is the most recently completed calendar day (00:00–24:00) in
+  the configured `--timezone` (default `Asia/Shanghai`) before querying Postgres.
+  `--date` is an explicit calendar-day backfill mode.
 - Production read-through rejects `--render html` and `--keep-html`. Intermediate HTML
   can contain real member names and message excerpts, so it is written only into a
   `0700` output directory as a `0600` file and is removed after image rendering or

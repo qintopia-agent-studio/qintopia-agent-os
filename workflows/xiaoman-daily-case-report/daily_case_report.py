@@ -131,7 +131,7 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Xiaoman daily community case-file report")
     parser.add_argument(
         "--date",
-        help="Backfill one calendar day (YYYY-MM-DD). Omit for the latest rolling 24-hour window.",
+        help="Backfill one calendar day (YYYY-MM-DD). Omit for the most recently completed calendar day (00:00-24:00).",
     )
     parser.add_argument(
         "--chat-id",
