@@ -1086,6 +1086,8 @@ pub enum Command {
         #[arg(long)]
         end: String,
     },
+    /// Preview daily case-report analysis with sanitized output (reads JSON from stdin).
+    DailyCaseReportAnalyzePreview,
     /// List AgentOS capabilities available for governed cross-Agent work.
     OperationsCapabilityList {
         /// Load capabilities from Postgres instead of the built-in offline registry.
