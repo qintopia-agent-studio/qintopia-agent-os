@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import httpx
@@ -41,6 +41,14 @@ _LLM_MODEL_ENVS = (
     "QINTOPIA_LLM_MODEL",
     "QINTOPIA_XIAOMAN_LLM_MODEL",
     "OPENAI_MODEL",
+)
+# Comma-separated fallback models tried in order when the primary model fails.
+# Read from env (never hardcoded) so operators can adjust the backup chain
+# without a code change, e.g. QINTOPIA_LLM_FALLBACK_MODELS=gpt-4o-mini,gpt-5-mini
+_LLM_FALLBACK_MODELS_ENVS = (
+    "QINTOPIA_LLM_FALLBACK_MODELS",
+    "QINTOPIA_XIAOMAN_LLM_FALLBACK_MODELS",
+    "OPENAI_FALLBACK_MODELS",
 )
 
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -326,6 +334,47 @@ def _chat_completion(config: NarrativeConfig, system: str, user: str, *, _attemp
     return content.strip()
 
 
+def _fallback_models(primary: str) -> list[str]:
+    """Return the ordered list of models to try, primary first then env fallbacks.
+
+    Reads QINTOPIA_LLM_FALLBACK_MODELS (comma-separated) from the session env;
+    never hardcoded so operators can adjust the backup chain without a deploy.
+    Duplicates and blanks are removed while preserving order.
+    """
+    raw = next((_session_env(v) for v in _LLM_FALLBACK_MODELS_ENVS if _session_env(v)), "")
+    chain = [primary] + [m.strip() for m in raw.split(",")]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for m in chain:
+        if m and m not in seen:
+            seen.add(m)
+            ordered.append(m)
+    return ordered
+
+
+def _chat_completion_with_failover(config: NarrativeConfig, system: str, user: str) -> str:
+    """Try the primary model, then each env-configured fallback model.
+
+    Returns the first non-empty completion. Raises the last error if every
+    model in the chain fails, so the caller can decide the final fallback.
+    """
+    last_exc: Exception | None = None
+    for model in _fallback_models(config.model):
+        if model == config.model:
+            attempt_config = config
+        else:
+            attempt_config = replace(config, model=model)
+        try:
+            return _chat_completion(attempt_config, system, user)
+        except Exception as exc:  # noqa: BLE001 - try the next model in the chain
+            last_exc = exc
+            print(
+                f"WARN: narrative model {model} failed ({exc}); trying next fallback",
+                file=sys.stderr,
+            )
+    raise RuntimeError(f"all narrative models failed: {last_exc}")
+
+
 def generate_narrative(style: str, report: Any, config: NarrativeConfig,
                        reviewed_image_dir: str | None = None) -> str:
     """Generate a narrative markdown from the deterministic report.
@@ -356,4 +405,4 @@ def generate_narrative(style: str, report: Any, config: NarrativeConfig,
         )
         user = user + image_block
 
-    return _chat_completion(config, system, user)
+    return _chat_completion_with_failover(config, system, user)

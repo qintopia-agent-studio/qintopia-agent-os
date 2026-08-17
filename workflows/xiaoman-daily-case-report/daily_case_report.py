@@ -512,26 +512,39 @@ def _render_html_with_roast_fallback(
     template: str,
     narrative_md: str | None,
 ) -> str:
-    """Render the deliverable HTML, degrading a roast template to the newspaper
-    template when the LLM narrative layer is unavailable.
+    """Render the deliverable HTML for non-roast templates.
 
-    The narrative layer is intentionally best-effort (see the comment above the
-    generation block in main()): an LLM/config error must never abort the
-    otherwise-deterministic report. Without this fallback, requesting the roast
-    template while narrative generation failed raised RuntimeError from
-    renderer._render_html and crashed the whole job, dropping every artifact.
+    The roast template no longer goes through HTML at all — it renders directly
+    with Pillow (see the roast branch in main), so this fallback no longer
+    degrades a roast request into the character-poster (newspaper) layout.
     """
-    try:
-        return _render_html(report, width, template, narrative_md)
-    except RuntimeError as exc:
-        if template == ROAST_LONG_IMAGE_TEMPLATE and not narrative_md:
-            print(
-                f"WARN: roast narrative unavailable ({exc}); "
-                f"falling back to {NEWSPAPER_ELEGANT_TEMPLATE} template",
-                file=sys.stderr,
-            )
-            return _render_html(report, width, NEWSPAPER_ELEGANT_TEMPLATE, None)
-        raise
+    return _render_html(report, width, template, narrative_md)
+
+
+def _render_roast_image(
+    report: ReportData,
+    width: int,
+    narrative_md: str | None,
+    image_path: Path,
+    image_format: str,
+) -> None:
+    """Render the roast daily report directly with Pillow (no browser).
+
+    Uses the LLM narrative when available (full roast text). When every LLM
+    model fails, builds the same roast layout from the deterministic report
+    data instead of degrading to the character poster.
+    """
+    import roast_long_image
+
+    if narrative_md:
+        input_data: dict = {"narrative_md": narrative_md, "width": width}
+    else:
+        print(
+            "WARN: roast narrative unavailable; rendering deterministic roast fallback (no character poster)",
+            file=sys.stderr,
+        )
+        input_data = {"parsed": roast_long_image.build_fallback_parsed(report), "width": width}
+    roast_long_image.render_pillow(input_data, str(image_path))
 
 
 def main() -> int:
@@ -606,7 +619,12 @@ def main() -> int:
     if narrative_path is not None and narrative_md:
         _write_private_text(narrative_path, narrative_md)
 
-    html_content = _render_html_with_roast_fallback(report, args.output_width, args.template, narrative_md)
+    is_roast = args.template == ROAST_LONG_IMAGE_TEMPLATE
+    # The roast template renders directly with Pillow (no HTML, no browser).
+    # Other templates still produce an HTML deliverable.
+    html_content = "" if is_roast else _render_html_with_roast_fallback(
+        report, args.output_width, args.template, narrative_md
+    )
     quote_map = _build_quote_map(report)
     wiki_bundle = _build_wiki_bundle(report, quote_map)
     draft_bundle = _build_draft_bundle(report, quote_map, wiki_bundle)
@@ -623,7 +641,8 @@ def main() -> int:
         .replace(microsecond=0)
         .isoformat(),
     )
-    _write_private_text(html_path, html_content)
+    if not is_roast:
+        _write_private_text(html_path, html_content)
     _write_private_text(markdown_path, _render_daily_markdown(report))
     _write_private_text(
         universe_path,
@@ -658,13 +677,22 @@ def main() -> int:
     try:
         if args.render in ("auto", "image", "png"):
             try:
-                _render_image(
-                    html_path,
-                    image_path,
-                    args.output_width,
-                    args.image_format,
-                    report,
-                )
+                if is_roast:
+                    _render_roast_image(
+                        report,
+                        args.output_width,
+                        narrative_md,
+                        image_path,
+                        args.image_format,
+                    )
+                else:
+                    _render_image(
+                        html_path,
+                        image_path,
+                        args.output_width,
+                        args.image_format,
+                        report,
+                    )
                 image_generated = True
             except RuntimeError as exc:
                 print(f"WARN: image rendering skipped: {exc}", file=sys.stderr)
