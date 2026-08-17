@@ -86,28 +86,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--audience", default=DEFAULT_AUDIENCE)
     parser.add_argument("--activity-fixture", help="JSON fixture with Xiaoman announcement output.")
     parser.add_argument("--news-fixture", help="QunMind markdown fixture for tests or demos.")
-    parser.add_argument("--weather-fixture", help="Open-Meteo JSON fixture for tests or demos.")
     parser.add_argument(
-        "--weather-latitude",
-        type=float,
-        default=float(os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_WEATHER_LATITUDE", "22.78")),
-        help="Latitude for Open-Meteo weather (default Pu'er, Yunnan).",
-    )
-    parser.add_argument(
-        "--weather-longitude",
-        type=float,
-        default=float(os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_WEATHER_LONGITUDE", "101.04")),
-        help="Longitude for Open-Meteo weather (default Pu'er, Yunnan).",
-    )
-    parser.add_argument(
-        "--weather-timeout-seconds",
-        type=int,
-        default=int(
-            os.environ.get(
-                "QINTOPIA_ERHUA_MORNING_BRIEF_WEATHER_TIMEOUT_SECONDS",
-                "8",
-            )
-        ),
+        "--weather-fixture",
+        help="qintopia_weather_lookup payload JSON fixture for tests or demos.",
     )
     parser.add_argument(
         "--qunmind-bin",
@@ -272,13 +253,7 @@ def _load_activity_fixture(path: str) -> dict[str, Any]:
 
 
 def _prepare_weather(args: argparse.Namespace) -> Optional[WeatherInfo]:
-    return fetch_weather(
-        latitude=args.weather_latitude,
-        longitude=args.weather_longitude,
-        timezone=args.timezone,
-        timeout_seconds=args.weather_timeout_seconds,
-        fixture_path=args.weather_fixture,
-    )
+    return fetch_weather(fixture_path=args.weather_fixture)
 
 
 def _prepare_activity(date: str, args: argparse.Namespace) -> dict[str, Any]:
@@ -1328,7 +1303,7 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         "guardrails": [
             "reads Xiaoman activity preview only",
             "uses QunMind public-only daily report or public RSS fallback for AI news",
-            "uses Open-Meteo free public forecast for weather; degrades gracefully when unavailable",
+            "uses the qintopia-weather QWeather capability (Open-Meteo fallback) for weather; degrades gracefully when unavailable",
             "does not publish, call Erhua, call QiWe, create work items, or send by default",
         ],
     }

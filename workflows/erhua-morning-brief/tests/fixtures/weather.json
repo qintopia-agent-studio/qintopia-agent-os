@@ -1,12 +1,48 @@
 {
-  "current": {
-    "temperature_2m": 23.1,
-    "weather_code": 3
+  "success": true,
+  "skill": "qintopia_weather_lookup",
+  "source": "qweather_mcp",
+  "provider": "QWeather",
+  "location": {
+    "name": "秦托邦·栗峪口",
+    "coordinates": "108.5666545,34.0261288",
+    "fixed": true
   },
-  "daily": {
-    "time": ["2026-08-08"],
-    "weather_code": [3],
-    "temperature_2m_max": [28.5],
-    "temperature_2m_min": [21.0]
+  "current": {
+    "obs_time": "2026-08-08T09:00+08:00",
+    "text": "阴",
+    "temp_c": "23.1",
+    "feels_like_c": "22.4",
+    "humidity_pct": "78"
+  },
+  "daily_forecast": {
+    "status": "complete",
+    "summary": "今天降水信号不明显，按正常出行准备。",
+    "periods": [
+      {
+        "id": "midday",
+        "label": "中午",
+        "status": "complete",
+        "condition": "阴",
+        "temp_min_c": 21,
+        "temp_max_c": 28.5
+      },
+      {
+        "id": "afternoon",
+        "label": "下午",
+        "status": "complete",
+        "condition": "阴",
+        "temp_min_c": 21,
+        "temp_max_c": 28.5
+      },
+      {
+        "id": "evening",
+        "label": "晚上",
+        "status": "complete",
+        "condition": "多云",
+        "temp_min_c": 21,
+        "temp_max_c": 28.5
+      }
+    ]
   }
 }
