@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.156](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.155...v0.2.156) (2026-08-18)
+
+
+### Features
+
+* **sidecar:** add daily case report Rust render module and HTML parity fixtures (PR 5) ([#637](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/637)) ([cf1de1f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/cf1de1faf86ab9b448b33cbd4c28257437e9dbc6))
+* **xiaoman:** prepend dynamic chat intro before daily report image ([#636](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/636)) ([97fbbc4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/97fbbc4a91c9ea2c0f9118b55d2a8e1569c8662c))
+
+
+### Bug Fixes
+
+* **deploy:** fetch tags with objects before git-tag fallback ([#635](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/635)) ([ccd5b9a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ccd5b9a70311a3b21619cd45817534dd32881488))
+* **xiaoman:** fail closed on intro dedupe probe error ([#640](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/640)) ([0a14ef7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/0a14ef7e8fe0d389c26890422ab080e1d9a41b8e))
+* **xiaoman:** strip markdown emphasis from roast daily report image ([#641](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/641)) ([c52e4d7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c52e4d78737629f68e47d6efbaf16609090c5c14))
+
 ## [0.2.155](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.154...v0.2.155) (2026-08-17)
 
 
