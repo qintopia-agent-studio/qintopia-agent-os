@@ -55,21 +55,6 @@ pub fn deterministic_uuid_from_parts(parts: &[&str]) -> Uuid {
     Uuid::from_bytes(bytes)
 }
 
-/// Identity of a JPEG image held in memory.
-///
-/// `bytes` holds the raw JPEG payload; callers are responsible for zeroizing
-/// it on drop when it is sensitive (the workflows wrap it in their own
-/// zeroizing types).
-#[derive(Debug, Clone)]
-pub struct ImageIdentity {
-    pub bytes: Vec<u8>,
-    pub content_hash: String,
-    pub file_md5: String,
-    pub byte_size: usize,
-    pub width: u32,
-    pub height: u32,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
