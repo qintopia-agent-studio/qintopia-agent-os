@@ -222,9 +222,27 @@ media_upload_evidence = uploaded.get("media_upload_evidence")
 if not isinstance(media_upload_evidence, dict):
     raise SystemExit("media upload did not return media_upload_evidence")
 
+def _default_intro_text() -> str:
+    report_date = rendered.get("report_date", "").strip()
+    group_name = rendered.get("group_name", "").strip()
+    message_count = rendered.get("message_count", 0)
+    participant_count = rendered.get("participant_count", 0)
+    date_part = report_date or "昨天"
+    group_part = f"「{group_name}」" if group_name else "咱们群"
+    return (
+        f"小满日报来啦 📰 {date_part} {group_part}的群聊，"
+        f"共 {message_count} 条消息、{participant_count} 位邻居发言。"
+        f"昨天的新鲜事都在下面这张长图里，点开看看 👇"
+    )
+
+
+# Intro chat text delivered immediately before the report image. Operators may
+# override with QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT; otherwise a
+# dynamic line is built from the rendered report so the group knows what the
+# image is before opening it.
 message_text = os.environ.get(
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT",
-    "小满日报已自动生成。",
+    _default_intro_text(),
 )
 
 print(json.dumps({
