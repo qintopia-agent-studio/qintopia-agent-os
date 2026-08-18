@@ -135,6 +135,9 @@ pub struct Cli {
     #[arg(long, env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY")]
     pub daily_case_report_mcp_workflow_py: Option<String>,
 
+    #[arg(long, env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_RASTERIZE_PY")]
+    pub daily_case_report_mcp_rasterize_py: Option<String>,
+
     #[arg(
         long,
         env = "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_RENDER_TIMEOUT_SECONDS",
@@ -1140,6 +1143,16 @@ pub enum Command {
         /// Optional placeholder output image path for the rasterization request.
         #[arg(long, default_value = "daily-report.jpg")]
         output_path: String,
+    },
+    /// Run the Xiaoman daily case-report auto-publish worker.
+    RunDailyCaseReportAutoPublishWorker {
+        /// Run one cycle and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Apply upload and publish. Without this flag the command previews locally.
+        #[arg(long)]
+        apply: bool,
     },
     /// List AgentOS capabilities available for governed cross-Agent work.
     OperationsCapabilityList {

@@ -1257,7 +1257,7 @@ fn profile_upgrade_reason(
     }
 }
 
-fn memory_recurrence_label(recent_count: i32) -> &'static str {
+pub(crate) fn memory_recurrence_label(recent_count: i32) -> &'static str {
     if recent_count >= 10 {
         "近90天高频复现"
     } else if recent_count >= 4 {
@@ -1269,7 +1269,7 @@ fn memory_recurrence_label(recent_count: i32) -> &'static str {
     }
 }
 
-fn memory_depth_label(lifetime_count: i32) -> &'static str {
+pub(crate) fn memory_depth_label(lifetime_count: i32) -> &'static str {
     if lifetime_count >= 24 {
         "长期角色锚点"
     } else if lifetime_count >= 8 {
@@ -1281,7 +1281,7 @@ fn memory_depth_label(lifetime_count: i32) -> &'static str {
     }
 }
 
-fn memory_weight_label(recent_count: i32, lifetime_count: i32) -> String {
+pub(crate) fn memory_weight_label(recent_count: i32, lifetime_count: i32) -> String {
     if lifetime_count <= 0 {
         return "只按今日表现呈现".to_string();
     }
@@ -1292,7 +1292,7 @@ fn memory_weight_label(recent_count: i32, lifetime_count: i32) -> String {
     )
 }
 
-fn memory_callback_seed(role_label: &str, recent_count: i32) -> String {
+pub(crate) fn memory_callback_seed(role_label: &str, recent_count: i32) -> String {
     if recent_count >= 4 {
         format!("可作为「{role_label}」连续出场回调")
     } else if recent_count >= 1 {
