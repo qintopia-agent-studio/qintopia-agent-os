@@ -71,6 +71,7 @@ mod poster_delivery;
     allow(dead_code, unused_imports)
 )]
 mod poster_notification;
+pub mod qiwe_claimable_image_sources;
 mod qiwe_image_send;
 pub mod qiwe_image_send_state;
 mod qiwe_text_send;

@@ -8,6 +8,9 @@ use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroize;
 
+use crate::qiwe_claimable_image_sources::{
+    claimable_image_review_policy_condition, claimable_image_source_join_condition,
+};
 use crate::{qiwe_image_send::QiweSendReceipt, url_policy};
 
 const WORKER_ID: &str = "qiwe-image-send-adapter";
@@ -163,7 +166,7 @@ pub async fn claim_ready_work_item(
     expire_one_stale_awaiting_callback(&mut tx, work_item_id).await?;
     reconcile_one_stale_uploading_attempt(&mut tx, work_item_id).await?;
     terminalize_one_stale_unrecorded_claim(&mut tx, work_item_id).await?;
-    let row = sqlx::query(
+    let query = format!(
         r#"
         WITH claimable AS (
             SELECT
@@ -187,40 +190,12 @@ pub async fn claim_ready_work_item(
              AND artifact.review_status = 'approved'
             JOIN qintopia_agent_os.work_items source_request
               ON source_request.id = artifact.work_item_id
-             AND (
-                (
-                    artifact.created_by_agent = 'huabaosi'
-                    AND source_request.work_item_type = 'image_generation_request'
-                    AND source_request.capability_key = 'huabaosi.generate_image_asset'
-                    AND source_request.target_agent = 'huabaosi'
-                    AND source_request.status = 'completed'
-                )
-                OR
-                (
-                    artifact.created_by_agent = 'xiaoman'
-                    AND artifact.metadata->>'workflow_type' = 'daily_case_report'
-                    AND source_request.work_item_type = 'daily_case_report_request'
-                    AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
-                    AND source_request.target_agent = 'xiaoman'
-                    AND source_request.status = 'completed'
-                )
-             )
+{source_join}
             WHERE request.work_item_type = $1
               AND request.capability_key = $2
               AND request.requester_agent = 'xiaoman'
               AND request.target_agent = 'erhua'
-              AND (
-                  (
-                      artifact.created_by_agent = 'huabaosi'
-                      AND request.review_policy = 'human_final_confirmation'
-                  )
-                  OR (
-                      artifact.created_by_agent = 'xiaoman'
-                      AND request.review_policy = 'automatic_publish'
-                      AND request.payload->>'workflow_type' = 'daily_case_report'
-                      AND request.payload->>'requires_human_final_confirmation' = 'false'
-                  )
-              )
+{review_policy}
               AND (
                   request.review_policy = 'human_final_confirmation'
                   OR (
@@ -301,15 +276,18 @@ pub async fn claim_ready_work_item(
             claimable.artifact_byte_size,
             claimable.target_group_id
         "#,
-    )
-    .bind(WORK_ITEM_TYPE)
-    .bind(CAPABILITY_KEY)
-    .bind(work_item_id)
-    .bind(&claim_token)
-    .bind(CLAIM_TTL_MINUTES as i32)
-    .fetch_optional(&mut *tx)
-    .await
-    .context("claim send-ready QiWe image work item")?;
+        source_join = claimable_image_source_join_condition("             "),
+        review_policy = claimable_image_review_policy_condition("              "),
+    );
+    let row = sqlx::query(&query)
+        .bind(WORK_ITEM_TYPE)
+        .bind(CAPABILITY_KEY)
+        .bind(work_item_id)
+        .bind(&claim_token)
+        .bind(CLAIM_TTL_MINUTES as i32)
+        .fetch_optional(&mut *tx)
+        .await
+        .context("claim send-ready QiWe image work item")?;
 
     let Some(row) = row else {
         tx.commit()
@@ -443,7 +421,7 @@ pub async fn preview_ready_work_item(
     allowed_group_ids: &BTreeSet<String>,
     media_allowed_hosts: &BTreeSet<String>,
 ) -> Result<Option<QiweUploadPreview>> {
-    let row = sqlx::query(
+    let query = format!(
         r#"
         SELECT
             request.id,
@@ -461,40 +439,12 @@ pub async fn preview_ready_work_item(
          AND artifact.review_status = 'approved'
         JOIN qintopia_agent_os.work_items source_request
           ON source_request.id = artifact.work_item_id
-         AND (
-            (
-                artifact.created_by_agent = 'huabaosi'
-                AND source_request.work_item_type = 'image_generation_request'
-                AND source_request.capability_key = 'huabaosi.generate_image_asset'
-                AND source_request.target_agent = 'huabaosi'
-                AND source_request.status = 'completed'
-            )
-            OR
-            (
-                artifact.created_by_agent = 'xiaoman'
-                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
-                AND source_request.work_item_type = 'daily_case_report_request'
-                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
-                AND source_request.target_agent = 'xiaoman'
-                AND source_request.status = 'completed'
-            )
-         )
+{source_join}
         WHERE request.work_item_type = $1
           AND request.capability_key = $2
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
-          AND (
-              (
-                  artifact.created_by_agent = 'huabaosi'
-                  AND request.review_policy = 'human_final_confirmation'
-              )
-              OR (
-                  artifact.created_by_agent = 'xiaoman'
-                  AND request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
-                  AND request.payload->>'requires_human_final_confirmation' = 'false'
-              )
-          )
+{review_policy}
           AND (
               request.review_policy = 'human_final_confirmation'
               OR (
@@ -552,13 +502,16 @@ pub async fn preview_ready_work_item(
         ORDER BY request.priority DESC, request.available_at ASC, request.created_at ASC
         LIMIT 1
         "#,
-    )
-    .bind(WORK_ITEM_TYPE)
-    .bind(CAPABILITY_KEY)
-    .bind(work_item_id)
-    .fetch_optional(pool)
-    .await
-    .context("preview send-ready QiWe image work item")?;
+        source_join = claimable_image_source_join_condition("         "),
+        review_policy = claimable_image_review_policy_condition("          "),
+    );
+    let row = sqlx::query(&query)
+        .bind(WORK_ITEM_TYPE)
+        .bind(CAPABILITY_KEY)
+        .bind(work_item_id)
+        .fetch_optional(pool)
+        .await
+        .context("preview send-ready QiWe image work item")?;
     let Some(row) = row else {
         return Ok(None);
     };
@@ -1763,7 +1716,7 @@ async fn lock_current_claim(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     claim: &QiweUploadClaim,
 ) -> Result<()> {
-    let current: Option<Uuid> = sqlx::query_scalar(
+    let query = format!(
         r#"
         SELECT request.id
         FROM qintopia_agent_os.work_items request
@@ -1772,24 +1725,7 @@ async fn lock_current_claim(
          AND artifact.id::text = request.payload->>'approved_artifact_id'
         JOIN qintopia_agent_os.work_items source_request
           ON source_request.id = artifact.work_item_id
-         AND (
-            (
-                artifact.created_by_agent = 'huabaosi'
-                AND source_request.work_item_type = 'image_generation_request'
-                AND source_request.capability_key = 'huabaosi.generate_image_asset'
-                AND source_request.target_agent = 'huabaosi'
-                AND source_request.status = 'completed'
-            )
-            OR
-            (
-                artifact.created_by_agent = 'xiaoman'
-                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
-                AND source_request.work_item_type = 'daily_case_report_request'
-                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
-                AND source_request.target_agent = 'xiaoman'
-                AND source_request.status = 'completed'
-            )
-         )
+{source_join}
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
@@ -1797,18 +1733,7 @@ async fn lock_current_claim(
           AND request.payload->>'target_group_id' = $4
           AND artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'approved'
-          AND (
-              (
-                  artifact.created_by_agent = 'huabaosi'
-                  AND request.review_policy = 'human_final_confirmation'
-              )
-              OR (
-                  artifact.created_by_agent = 'xiaoman'
-                  AND request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
-                  AND request.payload->>'requires_human_final_confirmation' = 'false'
-              )
-          )
+{review_policy}
           AND artifact.content_hash = $5
           AND artifact.artifact_uri = $6
           AND artifact.metadata->>'file_md5' = $7
@@ -1849,18 +1774,21 @@ async fn lock_current_claim(
           )
         FOR UPDATE OF request, artifact, source_request
         "#,
-    )
-    .bind(claim.work_item_id)
-    .bind(&claim.claim_token)
-    .bind(claim.generated_image_artifact_id)
-    .bind(&claim.target_group_id)
-    .bind(&claim.artifact_content_hash)
-    .bind(&claim.artifact_uri)
-    .bind(&claim.artifact_file_md5)
-    .bind(claim.artifact_byte_size.to_string())
-    .fetch_optional(&mut **tx)
-    .await
-    .context("recheck current QiWe upload claim")?;
+        source_join = claimable_image_source_join_condition("         "),
+        review_policy = claimable_image_review_policy_condition("          "),
+    );
+    let current: Option<Uuid> = sqlx::query_scalar(&query)
+        .bind(claim.work_item_id)
+        .bind(&claim.claim_token)
+        .bind(claim.generated_image_artifact_id)
+        .bind(&claim.target_group_id)
+        .bind(&claim.artifact_content_hash)
+        .bind(&claim.artifact_uri)
+        .bind(&claim.artifact_file_md5)
+        .bind(claim.artifact_byte_size.to_string())
+        .fetch_optional(&mut **tx)
+        .await
+        .context("recheck current QiWe upload claim")?;
     if current.is_none() {
         bail!("QiWe image-send claim or approved artifact is no longer current");
     }
@@ -1872,7 +1800,7 @@ async fn lock_callback_policy(
     attempt: &StoredAttempt,
     callback_file: &QiweCallbackFileIdentity<'_>,
 ) -> Result<(String, String, bool)> {
-    let row = sqlx::query(
+    let query = format!(
         r#"
         SELECT request.payload->>'target_group_id' AS target_group_id,
                artifact.artifact_uri,
@@ -1885,24 +1813,7 @@ async fn lock_callback_policy(
          AND artifact.id::text = request.payload->>'approved_artifact_id'
         JOIN qintopia_agent_os.work_items source_request
           ON source_request.id = artifact.work_item_id
-         AND (
-            (
-                artifact.created_by_agent = 'huabaosi'
-                AND source_request.work_item_type = 'image_generation_request'
-                AND source_request.capability_key = 'huabaosi.generate_image_asset'
-                AND source_request.target_agent = 'huabaosi'
-                AND source_request.status = 'completed'
-            )
-            OR
-            (
-                artifact.created_by_agent = 'xiaoman'
-                AND artifact.metadata->>'workflow_type' = 'daily_case_report'
-                AND source_request.work_item_type = 'daily_case_report_request'
-                AND source_request.capability_key = 'xiaoman.daily_case_report_auto_publish'
-                AND source_request.target_agent = 'xiaoman'
-                AND source_request.status = 'completed'
-            )
-         )
+{source_join}
         WHERE request.id = $1
           AND request.status = 'processing'
           AND request.claimed_by = $2
@@ -1910,32 +1821,10 @@ async fn lock_callback_policy(
           AND request.capability_key = 'erhua.send_group_message'
           AND request.requester_agent = 'xiaoman'
           AND request.target_agent = 'erhua'
-          AND (
-              (
-                  artifact.created_by_agent = 'huabaosi'
-                  AND request.review_policy = 'human_final_confirmation'
-              )
-              OR (
-                  artifact.created_by_agent = 'xiaoman'
-                  AND request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
-                  AND request.payload->>'requires_human_final_confirmation' = 'false'
-              )
-          )
+{review_policy}
           AND artifact.artifact_type = 'generated_image'
           AND artifact.review_status = 'approved'
-          AND (
-              (
-                  artifact.created_by_agent = 'huabaosi'
-                  AND request.review_policy = 'human_final_confirmation'
-              )
-              OR (
-                  artifact.created_by_agent = 'xiaoman'
-                  AND request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
-                  AND request.payload->>'requires_human_final_confirmation' = 'false'
-              )
-          )
+{review_policy}
           AND artifact.content_hash = $4
           AND (
               (
@@ -1973,15 +1862,18 @@ async fn lock_callback_policy(
           )
         FOR UPDATE OF request, artifact, source_request
         "#,
-    )
-    .bind(attempt.work_item_id)
-    .bind(&attempt.claim_token)
-    .bind(attempt.generated_image_artifact_id)
-    .bind(&attempt.artifact_content_hash)
-    .fetch_optional(&mut **tx)
-    .await
-    .context("lock QiWe callback policy facts")?
-    .ok_or_else(|| anyhow!("QiWe callback policy or claim is no longer current"))?;
+        source_join = claimable_image_source_join_condition("         "),
+        review_policy = claimable_image_review_policy_condition("          "),
+    );
+    let row = sqlx::query(&query)
+        .bind(attempt.work_item_id)
+        .bind(&attempt.claim_token)
+        .bind(attempt.generated_image_artifact_id)
+        .bind(&attempt.artifact_content_hash)
+        .fetch_optional(&mut **tx)
+        .await
+        .context("lock QiWe callback policy facts")?
+        .ok_or_else(|| anyhow!("QiWe callback policy or claim is no longer current"))?;
     let target_group_id: String = row.try_get("target_group_id")?;
     let artifact_uri: String = row.try_get("artifact_uri")?;
     let artifact_file_md5: String = row.try_get("artifact_file_md5")?;
