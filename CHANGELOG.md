@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.157](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.156...v0.2.157) (2026-08-18)
+
+
+### Features
+
+* **sidecar:** cutover xiaoman daily case report to Rust pipeline ([#644](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/644)) ([4eb096b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4eb096b3433552f18146a949b67e06a473611de5))
+* **sidecar:** Erhua morning brief sends a card image instead of plain text (media-upload unification PR 5) ([#648](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/648)) ([8ec3b4b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8ec3b4b208b2501b7d61a7b72b01e9d0ba74bd22))
+
+
+### Bug Fixes
+
+* **qiwe:** resolve solitaire relative time deterministically from first creation ([#649](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/649)) ([3e5eae8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3e5eae854d79ce295a22e00812baa13ffc5e2f89))
+* **xiaoman:** keep legitimate * / _ in roast image names ([#642](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/642)) ([73b8eae](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/73b8eae8b1c5c9d06cbe9495b000b1ef1ab47cb1))
+
+
+### Refactoring
+
+* **sidecar:** parameterize QiWe image-send claim SQL behind one source table (PR 4) ([#647](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/647)) ([d273ba9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d273ba90726aa98454350ff316c2bee4c0ff1075))
+* **sidecar:** unify Feishu image storage + shared HTTP media upload (media-upload unification PR 2+3) ([#645](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/645)) ([e9ae66c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e9ae66c176e57e5b10386f9652db27bc4c91dda2))
+* **sidecar:** unify media identity primitives + Feishu image storage (media-upload unification PR 1+2) ([#638](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/638)) ([a8e6073](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a8e60731f490209af96454d1cc4cf99ed87e9a92))
+
+
+### Documentation
+
+* **plans:** add media-upload unification + erhua morning-brief card-send plans ([51b2f99](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/51b2f99c322334c5b2057dc9fb23968826eb201c))
+* **plans:** add xiaoman daily case-report Rust cleanup plan ([#646](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/646)) ([666bd6b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/666bd6b3ff1cdd92a78eb3b296562fbd3427cc6a))
+
 ## [0.2.156](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.155...v0.2.156) (2026-08-18)
 
 
