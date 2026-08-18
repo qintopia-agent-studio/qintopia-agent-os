@@ -12,6 +12,7 @@ mod daily_case_report;
 mod daily_case_report_analyze;
 mod daily_case_report_mcp;
 mod daily_case_report_narrative;
+mod daily_case_report_render;
 mod daily_digest_publisher;
 mod db;
 mod embedding_worker;
@@ -623,6 +624,14 @@ async fn main() -> Result<()> {
         Command::DailyCaseReportNarrativePreview { style } => {
             daily_case_report_narrative::run_preview_cli(&cli, &style).await
         }
+        Command::DailyCaseReportRenderPreview {
+            template: _,
+            width: _,
+            narrative_file: _,
+            image_format: _,
+            html_path: _,
+            output_path: _,
+        } => daily_case_report_render::run_render_preview_cli(&cli).await,
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await
         }

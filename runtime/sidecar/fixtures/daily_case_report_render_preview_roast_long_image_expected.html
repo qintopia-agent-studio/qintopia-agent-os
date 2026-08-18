@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 1080px;
+    background: #fbfaf6;
+    font-family: "Songti SC", "Noto Serif SC", "STSong", "SimSun", serif;
+    color: #2a2a2a;
+    line-height: 2.0;
+    padding: 70px 110px 60px;
+  }
+
+  .kicker {
+    text-align: center;
+    font-size: 18px;
+    letter-spacing: 10px;
+    color: #8b1f2f;
+    font-weight: 600;
+    margin-bottom: 18px;
+  }
+
+  .title {
+    text-align: center;
+    font-size: 38px;
+    font-weight: 700;
+    color: #1a1a1a;
+    line-height: 1.5;
+    margin-bottom: 14px;
+  }
+
+  .date-line {
+    text-align: center;
+    font-size: 17px;
+    color: #999;
+    margin-bottom: 36px;
+    letter-spacing: 1px;
+  }
+
+  .divider-top {
+    border: none;
+    border-top: 4px solid #8b1f2f;
+    margin: 0 0 36px;
+  }
+  .divider-top::after {
+    content: "";
+    display: block;
+    border-top: 1px solid #8b1f2f;
+    margin-top: 4px;
+  }
+
+  .war-report {
+    background: #f5f0e8;
+    border-left: 5px solid #8b1f2f;
+    padding: 24px 28px;
+    font-size: 20px;
+    line-height: 2.0;
+    margin-bottom: 42px;
+    border-radius: 0 8px 8px 0;
+  }
+  .war-report .label {
+    font-size: 15px;
+    color: #8b1f2f;
+    font-weight: 600;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+  }
+
+  .chapter {
+    margin-bottom: 40px;
+  }
+
+  .chapter h2 {
+    font-size: 26px;
+    font-weight: 700;
+    color: #1a1a1a;
+    margin-bottom: 16px;
+    padding-left: 16px;
+    border-left: 5px solid #8b1f2f;
+    line-height: 1.5;
+  }
+
+  .chapter p {
+    font-size: 21px;
+    line-height: 2.05;
+    margin-bottom: 14px;
+    text-align: justify;
+  }
+
+  .golden-quote {
+    font-size: 20px;
+    font-weight: 600;
+    color: #8b1f2f;
+    margin-top: 18px;
+    padding: 12px 0;
+    border-top: 1px solid #e0d5c5;
+    border-bottom: 1px solid #e0d5c5;
+    text-align: center;
+  }
+
+  .tomorrow {
+    background: #f0ede5;
+    padding: 24px 28px;
+    border-radius: 10px;
+    margin-bottom: 42px;
+  }
+  .tomorrow h2 {
+    font-size: 23px;
+    color: #8b1f2f;
+    margin-bottom: 10px;
+  }
+  .tomorrow p {
+    font-size: 20px;
+    line-height: 2.0;
+  }
+
+  .characters {
+    margin-bottom: 42px;
+  }
+  .characters h2 {
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-left: 16px;
+    border-left: 5px solid #8b1f2f;
+  }
+  .char-card {
+    background: #fff;
+    border: 1px solid #e8e0d0;
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin-bottom: 14px;
+  }
+  .char-card .name {
+    font-size: 20px;
+    font-weight: 700;
+    color: #8b1f2f;
+    margin-bottom: 6px;
+  }
+  .char-card .desc {
+    font-size: 19px;
+    line-height: 1.9;
+    color: #444;
+  }
+
+  .final-quote {
+    text-align: center;
+    margin-bottom: 42px;
+    padding: 28px;
+    background: linear-gradient(135deg, #8b1f2f 0%, #6b1722 100%);
+    border-radius: 12px;
+    color: #fff;
+  }
+  .final-quote .label {
+    font-size: 15px;
+    letter-spacing: 5px;
+    opacity: 0.85;
+    margin-bottom: 10px;
+  }
+  .final-quote .text {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.6;
+    margin-bottom: 10px;
+  }
+  .final-quote .author {
+    font-size: 17px;
+    opacity: 0.85;
+  }
+
+  .divider-bottom {
+    border: none;
+    border-top: 1px solid #d0c8b8;
+    margin: 24px 0;
+  }
+  .footer {
+    text-align: center;
+    font-size: 15px;
+    color: #aaa;
+    line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+  <div class="kicker">小 满 吐 槽 日 报</div>
+  <h1 class="title">今日群里谁把话题推成了主线</h1>
+  <div class="date-line">2026年08月08日</div>
+  <hr class="divider-top">
+  <div class="war-report">
+  <div class="label">战 报</div>
+  42 位群友贡献 20 条消息，6 人活跃，主线围绕「Solidity 学习打卡 + RWA AMA 预告」展开。
+</div>
+  <div class="chapter">
+  <h2>第一章 · 学习打卡早场</h2>
+  <p>阿杰带头把函数修饰符啃完，小雨还在事件和日志里打转。阿杰顺手扔了句：事件是给前端监听用的，多写两个 demo 就懂了。</p>
+  <p>&gt; **金句**：「把 Solidity 函数修饰符啃完了，合约编译通过 ✅」</p>
+</div>
+<div class="chapter">
+  <h2>第二章 · 资源投喂员上线</h2>
+  <p>娜娜连丢两个链接：MEV 系列长文 + 交互式套利沙盒。老王默默收藏，说正好想补这块。</p>
+</div>
+<div class="chapter">
+  <h2>第三章 · 技术求助闭环</h2>
+  <p>Tom 的 hardhat 本地节点连不上，Mia 一针见血指出 8545 端口冲突。Tom 秒回：果然是端口冲突，谢谢！</p>
+</div>
+    <div class="characters">
+  <h2>今日人物速写</h2>
+    <div class="char-card">
+      <div class="name">阿杰</div>
+      <div class="desc">**小雨**：问题发射台，事件日志有点绕，但问得及时。 **娜娜**：资料投喂员，把有用线索递到群友手边。 **Mia**：现场解法师，hardhat 端口冲突一眼定位。</div>
+    </div>
+</div>
+  <div class="final-quote">
+  <div class="label">今 日 金 句</div>
+  <div class="text">"「事件是给前端监听用的，多写两个 demo 就懂了。」——阿杰"</div>
+  <div class="author"></div>
+</div>
+  <hr class="divider-bottom">
+  <div class="footer">
+    秦托邦 · 小满吐槽日报<br>
+    所有引用可回溯至当天 quote-map
+  </div>
+</body>
+</html>

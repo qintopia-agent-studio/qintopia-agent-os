@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #ddd8ce; color: #111111; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+  .daily-paper { width: 750px; margin: 18px auto; background: #fff8df; border: 9px solid #111111; }
+  .topline { min-height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; background: #111111; color: #ffd92e; font-size: 11px; font-weight: 800; }
+  .hero { position: relative; min-height: 196px; padding: 22px 154px 20px 24px; background: #ffd92e; border-bottom: 4px solid #111111; }
+  .hero-group { font-size: 25px; font-weight: 800; line-height: 1.25; }
+  .hero-title { margin-top: 7px; font-size: 42px; font-weight: 900; line-height: 1; }
+  .hero-mainline { margin-top: 14px; font-size: 18px; font-weight: 900; line-height: 1.45; }
+  .hero-opening { margin-top: 8px; color: #2b2b2b; font-size: 13px; font-weight: 700; line-height: 1.55; }
+  .hero-time { margin-top: 12px; padding-top: 6px; border-top: 4px solid #111111; font-size: 11px; }
+  .hero-badge { position: absolute; right: 24px; top: 24px; display: grid; width: 106px; height: 106px; place-items: center; border: 4px solid #111111; border-radius: 12px; background: #88d7ff; font-size: 21px; font-weight: 900; text-align: center; line-height: 1.1; }
+  .story-index { padding: 16px 24px 18px; background: #111111; color: #fff8df; }
+  .story-index-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; margin-bottom: 11px; }
+  .story-index-heading span { color: #ffd92e; font-size: 11px; font-weight: 900; }
+  .story-index-heading strong { color: #fff0a6; font-size: 12px; font-weight: 800; text-align: right; }
+  .story-index-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .story-index-item { display: grid; grid-template-columns: 32px 1fr; gap: 8px; min-height: 54px; padding: 8px; border: 2px solid #fff8df; background: #1c1c1c; }
+  .story-index-item span { display: grid; width: 28px; height: 28px; place-items: center; border: 2px solid #ffd92e; border-radius: 50%; color: #ffd92e; font-size: 11px; font-weight: 900; }
+  .story-index-item strong { min-width: 0; font-size: 13px; font-weight: 900; line-height: 1.25; }
+  .story-index-item small { grid-column: 2; color: #c9c9c9; font-size: 10px; line-height: 1.35; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); margin: 22px 24px 0; border: 3px solid #111111; background: #ffffff; color: #111111; }
+  .stat { min-height: 70px; padding: 13px 16px; border-right: 2px solid #111111; }
+  .stat:last-child { border-right: 0; }
+  .stat-label, .section-kicker, .highlight-kicker, .hotlist-heading span { color: #ffd92e; font-size: 11px; font-weight: 800; }
+  .stat .stat-label { color: #f25a18; }
+  .stat-value { margin-top: 4px; font-size: 26px; font-weight: 900; line-height: 1; }
+  .stat-caption { margin-top: 4px; color: #555555; font-size: 10px; }
+  .timeline { margin: 22px 24px 0; padding: 18px 18px 12px; border: 4px solid #111111; background: #fff0a6; }
+  .timeline-head { display: flex; align-items: baseline; justify-content: space-between; }
+  .timeline h2, .section h2 { font-size: 26px; font-weight: 900; line-height: 1.1; }
+  .peak { font-size: 12px; font-weight: 700; }
+  .timeline svg { display: block; width: 100%; height: 106px; margin-top: 8px; }
+  .highlight { display: grid; grid-template-columns: 154px 1fr; gap: 18px; margin: 34px 24px 0; padding: 18px 20px; border: 4px solid #111111; background: #f25a18; color: #fff8df; }
+  .highlight-kicker { grid-column: 1; color: #ffd92e; }
+  .highlight-title { grid-column: 1; align-self: center; font-size: 25px; font-weight: 900; }
+  .highlight p { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 15px; font-weight: 700; line-height: 1.65; }
+  .hotlist { margin: 20px 24px 0; padding: 14px 16px 16px; border: 4px solid #111111; background: #fff8df; }
+  .hotlist-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .hotlist-heading span { color: #f25a18; }
+  .hotlist-heading h2 { font-size: 20px; font-weight: 900; }
+  .hotlist-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .hot-topic { display: grid; grid-template-columns: 25px 94px 1fr; align-items: center; gap: 7px; min-height: 48px; padding: 6px 8px; border: 2px solid #111111; background: #fff0a6; }
+  .hot-rank { display: grid; width: 23px; height: 23px; place-items: center; border: 2px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 11px; font-weight: 900; }
+  .hot-topic strong { min-width: 0; font-size: 14px; }
+  .hot-topic small { color: #555555; font-size: 10px; line-height: 1.35; }
+  .relationships { margin: 20px 24px 0; padding: 14px 16px 16px; border: 4px solid #111111; background: #88d7ff; }
+  .relationships-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .relationships-heading span { color: #111111; font-size: 11px; font-weight: 800; }
+  .relationships-heading h2 { font-size: 20px; font-weight: 900; }
+  .relationship-list { display: grid; gap: 8px; }
+  .relationship-row { display: grid; grid-template-columns: 28px 1fr; align-items: center; min-height: 42px; border: 2px solid #111111; background: #ffffff; }
+  .relationship-row span { display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; background: #ffd92e; font-size: 11px; font-weight: 900; }
+  .relationship-row p { padding: 8px 10px; font-size: 12px; font-weight: 700; line-height: 1.45; }
+  .reference-notes { margin: 20px 24px 0; padding: 14px 16px 16px; border: 4px solid #111111; background: #ffffff; }
+  .reference-notes.questions { background: #fff0a6; }
+  .reference-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .reference-heading span { color: #f25a18; font-size: 11px; font-weight: 800; }
+  .reference-heading h2 { font-size: 20px; font-weight: 900; }
+  .reference-list { display: grid; gap: 8px; }
+  .reference-row { display: grid; grid-template-columns: 28px 1fr; align-items: center; min-height: 42px; border: 2px solid #111111; background: #fff8df; }
+  .reference-row span { display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; background: #88d7ff; font-size: 11px; font-weight: 900; }
+  .reference-row p { padding: 8px 10px; font-size: 12px; font-weight: 700; line-height: 1.45; }
+  .characters { margin: 22px 24px 0; padding: 18px 16px 16px; border: 4px solid #111111; background: #ffffff; }
+  .characters-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .characters-heading span { color: #f25a18; font-size: 11px; font-weight: 800; }
+  .characters-heading h2 { font-size: 21px; font-weight: 900; }
+  .character-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .character-card { display: grid; grid-template-columns: 34px 1fr; min-height: 142px; border: 3px solid #111111; background: #fff8df; }
+  .character-rank { display: grid; place-items: center; border-right: 2px solid #111111; background: #88d7ff; font-size: 16px; font-weight: 900; }
+  .character-copy { min-width: 0; padding: 10px 12px; }
+  .character-copy h3 { font-size: 16px; font-weight: 900; line-height: 1.25; }
+  .character-copy strong { display: block; margin-top: 4px; color: #f25a18; font-size: 12px; }
+  .character-copy p { margin-top: 5px; color: #333333; font-size: 11px; line-height: 1.45; }
+  .character-copy blockquote { margin-top: 7px; padding-left: 8px; border-left: 3px solid #111111; font-size: 10px; line-height: 1.45; }
+  .character-copy small { display: block; margin-top: 6px; color: #555555; font-size: 10px; }
+  .section { margin: 34px 24px 0; }
+  .section-kicker { color: #f25a18; }
+  .section h2 { margin-top: 6px; }
+  .cases { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-top: 18px; }
+  .case-card { min-height: 214px; padding: 16px; border: 4px solid #111111; background: #ffffff; }
+  .case-head { display: flex; align-items: center; gap: 12px; }
+  .case-number { display: grid; width: 39px; height: 39px; place-items: center; border: 3px solid #111111; border-radius: 50%; background: #ffd92e; font-size: 12px; font-weight: 900; }
+  .case-time { color: #f25a18; font-size: 11px; font-weight: 800; }
+  .case-card h3 { margin-top: 13px; font-size: 18px; line-height: 1.35; }
+  .case-summary { margin-top: 8px; color: #555555; font-size: 12px; line-height: 1.5; }
+  .case-notes { margin-top: 14px; padding: 10px 12px 8px 26px; background: #fff0a6; font-size: 11px; line-height: 1.55; }
+  .case-notes li + li { margin-top: 4px; }
+  .mvp-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 18px; }
+  .mvp-card { display: grid; grid-template-columns: 34px 1fr 48px; align-items: center; min-height: 70px; border: 3px solid #111111; background: #ffffff; }
+  .mvp-rank { display: grid; height: 100%; place-items: center; border-right: 2px solid #111111; font-size: 16px; font-weight: 900; }
+  .mvp-copy { padding: 8px 10px; }
+  .mvp-name { font-size: 15px; font-weight: 800; }
+  .mvp-meta { margin-top: 3px; color: #555555; font-size: 10px; }
+  .mvp-score { padding-right: 10px; text-align: right; font-size: 28px; font-weight: 900; }
+  .footer { margin-top: 34px; padding: 14px 24px; background: #111111; color: #ffd92e; font-size: 10px; }
+</style>
+</head>
+<body>
+<main class="daily-paper">
+  <div class="topline"><span>XIAOMAN CHARACTER DAILY</span><span>2026年08月08日</span></div>
+  <header class="hero">
+    <div class="hero-group">秦托邦的小伙伴（新）</div>
+    <div class="hero-title">小满群聊日报</div>
+    <div class="hero-mainline">今日主线：资源分享，阿杰和小雨围绕「打卡」同场接力</div>
+    <div class="hero-opening">今天的主线是「资源分享，阿杰和小雨围绕「打卡」同场接力」：20 条消息、7 位活跃成员，把信息、提问和现场反应压成一页可回看的群聊切片。 核心出场是 阿杰（气氛承包人）、小雨（活动推进者）、Tom（问题发射台）。</div>
+    <div class="hero-time">00:00–23:59 · 42 名成员</div>
+    <div class="hero-badge">人物<br>主线</div>
+  </header>
+  
+  <section class="story-index">
+    <div class="story-index-heading"><span>DAILY WORKSHOP INDEX</span><strong>20 条素材 / 7 位出场 / 6 条主线 / 4 张人物卡</strong></div>
+    <div class="story-index-grid">
+      <div class="story-index-item">
+        <span>01</span>
+        <strong>资源分享</strong>
+        <small>3 条消息，2 人参与</small>
+      </div>
+
+      <div class="story-index-item">
+        <span>02</span>
+        <strong>技术求助</strong>
+        <small>3 条消息，2 人参与</small>
+      </div>
+
+      <div class="story-index-item">
+        <span>03</span>
+        <strong>本周活动预告</strong>
+        <small>3 条消息，2 人参与</small>
+      </div>
+
+      <div class="story-index-item">
+        <span>04</span>
+        <strong>打卡</strong>
+        <small>3 条消息，2 人参与</small>
+      </div></div>
+  </section>
+  
+  <section class="characters">
+    <div class="characters-heading"><span>CAST NOTES</span><h2>人物出场表</h2></div>
+    <div class="character-grid"><article class="character-card"><div class="character-rank">1</div><div class="character-copy"><h3>阿杰</h3><strong>气氛承包人 · 接气口 · 多线串联</strong><p>今日高频出场，先形成「气氛承包人」日线</p><blockquote>报名+1，想问 RWA 的合规边界。</blockquote><small>如果后续继续出现，可沉淀为「气氛承包人」回调 · 和小雨围绕「打卡」同场接力 · 只按今日表现呈现</small></div></article><article class="character-card"><div class="character-rank">2</div><div class="character-copy"><h3>小雨</h3><strong>活动推进者 · 推进剧情 · 多线串联</strong><p>今日新鲜出场，暂记「活动推进者」</p><blockquote>我把问题收集表发群里了，大家填一下。</blockquote><small>如果后续继续出现，可沉淀为「活动推进者」回调 · 和阿杰围绕「打卡」同场接力 · 只按今日表现呈现</small></div></article><article class="character-card"><div class="character-rank">3</div><div class="character-copy"><h3>Tom</h3><strong>问题发射台 · 抛冲突 · 多线串联</strong><p>今日新鲜出场，暂记「问题发射台」</p><blockquote>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？</blockquote><small>如果后续继续出现，可沉淀为「问题发射台」回调 · 和Mia围绕「端口」同场接力 · 只按今日表现呈现</small></div></article><article class="character-card"><div class="character-rank">4</div><div class="character-copy"><h3>娜娜</h3><strong>资料投喂员 · 递道具 · 多线串联</strong><p>今日新鲜出场，暂记「资料投喂员」</p><blockquote>资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。</blockquote><small>如果后续继续出现，可沉淀为「资料投喂员」回调 · 只按今日表现呈现</small></div></article></div>
+  </section>
+  
+  <section class="highlight">
+    <div class="highlight-kicker">QUOTE ANCHOR</div>
+    <div class="highlight-title">今日台词</div>
+    <p>“资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。”</p>
+  </section>
+  
+  <section class="hotlist">
+    <div class="hotlist-heading"><span>MEME MAP</span><h2>梗和回调候选</h2></div>
+    <div class="hotlist-grid"><div class="hot-topic"><span class="hot-rank">1</span><strong>「本周活动预告」</strong><small>3 条消息，2 人参与</small></div><div class="hot-topic"><span class="hot-rank">2</span><strong>「技术求助」</strong><small>3 条消息，2 人参与</small></div><div class="hot-topic"><span class="hot-rank">3</span><strong>「资源分享」</strong><small>3 条消息，2 人参与</small></div><div class="hot-topic"><span class="hot-rank">4</span><strong>「打卡」</strong><small>3 条消息，2 人参与</small></div><div class="hot-topic"><span class="hot-rank">5</span><strong>「多话题串场的「气氛承包人」」</strong><small>如果后续继续出现，可沉淀为「气氛承包人」回调；和小雨围绕「打卡」同场接力</small></div></div>
+  </section>
+  
+  <section class="relationships">
+    <div class="relationships-heading"><span>ENSEMBLE LINKS</span><h2>同场关系</h2></div>
+    <div class="relationship-list"><div class="relationship-row"><span>1</span><p>和小雨围绕「打卡」同场接力（公开话题：打卡）</p></div></div>
+  </section>
+  
+  <section class="reference-notes">
+    <div class="reference-heading"><span>LOCAL THREADS</span><h2>地点 / 本地生活线索</h2></div>
+    <div class="reference-list"><div class="reference-row"><span>1</span><p>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？</p></div><div class="reference-row"><span>2</span><p>本周活动预告</p></div><div class="reference-row"><span>3</span><p>本周活动预告：周六晚 8 点有个 AMA，嘉宾聊 RWA 赛道。</p></div><div class="reference-row"><span>4</span><p>报名+1，想问 RWA 的合规边界。</p></div></div>
+  </section>
+  
+  <section class="reference-notes questions">
+    <div class="reference-heading"><span>OPEN LOOPS</span><h2>待解决问题</h2></div>
+    <div class="reference-list"><div class="reference-row"><span>1</span><p>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？</p></div></div>
+  </section>
+  
+  <section class="section cases-section">
+    <div class="section-kicker">STORYLINE FILES</div>
+    <h2>故事线候选</h2>
+    <div class="cases">
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">01</span>
+          <span class="case-time">09:30–09:42</span>
+        </div>
+        <h3>资源分享</h3>
+        <p class="case-summary">3 条消息，2 人参与</p>
+        <ul class="case-notes"><li>资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。</li><li>还有个交互式沙盒，可以直接改参数看套利路径。</li></ul>
+      </article>
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">02</span>
+          <span class="case-time">10:15–10:25</span>
+        </div>
+        <h3>技术求助</h3>
+        <p class="case-summary">3 条消息，2 人参与</p>
+        <ul class="case-notes"><li>检查下 8545 端口是不是被占了，或者 .env 里 RPC 写错了。</li><li>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？</li></ul>
+      </article>
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">03</span>
+          <span class="case-time">11:00–11:10</span>
+        </div>
+        <h3>本周活动预告</h3>
+        <p class="case-summary">3 条消息，2 人参与</p>
+        <ul class="case-notes"><li>本周活动预告：周六晚 8 点有个 AMA，嘉宾聊 RWA 赛道。</li><li>报名+1，想问 RWA 的合规边界。</li><li>我把问题收集表发群里了，大家填一下。</li></ul>
+      </article>
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">04</span>
+          <span class="case-time">08:05–20:10</span>
+        </div>
+        <h3>打卡</h3>
+        <p class="case-summary">3 条消息，2 人参与</p>
+        <ul class="case-notes"><li>打卡+1，我还在学事件和日志那块，有点绕。</li></ul>
+      </article>
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">05</span>
+          <span class="case-time">14:20–14:31</span>
+        </div>
+        <h3>午后 14:00 时段</h3>
+        <p class="case-summary">3 条消息，3 人参与</p>
+        <ul class="case-notes"><li>14:20–14:31：3 条群消息，3 人参与。</li></ul>
+      </article>
+      <article class="case-card">
+        <div class="case-head">
+          <span class="case-number">06</span>
+          <span class="case-time">16:45–16:55</span>
+        </div>
+        <h3>午后 16:00 时段</h3>
+        <p class="case-summary">3 条消息，3 人参与</p>
+        <ul class="case-notes"><li>16:45–16:55：3 条群消息，3 人参与。</li></ul>
+      </article></div>
+  </section>
+  <section class="stats">
+      <div class="stat">
+        <div class="stat-label">消息</div>
+        <div class="stat-value">20</div>
+        <div class="stat-caption">当日素材</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-label">出场</div>
+        <div class="stat-value">7</div>
+        <div class="stat-caption">活跃成员</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-label">主线</div>
+        <div class="stat-value">6</div>
+        <div class="stat-caption">可归档</div>
+      </div>
+
+      <div class="stat">
+        <div class="stat-label">人物</div>
+        <div class="stat-value">4</div>
+        <div class="stat-caption">群像卡</div>
+      </div></section>
+  <section class="timeline">
+    <div class="timeline-head"><h2>24H 活跃节奏</h2><div class="peak">峰值 3 条 / 08:00</div></div>
+    <svg viewBox="0 0 654 106" aria-label="24小时活跃节奏"><rect x="1" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="28" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="55" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="82" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="109" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="136" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="163" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="190" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="217" y="0" width="25" height="68" rx="2" fill="#1a2744"/>
+<rect x="244" y="0" width="25" height="68" rx="2" fill="#1a2744"/>
+<rect x="271" y="0" width="25" height="68" rx="2" fill="#1a2744"/>
+<rect x="298" y="0" width="25" height="68" rx="2" fill="#1a2744"/>
+<rect x="325" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="352" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="379" y="0" width="25" height="68" rx="2" fill="#1a2744"/>
+<rect x="406" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="433" y="0" width="25" height="68" rx="2" fill="#1a2744"/>
+<rect x="460" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="487" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="514" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="541" y="23" width="25" height="45" rx="2" fill="#1a2744"/>
+<rect x="568" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="595" y="68" width="25" height="0" rx="2" fill="#1a2744"/>
+<rect x="622" y="68" width="25" height="0" rx="2" fill="#1a2744"/><text x="229" y="12" font-size="10" fill="#f25a18" font-weight="700" text-anchor="middle">3</text><text x="0" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">00</text><text x="109" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">04</text><text x="218" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">08</text><text x="327" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">12</text><text x="436" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">16</text><text x="545" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">20</text><text x="654" y="94" font-size="9" fill="#4a4a4a" text-anchor="middle">24</text></svg>
+  </section>
+  
+  <section class="section mvp-section">
+    <div class="section-kicker">VOICE INDEX</div>
+    <h2>发言出场榜</h2>
+    <div class="mvp-grid">
+      <div class="mvp-card">
+        <div class="mvp-rank">1</div>
+        <div class="mvp-copy">
+          <div class="mvp-name">阿杰</div>
+          <div class="mvp-meta">5 条 / 108 字</div>
+        </div>
+        <div class="mvp-score">5</div>
+      </div>
+      <div class="mvp-card">
+        <div class="mvp-rank">2</div>
+        <div class="mvp-copy">
+          <div class="mvp-name">小雨</div>
+          <div class="mvp-meta">4 条 / 90 字</div>
+        </div>
+        <div class="mvp-score">4</div>
+      </div>
+      <div class="mvp-card">
+        <div class="mvp-rank">3</div>
+        <div class="mvp-copy">
+          <div class="mvp-name">娜娜</div>
+          <div class="mvp-meta">3 条 / 78 字</div>
+        </div>
+        <div class="mvp-score">3</div>
+      </div>
+      <div class="mvp-card">
+        <div class="mvp-rank">4</div>
+        <div class="mvp-copy">
+          <div class="mvp-name">Mia</div>
+          <div class="mvp-meta">3 条 / 72 字</div>
+        </div>
+        <div class="mvp-score">3</div>
+      </div>
+      <div class="mvp-card">
+        <div class="mvp-rank">5</div>
+        <div class="mvp-copy">
+          <div class="mvp-name">老王</div>
+          <div class="mvp-meta">2 条 / 26 字</div>
+        </div>
+        <div class="mvp-score">2</div>
+      </div></div>
+  </section>
+  <footer class="footer">本报告由小满根据最新群聊窗口自动整理 · 长期画像只以公开安全的角色复现计数参与</footer>
+</main>
+</body>
+</html>
