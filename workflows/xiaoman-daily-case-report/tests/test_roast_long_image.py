@@ -61,6 +61,19 @@ class StripMdInlineTest(unittest.TestCase):
     def test_collapses_nested_markers(self) -> None:
         self.assertEqual(roast_long_image._strip_md_inline("***重点***"), "重点")
 
+    def test_preserves_intraword_underscore_in_names(self) -> None:
+        # snake_case identifiers / nicknames are not Markdown emphasis.
+        self.assertEqual(roast_long_image._strip_md_inline("er_hua_test"), "er_hua_test")
+
+    def test_preserves_multiplication_asterisks(self) -> None:
+        # Asterisks adjacent to digits are not emphasis markers.
+        self.assertEqual(roast_long_image._strip_md_inline("3*4*5"), "3*4*5")
+        self.assertEqual(roast_long_image._strip_md_inline("a*b*c"), "a*b*c")
+
+    def test_preserves_ascii_adjacent_single_markers(self) -> None:
+        # *_..._* flanked by ASCII word chars is treated as literal text.
+        self.assertEqual(roast_long_image._strip_md_inline("word_二花_word"), "word_二花_word")
+
     def test_empty_and_plain_text_unchanged(self) -> None:
         self.assertEqual(roast_long_image._strip_md_inline(""), "")
         self.assertEqual(roast_long_image._strip_md_inline("没有标记的句子"), "没有标记的句子")
