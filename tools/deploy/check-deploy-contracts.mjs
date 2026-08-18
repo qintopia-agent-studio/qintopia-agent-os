@@ -4481,6 +4481,15 @@ if (exists("deploy/sidecar/scripts/erhua-morning-brief-worker.sh")) {
     "run-qiwe-text-send-worker",
     '"external_send_executed": False',
     '"send_request_created": False',
+    "--render-image",
+    "--render-image-format jpeg",
+    "use_card=false",
+    'if [[ "$use_card" == "true" ]]; then',
+    "operations-erhua-morning-brief-media-upload",
+    "operations-erhua-morning-brief-card-publish-create",
+    "send_text_brief() {",
+    "send_card_brief() {",
+    "card delivery failed; falling back to text brief",
   ]) {
     requireFragment(
       "deploy/sidecar/scripts/erhua-morning-brief-worker.sh",

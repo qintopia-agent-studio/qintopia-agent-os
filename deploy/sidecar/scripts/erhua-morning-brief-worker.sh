@@ -76,27 +76,29 @@ fi
 if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" && ! -x "$QIWE_BIN" ]]; then
   fail "reviewed QiWe production sidecar companion is missing"
 fi
+
+# Card delivery is an enhancement on top of the text brief. The text fallback
+# env (QiWe text-send gate, auto reviewer/confirmer, QiWe credentials) stays
+# mandatory so the brief can always go out; the card-only env (image-send gate
+# plus the Huabaosi Feishu mirror set) is optional and only gates whether we
+# attempt the card at all. Missing card env degrades to text, never fails.
+card_env_ready=false
 if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
   if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL:-}" != "$AUTO_PUBLISH_APPROVAL" ]]; then
     fail "Erhua morning brief auto-publish approval is missing"
   fi
   for key in \
     QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID \
+    QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_REVIEWER_ID \
+    QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_CONFIRMER_ID \
     QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS \
-    QINTOPIA_QIWE_IMAGE_SEND_ENABLED \
-    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL \
-    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256 \
-    QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS \
-    QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED \
-    QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL \
-    QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA \
-    QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 \
-    QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN \
-    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS \
-    QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID \
-    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS \
-    QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH \
-    QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION; do
+    QINTOPIA_QIWE_TEXT_SEND_ENABLED \
+    QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_APPROVAL \
+    QINTOPIA_QIWE_TEXT_SEND_PRODUCTION_DATABASE_URL_SHA256 \
+    QIWE_API_URL \
+    QIWE_TOKEN \
+    QIWE_GUID \
+    QINTOPIA_QIWE_IMAGE_SEND_ALLOWED_HOSTS; do
     required_env "$key"
   done
   "$SYSTEM_PYTHON" - "$QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID" "$QINTOPIA_OPERATIONS_ALLOWED_GROUP_IDS" <<'PY'
@@ -107,6 +109,26 @@ allowed_set = {item.strip() for item in allowed.split(",") if item.strip()}
 if target not in allowed_set:
     raise SystemExit("Erhua morning brief target group id is not allowlisted")
 PY
+  card_env_ready=true
+  for key in \
+    QINTOPIA_QIWE_IMAGE_SEND_ENABLED \
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL \
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256 \
+    QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED \
+    QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL \
+    QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA \
+    QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 \
+    QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN \
+    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS \
+    QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID \
+    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS \
+    QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH \
+    QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION; do
+    if [[ -z "${!key:-}" ]]; then
+      echo "erhua morning brief worker: ${key} missing; card image disabled, falling back to text brief" >&2
+      card_env_ready=false
+    fi
+  done
 fi
 if [[ ! -f "$PYTHON_VALIDATOR" ]]; then
   fail "Hermes Python validator is missing from release/current"
@@ -133,7 +155,15 @@ report_json="${tmp_dir}/morning-brief.json"
 card_image="${tmp_dir}/morning-brief-card.jpg"
 upload_json="${tmp_dir}/media-upload.json"
 publish_json="${tmp_dir}/card-publish.json"
+send_request_json="${tmp_dir}/send-request.json"
+review_json="${tmp_dir}/artifact-review.json"
+confirm_json="${tmp_dir}/final-confirmation.json"
+ready_json="${tmp_dir}/send-ready.json"
+send_json="${tmp_dir}/qiwe-text-send.json"
 
+# Rendering is fail-closed: on any failure (or a card taller than the storage
+# cap) the workflow leaves rendered_image_path empty and still succeeds, so the
+# brief itself never dies here.
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --sidecar-bin "$SIDECAR_BIN" \
   --prepare-artifact \
@@ -145,7 +175,12 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --render-image-format jpeg \
   --json >"$report_json"
 
-"$SYSTEM_PYTHON" - "$report_json" <<'PY' || fail "morning brief card image render failed or missing"
+# Card-first gate: attempt the card only when every card prerequisite held.
+# A failed/missing/oversized render degrades to the text brief instead of
+# aborting the run.
+use_card=false
+if [[ "$card_env_ready" == "true" ]]; then
+  if "$SYSTEM_PYTHON" - "$report_json" <<'PY'
 import json
 import os
 import sys
@@ -155,10 +190,16 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 
 image_path = (report.get("rendered_image_path") or "").strip()
 if not image_path:
-    raise SystemExit("rendered_image_path is empty")
+    raise SystemExit("rendered_image_path is empty; card degraded")
 if not os.path.isfile(image_path):
-    raise SystemExit("rendered card image file is missing")
+    raise SystemExit("rendered card image file is missing; card degraded")
 PY
+  then
+    use_card=true
+  else
+    echo "erhua morning brief worker: card image unavailable; falling back to text brief" >&2
+  fi
+fi
 
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" - "$report_json" <<'PY'
 import json
@@ -198,7 +239,159 @@ if not success:
     raise SystemExit(1)
 PY
 
-if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
+send_text_brief() {
+  local artifact_id review_payload send_payload work_item_id confirm_payload
+
+  artifact_id="$("$SYSTEM_PYTHON" - "$report_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+artifact_stdout = ((report.get("artifact_create") or {}).get("stdout") or "").strip()
+artifact = json.loads(artifact_stdout) if artifact_stdout else {}
+artifact_id = artifact.get("artifact_id")
+if not artifact_id:
+    raise SystemExit("artifact_id missing from morning brief artifact create")
+print(artifact_id)
+PY
+)"
+
+  review_payload="$("$SYSTEM_PYTHON" - "$artifact_id" <<'PY'
+import json
+import os
+import sys
+
+print(json.dumps({
+    "artifact_id": sys.argv[1],
+    "reviewer_id": os.environ["QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_REVIEWER_ID"],
+    "decision": "approved",
+    "expected_artifact_type": "text_announcement",
+    "expected_review_status": "pending",
+    "reason": "二花早报 08:10 生产自动发布审批",
+    "source": "erhua_morning_brief_auto_publish",
+}, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  "$SIDECAR_BIN" operations-artifact-review-decision \
+    --payload-json "$review_payload" \
+    --apply >"$review_json"
+
+  send_payload="$("$SYSTEM_PYTHON" - "$report_json" "$artifact_id" <<'PY'
+import hashlib
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+
+artifact_id = sys.argv[2]
+message_text = report["morning_brief_text"]
+content_hash = "sha256:" + hashlib.sha256(message_text.encode("utf-8")).hexdigest()
+date = report["date"]
+source_record_ref = f"erhua_morning_brief:{date}"
+target_group_id = os.environ["QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID"]
+idempotency_seed = hashlib.sha256(
+    f"{source_record_ref}:{artifact_id}:{content_hash}:{target_group_id}".encode("utf-8")
+).hexdigest()[:24]
+print(json.dumps({
+    "requester_agent": "xiaoman",
+    "target_agent": "erhua",
+    "capability_key": "erhua.send_group_message",
+    "work_item_type": "group_message_request",
+    "brief_summary": f"{date} 二花早报自动发送请求",
+    "purpose": "erhua_morning_brief_auto_publish",
+    "human_owner": "production-erhua-morning-brief-auto-publish",
+    "priority": "normal",
+    "source_type": "operations_workflow",
+    "source_refs": {"source_record_ref": source_record_ref},
+    "approved_artifact_id": artifact_id,
+    "idempotency_key": f"erhua_morning_brief_auto_publish:{date}:{idempotency_seed}",
+    "dedupe_key": f"erhua_morning_brief_auto_publish:{date}:{idempotency_seed}",
+    "payload": {
+        "workflow_type": "text_activity_announcement",
+        "planner_intent": "send_erhua_morning_brief_after_auto_publish_approval",
+        "approved_artifact_id": artifact_id,
+        "approved_artifact_type": "text_announcement",
+        "approved_artifact_content_hash": content_hash,
+        "target_channel": "qiwe",
+        "target_group_id": target_group_id,
+        "message_text": message_text,
+        "requires_human_confirmation": True,
+        "auto_publish_approval": os.environ["QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL"],
+        "external_send_executed": False,
+    },
+}, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  "$SIDECAR_BIN" operations-work-item-create \
+    --payload-json "$send_payload" \
+    --apply >"$send_request_json"
+
+  work_item_id="$("$SYSTEM_PYTHON" - "$send_request_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+work_item_id = report.get("work_item_id")
+if not work_item_id:
+    raise SystemExit("send request work_item_id missing")
+print(work_item_id)
+PY
+)"
+
+  confirm_payload="$("$SYSTEM_PYTHON" - "$work_item_id" <<'PY'
+import json
+import os
+import sys
+
+print(json.dumps({
+    "work_item_id": sys.argv[1],
+    "confirmer_id": os.environ["QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_CONFIRMER_ID"],
+    "decision": "confirmed",
+    "reason": "确认执行二花早报 08:10 自动发布",
+    "source": "erhua_morning_brief_auto_publish",
+}, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  "$SIDECAR_BIN" operations-group-message-confirm \
+    --payload-json "$confirm_payload" \
+    --apply >"$confirm_json"
+
+  "$SIDECAR_BIN" run-group-message-send-worker \
+    --once \
+    --work-item-id "$work_item_id" \
+    --apply >"$ready_json"
+
+  "$QIWE_BIN" run-qiwe-text-send-worker \
+    --once \
+    --work-item-id "$work_item_id" \
+    --apply >"$send_json"
+
+  "$SYSTEM_PYTHON" - "$send_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+print(json.dumps({
+    "success": report.get("success") is True,
+    "worker": "erhua-morning-brief-auto-publish",
+    "delivery_mode": "text",
+    "qiwe_text_send_action_status": report.get("action_status"),
+    "work_item_id": report.get("work_item_id"),
+    "external_send_executed": report.get("external_send_executed"),
+}, ensure_ascii=False, indent=2))
+if report.get("success") is not True or report.get("external_send_executed") is not True:
+    raise SystemExit(1)
+PY
+}
+
+send_card_brief() {
+  local upload_payload publish_payload
+
   upload_payload="$("$SYSTEM_PYTHON" - "$report_json" <<'PY'
 import hashlib
 import json
@@ -301,6 +494,7 @@ success = (
 print(json.dumps({
     "success": success,
     "worker": "erhua-morning-brief-auto-publish",
+    "delivery_mode": "card",
     "media_uploaded": upload.get("action_status") == "media_uploaded",
     "auto_publish_created": publish.get("action_status") == "auto_publish_send_ready_recorded",
     "source_work_item_id": publish.get("source_work_item_id"),
@@ -317,4 +511,20 @@ print(json.dumps({
 if not success:
     raise SystemExit(1)
 PY
+}
+
+if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
+  card_sent=false
+  if [[ "$use_card" == "true" ]]; then
+    # The card is an enhancement: any failure in the card chain degrades to
+    # the text brief so the morning brief always goes out.
+    if send_card_brief; then
+      card_sent=true
+    else
+      echo "erhua morning brief worker: card delivery failed; falling back to text brief" >&2
+    fi
+  fi
+  if [[ "$card_sent" != "true" ]]; then
+    send_text_brief
+  fi
 fi
