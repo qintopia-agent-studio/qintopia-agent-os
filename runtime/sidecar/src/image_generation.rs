@@ -2438,7 +2438,7 @@ fn store_feishu_primary_generated_image(
     image: &FeishuPrimaryStorageImage<'_>,
 ) -> std::result::Result<
     crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageResult,
-    MirrorFailure,
+    crate::huabaosi_feishu_artifact_mirror::MirrorFailure,
 > {
     #[cfg(not(any(
         feature = "huabaosi-production-adapter",
@@ -2447,7 +2447,7 @@ fn store_feishu_primary_generated_image(
     )))]
     {
         let _ = (config, image);
-        Err(MirrorFailure::policy("adapter_not_compiled"))
+        Err(crate::huabaosi_feishu_artifact_mirror::MirrorFailure::policy("adapter_not_compiled"))
     }
 
     #[cfg(any(
