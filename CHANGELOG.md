@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.158](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.157...v0.2.158) (2026-08-18)
+
+
+### Bug Fixes
+
+* **erhua:** gate text fallback on committed card send work item to prevent duplicate send ([#650](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/650)) ([ebd26cc](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ebd26ccfa540390352492f0172fcfc540c54b0dc))
+
 ## [0.2.157](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.156...v0.2.157) (2026-08-18)
 
 
