@@ -50,6 +50,14 @@ const ASYNC_UPLOAD_METHOD: &str = "/cloud/cdnUploadByUrlAsync";
 ))]
 const TEMPORARY_STORAGE_UPLOAD_METHOD: &str = "/cloud/cloudUpload";
 const SEND_IMAGE_METHOD: &str = "/msg/sendImage";
+const SEND_TEXT_METHOD: &str = "/msg/sendHyperText";
+/// Feature flag (default off) that prepends the work item's `message_text`
+/// chat intro before the image. Kept behind a flag so the no-confirm
+/// auto-publish send path only changes when explicitly enabled.
+const INTRO_TEXT_ENABLED_ENV: &str = "QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED";
+/// Upper bound on intro text length; anything longer is treated as a policy
+/// violation and the whole send is rejected before any external call.
+const MAX_INTRO_TEXT_CHARS: usize = 500;
 #[cfg(any(
     test,
     feature = "qiwe-staging-adapter",
@@ -265,6 +273,32 @@ struct SendImageParams<'a> {
 struct ApiResponse<T> {
     code: i64,
     data: T,
+}
+
+/// Loose response shape for the chat intro text call. The text endpoint
+/// (`/msg/sendHyperText`) returns `code` + optional `msg`, unlike the typed
+/// image-send response, so we only need the success code here.
+#[derive(Deserialize)]
+struct TextApiResponse {
+    code: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SendTextParams<'a> {
+    guid: &'a str,
+    #[serde(rename = "toId")]
+    to_id: &'a str,
+    #[serde(rename = "isNoNeedRead")]
+    is_no_need_read: bool,
+    content: Vec<HyperTextSegment<'a>>,
+}
+
+#[derive(Serialize)]
+struct HyperTextSegment<'a> {
+    #[serde(rename = "type")]
+    segment_type: &'a str,
+    text: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -1158,6 +1192,68 @@ async fn run_enabled_callback_processor(
         CallbackClaimOutcome::Ready(claim) => claim,
     };
     let work_item_id = send_claim.work_item_id;
+
+    // Optional chat intro: deliver the work item's `message_text` immediately
+    // before the image, only when the feature flag is on and an intro exists.
+    // A failed/ambiguous intro must NOT block silently into a bare image, so
+    // any non-confirmed intro outcome aborts the whole send as `Rejected`
+    // (no external image call, not auto-retried).
+    if intro_text_enabled() && !send_claim.message_text.is_empty() {
+        let already_sent = qiwe_image_send_state::intro_already_sent(&pool, work_item_id)
+            .await
+            .unwrap_or(false);
+        if !already_sent {
+            let intro_outcome = match build_send_text_request(
+                &config.guid,
+                &send_claim.target_group_id,
+                &send_claim.message_text,
+            ) {
+                Ok(text_body) => {
+                    let text_config = config.clone();
+                    let text_body = Zeroizing::new(text_body);
+                    let sent = tokio::task::spawn_blocking(move || {
+                        request_send_text_with(&text_config, &text_body, &HttpClient::production())
+                    })
+                    .await
+                    .unwrap_or(false);
+                    sent
+                }
+                Err(_) => false,
+            };
+            if !intro_outcome {
+                qiwe_image_send_state::record_send_failure(
+                    &pool,
+                    &send_claim,
+                    SendFailureDisposition::Rejected,
+                )
+                .await?;
+                let mut report = callback_worker_report(
+                    WorkerReportState {
+                        success: false,
+                        dry_run: false,
+                        apply_requested: true,
+                        phase: "callback",
+                        action_status: "intro_text_send_failed".to_string(),
+                        work_item_id: Some(work_item_id),
+                        external_upload_requested: false,
+                        callback_received: true,
+                        external_send_executed: Some(false),
+                    },
+                    parsed.credential_shape,
+                );
+                report.artifact_content_hash = Some(send_claim.artifact_content_hash.clone());
+                println!("{}", serde_json::to_string_pretty(&report)?);
+                return Ok(());
+            }
+            qiwe_image_send_state::mark_intro_sent(
+                &pool,
+                &send_claim,
+                &intro_message_preview(&send_claim.message_text),
+            )
+            .await?;
+        }
+    }
+
     let send_body = match build_send_image_request(
         &config.guid,
         &send_claim.target_group_id,
@@ -1674,6 +1770,82 @@ fn parse_send_response_for_call(
         sequence: response.data.seq,
         timestamp: response.data.timestamp,
     })
+}
+
+/// Build the `/msg/sendHyperText` body for the chat intro. Rejects control
+/// characters and over-long text so a malformed intro can never reach the
+/// provider; the caller treats a build error as a rejected (no external call)
+/// outcome and does not send the image either.
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
+fn build_send_text_request(
+    guid: &str,
+    target_group_id: &str,
+    message_text: &str,
+) -> Result<Vec<u8>> {
+    let guid = guid.trim();
+    let target_group_id = target_group_id.trim();
+    let message_text = message_text.trim();
+    if guid.is_empty() || target_group_id.is_empty() || message_text.is_empty() {
+        bail!("QiWe intro-text request requires guid, target_group_id, and message_text");
+    }
+    if message_text.chars().count() > MAX_INTRO_TEXT_CHARS {
+        bail!("QiWe intro-text exceeds the allowed length");
+    }
+    if contains_control(guid) || contains_control(target_group_id) || contains_control(message_text)
+    {
+        bail!("QiWe intro-text request contains control characters");
+    }
+    serde_json::to_vec(&ApiRequest {
+        method: SEND_TEXT_METHOD,
+        params: SendTextParams {
+            guid,
+            to_id: target_group_id,
+            is_no_need_read: false,
+            content: vec![HyperTextSegment {
+                segment_type: "text",
+                text: message_text,
+            }],
+        },
+    })
+    .context("serialize QiWe intro-text request")
+}
+
+/// Deliver the chat intro text. Returns `true` only on a confirmed business
+/// success; any HTTP error, non-success status, unparseable body, or non-zero
+/// business code returns `false` so the caller can abort the image send.
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
+fn request_send_text_with(config: &AdapterConfig, body: &[u8], client: &HttpClient) -> bool {
+    let Ok(response) = client.request(
+        "POST",
+        &config.api_url,
+        &[
+            ("Content-Type", "application/json".to_string()),
+            ("Accept", "application/json".to_string()),
+            ("x-qiwei-token", config.token.clone()),
+        ],
+        body,
+        MAX_JSON_RESPONSE_BYTES,
+    ) else {
+        return false;
+    };
+    if !(200..300).contains(&response.status) {
+        return false;
+    }
+    if response.body.len() > MAX_JSON_RESPONSE_BYTES {
+        return false;
+    }
+    let Ok(parsed) = serde_json::from_slice::<TextApiResponse>(&response.body) else {
+        return false;
+    };
+    matches!(parsed.code, Some(0) | Some(200))
 }
 
 fn read_callback_stdin() -> Result<Zeroizing<Vec<u8>>> {
@@ -2719,6 +2891,32 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
+fn contains_control(value: &str) -> bool {
+    value.chars().any(char::is_control)
+}
+
+/// Whether the intro-text prepend is enabled. Defaults to off; only an
+/// explicit `1`/`true` turns it on.
+fn intro_text_enabled() -> bool {
+    matches!(
+        std::env::var(INTRO_TEXT_ENABLED_ENV)
+            .unwrap_or_default()
+            .trim(),
+        "1" | "true" | "TRUE"
+    )
+}
+
+/// Short sanitized preview of the intro text for audit metadata. Single line,
+/// capped, never contains the raw payload beyond a short prefix.
+fn intro_message_preview(value: &str) -> String {
+    let mut preview = value.trim().replace('\n', " ");
+    if preview.chars().count() > 80 {
+        preview = preview.chars().take(79).collect();
+        preview.push('…');
+    }
+    preview
+}
+
 fn validate_jpeg_filename(filename: &str) -> Result<()> {
     validate_plain_value(filename, "QiWe image filename")?;
     if filename.len() > 255 || filename.contains(['/', '\\']) {
@@ -3110,6 +3308,56 @@ mod tests {
         }"#;
 
         assert!(parse_send_image_response(response).is_err());
+    }
+
+    #[test]
+    fn intro_text_request_serializes_hyper_text_method() {
+        let body = build_send_text_request("guid-1", "group-1", "小满日报来啦")
+            .expect("serialize intro text request");
+        let value: Value = serde_json::from_slice(&body).expect("parse intro text request");
+
+        assert_eq!(value["method"], SEND_TEXT_METHOD);
+        assert_eq!(value["params"]["guid"], "guid-1");
+        assert_eq!(value["params"]["toId"], "group-1");
+        assert_eq!(value["params"]["content"][0]["type"], "text");
+        assert_eq!(value["params"]["content"][0]["text"], "小满日报来啦");
+    }
+
+    #[test]
+    fn intro_text_request_rejects_invalid_or_oversized_text() {
+        // Empty / blank fields are rejected before any external call.
+        assert!(build_send_text_request("", "group-1", "hi").is_err());
+        assert!(build_send_text_request("guid-1", "", "hi").is_err());
+        assert!(build_send_text_request("guid-1", "group-1", "   ").is_err());
+        // Control characters are rejected.
+        assert!(build_send_text_request("guid-1", "group-1", "line\nbreak").is_err());
+        assert!(build_send_text_request("guid\n-1", "group-1", "hi").is_err());
+        // Over-long intro text is rejected.
+        let long_text = "长".repeat(MAX_INTRO_TEXT_CHARS + 1);
+        assert!(build_send_text_request("guid-1", "group-1", &long_text).is_err());
+        // Exactly at the limit is allowed.
+        let ok_text = "长".repeat(MAX_INTRO_TEXT_CHARS);
+        assert!(build_send_text_request("guid-1", "group-1", &ok_text).is_ok());
+    }
+
+    #[test]
+    fn intro_message_preview_is_single_line_and_capped() {
+        let preview = intro_message_preview("第一行\n第二行");
+        assert!(!preview.contains('\n'));
+        let long = "字".repeat(200);
+        let preview = intro_message_preview(&long);
+        assert!(preview.chars().count() <= 80);
+    }
+
+    #[test]
+    fn intro_text_enabled_defaults_off_and_reads_flag() {
+        std::env::remove_var(INTRO_TEXT_ENABLED_ENV);
+        assert!(!intro_text_enabled());
+        std::env::set_var(INTRO_TEXT_ENABLED_ENV, "1");
+        assert!(intro_text_enabled());
+        std::env::set_var(INTRO_TEXT_ENABLED_ENV, "0");
+        assert!(!intro_text_enabled());
+        std::env::remove_var(INTRO_TEXT_ENABLED_ENV);
     }
 
     #[test]
