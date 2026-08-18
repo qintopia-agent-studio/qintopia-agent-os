@@ -36,8 +36,15 @@ def _strip_md_inline(text: str) -> str:
         prev = cur
         cur = re.sub(r"\*\*(.+?)\*\*", r"\1", cur)  # **bold**
         cur = re.sub(r"__(.+?)__", r"\1", cur)  # __bold__
-        cur = re.sub(r"\*([^*\n]+?)\*", r"\1", cur)  # *italic*
-        cur = re.sub(r"_([^_\n]+?)_", r"\1", cur)  # _italic_
+        # Single-marker emphasis (*italic* / _italic_) is only treated as
+        # Markdown when the delimiter is NOT adjacent to an ASCII word char
+        # (letter/digit) on the outside. This avoids silently deleting
+        # legitimate punctuation inside source text such as snake_case names
+        # (er_hua_test -> erhuatest) or multiplication (3*4*5 -> 345), where * / _
+        # are not emphasis markers. CJK characters are not ASCII word chars, so
+        # genuine Chinese emphasis like *重点* / _重点_ still strips.
+        cur = re.sub(r"(?<![A-Za-z0-9])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![A-Za-z0-9])", r"\1", cur)  # *italic*
+        cur = re.sub(r"(?<![A-Za-z0-9])_(?!\s)([^_\n]+?)(?<!\s)_(?![A-Za-z0-9])", r"\1", cur)  # _italic_
         cur = re.sub(r"~~(.+?)~~", r"\1", cur)  # ~~strike~~
         cur = re.sub(r"`([^`]+?)`", r"\1", cur)  # `code`
     return cur
