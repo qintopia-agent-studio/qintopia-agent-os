@@ -2120,85 +2120,6 @@ fn mirror_to_feishu(
     Ok(record.record_id)
 }
 
-/// Profile describing the per-call-site differences between the two Feishu
-/// image storage flows (huabaosi generated image vs. xiaoman daily case report).
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-#[derive(Clone, Copy)]
-enum FeishuImageProfile {
-    HuabaosiGenerated,
-    XiaomanDailyCaseReport,
-}
-
-/// Unified field carrier consumed by the shared storage flow. The two public
-/// input structs are converted into this view before entering the pipeline.
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-struct FeishuImageStorageInput<'a> {
-    artifact_id: Uuid,
-    workflow_root_id: Uuid,
-    work_item_id: Uuid,
-    content_hash: &'a str,
-    file_md5: &'a str,
-    /// Huabaosi only: source PNG SHA-256 recorded alongside the JPEG digest.
-    source_content_hash: Option<&'a str>,
-    /// Daily case report only: filename recorded in the table and validated.
-    filename: Option<&'a str>,
-    bytes: &'a [u8],
-    width: u32,
-    height: u32,
-}
-
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-impl<'a> From<&'a FeishuPrimaryStorageImage<'a>> for FeishuImageStorageInput<'a> {
-    fn from(image: &'a FeishuPrimaryStorageImage<'a>) -> Self {
-        Self {
-            artifact_id: image.artifact_id,
-            workflow_root_id: image.workflow_root_id,
-            work_item_id: image.work_item_id,
-            content_hash: image.content_hash,
-            file_md5: image.file_md5,
-            source_content_hash: Some(image.source_content_hash),
-            filename: None,
-            bytes: image.bytes,
-            width: image.width,
-            height: image.height,
-        }
-    }
-}
-
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-impl<'a> From<&'a FeishuDailyCaseReportStorageImage<'a>> for FeishuImageStorageInput<'a> {
-    fn from(image: &'a FeishuDailyCaseReportStorageImage<'a>) -> Self {
-        Self {
-            artifact_id: image.artifact_id,
-            workflow_root_id: image.workflow_root_id,
-            work_item_id: image.work_item_id,
-            content_hash: image.content_hash,
-            file_md5: image.file_md5,
-            source_content_hash: None,
-            filename: Some(image.filename),
-            bytes: image.bytes,
-            width: image.width,
-            height: image.height,
-        }
-    }
-}
-
 pub(crate) fn store_primary_generated_image(
     config: &FeishuPrimaryStorageConfig,
     image: &FeishuPrimaryStorageImage<'_>,
@@ -2219,11 +2140,54 @@ pub(crate) fn store_primary_generated_image(
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     {
-        store_feishu_image(
-            config,
-            FeishuImageProfile::HuabaosiGenerated,
-            &FeishuImageStorageInput::from(image),
-        )
+        validate_primary_storage_image(image, config.max_media_bytes)
+            .map_err(|_| MirrorFailure::policy("image_validation_failed"))?;
+        let credentials = read_feishu_credentials(&config.profile_env_path)?;
+        let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+        let existing =
+            client.search_record(&config.base_token, &config.table_id, image.artifact_id)?;
+        let file_token = client.upload_media(&config.base_token, image.artifact_id, image.bytes)?;
+        let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+        if readback.as_slice() != image.bytes {
+            readback.zeroize();
+            return Err(MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            ));
+        }
+        validate_primary_storage_bytes(image, &readback).map_err(|_| {
+            MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            )
+        })?;
+        readback.zeroize();
+
+        let fields = build_primary_storage_fields(image, file_token.as_str());
+        let record = match existing {
+            Some(record) => {
+                client.update_record(
+                    &config.base_token,
+                    &config.table_id,
+                    &record.record_id,
+                    &fields,
+                )?;
+                record
+            }
+            None => client.create_record(&config.base_token, &config.table_id, &fields)?,
+        };
+
+        Ok(FeishuPrimaryStorageResult {
+            artifact_uri: format!(
+                "feishu-base://huabaosi-generated-image/{}",
+                image.artifact_id
+            ),
+            record_id: record.record_id,
+        })
     }
 }
 
@@ -2247,187 +2211,51 @@ pub(crate) fn store_daily_case_report_image(
         feature = "huabaosi-feishu-mirror-adapter"
     ))]
     {
-        store_feishu_image(
-            config,
-            FeishuImageProfile::XiaomanDailyCaseReport,
-            &FeishuImageStorageInput::from(image),
-        )
-    }
-}
-
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-fn store_feishu_image(
-    config: &FeishuPrimaryStorageConfig,
-    profile: FeishuImageProfile,
-    image: &FeishuImageStorageInput<'_>,
-) -> std::result::Result<FeishuPrimaryStorageResult, MirrorFailure> {
-    validate_feishu_storage_image(profile, image, config.max_media_bytes)
-        .map_err(|_| MirrorFailure::policy("image_validation_failed"))?;
-    let credentials = read_feishu_credentials(&config.profile_env_path)?;
-    let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
-    let existing = client.search_record(&config.base_token, &config.table_id, image.artifact_id)?;
-    let file_token = client.upload_media(&config.base_token, image.artifact_id, image.bytes)?;
-    let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
-    if readback.as_slice() != image.bytes {
+        validate_daily_case_report_storage_image(image, config.max_media_bytes)
+            .map_err(|_| MirrorFailure::policy("image_validation_failed"))?;
+        let credentials = read_feishu_credentials(&config.profile_env_path)?;
+        let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+        let existing =
+            client.search_record(&config.base_token, &config.table_id, image.artifact_id)?;
+        let file_token = client.upload_media(&config.base_token, image.artifact_id, image.bytes)?;
+        let mut readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+        if readback.as_slice() != image.bytes {
+            readback.zeroize();
+            return Err(MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            ));
+        }
+        validate_daily_case_report_storage_bytes(image, &readback).map_err(|_| {
+            MirrorFailure::external(
+                "media_readback",
+                "file_identity_mismatch",
+                Some(true),
+                false,
+            )
+        })?;
         readback.zeroize();
-        return Err(MirrorFailure::external(
-            "media_readback",
-            "file_identity_mismatch",
-            Some(true),
-            false,
-        ));
-    }
-    validate_feishu_storage_bytes(image, &readback).map_err(|_| {
-        MirrorFailure::external(
-            "media_readback",
-            "file_identity_mismatch",
-            Some(true),
-            false,
-        )
-    })?;
-    readback.zeroize();
 
-    let fields = build_feishu_image_storage_fields(profile, image, file_token.as_str());
-    let record = match existing {
-        Some(record) => {
-            client.update_record(&config.base_token, &config.table_id, &record.record_id, &fields)?;
-            record
-        }
-        None => client.create_record(&config.base_token, &config.table_id, &fields)?,
-    };
+        let fields = build_daily_case_report_storage_fields(image, file_token.as_str());
+        let record = match existing {
+            Some(record) => {
+                client.update_record(
+                    &config.base_token,
+                    &config.table_id,
+                    &record.record_id,
+                    &fields,
+                )?;
+                record
+            }
+            None => client.create_record(&config.base_token, &config.table_id, &fields)?,
+        };
 
-    Ok(FeishuPrimaryStorageResult {
-        artifact_uri: primary_storage_artifact_uri(image.artifact_id),
-        record_id: record.record_id,
-    })
-}
-
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-fn validate_feishu_storage_image(
-    profile: FeishuImageProfile,
-    image: &FeishuImageStorageInput<'_>,
-    max_media_bytes: usize,
-) -> Result<()> {
-    match profile {
-        FeishuImageProfile::HuabaosiGenerated => {
-            if image.bytes.is_empty() || image.bytes.len() > max_media_bytes {
-                bail!("Huabaosi Feishu storage image bytes are outside the reviewed bound");
-            }
-            if image.width != REQUIRED_WIDTH as u32 || image.height != REQUIRED_HEIGHT as u32 {
-                bail!("Huabaosi Feishu storage image dimensions are invalid");
-            }
-            if !is_canonical_sha256(image.content_hash)
-                || !is_lower_hex(image.file_md5, 32)
-                || !image
-                    .source_content_hash
-                    .is_some_and(is_canonical_sha256)
-            {
-                bail!("Huabaosi Feishu storage image identity is not canonical");
-            }
-        }
-        FeishuImageProfile::XiaomanDailyCaseReport => {
-            if image.bytes.is_empty() || image.bytes.len() > max_media_bytes {
-                bail!(
-                    "daily case report Feishu storage image bytes are outside the reviewed bound"
-                );
-            }
-            if image.width == 0 || image.height == 0 || image.width > 4096 || image.height > 8192
-            {
-                bail!("daily case report Feishu storage image dimensions are invalid");
-            }
-            if !is_canonical_sha256(image.content_hash) || !is_lower_hex(image.file_md5, 32) {
-                bail!("daily case report Feishu storage image identity is not canonical");
-            }
-            let filename = image.filename.unwrap_or_default();
-            if filename.contains('/') || filename.contains('\\') {
-                bail!("daily case report Feishu storage filename is invalid");
-            }
-            let filename = filename.to_ascii_lowercase();
-            if !filename.ends_with(".jpg") && !filename.ends_with(".jpeg") {
-                bail!("daily case report Feishu storage filename must reference a JPEG");
-            }
-        }
-    }
-    validate_feishu_storage_bytes(image, image.bytes)
-}
-
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-fn validate_feishu_storage_bytes(image: &FeishuImageStorageInput<'_>, bytes: &[u8]) -> Result<()> {
-    if format!("sha256:{}", sha256_hex(bytes)) != image.content_hash
-        || md5_hex(bytes) != image.file_md5
-    {
-        bail!("Feishu storage image digest does not match JPEG bytes");
-    }
-    let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
-        .context("decode Feishu storage JPEG")?;
-    if decoded.dimensions() != (image.width, image.height) {
-        bail!("Feishu storage JPEG dimensions do not match");
-    }
-    Ok(())
-}
-
-#[cfg(any(
-    feature = "huabaosi-production-adapter",
-    feature = "huabaosi-staging-adapter",
-    feature = "huabaosi-feishu-mirror-adapter"
-))]
-fn build_feishu_image_storage_fields(
-    profile: FeishuImageProfile,
-    image: &FeishuImageStorageInput<'_>,
-    file_token: &str,
-) -> Value {
-    let now = Utc::now().timestamp_millis();
-    match profile {
-        FeishuImageProfile::HuabaosiGenerated => json!({
-            "产物标题": "活动海报图片（待审核）",
-            "AgentOS产物ID": image.artifact_id.to_string(),
-            "Schema版本": SCHEMA_VERSION,
-            "AgentOS工作项ID": image.workflow_root_id.to_string(),
-            "图片请求ID": image.work_item_id.to_string(),
-            "最终JPEG": [{"file_token": file_token}],
-            "JPEG SHA-256": image.content_hash,
-            "文件MD5": image.file_md5,
-            "字节数": image.bytes.len(),
-            "宽度": image.width,
-            "高度": image.height,
-            "MIME类型": REQUIRED_MIME_TYPE,
-            "源PNG SHA-256": image.source_content_hash,
-            "转换规则": REQUIRED_TRANSFORM,
-            "审核状态": "待审核",
-            "生成时间": now,
-        }),
-        FeishuImageProfile::XiaomanDailyCaseReport => json!({
-            "产物标题": "小满日报图片（自动发布）",
-            "AgentOS产物ID": image.artifact_id.to_string(),
-            "Schema版本": DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION,
-            "AgentOS工作项ID": image.workflow_root_id.to_string(),
-            "图片请求ID": image.work_item_id.to_string(),
-            "最终JPEG": [{"file_token": file_token}],
-            "JPEG SHA-256": image.content_hash,
-            "文件MD5": image.file_md5,
-            "字节数": image.bytes.len(),
-            "宽度": image.width,
-            "高度": image.height,
-            "MIME类型": REQUIRED_MIME_TYPE,
-            "源PNG SHA-256": image.content_hash,
-            "转换规则": DAILY_CASE_REPORT_MEDIA_TRANSFORM,
-            "审核状态": "已通过",
-            "审核人": DAILY_CASE_REPORT_GENERATED_BY,
-            "审核意见": "approved by reviewed daily case report automatic publish boundary",
-            "生成时间": now,
-        }),
+        Ok(FeishuPrimaryStorageResult {
+            artifact_uri: primary_storage_artifact_uri(image.artifact_id),
+            record_id: record.record_id,
+        })
     }
 }
 
@@ -2440,11 +2268,19 @@ fn validate_primary_storage_image(
     image: &FeishuPrimaryStorageImage<'_>,
     max_media_bytes: usize,
 ) -> Result<()> {
-    validate_feishu_storage_image(
-        FeishuImageProfile::HuabaosiGenerated,
-        &FeishuImageStorageInput::from(image),
-        max_media_bytes,
-    )
+    if image.bytes.is_empty() || image.bytes.len() > max_media_bytes {
+        bail!("Huabaosi Feishu storage image bytes are outside the reviewed bound");
+    }
+    if image.width != REQUIRED_WIDTH as u32 || image.height != REQUIRED_HEIGHT as u32 {
+        bail!("Huabaosi Feishu storage image dimensions are invalid");
+    }
+    if !is_canonical_sha256(image.content_hash)
+        || !is_lower_hex(image.file_md5, 32)
+        || !is_canonical_sha256(image.source_content_hash)
+    {
+        bail!("Huabaosi Feishu storage image identity is not canonical");
+    }
+    validate_primary_storage_bytes(image, image.bytes)
 }
 
 #[cfg(any(
@@ -2456,11 +2292,23 @@ fn validate_daily_case_report_storage_image(
     image: &FeishuDailyCaseReportStorageImage<'_>,
     max_media_bytes: usize,
 ) -> Result<()> {
-    validate_feishu_storage_image(
-        FeishuImageProfile::XiaomanDailyCaseReport,
-        &FeishuImageStorageInput::from(image),
-        max_media_bytes,
-    )
+    if image.bytes.is_empty() || image.bytes.len() > max_media_bytes {
+        bail!("daily case report Feishu storage image bytes are outside the reviewed bound");
+    }
+    if image.width == 0 || image.height == 0 || image.width > 4096 || image.height > 8192 {
+        bail!("daily case report Feishu storage image dimensions are invalid");
+    }
+    if !is_canonical_sha256(image.content_hash) || !is_lower_hex(image.file_md5, 32) {
+        bail!("daily case report Feishu storage image identity is not canonical");
+    }
+    if image.filename.contains('/') || image.filename.contains('\\') {
+        bail!("daily case report Feishu storage filename is invalid");
+    }
+    let filename = image.filename.to_ascii_lowercase();
+    if !filename.ends_with(".jpg") && !filename.ends_with(".jpeg") {
+        bail!("daily case report Feishu storage filename must reference a JPEG");
+    }
+    validate_daily_case_report_storage_bytes(image, image.bytes)
 }
 
 #[cfg(any(
@@ -2472,7 +2320,17 @@ fn validate_daily_case_report_storage_bytes(
     image: &FeishuDailyCaseReportStorageImage<'_>,
     bytes: &[u8],
 ) -> Result<()> {
-    validate_feishu_storage_bytes(&FeishuImageStorageInput::from(image), bytes)
+    if format!("sha256:{}", sha256_hex(bytes)) != image.content_hash
+        || md5_hex(bytes) != image.file_md5
+    {
+        bail!("daily case report Feishu storage image digest does not match JPEG bytes");
+    }
+    let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
+        .context("decode daily case report Feishu storage JPEG")?;
+    if decoded.dimensions() != (image.width, image.height) {
+        bail!("daily case report Feishu storage JPEG dimensions do not match");
+    }
+    Ok(())
 }
 
 #[cfg(any(
@@ -2484,7 +2342,17 @@ fn validate_primary_storage_bytes(
     image: &FeishuPrimaryStorageImage<'_>,
     bytes: &[u8],
 ) -> Result<()> {
-    validate_feishu_storage_bytes(&FeishuImageStorageInput::from(image), bytes)
+    if format!("sha256:{}", sha256_hex(bytes)) != image.content_hash
+        || md5_hex(bytes) != image.file_md5
+    {
+        bail!("Huabaosi Feishu storage image digest does not match JPEG bytes");
+    }
+    let decoded = image::load_from_memory_with_format(bytes, image::ImageFormat::Jpeg)
+        .context("decode Huabaosi Feishu storage JPEG")?;
+    if decoded.dimensions() != (image.width, image.height) {
+        bail!("Huabaosi Feishu storage JPEG dimensions do not match");
+    }
+    Ok(())
 }
 
 #[cfg(any(
@@ -2493,11 +2361,25 @@ fn validate_primary_storage_bytes(
     feature = "huabaosi-feishu-mirror-adapter"
 ))]
 fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_token: &str) -> Value {
-    build_feishu_image_storage_fields(
-        FeishuImageProfile::HuabaosiGenerated,
-        &FeishuImageStorageInput::from(image),
-        file_token,
-    )
+    let now = Utc::now().timestamp_millis();
+    json!({
+        "产物标题": "活动海报图片（待审核）",
+        "AgentOS产物ID": image.artifact_id.to_string(),
+        "Schema版本": SCHEMA_VERSION,
+        "AgentOS工作项ID": image.workflow_root_id.to_string(),
+        "图片请求ID": image.work_item_id.to_string(),
+        "最终JPEG": [{"file_token": file_token}],
+        "JPEG SHA-256": image.content_hash,
+        "文件MD5": image.file_md5,
+        "字节数": image.bytes.len(),
+        "宽度": image.width,
+        "高度": image.height,
+        "MIME类型": REQUIRED_MIME_TYPE,
+        "源PNG SHA-256": image.source_content_hash,
+        "转换规则": REQUIRED_TRANSFORM,
+        "审核状态": "待审核",
+        "生成时间": now,
+    })
 }
 
 #[cfg(any(
@@ -2509,11 +2391,27 @@ fn build_daily_case_report_storage_fields(
     image: &FeishuDailyCaseReportStorageImage<'_>,
     file_token: &str,
 ) -> Value {
-    build_feishu_image_storage_fields(
-        FeishuImageProfile::XiaomanDailyCaseReport,
-        &FeishuImageStorageInput::from(image),
-        file_token,
-    )
+    let now = Utc::now().timestamp_millis();
+    json!({
+        "产物标题": "小满日报图片（自动发布）",
+        "AgentOS产物ID": image.artifact_id.to_string(),
+        "Schema版本": DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION,
+        "AgentOS工作项ID": image.workflow_root_id.to_string(),
+        "图片请求ID": image.work_item_id.to_string(),
+        "最终JPEG": [{"file_token": file_token}],
+        "JPEG SHA-256": image.content_hash,
+        "文件MD5": image.file_md5,
+        "字节数": image.bytes.len(),
+        "宽度": image.width,
+        "高度": image.height,
+        "MIME类型": REQUIRED_MIME_TYPE,
+        "源PNG SHA-256": image.content_hash,
+        "转换规则": DAILY_CASE_REPORT_MEDIA_TRANSFORM,
+        "审核状态": "已通过",
+        "审核人": DAILY_CASE_REPORT_GENERATED_BY,
+        "审核意见": "approved by reviewed daily case report automatic publish boundary",
+        "生成时间": now,
+    })
 }
 
 #[cfg(any(
@@ -3794,101 +3692,6 @@ mod tests {
             "PostgreSQL integration test may only use qintopia_test"
         );
         database_url
-    }
-
-    #[test]
-    #[cfg(any(
-        feature = "huabaosi-production-adapter",
-        feature = "huabaosi-staging-adapter",
-        feature = "huabaosi-feishu-mirror-adapter"
-    ))]
-    fn primary_storage_fields_stay_byte_equivalent_to_legacy_template() {
-        // Always-on (test) equivalence guard for the PR-2 store merge: the unified
-        // build_feishu_image_storage_fields must keep producing the reviewed legacy
-        // field template byte-for-byte. This replaces the former debug_assert_eq!
-        // (which is compiled out in release builds) with a permanent test.
-        let bytes = vec![1u8, 2, 3, 4];
-        let image = FeishuPrimaryStorageImage {
-            artifact_id: Uuid::new_v4(),
-            workflow_root_id: Uuid::new_v4(),
-            work_item_id: Uuid::new_v4(),
-            content_hash: "sha256:deadbeef",
-            file_md5: "0123456789abcdef0123456789abcdef",
-            source_content_hash: "sha256:source",
-            bytes: &bytes,
-            width: REQUIRED_WIDTH as u32,
-            height: REQUIRED_HEIGHT as u32,
-        };
-        let fields = build_primary_storage_fields(&image, "fileTokenA");
-        let expected = json!({
-            "产物标题": "活动海报图片（待审核）",
-            "AgentOS产物ID": image.artifact_id.to_string(),
-            "Schema版本": SCHEMA_VERSION,
-            "AgentOS工作项ID": image.workflow_root_id.to_string(),
-            "图片请求ID": image.work_item_id.to_string(),
-            "最终JPEG": [{"file_token": "fileTokenA"}],
-            "JPEG SHA-256": image.content_hash,
-            "文件MD5": image.file_md5,
-            "字节数": image.bytes.len(),
-            "宽度": image.width,
-            "高度": image.height,
-            "MIME类型": REQUIRED_MIME_TYPE,
-            "源PNG SHA-256": image.source_content_hash,
-            "转换规则": REQUIRED_TRANSFORM,
-            "审核状态": "待审核",
-            "生成时间": fields["生成时间"],
-        });
-        assert_eq!(
-            fields, expected,
-            "merged primary Feishu image fields drifted from the legacy template"
-        );
-    }
-
-    #[test]
-    #[cfg(any(
-        feature = "huabaosi-production-adapter",
-        feature = "huabaosi-staging-adapter",
-        feature = "huabaosi-feishu-mirror-adapter"
-    ))]
-    fn daily_case_report_storage_fields_stay_byte_equivalent_to_legacy_template() {
-        // Same always-on equivalence guard for the daily-case-report profile.
-        let bytes = vec![5u8, 6, 7, 8];
-        let image = FeishuDailyCaseReportStorageImage {
-            artifact_id: Uuid::new_v4(),
-            workflow_root_id: Uuid::new_v4(),
-            work_item_id: Uuid::new_v4(),
-            content_hash: "sha256:cafebabe",
-            file_md5: "fedcba9876543210fedcba9876543210",
-            bytes: &bytes,
-            width: 16,
-            height: 24,
-            filename: "xiaoman-2026-08-18.jpg",
-        };
-        let fields = build_daily_case_report_storage_fields(&image, "fileTokenB");
-        let expected = json!({
-            "产物标题": "小满日报图片（自动发布）",
-            "AgentOS产物ID": image.artifact_id.to_string(),
-            "Schema版本": DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION,
-            "AgentOS工作项ID": image.workflow_root_id.to_string(),
-            "图片请求ID": image.work_item_id.to_string(),
-            "最终JPEG": [{"file_token": "fileTokenB"}],
-            "JPEG SHA-256": image.content_hash,
-            "文件MD5": image.file_md5,
-            "字节数": image.bytes.len(),
-            "宽度": image.width,
-            "高度": image.height,
-            "MIME类型": REQUIRED_MIME_TYPE,
-            "源PNG SHA-256": image.content_hash,
-            "转换规则": DAILY_CASE_REPORT_MEDIA_TRANSFORM,
-            "审核状态": "已通过",
-            "审核人": DAILY_CASE_REPORT_GENERATED_BY,
-            "审核意见": "approved by reviewed daily case report automatic publish boundary",
-            "生成时间": fields["生成时间"],
-        });
-        assert_eq!(
-            fields, expected,
-            "merged daily-case-report Feishu image fields drifted from the legacy template"
-        );
     }
 
     #[test]
