@@ -1227,9 +1227,10 @@ async fn run_enabled_callback_processor(
     // any non-confirmed intro outcome aborts the whole send as `Rejected`
     // (no external image call, not auto-retried).
     if intro_text_enabled() && !send_claim.message_text.is_empty() {
-        let already_sent = qiwe_image_send_state::intro_already_sent(&pool, work_item_id)
-            .await
-            .unwrap_or(false);
+        // Fail closed on the dedupe probe: if we cannot confirm whether the
+        // intro was already delivered (e.g. a transient DB error), abort this
+        // send rather than risk re-sending a duplicate intro to the group.
+        let already_sent = qiwe_image_send_state::intro_already_sent(&pool, work_item_id).await?;
         if !already_sent {
             let intro_outcome = match build_send_text_request(
                 &config.guid,
