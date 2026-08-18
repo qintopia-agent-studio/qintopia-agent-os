@@ -2493,34 +2493,11 @@ fn validate_primary_storage_bytes(
     feature = "huabaosi-feishu-mirror-adapter"
 ))]
 fn build_primary_storage_fields(image: &FeishuPrimaryStorageImage<'_>, file_token: &str) -> Value {
-    let fields = build_feishu_image_storage_fields(
+    build_feishu_image_storage_fields(
         FeishuImageProfile::HuabaosiGenerated,
         &FeishuImageStorageInput::from(image),
         file_token,
-    );
-    debug_assert_eq!(
-        fields,
-        json!({
-            "产物标题": "活动海报图片（待审核）",
-            "AgentOS产物ID": image.artifact_id.to_string(),
-            "Schema版本": SCHEMA_VERSION,
-            "AgentOS工作项ID": image.workflow_root_id.to_string(),
-            "图片请求ID": image.work_item_id.to_string(),
-            "最终JPEG": [{"file_token": file_token}],
-            "JPEG SHA-256": image.content_hash,
-            "文件MD5": image.file_md5,
-            "字节数": image.bytes.len(),
-            "宽度": image.width,
-            "高度": image.height,
-            "MIME类型": REQUIRED_MIME_TYPE,
-            "源PNG SHA-256": image.source_content_hash,
-            "转换规则": REQUIRED_TRANSFORM,
-            "审核状态": "待审核",
-            "生成时间": fields["生成时间"],
-        }),
-        "merged Feishu image fields must stay byte-equivalent to the legacy template"
-    );
-    fields
+    )
 }
 
 #[cfg(any(
@@ -2532,36 +2509,11 @@ fn build_daily_case_report_storage_fields(
     image: &FeishuDailyCaseReportStorageImage<'_>,
     file_token: &str,
 ) -> Value {
-    let fields = build_feishu_image_storage_fields(
+    build_feishu_image_storage_fields(
         FeishuImageProfile::XiaomanDailyCaseReport,
         &FeishuImageStorageInput::from(image),
         file_token,
-    );
-    debug_assert_eq!(
-        fields,
-        json!({
-            "产物标题": "小满日报图片（自动发布）",
-            "AgentOS产物ID": image.artifact_id.to_string(),
-            "Schema版本": DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION,
-            "AgentOS工作项ID": image.workflow_root_id.to_string(),
-            "图片请求ID": image.work_item_id.to_string(),
-            "最终JPEG": [{"file_token": file_token}],
-            "JPEG SHA-256": image.content_hash,
-            "文件MD5": image.file_md5,
-            "字节数": image.bytes.len(),
-            "宽度": image.width,
-            "高度": image.height,
-            "MIME类型": REQUIRED_MIME_TYPE,
-            "源PNG SHA-256": image.content_hash,
-            "转换规则": DAILY_CASE_REPORT_MEDIA_TRANSFORM,
-            "审核状态": "已通过",
-            "审核人": DAILY_CASE_REPORT_GENERATED_BY,
-            "审核意见": "approved by reviewed daily case report automatic publish boundary",
-            "生成时间": fields["生成时间"],
-        }),
-        "merged Feishu image fields must stay byte-equivalent to the legacy template"
-    );
-    fields
+    )
 }
 
 #[cfg(any(
@@ -3842,6 +3794,101 @@ mod tests {
             "PostgreSQL integration test may only use qintopia_test"
         );
         database_url
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn primary_storage_fields_stay_byte_equivalent_to_legacy_template() {
+        // Always-on (test) equivalence guard for the PR-2 store merge: the unified
+        // build_feishu_image_storage_fields must keep producing the reviewed legacy
+        // field template byte-for-byte. This replaces the former debug_assert_eq!
+        // (which is compiled out in release builds) with a permanent test.
+        let bytes = vec![1u8, 2, 3, 4];
+        let image = FeishuPrimaryStorageImage {
+            artifact_id: Uuid::new_v4(),
+            workflow_root_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            content_hash: "sha256:deadbeef",
+            file_md5: "0123456789abcdef0123456789abcdef",
+            source_content_hash: "sha256:source",
+            bytes: &bytes,
+            width: REQUIRED_WIDTH as u32,
+            height: REQUIRED_HEIGHT as u32,
+        };
+        let fields = build_primary_storage_fields(&image, "fileTokenA");
+        let expected = json!({
+            "产物标题": "活动海报图片（待审核）",
+            "AgentOS产物ID": image.artifact_id.to_string(),
+            "Schema版本": SCHEMA_VERSION,
+            "AgentOS工作项ID": image.workflow_root_id.to_string(),
+            "图片请求ID": image.work_item_id.to_string(),
+            "最终JPEG": [{"file_token": "fileTokenA"}],
+            "JPEG SHA-256": image.content_hash,
+            "文件MD5": image.file_md5,
+            "字节数": image.bytes.len(),
+            "宽度": image.width,
+            "高度": image.height,
+            "MIME类型": REQUIRED_MIME_TYPE,
+            "源PNG SHA-256": image.source_content_hash,
+            "转换规则": REQUIRED_TRANSFORM,
+            "审核状态": "待审核",
+            "生成时间": fields["生成时间"],
+        });
+        assert_eq!(
+            fields, expected,
+            "merged primary Feishu image fields drifted from the legacy template"
+        );
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn daily_case_report_storage_fields_stay_byte_equivalent_to_legacy_template() {
+        // Same always-on equivalence guard for the daily-case-report profile.
+        let bytes = vec![5u8, 6, 7, 8];
+        let image = FeishuDailyCaseReportStorageImage {
+            artifact_id: Uuid::new_v4(),
+            workflow_root_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            content_hash: "sha256:cafebabe",
+            file_md5: "fedcba9876543210fedcba9876543210",
+            bytes: &bytes,
+            width: 16,
+            height: 24,
+            filename: "xiaoman-2026-08-18.jpg",
+        };
+        let fields = build_daily_case_report_storage_fields(&image, "fileTokenB");
+        let expected = json!({
+            "产物标题": "小满日报图片（自动发布）",
+            "AgentOS产物ID": image.artifact_id.to_string(),
+            "Schema版本": DAILY_CASE_REPORT_STORAGE_SCHEMA_VERSION,
+            "AgentOS工作项ID": image.workflow_root_id.to_string(),
+            "图片请求ID": image.work_item_id.to_string(),
+            "最终JPEG": [{"file_token": "fileTokenB"}],
+            "JPEG SHA-256": image.content_hash,
+            "文件MD5": image.file_md5,
+            "字节数": image.bytes.len(),
+            "宽度": image.width,
+            "高度": image.height,
+            "MIME类型": REQUIRED_MIME_TYPE,
+            "源PNG SHA-256": image.content_hash,
+            "转换规则": DAILY_CASE_REPORT_MEDIA_TRANSFORM,
+            "审核状态": "已通过",
+            "审核人": DAILY_CASE_REPORT_GENERATED_BY,
+            "审核意见": "approved by reviewed daily case report automatic publish boundary",
+            "生成时间": fields["生成时间"],
+        });
+        assert_eq!(
+            fields, expected,
+            "merged daily-case-report Feishu image fields drifted from the legacy template"
+        );
     }
 
     #[test]
