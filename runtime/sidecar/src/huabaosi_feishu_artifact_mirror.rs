@@ -2258,7 +2258,12 @@ pub(crate) fn store_feishu_image(
     let fields = build_feishu_image_storage_fields(profile, image, file_token.as_str());
     let record = match existing {
         Some(record) => {
-            client.update_record(&config.base_token, &config.table_id, &record.record_id, &fields)?;
+            client.update_record(
+                &config.base_token,
+                &config.table_id,
+                &record.record_id,
+                &fields,
+            )?;
             record
         }
         None => client.create_record(&config.base_token, &config.table_id, &fields)?,
@@ -2290,9 +2295,7 @@ fn validate_feishu_storage_image(
             }
             if !is_canonical_sha256(image.content_hash)
                 || !is_lower_hex(image.file_md5, 32)
-                || !image
-                    .source_content_hash
-                    .is_some_and(is_canonical_sha256)
+                || !image.source_content_hash.is_some_and(is_canonical_sha256)
             {
                 bail!("Huabaosi Feishu storage image identity is not canonical");
             }
@@ -2303,8 +2306,7 @@ fn validate_feishu_storage_image(
                     "daily case report Feishu storage image bytes are outside the reviewed bound"
                 );
             }
-            if image.width == 0 || image.height == 0 || image.width > 4096 || image.height > 8192
-            {
+            if image.width == 0 || image.height == 0 || image.width > 4096 || image.height > 8192 {
                 bail!("daily case report Feishu storage image dimensions are invalid");
             }
             if !is_canonical_sha256(image.content_hash) || !is_lower_hex(image.file_md5, 32) {
@@ -2394,12 +2396,6 @@ fn build_feishu_image_storage_fields(
         }),
     }
 }
-
-
-
-
-
-
 
 #[cfg(any(
     test,

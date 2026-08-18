@@ -21,8 +21,7 @@ use crate::{
     media_identity::{
         content_hash_bytes, deterministic_uuid_from_parts, md5_hex_bytes, null_separated_digest,
     },
-    media_upload,
-    url_policy,
+    media_upload, url_policy,
 };
 
 const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[

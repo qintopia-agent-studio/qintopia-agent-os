@@ -65,7 +65,11 @@ pub(crate) fn upload_public_media(
     let mut headers = Vec::with_capacity(extra_headers.len() + 2);
     headers.push(("Content-Type", expectation.mime_type.to_string()));
     headers.push(("Accept", "application/json".to_string()));
-    headers.extend(extra_headers.iter().map(|(name, value)| (*name, value.clone())));
+    headers.extend(
+        extra_headers
+            .iter()
+            .map(|(name, value)| (*name, value.clone())),
+    );
     let response = client.request(
         "POST",
         endpoint,

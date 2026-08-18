@@ -2308,9 +2308,9 @@ fn generate_and_store_with(
                 )
             })?;
             let media_url = validate_media_response(storage, &media, client.allows_insecure_http())
-            .map_err(|source| {
-                GenerationAttemptError::terminal("media_upload", Some(true), None, source)
-            })?;
+                .map_err(|source| {
+                    GenerationAttemptError::terminal("media_upload", Some(true), None, source)
+                })?;
             let readback = client
                 .request("GET", &media_url, &[], &[], config.max_media_bytes)
                 .map_err(|error| {
