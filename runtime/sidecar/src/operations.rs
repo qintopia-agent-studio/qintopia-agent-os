@@ -2,7 +2,6 @@ use std::{collections::BTreeSet, fs, io::Cursor, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, bail, Context, Result};
 use image::{GenericImageView, ImageFormat, ImageReader};
-use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -18,6 +17,9 @@ use crate::{
     huabaosi_feishu_artifact_mirror::{
         self, FeishuDailyCaseReportStorageImage, FeishuPrimaryStorageApprovalEvidence,
         FeishuPrimaryStorageConfig,
+    },
+    media_identity::{
+        content_hash_bytes, deterministic_uuid_from_parts, md5_hex_bytes, null_separated_digest,
     },
     url_policy,
 };
@@ -4743,15 +4745,6 @@ pub(crate) fn poster_revision_idempotency_key(source_artifact_id: Uuid) -> Strin
     )
 }
 
-fn null_separated_digest(parts: &[&str]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update(part.as_bytes());
-        hasher.update([0]);
-    }
-    format!("sha256:{:x}", hasher.finalize())
-}
-
 fn is_canonical_sha256(value: &str) -> bool {
     value.strip_prefix("sha256:").is_some_and(|digest| {
         digest.len() == 64
@@ -6500,19 +6493,6 @@ fn daily_case_report_artifact_id_from_upload(
     ]))
 }
 
-fn deterministic_uuid_from_parts(parts: &[&str]) -> Uuid {
-    let digest = null_separated_digest(parts);
-    let hex = digest.strip_prefix("sha256:").unwrap_or(digest.as_str());
-    let mut bytes = [0_u8; 16];
-    for (index, slot) in bytes.iter_mut().enumerate() {
-        let offset = index * 2;
-        *slot = u8::from_str_radix(&hex[offset..offset + 2], 16).unwrap_or_default();
-    }
-    bytes[6] = (bytes[6] & 0x0f) | 0x80;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    Uuid::from_bytes(bytes)
-}
-
 fn daily_case_report_upload_window(
     request: &DailyCaseReportMediaUploadRequest,
 ) -> Result<(String, String)> {
@@ -7624,14 +7604,6 @@ fn validate_text_announcement_artifact_binding(
 
 fn content_hash_for_text(value: &str) -> String {
     format!("sha256:{:x}", Sha256::digest(value.as_bytes()))
-}
-
-fn content_hash_bytes(value: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(value))
-}
-
-fn md5_hex_bytes(value: &[u8]) -> String {
-    format!("{:x}", Md5::digest(value))
 }
 
 fn daily_case_report_media_upload_idempotency_key(content_hash: &str) -> String {
