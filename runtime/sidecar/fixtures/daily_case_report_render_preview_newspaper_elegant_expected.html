@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    margin: 0;
+    background: #d5d4ce;
+    color: #171717;
+    font-family: "PingFang SC", "Noto Sans CJK SC", "Heiti SC", sans-serif;
+  }
+  .ns-page {
+    width: 1080px;
+    margin: 0 auto;
+    padding: 38px 32px 32px;
+    background:
+      linear-gradient(90deg, rgba(23, 23, 23, 0.018) 1px, transparent 1px) 0 0 / 60px 60px,
+      linear-gradient(#fbfaf6, #fbfaf6);
+    position: relative;
+  }
+  .ns-page::after {
+    content: "";
+    position: absolute;
+    inset: 18px;
+    border: 1px solid #d6d2c8;
+    pointer-events: none;
+  }
+  .ns-header {
+    position: relative;
+    z-index: 1;
+    border-bottom: 2px solid #242424;
+    margin-bottom: 22px;
+  }
+  .ns-nameplate {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: end;
+    gap: 18px;
+    padding-bottom: 10px;
+    text-transform: uppercase;
+    color: #63625d;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+  }
+  .ns-nameplate strong {
+    color: #171717;
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    font-size: 44px;
+    line-height: 0.95;
+    font-weight: 900;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+  .ns-nameplate span:last-child { text-align: right; }
+  .ns-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+    padding: 8px 0 9px;
+    border-top: 1px solid #d6d2c8;
+    color: #63625d;
+    font-size: 13px;
+  }
+  .ns-meta span:first-child { color: #171717; font-weight: 800; }
+  .ns-meta span:nth-child(2) { text-align: center; }
+  .ns-meta span:last-child { text-align: right; color: #171717; font-weight: 800; }
+  .ns-hero {
+    position: relative;
+    z-index: 1;
+    padding: 18px 20px 20px;
+    margin-bottom: 22px;
+    background: #f1f0ea;
+    border-left: 6px solid #8b1f2f;
+  }
+  .ns-hero-kicker {
+    color: #8b1f2f;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .ns-hero h2 {
+    margin-top: 6px;
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    font-size: 36px;
+    line-height: 1.05;
+    font-weight: 900;
+  }
+  .ns-deck {
+    margin-top: 12px;
+    color: #373530;
+    font-size: 16px;
+    line-height: 1.45;
+    font-weight: 700;
+  }
+  .ns-hero-meta {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #d6d2c8;
+    font-size: 11px;
+    color: #555;
+  }
+  .ns-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .ns-card {
+    padding: 14px 14px 16px;
+    border: 1px solid #d6d2c8;
+    background: #ffffff;
+  }
+  .ns-kicker {
+    color: #8b1f2f;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .ns-section-title {
+    margin-top: 6px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #242424;
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    font-size: 20px;
+    line-height: 1.15;
+    font-weight: 900;
+  }
+  .ns-card-body {
+    margin-top: 10px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .ns-list {
+    list-style: none;
+    padding: 0;
+  }
+  .ns-list li {
+    margin: 0 0 7px;
+    padding-left: 14px;
+    position: relative;
+  }
+  .ns-list li::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.65em;
+    width: 5px;
+    height: 5px;
+    background: #8b1f2f;
+  }
+  .ns-quote {
+    margin: 0;
+    padding: 12px 14px;
+    background: #fff;
+    border-top: 3px solid #8b1f2f;
+    font-size: 15px;
+    line-height: 1.5;
+    font-weight: 700;
+  }
+  .ns-topic-row {
+    display: grid;
+    gap: 2px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f1f0ea;
+  }
+  .ns-topic-row:last-child { border-bottom: 0; }
+  .ns-topic-row strong { font-size: 14px; }
+  .ns-topic-row span { color: #555; font-size: 12px; }
+  .ns-topic-row small { color: #8b1f2f; font-size: 10px; font-weight: 800; }
+  .ns-cast-row {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f1f0ea;
+  }
+  .ns-cast-row:last-child { border-bottom: 0; }
+  .ns-cast-rank {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #171717;
+    background: #f1f0ea;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .ns-cast-copy strong { font-size: 14px; }
+  .ns-cast-copy span { display: block; color: #8b1f2f; font-size: 11px; font-weight: 700; }
+  .ns-cast-copy small { display: block; color: #555; font-size: 11px; margin-top: 2px; }
+  .ns-case-row {
+    display: grid;
+    gap: 2px;
+    padding: 7px 0;
+    border-bottom: 1px solid #f1f0ea;
+  }
+  .ns-case-row:last-child { border-bottom: 0; }
+  .ns-case-no {
+    width: 22px;
+    height: 22px;
+    display: grid;
+    place-items: center;
+    border: 1px solid #171717;
+    border-radius: 50%;
+    background: #f1f0ea;
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .ns-case-row strong { font-size: 13px; }
+  .ns-case-row small { color: #555; font-size: 11px; }
+  .ns-bottom {
+    position: relative;
+    z-index: 1;
+    margin-top: 22px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  .ns-timeline {
+    padding: 14px;
+    border: 1px solid #d6d2c8;
+    background: #fff;
+  }
+  .ns-timeline h4 {
+    font-family: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .ns-timeline svg { display: block; width: 100%; height: 90px; }
+  .ns-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: #d6d2c8;
+    border: 1px solid #d6d2c8;
+  }
+  .ns-stat {
+    background: #fff;
+    padding: 12px 8px;
+    text-align: center;
+  }
+  .ns-stat-value { font-size: 26px; font-weight: 900; color: #171717; }
+  .ns-stat-label { display: block; font-size: 11px; color: #8b1f2f; font-weight: 800; margin-top: 4px; }
+  .ns-stat-caption { display: block; font-size: 9px; color: #63625d; margin-top: 2px; }
+  .ns-footer {
+    position: relative;
+    z-index: 1;
+    margin-top: 22px;
+    padding-top: 10px;
+    border-top: 2px solid #242424;
+    color: #63625d;
+    font-size: 11px;
+    display: flex;
+    justify-content: space-between;
+  }
+  @media screen and (max-width: 780px) {
+    .ns-grid { grid-template-columns: 1fr; }
+    .ns-bottom { grid-template-columns: 1fr; }
+    .ns-nameplate strong { font-size: 32px; }
+    .ns-hero h2 { font-size: 28px; }
+  }
+</style>
+</head>
+<body>
+<div class="ns-page">
+  <header class="ns-header">
+    <div class="ns-nameplate">
+      <span>秦托邦的小伙伴（新）</span>
+      <strong>小满群聊日报</strong>
+      <span>2026年08月08日</span>
+    </div>
+    <div class="ns-meta">
+      <span>COMMUNITY DAILY</span>
+      <span>00:00–23:59 · 7 人出场</span>
+      <span>2026年08月08日 版</span>
+    </div>
+  </header>
+  <section class="ns-hero">
+    <div class="ns-hero-kicker">COVER STORY</div>
+    <h2>资源分享，阿杰和小雨围绕「打卡」同场接力</h2>
+    <p class="ns-deck">今天的主线是「资源分享，阿杰和小雨围绕「打卡」同场接力」：20 条消息、7 位活跃成员，把信息、提问和现场反应压成一页可回看的群聊切片。 核心出场是 阿杰（气氛承包人）、小雨（活动推进者）、Tom（问题发射台）。</p>
+    <div class="ns-hero-meta">20 条素材 · 6 条主线 · 4 位剧中人</div>
+  </section>
+  <div class="ns-grid">
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">COMMUNITY DESK</div>
+      <h3 class="ns-section-title">主要话题</h3>
+      <div class="ns-card-body"><div class="ns-topic-list">
+        <div class="ns-topic-row">
+          <strong>资源分享</strong>
+          <span>3 条消息，2 人参与</span>
+          <small>2 人参与</small>
+        </div>
+        <div class="ns-topic-row">
+          <strong>技术求助</strong>
+          <span>3 条消息，2 人参与</span>
+          <small>2 人参与</small>
+        </div>
+        <div class="ns-topic-row">
+          <strong>本周活动预告</strong>
+          <span>3 条消息，2 人参与</span>
+          <small>2 人参与</small>
+        </div>
+        <div class="ns-topic-row">
+          <strong>打卡</strong>
+          <span>3 条消息，2 人参与</span>
+          <small>2 人参与</small>
+        </div>
+        <div class="ns-topic-row">
+          <strong>午后 14:00 时段</strong>
+          <span>3 条消息，3 人参与</span>
+          <small>3 人参与</small>
+        </div>
+        <div class="ns-topic-row">
+          <strong>午后 16:00 时段</strong>
+          <span>3 条消息，3 人参与</span>
+          <small>3 人参与</small>
+        </div></div></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">CAST NOTES</div>
+      <h3 class="ns-section-title">人物出场表</h3>
+      <div class="ns-card-body"><div class="ns-cast-list">
+        <div class="ns-cast-row">
+          <div class="ns-cast-rank">1</div>
+          <div class="ns-cast-copy">
+            <strong>阿杰</strong>
+            <span>气氛承包人</span>
+            <small>报名+1，想问 RWA 的合规边界。</small>
+          </div>
+        </div>
+        <div class="ns-cast-row">
+          <div class="ns-cast-rank">2</div>
+          <div class="ns-cast-copy">
+            <strong>小雨</strong>
+            <span>活动推进者</span>
+            <small>我把问题收集表发群里了，大家填一下。</small>
+          </div>
+        </div>
+        <div class="ns-cast-row">
+          <div class="ns-cast-rank">3</div>
+          <div class="ns-cast-copy">
+            <strong>Tom</strong>
+            <span>问题发射台</span>
+            <small>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？</small>
+          </div>
+        </div>
+        <div class="ns-cast-row">
+          <div class="ns-cast-rank">4</div>
+          <div class="ns-cast-copy">
+            <strong>娜娜</strong>
+            <span>资料投喂员</span>
+            <small>资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。</small>
+          </div>
+        </div></div></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">QUOTE ANCHOR</div>
+      <h3 class="ns-section-title">今日台词</h3>
+      <div class="ns-card-body"><blockquote class="ns-quote">资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。</blockquote></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">MEME MAP</div>
+      <h3 class="ns-section-title">梗和回调候选</h3>
+      <div class="ns-card-body"><ul class="ns-list"><li>如果后续继续出现，可沉淀为「气氛承包人」回调</li><li>如果后续继续出现，可沉淀为「活动推进者」回调</li><li>如果后续继续出现，可沉淀为「问题发射台」回调</li><li>如果后续继续出现，可沉淀为「资料投喂员」回调</li></ul></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">ENSEMBLE LINKS</div>
+      <h3 class="ns-section-title">同场关系</h3>
+      <div class="ns-card-body"><ul class="ns-list"><li>和小雨围绕「打卡」同场接力</li></ul></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">LOCAL THREADS</div>
+      <h3 class="ns-section-title">地点 / 本地生活线索</h3>
+      <div class="ns-card-body"><ul class="ns-list"><li>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？（CASE 02）</li><li>本周活动预告（CASE 03）</li><li>本周活动预告：周六晚 8 点有个 AMA，嘉宾聊 RWA 赛道。（CASE 03）</li><li>报名+1，想问 RWA 的合规边界。（CASE 03）</li></ul></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">OPEN LOOPS</div>
+      <h3 class="ns-section-title">待解决问题</h3>
+      <div class="ns-card-body"><ul class="ns-list"><li>技术求助：hardhat 本地节点一直连不上，有没有人遇到过？</li></ul></div>
+    </section>
+    
+    <section class="ns-card ">
+      <div class="ns-kicker">STORYLINE FILES</div>
+      <h3 class="ns-section-title">故事线候选</h3>
+      <div class="ns-card-body"><div class="ns-case-list">
+        <div class="ns-case-row">
+          <span class="ns-case-no">01</span>
+          <strong>资源分享</strong>
+          <small>3 条消息，2 人参与</small>
+        </div>
+        <div class="ns-case-row">
+          <span class="ns-case-no">02</span>
+          <strong>技术求助</strong>
+          <small>3 条消息，2 人参与</small>
+        </div>
+        <div class="ns-case-row">
+          <span class="ns-case-no">03</span>
+          <strong>本周活动预告</strong>
+          <small>3 条消息，2 人参与</small>
+        </div>
+        <div class="ns-case-row">
+          <span class="ns-case-no">04</span>
+          <strong>关于「打卡」的讨论</strong>
+          <small>3 条消息，2 人参与</small>
+        </div></div></div>
+    </section>
+  </div>
+  <div class="ns-bottom">
+    <section class="ns-timeline">
+      <h4>24H 活跃节奏</h4>
+      <svg viewBox="0 0 960 90" aria-label="24小时活跃节奏"><rect x="1" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="41" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="81" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="121" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="161" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="201" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="241" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="281" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="321" y="0" width="38" height="90" rx="2" fill="#1a2744"/>
+<rect x="361" y="0" width="38" height="90" rx="2" fill="#1a2744"/>
+<rect x="401" y="0" width="38" height="90" rx="2" fill="#1a2744"/>
+<rect x="441" y="0" width="38" height="90" rx="2" fill="#1a2744"/>
+<rect x="481" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="521" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="561" y="0" width="38" height="90" rx="2" fill="#1a2744"/>
+<rect x="601" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="641" y="0" width="38" height="90" rx="2" fill="#1a2744"/>
+<rect x="681" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="721" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="761" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="801" y="30" width="38" height="60" rx="2" fill="#1a2744"/>
+<rect x="841" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="881" y="90" width="38" height="0" rx="2" fill="#1a2744"/>
+<rect x="921" y="90" width="38" height="0" rx="2" fill="#1a2744"/></svg>
+    </section>
+    <div class="ns-stats">
+        <div class="ns-stat">
+          <span class="ns-stat-value">20</span>
+          <span class="ns-stat-label">消息</span>
+          <span class="ns-stat-caption">当日素材</span>
+        </div>
+        <div class="ns-stat">
+          <span class="ns-stat-value">7</span>
+          <span class="ns-stat-label">出场</span>
+          <span class="ns-stat-caption">活跃成员</span>
+        </div>
+        <div class="ns-stat">
+          <span class="ns-stat-value">6</span>
+          <span class="ns-stat-label">主线</span>
+          <span class="ns-stat-caption">可归档</span>
+        </div>
+        <div class="ns-stat">
+          <span class="ns-stat-value">4</span>
+          <span class="ns-stat-label">人物</span>
+          <span class="ns-stat-caption">群像卡</span>
+        </div></div>
+  </div>
+  <footer class="ns-footer">
+    <span>本报告由小满根据最新群聊窗口自动整理 · 长期画像只以公开安全的角色复现计数参与</span>
+    <span>小满群聊日报</span>
+  </footer>
+</div>
+</body>
+</html>

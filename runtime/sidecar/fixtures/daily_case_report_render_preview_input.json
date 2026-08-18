@@ -1,0 +1,1242 @@
+{
+  "group_name": "秦托邦的小伙伴（新）",
+  "report_title": "小满群聊日报",
+  "report_date": "2026年08月08日",
+  "time_range": "00:00–23:59",
+  "member_count": 42,
+  "message_count": 20,
+  "participant_count": 7,
+  "case_count": 6,
+  "suspect_count": 5,
+  "hourly_counts": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    3,
+    3,
+    3,
+    3,
+    0,
+    0,
+    3,
+    0,
+    3,
+    0,
+    0,
+    0,
+    2,
+    0,
+    0,
+    0
+  ],
+  "cases": [
+    {
+      "case_no": "CASE 01",
+      "title": "资源分享",
+      "time_label": "09:30–09:42",
+      "summary": "3 条消息，2 人参与",
+      "bullets": [
+        "资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。",
+        "还有个交互式沙盒，可以直接改参数看套利路径。"
+      ],
+      "message_count": 3,
+      "participant_count": 2,
+      "color_bg": "#fef3c7",
+      "color_text": "#92400e",
+      "top_speaker": "娜娜"
+    },
+    {
+      "case_no": "CASE 02",
+      "title": "技术求助",
+      "time_label": "10:15–10:25",
+      "summary": "3 条消息，2 人参与",
+      "bullets": [
+        "检查下 8545 端口是不是被占了，或者 .env 里 RPC 写错了。",
+        "技术求助：hardhat 本地节点一直连不上，有没有人遇到过？"
+      ],
+      "message_count": 3,
+      "participant_count": 2,
+      "color_bg": "#fee2e2",
+      "color_text": "#991b1b",
+      "top_speaker": "Tom"
+    },
+    {
+      "case_no": "CASE 03",
+      "title": "本周活动预告",
+      "time_label": "11:00–11:10",
+      "summary": "3 条消息，2 人参与",
+      "bullets": [
+        "本周活动预告：周六晚 8 点有个 AMA，嘉宾聊 RWA 赛道。",
+        "报名+1，想问 RWA 的合规边界。",
+        "我把问题收集表发群里了，大家填一下。"
+      ],
+      "message_count": 3,
+      "participant_count": 2,
+      "color_bg": "#dbeafe",
+      "color_text": "#1e40af",
+      "top_speaker": "小雨"
+    },
+    {
+      "case_no": "CASE 04",
+      "title": "关于「打卡」的讨论",
+      "time_label": "08:05–20:10",
+      "summary": "3 条消息，2 人参与",
+      "bullets": [
+        "打卡+1，我还在学事件和日志那块，有点绕。"
+      ],
+      "message_count": 3,
+      "participant_count": 2,
+      "color_bg": "#dcfce7",
+      "color_text": "#166534",
+      "top_speaker": "小雨"
+    },
+    {
+      "case_no": "CASE 05",
+      "title": "午后 14:00 时段",
+      "time_label": "14:20–14:31",
+      "summary": "3 条消息，3 人参与",
+      "bullets": [
+        "14:20–14:31：3 条群消息，3 人参与。"
+      ],
+      "message_count": 3,
+      "participant_count": 3,
+      "color_bg": "#f3e8ff",
+      "color_text": "#6b21a8",
+      "top_speaker": "Mia"
+    },
+    {
+      "case_no": "CASE 06",
+      "title": "午后 16:00 时段",
+      "time_label": "16:45–16:55",
+      "summary": "3 条消息，3 人参与",
+      "bullets": [
+        "16:45–16:55：3 条群消息，3 人参与。"
+      ],
+      "message_count": 3,
+      "participant_count": 3,
+      "color_bg": "#ffedd5",
+      "color_text": "#9a3412",
+      "top_speaker": "小林"
+    }
+  ],
+  "suspects": [
+    {
+      "rank": 1,
+      "name": "阿杰",
+      "message_count": 5,
+      "word_count": 108,
+      "avatar_emoji": "🕵️"
+    },
+    {
+      "rank": 2,
+      "name": "小雨",
+      "message_count": 4,
+      "word_count": 90,
+      "avatar_emoji": "🕵️‍♀️"
+    },
+    {
+      "rank": 3,
+      "name": "娜娜",
+      "message_count": 3,
+      "word_count": 78,
+      "avatar_emoji": "🥷"
+    },
+    {
+      "rank": 4,
+      "name": "Mia",
+      "message_count": 3,
+      "word_count": 72,
+      "avatar_emoji": "🦹"
+    },
+    {
+      "rank": 5,
+      "name": "老王",
+      "message_count": 2,
+      "word_count": 26,
+      "avatar_emoji": "🧙"
+    }
+  ],
+  "highlight": "资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。",
+  "hot_topics": [
+    {
+      "rank": 1,
+      "keyword": "本周活动预告",
+      "message_count": 3,
+      "participant_count": 2
+    },
+    {
+      "rank": 2,
+      "keyword": "技术求助",
+      "message_count": 3,
+      "participant_count": 2
+    },
+    {
+      "rank": 3,
+      "keyword": "资源分享",
+      "message_count": 3,
+      "participant_count": 2
+    },
+    {
+      "rank": 4,
+      "keyword": "打卡",
+      "message_count": 3,
+      "participant_count": 2
+    }
+  ],
+  "character_count": 4,
+  "characters": [
+    {
+      "rank": 1,
+      "name": "阿杰",
+      "role_label": "气氛承包人",
+      "one_liner": "负责让一天的聊天不只是信息流",
+      "evidence": "报名+1，想问 RWA 的合规边界。",
+      "message_count": 5,
+      "topic_count": 21,
+      "node_key": "阿杰",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "接气口 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「气氛承包人」回调",
+      "arc_label": "今日高频出场，先形成「气氛承包人」日线",
+      "relationship_hint": "和小雨围绕「打卡」同场接力",
+      "relationship_target_key": "小雨",
+      "relationship_topic": "打卡",
+      "meme_seed": "多话题串场的「气氛承包人」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:阿杰",
+      "expressive_label": "",
+      "profile_evidence_count": 2,
+      "profile_upgrade_status": "eligible_for_review",
+      "profile_upgrade_reason": "今日同一身份 5 条发言支撑；今日跨 21 个公开话题出现；今日存在同场关系候选",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#fef3c7",
+      "color_text": "#92400e"
+    },
+    {
+      "rank": 2,
+      "name": "小雨",
+      "role_label": "活动推进者",
+      "one_liner": "把松散聊天推成下一步行动",
+      "evidence": "我把问题收集表发群里了，大家填一下。",
+      "message_count": 4,
+      "topic_count": 19,
+      "node_key": "小雨",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "推进剧情 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「活动推进者」回调",
+      "arc_label": "今日新鲜出场，暂记「活动推进者」",
+      "relationship_hint": "和阿杰围绕「打卡」同场接力",
+      "relationship_target_key": "阿杰",
+      "relationship_topic": "打卡",
+      "meme_seed": "多话题串场的「活动推进者」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:小雨",
+      "expressive_label": "",
+      "profile_evidence_count": 2,
+      "profile_upgrade_status": "eligible_for_review",
+      "profile_upgrade_reason": "今日同一身份 4 条发言支撑；今日跨 19 个公开话题出现；今日存在同场关系候选",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#fee2e2",
+      "color_text": "#991b1b"
+    },
+    {
+      "rank": 3,
+      "name": "Tom",
+      "role_label": "问题发射台",
+      "one_liner": "把模糊卡点抛到台面上",
+      "evidence": "技术求助：hardhat 本地节点一直连不上，有没有人遇到过？",
+      "message_count": 2,
+      "topic_count": 10,
+      "node_key": "Tom",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "抛冲突 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「问题发射台」回调",
+      "arc_label": "今日新鲜出场，暂记「问题发射台」",
+      "relationship_hint": "和Mia围绕「端口」同场接力",
+      "relationship_target_key": "Mia",
+      "relationship_topic": "端口",
+      "meme_seed": "多话题串场的「问题发射台」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:Tom",
+      "expressive_label": "",
+      "profile_evidence_count": 2,
+      "profile_upgrade_status": "eligible_for_review",
+      "profile_upgrade_reason": "今日同一身份 2 条发言支撑；今日跨 10 个公开话题出现；今日存在同场关系候选",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#dbeafe",
+      "color_text": "#1e40af"
+    },
+    {
+      "rank": 4,
+      "name": "娜娜",
+      "role_label": "资料投喂员",
+      "one_liner": "把有用线索递到群友手边",
+      "evidence": "资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。",
+      "message_count": 3,
+      "topic_count": 21,
+      "node_key": "娜娜",
+      "memory_label": "",
+      "member_fact_memory_used": false,
+      "story_function": "递道具 · 多线串联",
+      "callback_hint": "如果后续继续出现，可沉淀为「资料投喂员」回调",
+      "arc_label": "今日新鲜出场，暂记「资料投喂员」",
+      "relationship_hint": "",
+      "relationship_target_key": "",
+      "relationship_topic": "",
+      "meme_seed": "多话题串场的「资料投喂员」",
+      "memory_weight_label": "只按今日表现呈现",
+      "evidence_anchor": "daily_character_note:娜娜",
+      "expressive_label": "",
+      "profile_evidence_count": 1,
+      "profile_upgrade_status": "daily_note_only",
+      "profile_upgrade_reason": "只有单日轻量信号，不能升级为长期人物画像",
+      "creative_profile_label": "",
+      "creative_profile_status": "",
+      "color_bg": "#dcfce7",
+      "color_text": "#166534"
+    }
+  ],
+  "character_universe": {
+    "schema_version": "xiaoman-character-universe-v1",
+    "source": "daily_case_report_second_pass",
+    "retained_source_policy": "curated_summary_only",
+    "raw_messages_included": false,
+    "profile_fact_text_included": false,
+    "people": [
+      {
+        "type": "people",
+        "key": "阿杰",
+        "label": "阿杰",
+        "role_label": "气氛承包人",
+        "daily_line": "负责让一天的聊天不只是信息流",
+        "evidence": "报名+1，想问 RWA 的合规边界。",
+        "message_count": 5,
+        "topic_count": 21,
+        "memory_label": "",
+        "story_function": "接气口 · 多线串联",
+        "callback_hint": "如果后续继续出现，可沉淀为「气氛承包人」回调",
+        "arc_label": "今日高频出场，先形成「气氛承包人」日线",
+        "relationship_hint": "和小雨围绕「打卡」同场接力",
+        "meme_seed": "多话题串场的「气氛承包人」",
+        "expressive_label": "",
+        "memory_weight_label": "只按今日表现呈现",
+        "evidence_anchor": "daily_character_note:阿杰",
+        "profile_evidence_count": 2,
+        "profile_upgrade_status": "eligible_for_review",
+        "creative_profile_label": "",
+        "creative_profile_status": "",
+        "risk": "internal"
+      },
+      {
+        "type": "people",
+        "key": "小雨",
+        "label": "小雨",
+        "role_label": "活动推进者",
+        "daily_line": "把松散聊天推成下一步行动",
+        "evidence": "我把问题收集表发群里了，大家填一下。",
+        "message_count": 4,
+        "topic_count": 19,
+        "memory_label": "",
+        "story_function": "推进剧情 · 多线串联",
+        "callback_hint": "如果后续继续出现，可沉淀为「活动推进者」回调",
+        "arc_label": "今日新鲜出场，暂记「活动推进者」",
+        "relationship_hint": "和阿杰围绕「打卡」同场接力",
+        "meme_seed": "多话题串场的「活动推进者」",
+        "expressive_label": "",
+        "memory_weight_label": "只按今日表现呈现",
+        "evidence_anchor": "daily_character_note:小雨",
+        "profile_evidence_count": 2,
+        "profile_upgrade_status": "eligible_for_review",
+        "creative_profile_label": "",
+        "creative_profile_status": "",
+        "risk": "internal"
+      },
+      {
+        "type": "people",
+        "key": "Tom",
+        "label": "Tom",
+        "role_label": "问题发射台",
+        "daily_line": "把模糊卡点抛到台面上",
+        "evidence": "技术求助：hardhat 本地节点一直连不上，有没有人遇到过？",
+        "message_count": 2,
+        "topic_count": 10,
+        "memory_label": "",
+        "story_function": "抛冲突 · 多线串联",
+        "callback_hint": "如果后续继续出现，可沉淀为「问题发射台」回调",
+        "arc_label": "今日新鲜出场，暂记「问题发射台」",
+        "relationship_hint": "和Mia围绕「端口」同场接力",
+        "meme_seed": "多话题串场的「问题发射台」",
+        "expressive_label": "",
+        "memory_weight_label": "只按今日表现呈现",
+        "evidence_anchor": "daily_character_note:Tom",
+        "profile_evidence_count": 2,
+        "profile_upgrade_status": "eligible_for_review",
+        "creative_profile_label": "",
+        "creative_profile_status": "",
+        "risk": "internal"
+      },
+      {
+        "type": "people",
+        "key": "娜娜",
+        "label": "娜娜",
+        "role_label": "资料投喂员",
+        "daily_line": "把有用线索递到群友手边",
+        "evidence": "资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。",
+        "message_count": 3,
+        "topic_count": 21,
+        "memory_label": "",
+        "story_function": "递道具 · 多线串联",
+        "callback_hint": "如果后续继续出现，可沉淀为「资料投喂员」回调",
+        "arc_label": "今日新鲜出场，暂记「资料投喂员」",
+        "relationship_hint": "",
+        "meme_seed": "多话题串场的「资料投喂员」",
+        "expressive_label": "",
+        "memory_weight_label": "只按今日表现呈现",
+        "evidence_anchor": "daily_character_note:娜娜",
+        "profile_evidence_count": 1,
+        "profile_upgrade_status": "daily_note_only",
+        "creative_profile_label": "",
+        "creative_profile_status": "",
+        "risk": "internal"
+      }
+    ],
+    "topics": [
+      {
+        "type": "topics",
+        "key": "本周活动预告",
+        "label": "本周活动预告",
+        "message_count": 3,
+        "participant_count": 2,
+        "risk": "public_safe_summary"
+      },
+      {
+        "type": "topics",
+        "key": "技术求助",
+        "label": "技术求助",
+        "message_count": 3,
+        "participant_count": 2,
+        "risk": "public_safe_summary"
+      },
+      {
+        "type": "topics",
+        "key": "资源分享",
+        "label": "资源分享",
+        "message_count": 3,
+        "participant_count": 2,
+        "risk": "public_safe_summary"
+      },
+      {
+        "type": "topics",
+        "key": "打卡",
+        "label": "打卡",
+        "message_count": 3,
+        "participant_count": 2,
+        "risk": "public_safe_summary"
+      }
+    ],
+    "events": [
+      {
+        "type": "events",
+        "key": "资源分享",
+        "label": "资源分享",
+        "case_no": "CASE 01",
+        "time_label": "09:30–09:42",
+        "summary": "3 条消息，2 人参与",
+        "top_speaker": "娜娜",
+        "evidence": [
+          "资源分享：发现一个讲 MEV 的系列长文，讲得特别清楚，链接发群里了。",
+          "还有个交互式沙盒，可以直接改参数看套利路径。"
+        ],
+        "risk": "internal"
+      },
+      {
+        "type": "events",
+        "key": "技术求助",
+        "label": "技术求助",
+        "case_no": "CASE 02",
+        "time_label": "10:15–10:25",
+        "summary": "3 条消息，2 人参与",
+        "top_speaker": "Tom",
+        "evidence": [
+          "检查下 8545 端口是不是被占了，或者 .env 里 RPC 写错了。",
+          "技术求助：hardhat 本地节点一直连不上，有没有人遇到过？"
+        ],
+        "risk": "internal"
+      },
+      {
+        "type": "events",
+        "key": "本周活动预告",
+        "label": "本周活动预告",
+        "case_no": "CASE 03",
+        "time_label": "11:00–11:10",
+        "summary": "3 条消息，2 人参与",
+        "top_speaker": "小雨",
+        "evidence": [
+          "本周活动预告：周六晚 8 点有个 AMA，嘉宾聊 RWA 赛道。",
+          "报名+1，想问 RWA 的合规边界。",
+          "我把问题收集表发群里了，大家填一下。"
+        ],
+        "risk": "internal"
+      },
+      {
+        "type": "events",
+        "key": "关于打卡的讨论",
+        "label": "关于「打卡」的讨论",
+        "case_no": "CASE 04",
+        "time_label": "08:05–20:10",
+        "summary": "3 条消息，2 人参与",
+        "top_speaker": "小雨",
+        "evidence": [
+          "打卡+1，我还在学事件和日志那块，有点绕。"
+        ],
+        "risk": "internal"
+      },
+      {
+        "type": "events",
+        "key": "午后-1400-时段",
+        "label": "午后 14:00 时段",
+        "case_no": "CASE 05",
+        "time_label": "14:20–14:31",
+        "summary": "3 条消息，3 人参与",
+        "top_speaker": "Mia",
+        "evidence": [
+          "14:20–14:31：3 条群消息，3 人参与。"
+        ],
+        "risk": "internal"
+      },
+      {
+        "type": "events",
+        "key": "午后-1600-时段",
+        "label": "午后 16:00 时段",
+        "case_no": "CASE 06",
+        "time_label": "16:45–16:55",
+        "summary": "3 条消息，3 人参与",
+        "top_speaker": "小林",
+        "evidence": [
+          "16:45–16:55：3 条群消息，3 人参与。"
+        ],
+        "risk": "internal"
+      }
+    ],
+    "memes": [
+      {
+        "type": "memes",
+        "key": "多话题串场的气氛承包人",
+        "label": "多话题串场的「气氛承包人」",
+        "source": "daily_character_note",
+        "related_people": [
+          "阿杰"
+        ],
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "多话题串场的活动推进者",
+        "label": "多话题串场的「活动推进者」",
+        "source": "daily_character_note",
+        "related_people": [
+          "小雨"
+        ],
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "多话题串场的问题发射台",
+        "label": "多话题串场的「问题发射台」",
+        "source": "daily_character_note",
+        "related_people": [
+          "Tom"
+        ],
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "多话题串场的资料投喂员",
+        "label": "多话题串场的「资料投喂员」",
+        "source": "daily_character_note",
+        "related_people": [
+          "娜娜"
+        ],
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "本周活动预告今日高频回调",
+        "label": "「本周活动预告」今日高频回调",
+        "source": "daily_hot_topic",
+        "message_count": 3,
+        "participant_count": 2,
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "技术求助今日高频回调",
+        "label": "「技术求助」今日高频回调",
+        "source": "daily_hot_topic",
+        "message_count": 3,
+        "participant_count": 2,
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "资源分享今日高频回调",
+        "label": "「资源分享」今日高频回调",
+        "source": "daily_hot_topic",
+        "message_count": 3,
+        "participant_count": 2,
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "memes",
+        "key": "打卡今日高频回调",
+        "label": "「打卡」今日高频回调",
+        "source": "daily_hot_topic",
+        "message_count": 3,
+        "participant_count": 2,
+        "status": "candidate",
+        "risk": "internal_review_required"
+      }
+    ],
+    "callbacks": [
+      {
+        "type": "callbacks",
+        "key": "阿杰-气氛承包人-callback",
+        "label": "如果后续继续出现，可沉淀为「气氛承包人」回调",
+        "related_people": [
+          "阿杰"
+        ],
+        "memory_weight_label": "只按今日表现呈现",
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "callbacks",
+        "key": "小雨-活动推进者-callback",
+        "label": "如果后续继续出现，可沉淀为「活动推进者」回调",
+        "related_people": [
+          "小雨"
+        ],
+        "memory_weight_label": "只按今日表现呈现",
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "callbacks",
+        "key": "Tom-问题发射台-callback",
+        "label": "如果后续继续出现，可沉淀为「问题发射台」回调",
+        "related_people": [
+          "Tom"
+        ],
+        "memory_weight_label": "只按今日表现呈现",
+        "status": "candidate",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "callbacks",
+        "key": "娜娜-资料投喂员-callback",
+        "label": "如果后续继续出现，可沉淀为「资料投喂员」回调",
+        "related_people": [
+          "娜娜"
+        ],
+        "memory_weight_label": "只按今日表现呈现",
+        "status": "candidate",
+        "risk": "internal_review_required"
+      }
+    ],
+    "relationships": [
+      {
+        "type": "relationships",
+        "key": "小雨-阿杰-打卡",
+        "source": "阿杰",
+        "target": "小雨",
+        "relation": "co_discusses_topic",
+        "label": "和小雨围绕「打卡」同场接力",
+        "topic": "打卡",
+        "risk": "public_safe_summary"
+      }
+    ],
+    "expressive_label_candidates": [
+      {
+        "type": "expressive_label_candidate",
+        "key": "expressive-阿杰-气氛承包人",
+        "related_person": "阿杰",
+        "candidate_label": "多话题串场的「气氛承包人」",
+        "label_kind": "draft_requires_owner_review",
+        "review_status": "candidate",
+        "public_surface_allowed": false,
+        "evidence_anchor": "daily_character_note:阿杰",
+        "risk": "field_level_owner_review_required"
+      },
+      {
+        "type": "expressive_label_candidate",
+        "key": "expressive-小雨-活动推进者",
+        "related_person": "小雨",
+        "candidate_label": "多话题串场的「活动推进者」",
+        "label_kind": "draft_requires_owner_review",
+        "review_status": "candidate",
+        "public_surface_allowed": false,
+        "evidence_anchor": "daily_character_note:小雨",
+        "risk": "field_level_owner_review_required"
+      },
+      {
+        "type": "expressive_label_candidate",
+        "key": "expressive-Tom-问题发射台",
+        "related_person": "Tom",
+        "candidate_label": "多话题串场的「问题发射台」",
+        "label_kind": "draft_requires_owner_review",
+        "review_status": "candidate",
+        "public_surface_allowed": false,
+        "evidence_anchor": "daily_character_note:Tom",
+        "risk": "field_level_owner_review_required"
+      },
+      {
+        "type": "expressive_label_candidate",
+        "key": "expressive-娜娜-资料投喂员",
+        "related_person": "娜娜",
+        "candidate_label": "多话题串场的「资料投喂员」",
+        "label_kind": "draft_requires_owner_review",
+        "review_status": "candidate",
+        "public_surface_allowed": false,
+        "evidence_anchor": "daily_character_note:娜娜",
+        "risk": "field_level_owner_review_required"
+      }
+    ],
+    "creative_profile_candidates": [
+      {
+        "type": "creative_profile_candidates",
+        "key": "阿杰-气氛承包人-creative-profile",
+        "profile_kind": "creative_profile",
+        "profile_version": "daily-character-v1",
+        "related_person": "阿杰",
+        "candidate_role_label": "气氛承包人",
+        "story_function": "接气口 · 多线串联",
+        "daily_arc": "今日高频出场，先形成「气氛承包人」日线",
+        "memory_weight_label": "只按今日表现呈现",
+        "meme_seed": "多话题串场的「气氛承包人」",
+        "callback_hint": "如果后续继续出现，可沉淀为「气氛承包人」回调",
+        "expressive_label": "",
+        "evidence_anchor": "daily_character_note:阿杰",
+        "recurrence_evidence_count": 2,
+        "minimum_recurrence_met": true,
+        "profile_upgrade_status": "eligible_for_review",
+        "profile_upgrade_reason": "今日同一身份 5 条发言支撑；今日跨 21 个公开话题出现；今日存在同场关系候选",
+        "blocked_reason": "",
+        "evidence_policy": "daily_character_note_or_quote_map",
+        "minimum_recurrence": 2,
+        "status": "candidate",
+        "public_surface_allowed": false,
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "creative_profile_candidates",
+        "key": "小雨-活动推进者-creative-profile",
+        "profile_kind": "creative_profile",
+        "profile_version": "daily-character-v1",
+        "related_person": "小雨",
+        "candidate_role_label": "活动推进者",
+        "story_function": "推进剧情 · 多线串联",
+        "daily_arc": "今日新鲜出场，暂记「活动推进者」",
+        "memory_weight_label": "只按今日表现呈现",
+        "meme_seed": "多话题串场的「活动推进者」",
+        "callback_hint": "如果后续继续出现，可沉淀为「活动推进者」回调",
+        "expressive_label": "",
+        "evidence_anchor": "daily_character_note:小雨",
+        "recurrence_evidence_count": 2,
+        "minimum_recurrence_met": true,
+        "profile_upgrade_status": "eligible_for_review",
+        "profile_upgrade_reason": "今日同一身份 4 条发言支撑；今日跨 19 个公开话题出现；今日存在同场关系候选",
+        "blocked_reason": "",
+        "evidence_policy": "daily_character_note_or_quote_map",
+        "minimum_recurrence": 2,
+        "status": "candidate",
+        "public_surface_allowed": false,
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "creative_profile_candidates",
+        "key": "Tom-问题发射台-creative-profile",
+        "profile_kind": "creative_profile",
+        "profile_version": "daily-character-v1",
+        "related_person": "Tom",
+        "candidate_role_label": "问题发射台",
+        "story_function": "抛冲突 · 多线串联",
+        "daily_arc": "今日新鲜出场，暂记「问题发射台」",
+        "memory_weight_label": "只按今日表现呈现",
+        "meme_seed": "多话题串场的「问题发射台」",
+        "callback_hint": "如果后续继续出现，可沉淀为「问题发射台」回调",
+        "expressive_label": "",
+        "evidence_anchor": "daily_character_note:Tom",
+        "recurrence_evidence_count": 2,
+        "minimum_recurrence_met": true,
+        "profile_upgrade_status": "eligible_for_review",
+        "profile_upgrade_reason": "今日同一身份 2 条发言支撑；今日跨 10 个公开话题出现；今日存在同场关系候选",
+        "blocked_reason": "",
+        "evidence_policy": "daily_character_note_or_quote_map",
+        "minimum_recurrence": 2,
+        "status": "candidate",
+        "public_surface_allowed": false,
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "creative_profile_candidates",
+        "key": "娜娜-资料投喂员-creative-profile",
+        "profile_kind": "creative_profile",
+        "profile_version": "daily-character-v1",
+        "related_person": "娜娜",
+        "candidate_role_label": "资料投喂员",
+        "story_function": "递道具 · 多线串联",
+        "daily_arc": "今日新鲜出场，暂记「资料投喂员」",
+        "memory_weight_label": "只按今日表现呈现",
+        "meme_seed": "多话题串场的「资料投喂员」",
+        "callback_hint": "如果后续继续出现，可沉淀为「资料投喂员」回调",
+        "expressive_label": "",
+        "evidence_anchor": "daily_character_note:娜娜",
+        "recurrence_evidence_count": 1,
+        "minimum_recurrence_met": false,
+        "profile_upgrade_status": "daily_note_only",
+        "profile_upgrade_reason": "只有单日轻量信号，不能升级为长期人物画像",
+        "blocked_reason": "只有单日轻量信号，不能升级为长期人物画像",
+        "evidence_policy": "daily_character_note_or_quote_map",
+        "minimum_recurrence": 2,
+        "status": "candidate",
+        "public_surface_allowed": false,
+        "risk": "internal_review_required"
+      }
+    ],
+    "creative_universe_candidates": {
+      "schema_version": "xiaoman-daily-creative-universe-candidates-v1",
+      "source": "daily_case_report_second_pass",
+      "apply_mode": "candidate_only",
+      "public_surface_allowed": false,
+      "review_required": true,
+      "raw_messages_included": false,
+      "profile_fact_text_included": false,
+      "writes_member_profile_snapshots": false,
+      "candidate_count": 15,
+      "candidate_sets": {
+        "cross_day_memes": [
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-多话题串场的气氛承包人",
+            "label": "多话题串场的「气氛承包人」",
+            "related_people": [
+              "阿杰"
+            ],
+            "source": "daily_character_note",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-多话题串场的活动推进者",
+            "label": "多话题串场的「活动推进者」",
+            "related_people": [
+              "小雨"
+            ],
+            "source": "daily_character_note",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-多话题串场的问题发射台",
+            "label": "多话题串场的「问题发射台」",
+            "related_people": [
+              "Tom"
+            ],
+            "source": "daily_character_note",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-多话题串场的资料投喂员",
+            "label": "多话题串场的「资料投喂员」",
+            "related_people": [
+              "娜娜"
+            ],
+            "source": "daily_character_note",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-本周活动预告今日高频回调",
+            "label": "「本周活动预告」今日高频回调",
+            "related_people": [],
+            "source": "daily_hot_topic",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-技术求助今日高频回调",
+            "label": "「技术求助」今日高频回调",
+            "related_people": [],
+            "source": "daily_hot_topic",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-资源分享今日高频回调",
+            "label": "「资源分享」今日高频回调",
+            "related_people": [],
+            "source": "daily_hot_topic",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_meme_candidate",
+            "key": "creative-meme-打卡今日高频回调",
+            "label": "「打卡」今日高频回调",
+            "related_people": [],
+            "source": "daily_hot_topic",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "evidence_policy": "daily_meme_candidate_or_quote_map",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          }
+        ],
+        "relationship_labels": [
+          {
+            "type": "creative_relationship_candidate",
+            "key": "creative-relationship-小雨-阿杰-打卡",
+            "source": "阿杰",
+            "target": "小雨",
+            "topic": "打卡",
+            "candidate_label": "和小雨围绕「打卡」同场接力",
+            "evidence_policy": "same_topic_co_presence_only",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          }
+        ],
+        "timeline_threads": [
+          {
+            "type": "creative_timeline_candidate",
+            "key": "creative-timeline-资源分享",
+            "label": "资源分享",
+            "last_seen": "2026年08月08日",
+            "related_event": "CASE 01",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "candidate_arc": "连续观察「资源分享」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_timeline_candidate",
+            "key": "creative-timeline-技术求助",
+            "label": "技术求助",
+            "last_seen": "2026年08月08日",
+            "related_event": "CASE 02",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "candidate_arc": "连续观察「技术求助」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_timeline_candidate",
+            "key": "creative-timeline-本周活动预告",
+            "label": "本周活动预告",
+            "last_seen": "2026年08月08日",
+            "related_event": "CASE 03",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "candidate_arc": "连续观察「本周活动预告」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_timeline_candidate",
+            "key": "creative-timeline-关于打卡的讨论",
+            "label": "打卡",
+            "last_seen": "2026年08月08日",
+            "related_event": "CASE 04",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "candidate_arc": "连续观察「打卡」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_timeline_candidate",
+            "key": "creative-timeline-午后-1400-时段",
+            "label": "午后 14:00 时段",
+            "last_seen": "2026年08月08日",
+            "related_event": "CASE 05",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "candidate_arc": "连续观察「午后 14:00 时段」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          },
+          {
+            "type": "creative_timeline_candidate",
+            "key": "creative-timeline-午后-1600-时段",
+            "label": "午后 16:00 时段",
+            "last_seen": "2026年08月08日",
+            "related_event": "CASE 06",
+            "lookback_days": [
+              7,
+              14,
+              30
+            ],
+            "candidate_arc": "连续观察「午后 16:00 时段」是否复现",
+            "evidence_policy": "daily_storyline_or_wiki_timeline",
+            "status": "pending_review",
+            "public_surface_allowed": false,
+            "risk": "internal_review_required"
+          }
+        ]
+      }
+    },
+    "creative_profile_candidate_policy": {
+      "profile_kind": "creative_profile",
+      "apply_mode": "candidate_only",
+      "writes_member_profile_snapshots": false,
+      "public_surface_allowed": false,
+      "evidence_policy": "daily_character_note_or_quote_map",
+      "review_required": true
+    },
+    "expressive_label_policy": {
+      "apply_mode": "candidate_only",
+      "public_surface_allowed_requires_owner_review": true,
+      "public_render_requires_reviewed_safe_reply_hints": true,
+      "writes_member_profile_snapshots": false,
+      "review_required": true
+    },
+    "storyline_candidates": [
+      {
+        "type": "storylines",
+        "key": "资源分享",
+        "label": "资源分享",
+        "status": "candidate",
+        "last_seen": "2026年08月08日",
+        "reason": "3 条消息，2 人参与",
+        "related_event": "CASE 01",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "storylines",
+        "key": "技术求助",
+        "label": "技术求助",
+        "status": "candidate",
+        "last_seen": "2026年08月08日",
+        "reason": "3 条消息，2 人参与",
+        "related_event": "CASE 02",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "storylines",
+        "key": "本周活动预告",
+        "label": "本周活动预告",
+        "status": "candidate",
+        "last_seen": "2026年08月08日",
+        "reason": "3 条消息，2 人参与",
+        "related_event": "CASE 03",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "storylines",
+        "key": "关于打卡的讨论",
+        "label": "打卡",
+        "status": "candidate",
+        "last_seen": "2026年08月08日",
+        "reason": "3 条消息，2 人参与",
+        "related_event": "CASE 04",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "storylines",
+        "key": "午后-1400-时段",
+        "label": "午后 14:00 时段",
+        "status": "candidate",
+        "last_seen": "2026年08月08日",
+        "reason": "3 条消息，3 人参与",
+        "related_event": "CASE 05",
+        "risk": "internal_review_required"
+      },
+      {
+        "type": "storylines",
+        "key": "午后-1600-时段",
+        "label": "午后 16:00 时段",
+        "status": "candidate",
+        "last_seen": "2026年08月08日",
+        "reason": "3 条消息，3 人参与",
+        "related_event": "CASE 06",
+        "risk": "internal_review_required"
+      }
+    ],
+    "edges": [
+      {
+        "source": "阿杰",
+        "target": "多话题串场的气氛承包人",
+        "relation": "seeds_callback",
+        "evidence": "daily_character_note"
+      },
+      {
+        "source": "小雨",
+        "target": "本周活动预告",
+        "relation": "appears_in",
+        "evidence": "CASE 03"
+      },
+      {
+        "source": "小雨",
+        "target": "关于打卡的讨论",
+        "relation": "appears_in",
+        "evidence": "CASE 04"
+      },
+      {
+        "source": "小雨",
+        "target": "多话题串场的活动推进者",
+        "relation": "seeds_callback",
+        "evidence": "daily_character_note"
+      },
+      {
+        "source": "Tom",
+        "target": "技术求助",
+        "relation": "appears_in",
+        "evidence": "CASE 02"
+      },
+      {
+        "source": "Tom",
+        "target": "技术求助",
+        "relation": "mentions_topic",
+        "evidence": "daily_character_note"
+      },
+      {
+        "source": "Tom",
+        "target": "多话题串场的问题发射台",
+        "relation": "seeds_callback",
+        "evidence": "daily_character_note"
+      },
+      {
+        "source": "娜娜",
+        "target": "资源分享",
+        "relation": "appears_in",
+        "evidence": "CASE 01"
+      },
+      {
+        "source": "娜娜",
+        "target": "资源分享",
+        "relation": "mentions_topic",
+        "evidence": "daily_character_note"
+      },
+      {
+        "source": "娜娜",
+        "target": "多话题串场的资料投喂员",
+        "relation": "seeds_callback",
+        "evidence": "daily_character_note"
+      },
+      {
+        "source": "阿杰",
+        "target": "小雨",
+        "relation": "co_discusses_topic",
+        "evidence": "打卡"
+      }
+    ]
+  },
+  "window_start": "2026-08-08T00:00:00+08:00",
+  "window_end": "2026-08-09T00:00:00+08:00",
+  "timezone": "Asia/Shanghai"
+}

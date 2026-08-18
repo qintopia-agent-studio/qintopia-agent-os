@@ -1114,6 +1114,33 @@ pub enum Command {
         #[arg(long, default_value = "roast")]
         style: String,
     },
+    /// Preview daily case-report HTML rendering and rasterization request from stdin JSON.
+    DailyCaseReportRenderPreview {
+        /// Template: roast-long-image, newspaper-elegant, v3, or newspaper.
+        #[arg(long, default_value = "roast-long-image")]
+        template: String,
+
+        /// Output width in CSS pixels.
+        #[arg(long, default_value_t = 750)]
+        width: usize,
+
+        /// Path to roast narrative markdown. If omitted for roast-long-image,
+        /// a deterministic fallback is rendered from the report data.
+        #[arg(long)]
+        narrative_file: Option<std::path::PathBuf>,
+
+        /// Output image format for downstream rasterization (jpeg or png).
+        #[arg(long, default_value = "jpeg")]
+        image_format: String,
+
+        /// Optional placeholder HTML path for the rasterization request.
+        #[arg(long, default_value = "daily-report.html")]
+        html_path: String,
+
+        /// Optional placeholder output image path for the rasterization request.
+        #[arg(long, default_value = "daily-report.jpg")]
+        output_path: String,
+    },
     /// List AgentOS capabilities available for governed cross-Agent work.
     OperationsCapabilityList {
         /// Load capabilities from Postgres instead of the built-in offline registry.
