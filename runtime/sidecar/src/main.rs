@@ -58,6 +58,7 @@ mod identity_bootstrap;
 mod image_generation;
 mod knowledge;
 mod mcp_server;
+mod media_identity;
 mod member_profile;
 mod message_search;
 mod operations;
