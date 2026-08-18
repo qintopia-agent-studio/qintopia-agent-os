@@ -17,7 +17,6 @@ use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, ImageFormat, ImageReader,
     Limits, RgbaImage,
 };
-use md5::Md5;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -57,6 +56,7 @@ use crate::huabaosi_feishu_artifact_mirror::resolve_workflow_root_pool;
     feature = "huabaosi-staging-adapter"
 ))]
 use crate::bounded_http::{HttpClient, HttpResponse};
+use crate::media_identity::content_hash_bytes;
 
 #[cfg(test)]
 use crate::bounded_http::{
@@ -2143,14 +2143,6 @@ fn content_hash_text(value: &str) -> String {
     content_hash_bytes(value.as_bytes())
 }
 
-fn content_hash_bytes(value: &[u8]) -> String {
-    format!("sha256:{:x}", Sha256::digest(value))
-}
-
-fn md5_hex_bytes(value: &[u8]) -> String {
-    format!("{:x}", Md5::digest(value))
-}
-
 fn media_upload_idempotency_key(prompt_hash: &str, final_content_hash: &str) -> String {
     content_hash_text(&format!(
         "{prompt_hash}|{MEDIA_TRANSFORM}|{final_content_hash}"
@@ -2278,7 +2270,7 @@ fn generate_and_store_with(
         GenerationAttemptError::terminal("media_transform", Some(true), Some(false), source)
     })?;
     let content_hash = content_hash_bytes(&bytes);
-    let file_md5 = md5_hex_bytes(&bytes);
+    let file_md5 = crate::media_identity::md5_hex_bytes(&bytes);
     let artifact_id = generated_image_artifact_id(work_item.id, &content_hash);
     let (artifact_uri, storage_provider, feishu_record_id) = match &config.storage {
         StorageConfig::Http(storage) => {
@@ -3622,7 +3614,10 @@ mod tests {
         handle.join().expect("fake server joins");
 
         assert_eq!(generated.bytes, final_jpeg);
-        assert_eq!(generated.file_md5, md5_hex_bytes(&generated.bytes));
+        assert_eq!(
+            generated.file_md5,
+            crate::media_identity::md5_hex_bytes(&generated.bytes)
+        );
         assert_eq!(
             generated.provider_source_content_hash,
             content_hash_bytes(&source_png)
