@@ -477,7 +477,19 @@ PY
     --payload-json "$publish_payload" \
     --apply >"$publish_json"
 
-  "$SYSTEM_PYTHON" - "$upload_json" "$publish_json" <<'PY'
+  # The publish-create command commits the card send work item only after its
+  # transaction succeeds; send_work_item_id is present in the report ONLY then
+  # (dry-run / failure return no committed send work item). Once committed, the
+  # card is queued for the QiWe image-send worker and WILL be sent regardless of
+  # what this script does next. The ONLY safe signal that the card is already in
+  # flight is a present send_work_item_id. If it is missing the publish clearly
+  # did not create a send work item, so text fallback is safe. We must never fall
+  # back to text when send_work_item_id is present, or the group would receive
+  # both the card and the text brief on the same day. This intentionally does NOT
+  # re-validate publish/success action_status strings, which could drift and
+  # cause a misjudged fallback while the card is already queued.
+  local card_sent_ok=false
+  if "$SYSTEM_PYTHON" - "$upload_json" "$publish_json" <<'PY'
 import json
 import sys
 
@@ -486,31 +498,33 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 with open(sys.argv[2], encoding="utf-8") as fh:
     publish = json.load(fh)
 
-success = (
-    publish.get("success") is True
-    and upload.get("action_status") == "media_uploaded"
-    and publish.get("action_status") == "auto_publish_send_ready_recorded"
-)
+# Authoritative signal: the card send work item was durably committed.
+send_work_item_id = publish.get("send_work_item_id")
+if not send_work_item_id:
+    raise SystemExit(1)
+
 print(json.dumps({
-    "success": success,
+    "success": True,
     "worker": "erhua-morning-brief-auto-publish",
     "delivery_mode": "card",
-    "media_uploaded": upload.get("action_status") == "media_uploaded",
-    "auto_publish_created": publish.get("action_status") == "auto_publish_send_ready_recorded",
+    "card_send_work_item_id": send_work_item_id,
     "source_work_item_id": publish.get("source_work_item_id"),
-    "send_work_item_id": publish.get("send_work_item_id"),
     "artifact_id": publish.get("artifact_id"),
     "artifact_type": publish.get("artifact_type"),
     "review_status": publish.get("review_status"),
-    "requires_human_final_confirmation": publish.get("requires_human_final_confirmation"),
-    "send_ready_recorded": publish.get("send_ready_recorded"),
-    "external_send_executed": publish.get("external_send_executed"),
-    "content_hash": publish.get("content_hash"),
     "idempotency_key": publish.get("idempotency_key"),
+    "content_hash": publish.get("content_hash"),
+    "send_ready_recorded": publish.get("send_ready_recorded"),
 }, ensure_ascii=False, indent=2))
-if not success:
-    raise SystemExit(1)
 PY
+  then
+    card_sent_ok=true
+  fi
+
+  if [[ "$card_sent_ok" == "true" ]]; then
+    return 0
+  fi
+  return 1
 }
 
 if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
