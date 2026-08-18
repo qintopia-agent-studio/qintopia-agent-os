@@ -15,6 +15,34 @@ import re
 from typing import Any
 
 
+def _strip_md_inline(text: str) -> str:
+    """Remove inline Markdown emphasis markers so they don't render literally.
+
+    The LLM narrative writes inline emphasis like `**二花**` / `*重点*` /
+    `__粗体__` / `` `code` ``. The renderer draws paragraph text verbatim (both
+    the HTML path via ``html.escape`` and the Pillow path via ``draw.text``), so
+    any leftover markers show up as literal asterisks/underscores/backticks on
+    the image. The renderer applies its own typography, so we drop the markers
+    and keep the inner text. Runs repeatedly to collapse nested markers.
+    """
+    if not text:
+        return text
+    prev = None
+    cur = text
+    # Iterate to collapse nested/overlapping emphasis (e.g. ***x***, **__x__**).
+    # Bold markers run before single-marker rules so `**x**` is consumed as bold
+    # rather than as two nested `*x*` spans.
+    while prev != cur:
+        prev = cur
+        cur = re.sub(r"\*\*(.+?)\*\*", r"\1", cur)  # **bold**
+        cur = re.sub(r"__(.+?)__", r"\1", cur)  # __bold__
+        cur = re.sub(r"\*([^*\n]+?)\*", r"\1", cur)  # *italic*
+        cur = re.sub(r"_([^_\n]+?)_", r"\1", cur)  # _italic_
+        cur = re.sub(r"~~(.+?)~~", r"\1", cur)  # ~~strike~~
+        cur = re.sub(r"`([^`]+?)`", r"\1", cur)  # `code`
+    return cur
+
+
 def _split_title_line(line: str) -> tuple[str, str, str]:
     """Parse '# kicker | date | subtitle' into (kicker, date, subtitle)."""
     text = line.lstrip("#").strip()
@@ -89,14 +117,30 @@ def _parse_narrative(md: str) -> dict[str, Any]:
             final_quote = _parse_final_quote(section_body)
 
     return {
-        "kicker": kicker,
-        "date_line": date_line,
-        "title": title,
-        "war_report": war_report,
-        "chapters": chapters,
-        "tomorrow": tomorrow,
-        "characters": characters,
-        "final_quote": final_quote,
+        "kicker": _strip_md_inline(kicker),
+        "date_line": _strip_md_inline(date_line),
+        "title": _strip_md_inline(title),
+        "war_report": _strip_md_inline(war_report),
+        "chapters": [
+            {
+                "title": _strip_md_inline(ch["title"]),
+                "paragraphs": [_strip_md_inline(p) for p in ch["paragraphs"]],
+                "golden_quote": _strip_md_inline(ch["golden_quote"]),
+            }
+            for ch in chapters
+        ],
+        "tomorrow": _strip_md_inline(tomorrow),
+        "characters": [
+            {
+                "name": _strip_md_inline(c["name"]),
+                "desc": _strip_md_inline(c["desc"]),
+            }
+            for c in characters
+        ],
+        "final_quote": {
+            "text": _strip_md_inline(final_quote["text"]),
+            "author": _strip_md_inline(final_quote["author"]),
+        },
     }
 
 
@@ -524,14 +568,30 @@ def build_fallback_parsed(report: Any) -> dict[str, Any]:
         final_quote = {"text": str(report.highlight), "author": ""}
 
     return {
-        "kicker": f"{group}吐槽日报",
-        "date_line": date,
+        "kicker": _strip_md_inline(f"{group}吐槽日报"),
+        "date_line": _strip_md_inline(date),
         "title": "今日群聊观察",
-        "war_report": war,
-        "chapters": chapters,
+        "war_report": _strip_md_inline(war),
+        "chapters": [
+            {
+                "title": _strip_md_inline(ch["title"]),
+                "paragraphs": [_strip_md_inline(p) for p in ch["paragraphs"]],
+                "golden_quote": _strip_md_inline(ch["golden_quote"]),
+            }
+            for ch in chapters
+        ],
         "tomorrow": "",
-        "characters": characters,
-        "final_quote": final_quote,
+        "characters": [
+            {
+                "name": _strip_md_inline(c["name"]),
+                "desc": _strip_md_inline(c["desc"]),
+            }
+            for c in characters
+        ],
+        "final_quote": {
+            "text": _strip_md_inline(final_quote["text"]),
+            "author": _strip_md_inline(final_quote["author"]),
+        },
     }
 
 
