@@ -4358,6 +4358,71 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(start_time, "2026-06-15 14:30")
         self.assertIn("当前月份", note)
 
+    def _relative_time_event(self):
+        # Solitaire created 2026-08-16 20:51 Asia/Shanghai (12:51 UTC); the
+        # earliest solitaireInfo item carries that creation timestamp.
+        payload = copy.deepcopy(load_fixture("group_solitaire.json"))
+        raw = json.loads(payload["data"])
+        raw["timestamp"] = 1786884672  # 2026-08-16 20:51:12 Asia/Shanghai (12:51 UTC)
+        raw["msgData"]["solitaireInfo"]["items"] = [
+            {"range": "1-1", "timestamp": 1786884672, "userId": 1}
+        ]
+        payload["data"] = json.dumps(raw, ensure_ascii=False)
+        parsed = parse_qiwe_payload(payload, bot_names=["二花"], bot_user_id="1688857683805864")
+        return normalized_event_from_parsed(parsed)
+
+    def test_relative_time_tomorrow_afternoon_anchors_to_first_creation(self) -> None:
+        # Regression for the 2026-08-18 wrong-date bug: a solitaire created on
+        # 08-16 with text "明天下午六点" must resolve to 08-17 (anchor day + 1),
+        # not to the day Erhua happened to parse it.
+        old_env = dict(os.environ)
+        try:
+            os.environ["QIWE_ACTIVITY_TIMEZONE"] = "Asia/Shanghai"
+            event = self._relative_time_event()
+            start_time, note = normalize_start_time_from_event("明天下午六点", event)
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
+        self.assertEqual(start_time, "2026-08-17 18:00")
+        self.assertIn("首次发起时间", note)
+
+    def test_relative_time_variants_resolve_against_first_creation(self) -> None:
+        old_env = dict(os.environ)
+        try:
+            os.environ["QIWE_ACTIVITY_TIMEZONE"] = "Asia/Shanghai"
+            event = self._relative_time_event()
+            cases = {
+                "今晚八点": "2026-08-16 20:00",
+                "明晚8点": "2026-08-17 20:00",
+                "后天上午10点": "2026-08-18 10:00",
+                "明天18:30": "2026-08-17 18:30",
+                "明天下午6点半": "2026-08-17 18:30",
+            }
+            for phrase, expected in cases.items():
+                with self.subTest(phrase=phrase):
+                    start_time, _ = normalize_start_time_from_event(phrase, event)
+                    self.assertEqual(start_time, expected)
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
+    def test_relative_time_absolute_and_unparseable_passthrough(self) -> None:
+        old_env = dict(os.environ)
+        try:
+            os.environ["QIWE_ACTIVITY_TIMEZONE"] = "Asia/Shanghai"
+            event = self._relative_time_event()
+            # Absolute dates pass through unchanged.
+            start_time, note = normalize_start_time_from_event("2026-08-19 18:00", event)
+            self.assertEqual(start_time, "2026-08-19 18:00")
+            self.assertEqual(note, "")
+            # Non-time text is left untouched.
+            start_time, _ = normalize_start_time_from_event("时间待定", event)
+            self.assertEqual(start_time, "时间待定")
+        finally:
+            os.environ.clear()
+            os.environ.update(old_env)
+
     def test_activity_service_uses_stable_body_when_llm_subject_changes(self) -> None:
         first_payload = copy.deepcopy(load_fixture("group_solitaire.json"))
         first_raw = json.loads(first_payload["data"])
