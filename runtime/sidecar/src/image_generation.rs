@@ -25,8 +25,6 @@ use image::{
 use serde::Deserialize;
 use serde::Serialize;
 
-#[cfg(test)]
-use crate::huabaosi_feishu_artifact_mirror::MirrorFailure;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Postgres, Row, Transaction};
