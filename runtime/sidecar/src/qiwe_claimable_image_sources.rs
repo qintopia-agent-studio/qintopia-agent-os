@@ -50,6 +50,14 @@ pub const CLAIMABLE_IMAGE_SOURCES: &[ClaimableImageSource] = &[
         artifact_workflow_type: Some("daily_case_report"),
         review_policy: "automatic_publish",
     },
+    ClaimableImageSource {
+        created_by_agent: "xiaoman",
+        source_work_item_type: "morning_brief_card_request",
+        source_capability_key: "erhua.morning_brief_card_publish",
+        source_target_agent: "xiaoman",
+        artifact_workflow_type: Some("erhua_morning_brief_card"),
+        review_policy: "automatic_publish",
+    },
 ];
 
 fn write_source_branch(out: &mut String, source: &ClaimableImageSource, unit: &str) {
@@ -137,6 +145,34 @@ fn write_review_policy_branch(
     let _ = write!(out, "{unit})");
 }
 
+/// Renders the `request.payload->>'workflow_type' IN (...)` predicate covering
+/// every `automatic_publish` workflow that carries an artifact workflow type.
+/// The send request payload re-uses the same workflow identifier as the
+/// source artifact metadata, so this predicate is what lets the four claim
+/// sites recognize every claimable automatic workflow (daily case report,
+/// erhua morning brief, ...) without per-site literals. Callers must only
+/// splice this into `OR (request.review_policy = 'automatic_publish' ...)`
+/// branches, where a matched workflow type is always `Some`.
+pub fn automatic_publish_workflow_type_in_predicate() -> String {
+    let mut out = String::from("request.payload->>'workflow_type' IN (");
+    let mut first = true;
+    for source in CLAIMABLE_IMAGE_SOURCES {
+        if source.review_policy != "automatic_publish" {
+            continue;
+        }
+        let Some(artifact_workflow_type) = source.artifact_workflow_type else {
+            continue;
+        };
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        let _ = write!(out, "'{artifact_workflow_type}'");
+    }
+    out.push(')');
+    out
+}
+
 /// Renders the `AND ((agent + review_policy) OR ...)` branch pairing each
 /// workflow's agent with the review policy the send request must use.
 /// Returned string keeps no trailing newline.
@@ -179,6 +215,15 @@ mod tests {
         AND source_request.target_agent = 'xiaoman'
         AND source_request.status = 'completed'
     )
+    OR
+    (
+        artifact.created_by_agent = 'xiaoman'
+        AND artifact.metadata->>'workflow_type' = 'erhua_morning_brief_card'
+        AND source_request.work_item_type = 'morning_brief_card_request'
+        AND source_request.capability_key = 'erhua.morning_brief_card_publish'
+        AND source_request.target_agent = 'xiaoman'
+        AND source_request.status = 'completed'
+    )
 )"#;
 
     // Byte-for-byte snapshot of the agent + review_policy branch previously
@@ -192,6 +237,12 @@ mod tests {
         artifact.created_by_agent = 'xiaoman'
         AND request.review_policy = 'automatic_publish'
         AND request.payload->>'workflow_type' = 'daily_case_report'
+        AND request.payload->>'requires_human_final_confirmation' = 'false'
+    )
+    OR (
+        artifact.created_by_agent = 'xiaoman'
+        AND request.review_policy = 'automatic_publish'
+        AND request.payload->>'workflow_type' = 'erhua_morning_brief_card'
         AND request.payload->>'requires_human_final_confirmation' = 'false'
     )
 )"#;
@@ -227,13 +278,27 @@ mod tests {
     }
 
     #[test]
+    fn automatic_publish_in_predicate_covers_every_automatic_workflow() {
+        assert_eq!(
+            automatic_publish_workflow_type_in_predicate(),
+            "request.payload->>'workflow_type' IN ('daily_case_report', 'erhua_morning_brief_card')"
+        );
+        // Human-confirmation workflows (huabaosi) must never leak into the
+        // automatic_publish predicate.
+        assert!(!automatic_publish_workflow_type_in_predicate().contains("huabaosi"));
+    }
+
+    #[test]
     fn every_claimable_source_is_rendered_in_both_branches() {
         let join = claimable_image_source_join_condition("");
         let policy = claimable_image_review_policy_condition("");
         for source in CLAIMABLE_IMAGE_SOURCES {
+            // Workflows sharing one agent (daily case report, morning brief)
+            // are disambiguated by the workflow-type / capability-key lines,
+            // so the agent line may appear once per workflow.
             let agent = format!("artifact.created_by_agent = '{}'", source.created_by_agent);
-            assert_eq!(join.matches(&agent).count(), 1, "join branch: {agent}");
-            assert_eq!(policy.matches(&agent).count(), 1, "policy branch: {agent}");
+            assert!(join.contains(&agent), "join branch: {agent}");
+            assert!(policy.contains(&agent), "policy branch: {agent}");
             assert!(join.contains(source.source_capability_key));
             assert!(policy.contains(source.review_policy));
         }

@@ -1041,6 +1041,82 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             renderer._font_candidates = original_candidates
             renderer._render_with_playwright = original_playwright
 
+    def test_pillow_render_raises_when_card_exceeds_height_cap(self):
+        if not _PIL_AVAILABLE:
+            self.skipTest("Pillow not installed")
+        renderer = self._load_renderer_module()
+        if not any(Path(p).exists() for p in renderer._font_candidates()):
+            self.skipTest("no CJK-capable font installed")
+        # Enough wrapped lines to push the measured canvas past MAX_HEIGHT.
+        huge_activity = "\n".join(
+            "社区路跑训练营报名现已开启，请提前到栗峪口集合并带好补给。" for _ in range(300)
+        )
+        card = renderer.MorningBriefCard(
+            greeting="二花早报",
+            date_label="2026-08-17 周一",
+            activity_body=huge_activity,
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            out = Path(temp_dir) / "too-tall.png"
+            with self.assertRaises(renderer.CardTooTallError):
+                renderer._render_with_pillow(card, out, 720, "png")
+            self.assertFalse(out.exists(), "oversized card must leave no image file")
+
+    def test_render_degrades_to_none_when_card_exceeds_height_cap(self):
+        renderer = self._load_renderer_module()
+        original_playwright = renderer._render_with_playwright
+        original_pillow = renderer._render_with_pillow
+        calls = {"pillow": 0}
+
+        def too_tall_playwright(*args, **kwargs):
+            raise renderer.CardTooTallError("card height 9000px exceeds 8192px storage cap")
+
+        def counting_pillow(*args, **kwargs):
+            calls["pillow"] += 1
+            raise AssertionError("Pillow fallback must not run after CardTooTallError")
+
+        renderer._render_with_playwright = too_tall_playwright
+        renderer._render_with_pillow = counting_pillow
+        try:
+            card = renderer.MorningBriefCard(
+                greeting="二花早报",
+                date_label="2026-08-17 周一",
+                activity_body="社区路跑训练营报名现已开启。",
+            )
+            with tempfile.TemporaryDirectory() as temp_dir:
+                out = Path(temp_dir) / "too-tall.png"
+                # render() must not raise; the worker degrades to the text brief.
+                renderer.render(card, out)
+                self.assertFalse(out.exists(), "oversized card must leave no image file")
+                self.assertEqual(calls["pillow"], 0)
+        finally:
+            renderer._render_with_playwright = original_playwright
+            renderer._render_with_pillow = original_pillow
+
+    def test_render_removes_stale_output_when_card_exceeds_height_cap(self):
+        renderer = self._load_renderer_module()
+        original_playwright = renderer._render_with_playwright
+        def too_tall(*args, **kwargs):
+            raise renderer.CardTooTallError("card height 9000px exceeds 8192px storage cap")
+
+        renderer._render_with_playwright = too_tall
+        try:
+            card = renderer.MorningBriefCard(
+                greeting="二花早报",
+                date_label="2026-08-17 周一",
+                activity_body="社区路跑训练营报名现已开启。",
+            )
+            with tempfile.TemporaryDirectory() as temp_dir:
+                out = Path(temp_dir) / "card.png"
+                out.write_bytes(b"stale image from a previous run")
+                renderer.render(card, out)
+                self.assertFalse(
+                    out.exists(),
+                    "render must remove a stale output so the worker never uploads it",
+                )
+        finally:
+            renderer._render_with_playwright = original_playwright
+
 
 if __name__ == "__main__":
     unittest.main()

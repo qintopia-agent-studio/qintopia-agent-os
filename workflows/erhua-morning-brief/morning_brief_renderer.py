@@ -21,6 +21,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_WIDTH = 720
 DEFAULT_IMAGE_FORMAT = "png"
+# Final-pixel height ceiling, aligned with the Feishu artifact storage
+# validation (runtime/sidecar rejects images taller than 8192px). A card
+# taller than this would render fine but be refused at upload time, so the
+# renderer refuses to emit it: render() then leaves no file and the worker
+# degrades to the text brief instead of shipping a rejected upload.
+MAX_HEIGHT = 8192
+
+
+class CardTooTallError(RuntimeError):
+    """Raised when the measured card height exceeds MAX_HEIGHT pixels."""
 
 _INK = "#1a1a1a"
 _YELLOW = "#ffd92e"
@@ -155,6 +165,13 @@ def _render_with_playwright(html_path: Path, output_path: Path, width: int, imag
         )
         page.goto(_file_url(html_path), wait_until="load")
         height = page.evaluate("document.body.scrollHeight")
+        # device_scale_factor=2 doubles every CSS pixel into final pixels; the
+        # storage-side cap applies to the rendered image, not the CSS layout.
+        if height * 2 > MAX_HEIGHT:
+            raise CardTooTallError(
+                f"card height {height * 2}px exceeds {MAX_HEIGHT}px storage cap; "
+                "refusing to render an image that upload validation would reject"
+            )
         page.set_viewport_size({"width": width, "height": height})
         page.screenshot(**screenshot_options)
         browser.close()
@@ -289,6 +306,11 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
         + 40 * scale + 20 * scale
     )
     H = max(int(H), 1)
+    if H > MAX_HEIGHT:
+        raise CardTooTallError(
+            f"card height {H}px exceeds {MAX_HEIGHT}px storage cap; "
+            "refusing to render an image that upload validation would reject"
+        )
 
     img = Image.new("RGB", (W, H), _PAPER)
     d = ImageDraw.Draw(img)
@@ -367,6 +389,10 @@ def render(
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # A too-tall card must never leave a file behind: the worker treats an
+    # existing image as "send the card", and storage would reject the upload.
+    if output_path.exists():
+        output_path.unlink()
     try:
         import tempfile
 
@@ -375,6 +401,15 @@ def render(
             html_path.write_text(_render_html(card, width), encoding="utf-8")
             _render_with_playwright(html_path, output_path, width, image_format)
             return
+    except CardTooTallError:
+        # Oversized cards must not fall through to Pillow: the height is a
+        # property of the content, so the fallback would hit the same cap.
+        logger.warning(
+            "Card height exceeds the %dpx storage cap; skipping card image so the "
+            "worker degrades to the text brief",
+            MAX_HEIGHT,
+        )
+        return
     except Exception as exc:
         logger.warning("Playwright render failed; falling back to Pillow: %s", exc)
     try:

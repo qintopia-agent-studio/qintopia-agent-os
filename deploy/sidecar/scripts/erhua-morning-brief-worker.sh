@@ -76,6 +76,13 @@ fi
 if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" && ! -x "$QIWE_BIN" ]]; then
   fail "reviewed QiWe production sidecar companion is missing"
 fi
+
+# Card delivery is an enhancement on top of the text brief. The text fallback
+# env (QiWe text-send gate, auto reviewer/confirmer, QiWe credentials) stays
+# mandatory so the brief can always go out; the card-only env (image-send gate
+# plus the Huabaosi Feishu mirror set) is optional and only gates whether we
+# attempt the card at all. Missing card env degrades to text, never fails.
+card_env_ready=false
 if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
   if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL:-}" != "$AUTO_PUBLISH_APPROVAL" ]]; then
     fail "Erhua morning brief auto-publish approval is missing"
@@ -102,6 +109,26 @@ allowed_set = {item.strip() for item in allowed.split(",") if item.strip()}
 if target not in allowed_set:
     raise SystemExit("Erhua morning brief target group id is not allowlisted")
 PY
+  card_env_ready=true
+  for key in \
+    QINTOPIA_QIWE_IMAGE_SEND_ENABLED \
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_APPROVAL \
+    QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_DATABASE_URL_SHA256 \
+    QINTOPIA_HUABAOSI_FEISHU_MIRROR_ENABLED \
+    QINTOPIA_HUABAOSI_FEISHU_MIRROR_APPROVAL \
+    QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA \
+    QINTOPIA_HUABAOSI_FEISHU_DATABASE_URL_SHA256 \
+    QINTOPIA_HUABAOSI_FEISHU_BASE_TOKEN \
+    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_BASE_TOKENS \
+    QINTOPIA_HUABAOSI_FEISHU_ARTIFACT_TABLE_ID \
+    QINTOPIA_HUABAOSI_FEISHU_ALLOWED_ARTIFACT_TABLE_IDS \
+    QINTOPIA_HUABAOSI_FEISHU_PROFILE_ENV_PATH \
+    QINTOPIA_HUABAOSI_FEISHU_SCHEMA_VERSION; do
+    if [[ -z "${!key:-}" ]]; then
+      echo "erhua morning brief worker: ${key} missing; card image disabled, falling back to text brief" >&2
+      card_env_ready=false
+    fi
+  done
 fi
 if [[ ! -f "$PYTHON_VALIDATOR" ]]; then
   fail "Hermes Python validator is missing from release/current"
@@ -125,12 +152,18 @@ cleanup() {
 trap cleanup EXIT
 
 report_json="${tmp_dir}/morning-brief.json"
+card_image="${tmp_dir}/morning-brief-card.jpg"
+upload_json="${tmp_dir}/media-upload.json"
+publish_json="${tmp_dir}/card-publish.json"
 send_request_json="${tmp_dir}/send-request.json"
 review_json="${tmp_dir}/artifact-review.json"
 confirm_json="${tmp_dir}/final-confirmation.json"
 ready_json="${tmp_dir}/send-ready.json"
 send_json="${tmp_dir}/qiwe-text-send.json"
 
+# Rendering is fail-closed: on any failure (or a card taller than the storage
+# cap) the workflow leaves rendered_image_path empty and still succeeds, so the
+# brief itself never dies here.
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --sidecar-bin "$SIDECAR_BIN" \
   --prepare-artifact \
@@ -138,7 +171,35 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --apply-artifact-create \
   --publish-plan \
   --allow-news-unavailable \
+  --render-image "$card_image" \
+  --render-image-format jpeg \
   --json >"$report_json"
+
+# Card-first gate: attempt the card only when every card prerequisite held.
+# A failed/missing/oversized render degrades to the text brief instead of
+# aborting the run.
+use_card=false
+if [[ "$card_env_ready" == "true" ]]; then
+  if "$SYSTEM_PYTHON" - "$report_json" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+
+image_path = (report.get("rendered_image_path") or "").strip()
+if not image_path:
+    raise SystemExit("rendered_image_path is empty; card degraded")
+if not os.path.isfile(image_path):
+    raise SystemExit("rendered card image file is missing; card degraded")
+PY
+  then
+    use_card=true
+  else
+    echo "erhua morning brief worker: card image unavailable; falling back to text brief" >&2
+  fi
+fi
 
 PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" - "$report_json" <<'PY'
 import json
@@ -178,7 +239,9 @@ if not success:
     raise SystemExit(1)
 PY
 
-if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
+send_text_brief() {
+  local artifact_id review_payload send_payload work_item_id confirm_payload
+
   artifact_id="$("$SYSTEM_PYTHON" - "$report_json" <<'PY'
 import json
 import sys
@@ -316,6 +379,7 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 print(json.dumps({
     "success": report.get("success") is True,
     "worker": "erhua-morning-brief-auto-publish",
+    "delivery_mode": "text",
     "qiwe_text_send_action_status": report.get("action_status"),
     "work_item_id": report.get("work_item_id"),
     "external_send_executed": report.get("external_send_executed"),
@@ -323,4 +387,144 @@ print(json.dumps({
 if report.get("success") is not True or report.get("external_send_executed") is not True:
     raise SystemExit(1)
 PY
+}
+
+send_card_brief() {
+  local upload_payload publish_payload
+
+  upload_payload="$("$SYSTEM_PYTHON" - "$report_json" <<'PY'
+import hashlib
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+
+image_path = (report.get("rendered_image_path") or "").strip()
+if not image_path or not os.path.isfile(image_path):
+    raise SystemExit("rendered card image is missing")
+brief_date = (report.get("date") or "").strip()
+if not brief_date:
+    raise SystemExit("brief date missing from morning brief report")
+
+with open(image_path, "rb") as fh:
+    blob = fh.read()
+if not blob:
+    raise SystemExit("rendered card image is empty")
+
+print(json.dumps({
+    "image_path": image_path,
+    "content_hash": "sha256:" + hashlib.sha256(blob).hexdigest(),
+    "file_md5": hashlib.md5(blob).hexdigest(),
+    "byte_size": len(blob),
+    "filename": f"erhua-morning-brief-card-{brief_date}.jpg",
+    "brief_date": brief_date,
+    "source_record_ref": f"erhua_morning_brief:{brief_date}",
+}, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  "$SIDECAR_BIN" operations-erhua-morning-brief-media-upload \
+    --payload-json "$upload_payload" \
+    --apply >"$upload_json"
+
+  publish_payload="$("$SYSTEM_PYTHON" - "$report_json" "$upload_json" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    report = json.load(fh)
+with open(sys.argv[2], encoding="utf-8") as fh:
+    upload = json.load(fh)
+
+if upload.get("success") is not True or upload.get("action_status") != "media_uploaded":
+    raise SystemExit("card media upload did not succeed")
+artifact_uri = upload.get("artifact_uri")
+if not artifact_uri:
+    raise SystemExit("media upload did not return artifact_uri")
+media_upload_evidence = upload.get("media_upload_evidence")
+if not isinstance(media_upload_evidence, dict):
+    raise SystemExit("media upload did not return media_upload_evidence")
+
+brief_date = (report.get("date") or "").strip()
+if not brief_date:
+    raise SystemExit("brief date missing from morning brief report")
+message_text = (report.get("morning_brief_text") or "").strip()
+if not message_text:
+    raise SystemExit("morning brief message text missing")
+
+print(json.dumps({
+    "brief_date": brief_date,
+    "source_record_ref": f"erhua_morning_brief:{brief_date}",
+    "artifact_uri": artifact_uri,
+    "content_hash": upload["content_hash"],
+    "file_md5": upload["file_md5"],
+    "byte_size": upload["byte_size"],
+    "mime_type": upload["mime_type"],
+    "width": upload["width"],
+    "height": upload["height"],
+    "filename": upload["filename"],
+    "target_group_id": os.environ["QINTOPIA_ERHUA_MORNING_BRIEF_TARGET_GROUP_ID"],
+    "message_text": message_text,
+    "title": f"二花早报 {brief_date}",
+    "media_upload_evidence": media_upload_evidence,
+    "metadata": {"created_by_command": "erhua-morning-brief-worker"},
+}, ensure_ascii=False, separators=(",", ":")))
+PY
+)"
+  "$SIDECAR_BIN" operations-erhua-morning-brief-card-publish-create \
+    --payload-json "$publish_payload" \
+    --apply >"$publish_json"
+
+  "$SYSTEM_PYTHON" - "$upload_json" "$publish_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    upload = json.load(fh)
+with open(sys.argv[2], encoding="utf-8") as fh:
+    publish = json.load(fh)
+
+success = (
+    publish.get("success") is True
+    and upload.get("action_status") == "media_uploaded"
+    and publish.get("action_status") == "auto_publish_send_ready_recorded"
+)
+print(json.dumps({
+    "success": success,
+    "worker": "erhua-morning-brief-auto-publish",
+    "delivery_mode": "card",
+    "media_uploaded": upload.get("action_status") == "media_uploaded",
+    "auto_publish_created": publish.get("action_status") == "auto_publish_send_ready_recorded",
+    "source_work_item_id": publish.get("source_work_item_id"),
+    "send_work_item_id": publish.get("send_work_item_id"),
+    "artifact_id": publish.get("artifact_id"),
+    "artifact_type": publish.get("artifact_type"),
+    "review_status": publish.get("review_status"),
+    "requires_human_final_confirmation": publish.get("requires_human_final_confirmation"),
+    "send_ready_recorded": publish.get("send_ready_recorded"),
+    "external_send_executed": publish.get("external_send_executed"),
+    "content_hash": publish.get("content_hash"),
+    "idempotency_key": publish.get("idempotency_key"),
+}, ensure_ascii=False, indent=2))
+if not success:
+    raise SystemExit(1)
+PY
+}
+
+if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED:-0}" == "1" ]]; then
+  card_sent=false
+  if [[ "$use_card" == "true" ]]; then
+    # The card is an enhancement: any failure in the card chain degrades to
+    # the text brief so the morning brief always goes out.
+    if send_card_brief; then
+      card_sent=true
+    else
+      echo "erhua morning brief worker: card delivery failed; falling back to text brief" >&2
+    fi
+  fi
+  if [[ "$card_sent" != "true" ]]; then
+    send_text_brief
+  fi
 fi

@@ -28,6 +28,7 @@ const ALLOWED_WORK_ITEM_TYPES: &[&str] = &[
     "visual_asset_request",
     "image_generation_request",
     "daily_case_report_request",
+    "morning_brief_card_request",
     "group_message_request",
     "text_announcement_request",
     "activity_promotion_request",
@@ -71,6 +72,7 @@ const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "xiaoman.material_followup_request",
     "xiaoman.notify_direct_conversation",
     "xiaoman.notify_conversation",
+    "erhua.morning_brief_card_publish",
 ];
 const GENERATED_IMAGE_ARTIFACT_TYPE: &str = "generated_image";
 const GENERATED_IMAGE_CAPABILITY_KEY: &str = "huabaosi.generate_image_asset";
@@ -131,6 +133,46 @@ const DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL_ENV: &str =
 const DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS_ENV: &str =
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS";
 const DAILY_CASE_REPORT_DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
+const ERHUA_MORNING_BRIEF_CAPABILITY_KEY: &str = "erhua.morning_brief_card_publish";
+const ERHUA_MORNING_BRIEF_WORK_ITEM_TYPE: &str = "morning_brief_card_request";
+const ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE: &str = "erhua_morning_brief_card";
+const ERHUA_MORNING_BRIEF_GENERATED_BY: &str = "erhua-morning-brief-worker";
+const ERHUA_MORNING_BRIEF_FINAL_IMAGE_MIME_TYPE: &str = "image/jpeg";
+const ERHUA_MORNING_BRIEF_MEDIA_MAX_BYTES_ENV: &str =
+    "QINTOPIA_ERHUA_MORNING_BRIEF_MEDIA_MAX_BYTES";
+const ERHUA_MORNING_BRIEF_DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
+const ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY: &str =
+    "erhua_morning_brief_card_feishu_primary_storage_v1";
+const ERHUA_MORNING_BRIEF_ACTOR_ID: &str = "erhua-morning-brief-card-publisher";
+const ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND: &str = "feishu-base";
+const ERHUA_MORNING_BRIEF_GENERATED_IMAGE_ARTIFACT_UPSERT_SQL: &str = r#"
+        INSERT INTO qintopia_agent_os.artifacts
+            (id, work_item_id, artifact_type, review_status, created_by_agent, title,
+             summary, artifact_uri, content_hash, source_ids, risk_labels,
+             information_class, metadata, review_requested_at, reviewed_at,
+             review_decision_reason)
+        VALUES
+            ($1, $2, 'generated_image', 'approved', 'xiaoman', $3, $4, $5, $6, $7,
+             ARRAY['automatic_external_send','erhua_morning_brief_card']::text[],
+             'internal_ops', $8, now(), now(),
+             'approved by reviewed erhua morning brief card automatic publish boundary')
+        ON CONFLICT (work_item_id, content_hash) WHERE content_hash IS NOT NULL AND content_hash <> ''
+        DO UPDATE SET
+            title = EXCLUDED.title,
+            summary = EXCLUDED.summary,
+            artifact_uri = EXCLUDED.artifact_uri,
+            source_ids = EXCLUDED.source_ids,
+            risk_labels = EXCLUDED.risk_labels,
+            information_class = EXCLUDED.information_class,
+            metadata = qintopia_agent_os.artifacts.metadata || EXCLUDED.metadata,
+            updated_at = now()
+        WHERE qintopia_agent_os.artifacts.id = EXCLUDED.id
+           AND qintopia_agent_os.artifacts.artifact_type = 'generated_image'
+           AND qintopia_agent_os.artifacts.review_status = 'approved'
+           AND qintopia_agent_os.artifacts.created_by_agent = 'xiaoman'
+           AND qintopia_agent_os.artifacts.metadata->>'workflow_type' = 'erhua_morning_brief_card'
+        RETURNING id
+        "#;
 const POSTER_REVISION_PURPOSE: &str = "activity_image_revision_request";
 const POSTER_REVISION_KEY_NAMESPACE: &str = "poster-revision-source-artifact-v3";
 const POSTER_REVISION_VOLATILE_PAYLOAD_FIELDS: &[&str] = &[
@@ -470,6 +512,142 @@ struct DailyCaseReportUploadedMedia {
     artifact_uri: String,
     artifact_id: Uuid,
     source_work_item_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ErhuaMorningBriefMediaUploadRequest {
+    pub image_path: PathBuf,
+    #[serde(default)]
+    pub content_hash: String,
+    #[serde(default)]
+    pub file_md5: String,
+    #[serde(default)]
+    pub byte_size: Option<usize>,
+    #[serde(default)]
+    pub filename: String,
+    #[serde(default)]
+    pub brief_date: String,
+    #[serde(default)]
+    pub source_record_ref: String,
+    #[serde(default)]
+    pub metadata: Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ErhuaMorningBriefMediaUploadReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub action_status: String,
+    pub artifact_uri: Option<String>,
+    pub media_upload_evidence: Option<ErhuaMorningBriefMediaUploadEvidence>,
+    pub content_hash: String,
+    pub file_md5: String,
+    pub byte_size: usize,
+    pub mime_type: String,
+    pub filename: String,
+    pub width: u32,
+    pub height: u32,
+    pub external_send_executed: bool,
+    pub guardrails: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ErhuaMorningBriefMediaUploadEvidence {
+    pub boundary: String,
+    #[serde(default)]
+    pub storage_backend: String,
+    pub workflow_type: String,
+    pub action_status: String,
+    pub artifact_uri: String,
+    #[serde(default)]
+    pub artifact_id: Option<Uuid>,
+    #[serde(default)]
+    pub source_work_item_id: Option<Uuid>,
+    pub content_hash: String,
+    pub file_md5: String,
+    pub byte_size: i64,
+    pub mime_type: String,
+    pub filename: String,
+    pub width: u32,
+    pub height: u32,
+    pub upload_idempotency_key: String,
+}
+
+#[derive(Debug, Clone)]
+struct ErhuaMorningBriefImageIdentity {
+    bytes: Vec<u8>,
+    content_hash: String,
+    file_md5: String,
+    byte_size: usize,
+    width: u32,
+    height: u32,
+    filename: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ErhuaMorningBriefStorageIds {
+    artifact_id: Uuid,
+    source_work_item_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+struct ErhuaMorningBriefUploadedMedia {
+    boundary: &'static str,
+    artifact_uri: String,
+    artifact_id: Uuid,
+    source_work_item_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ErhuaMorningBriefCardPublishCreateRequest {
+    pub brief_date: String,
+    #[serde(default)]
+    pub source_record_ref: String,
+    pub artifact_uri: String,
+    pub content_hash: String,
+    pub file_md5: String,
+    pub byte_size: i64,
+    #[serde(default = "default_image_jpeg_mime")]
+    pub mime_type: String,
+    #[serde(default)]
+    pub width: u32,
+    #[serde(default)]
+    pub height: u32,
+    #[serde(default)]
+    pub filename: String,
+    pub target_group_id: String,
+    #[serde(default)]
+    pub message_text: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub summary: String,
+    #[serde(default = "default_priority")]
+    pub priority: String,
+    #[serde(default)]
+    pub metadata: Value,
+    #[serde(default)]
+    pub media_upload_evidence: Option<ErhuaMorningBriefMediaUploadEvidence>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ErhuaMorningBriefCardPublishCreateReport {
+    pub success: bool,
+    pub dry_run: bool,
+    pub apply_requested: bool,
+    pub action_status: String,
+    pub source_work_item_id: Option<Uuid>,
+    pub send_work_item_id: Option<Uuid>,
+    pub artifact_id: Option<Uuid>,
+    pub artifact_type: String,
+    pub review_status: String,
+    pub content_hash: String,
+    pub idempotency_key: String,
+    pub requires_human_final_confirmation: bool,
+    pub send_ready_recorded: bool,
+    pub external_send_executed: bool,
+    pub guardrails: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1068,6 +1246,55 @@ pub async fn run_daily_case_report_media_upload(
         pool.as_ref(),
     )
     .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+pub async fn run_erhua_morning_brief_media_upload(
+    cli: &Cli,
+    payload_json: String,
+    apply: bool,
+    dry_run: bool,
+) -> Result<()> {
+    if apply && dry_run {
+        bail!("use either --apply or --dry-run, not both");
+    }
+    let request: ErhuaMorningBriefMediaUploadRequest = serde_json::from_str(&payload_json)
+        .context("parse erhua morning brief media upload payload")?;
+    let apply_requested = apply && !dry_run;
+    let (database_url, pool) = if apply_requested {
+        let database_url = cli.database_url_required()?;
+        let pool = db::connect(database_url, cli.db_max_connections).await?;
+        (Some(database_url), Some(pool))
+    } else {
+        (None, None)
+    };
+    let report =
+        erhua_morning_brief_media_upload(request, apply_requested, database_url, pool.as_ref())
+            .await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+pub async fn run_erhua_morning_brief_card_publish_create(
+    cli: &Cli,
+    payload_json: String,
+    apply: bool,
+    dry_run: bool,
+) -> Result<()> {
+    if apply && dry_run {
+        bail!("use either --apply or --dry-run, not both");
+    }
+    let request: ErhuaMorningBriefCardPublishCreateRequest = serde_json::from_str(&payload_json)
+        .context("parse erhua morning brief card publish payload")?;
+    let apply_requested = apply && !dry_run;
+    let report = if apply_requested {
+        let database_url = cli.database_url_required()?;
+        let pool = db::connect(database_url, cli.db_max_connections).await?;
+        create_erhua_morning_brief_card_publish(&pool, database_url, request, true).await?
+    } else {
+        create_erhua_morning_brief_card_publish_dry_run(request)?
+    };
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
@@ -4285,6 +4512,767 @@ fn store_feishu_daily_case_report_image(
     }
 }
 
+/// Store the Erhua morning brief card image through the shared Feishu storage flow.
+/// In builds without a Feishu mirror adapter this fails closed, matching the
+/// legacy wrapper behavior.
+fn store_feishu_erhua_morning_brief_image(
+    config: &FeishuPrimaryStorageConfig,
+    image: &FeishuDailyCaseReportStorageImage<'_>,
+) -> std::result::Result<
+    huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageResult,
+    huabaosi_feishu_artifact_mirror::MirrorFailure,
+> {
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
+    {
+        let _ = (config, image);
+        Err(huabaosi_feishu_artifact_mirror::MirrorFailure::policy(
+            "adapter_not_compiled",
+        ))
+    }
+
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    {
+        huabaosi_feishu_artifact_mirror::store_feishu_image(
+            config,
+            huabaosi_feishu_artifact_mirror::FeishuImageProfile::ErhuaMorningBrief,
+            &huabaosi_feishu_artifact_mirror::FeishuImageStorageInput::from(image),
+        )
+    }
+}
+
+pub async fn erhua_morning_brief_media_upload(
+    request: ErhuaMorningBriefMediaUploadRequest,
+    apply: bool,
+    database_url: Option<&str>,
+    pool: Option<&PgPool>,
+) -> Result<ErhuaMorningBriefMediaUploadReport> {
+    let identity =
+        erhua_morning_brief_image_identity(&request, erhua_morning_brief_max_media_bytes()?)?;
+    if !apply {
+        return Ok(erhua_morning_brief_media_upload_report(
+            true, false, None, &identity,
+        ));
+    }
+
+    let database_url =
+        database_url.context("erhua morning brief Feishu media upload requires a database URL")?;
+    let pool = pool.context("erhua morning brief Feishu media upload requires a database pool")?;
+    let ids = resolve_erhua_morning_brief_storage_ids_for_upload(pool, &request, &identity).await?;
+    let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
+    let result = store_feishu_erhua_morning_brief_image(
+        &config,
+        &FeishuDailyCaseReportStorageImage {
+            artifact_id: ids.artifact_id,
+            workflow_root_id: ids.source_work_item_id,
+            work_item_id: ids.source_work_item_id,
+            content_hash: &identity.content_hash,
+            file_md5: &identity.file_md5,
+            bytes: &identity.bytes,
+            width: identity.width,
+            height: identity.height,
+            filename: &identity.filename,
+        },
+    )
+    .map_err(|failure| {
+        anyhow!(
+            "erhua morning brief Feishu storage failed at {} with {}",
+            failure.stage(),
+            failure.code()
+        )
+    })?;
+    let expected_uri = erhua_morning_brief_feishu_artifact_uri(ids.artifact_id);
+    if result.artifact_uri != expected_uri {
+        bail!("erhua morning brief Feishu storage returned an unexpected artifact URI");
+    }
+
+    Ok(erhua_morning_brief_media_upload_report(
+        true,
+        true,
+        Some(ErhuaMorningBriefUploadedMedia {
+            boundary: ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+            artifact_uri: result.artifact_uri,
+            artifact_id: ids.artifact_id,
+            source_work_item_id: ids.source_work_item_id,
+        }),
+        &identity,
+    ))
+}
+
+fn erhua_morning_brief_max_media_bytes() -> Result<usize> {
+    let max_media_bytes = std::env::var(ERHUA_MORNING_BRIEF_MEDIA_MAX_BYTES_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            value
+                .parse::<usize>()
+                .context("parse erhua morning brief media max bytes")
+        })
+        .transpose()?
+        .unwrap_or(ERHUA_MORNING_BRIEF_DEFAULT_MAX_MEDIA_BYTES);
+    if max_media_bytes == 0 || max_media_bytes > 25 * 1024 * 1024 {
+        bail!("erhua morning brief media max bytes must be between 1 and 26214400");
+    }
+    Ok(max_media_bytes)
+}
+
+fn erhua_morning_brief_image_identity(
+    request: &ErhuaMorningBriefMediaUploadRequest,
+    max_media_bytes: usize,
+) -> Result<ErhuaMorningBriefImageIdentity> {
+    if contains_sensitive_value(&request.metadata)
+        || contains_sensitive_text(&request.brief_date)
+        || contains_sensitive_text(&request.source_record_ref)
+    {
+        bail!("erhua morning brief media upload payload contains disallowed sensitive content");
+    }
+    if request.image_path.as_os_str().is_empty() || !request.image_path.is_file() {
+        bail!("erhua morning brief image_path must reference a local JPEG file");
+    }
+    let bytes = fs::read(&request.image_path).context("read erhua morning brief JPEG")?;
+    if bytes.is_empty() || bytes.len() > max_media_bytes {
+        bail!("erhua morning brief JPEG bytes are outside the configured size limit");
+    }
+    let image = ImageReader::with_format(Cursor::new(&bytes), ImageFormat::Jpeg)
+        .decode()
+        .context("decode erhua morning brief JPEG")?;
+    let (width, height) = image.dimensions();
+    if width == 0 || height == 0 || width > 4096 || height > 8192 {
+        bail!("erhua morning brief JPEG dimensions are outside the reviewed bounds");
+    }
+    let content_hash = content_hash_bytes(&bytes);
+    let file_md5 = md5_hex_bytes(&bytes);
+    if !request.content_hash.trim().is_empty() && request.content_hash.trim() != content_hash {
+        bail!("erhua morning brief content_hash does not match image bytes");
+    }
+    if !request.file_md5.trim().is_empty()
+        && request.file_md5.trim().to_ascii_lowercase() != file_md5
+    {
+        bail!("erhua morning brief file_md5 does not match image bytes");
+    }
+    if request
+        .byte_size
+        .is_some_and(|expected| expected != bytes.len())
+    {
+        bail!("erhua morning brief byte_size does not match image bytes");
+    }
+    let filename = if request.filename.trim().is_empty() {
+        request
+            .image_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("erhua-morning-brief.jpg")
+            .to_string()
+    } else {
+        request.filename.trim().to_string()
+    };
+    validate_erhua_morning_brief_filename(&filename)?;
+    validate_erhua_morning_brief_brief_date(&request.brief_date)?;
+    Ok(ErhuaMorningBriefImageIdentity {
+        byte_size: bytes.len(),
+        bytes,
+        content_hash,
+        file_md5,
+        width,
+        height,
+        filename,
+    })
+}
+
+fn validate_erhua_morning_brief_filename(value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.len() > 160
+        || value.contains('/')
+        || value.contains('\\')
+        || value.chars().any(char::is_control)
+    {
+        bail!("erhua morning brief filename is invalid");
+    }
+    let lowered = value.to_ascii_lowercase();
+    if !lowered.ends_with(".jpg") && !lowered.ends_with(".jpeg") {
+        bail!("erhua morning brief filename must reference a JPEG object");
+    }
+    Ok(())
+}
+
+fn validate_erhua_morning_brief_brief_date(value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    if trimmed.len() != 10 {
+        bail!("erhua morning brief brief_date must be YYYY-MM-DD");
+    }
+    let parts: Vec<&str> = trimmed.split('-').collect();
+    if parts.len() != 3
+        || parts[0].len() != 4
+        || parts[1].len() != 2
+        || parts[2].len() != 2
+        || !parts
+            .iter()
+            .all(|part| part.chars().all(|c| c.is_ascii_digit()))
+    {
+        bail!("erhua morning brief brief_date must be YYYY-MM-DD");
+    }
+    Ok(())
+}
+
+fn erhua_morning_brief_source_idempotency_key(
+    request: &ErhuaMorningBriefMediaUploadRequest,
+    identity: &ErhuaMorningBriefImageIdentity,
+) -> String {
+    let digest = null_separated_digest(&[
+        "erhua-morning-brief-card-source-v1",
+        &request.brief_date,
+        &request.source_record_ref,
+        &identity.content_hash,
+    ]);
+    format!("erhua_morning_brief_card_source:{}", &digest[7..31])
+}
+
+fn erhua_morning_brief_source_work_item_id(
+    request: &ErhuaMorningBriefMediaUploadRequest,
+    identity: &ErhuaMorningBriefImageIdentity,
+) -> Uuid {
+    deterministic_uuid_from_parts(&[
+        "erhua-morning-brief-card-source-work-item-v1",
+        &erhua_morning_brief_source_idempotency_key(request, identity),
+    ])
+}
+
+fn erhua_morning_brief_artifact_id(
+    request: &ErhuaMorningBriefMediaUploadRequest,
+    identity: &ErhuaMorningBriefImageIdentity,
+) -> Uuid {
+    deterministic_uuid_from_parts(&[
+        "erhua-morning-brief-card-generated-image-v1",
+        &erhua_morning_brief_source_idempotency_key(request, identity),
+    ])
+}
+
+fn erhua_morning_brief_media_upload_idempotency_key(content_hash: &str) -> String {
+    content_hash_for_text(&format!(
+        "erhua-morning-brief-card-media-upload-v1|{content_hash}"
+    ))
+}
+
+async fn resolve_erhua_morning_brief_storage_ids_for_upload(
+    pool: &PgPool,
+    request: &ErhuaMorningBriefMediaUploadRequest,
+    identity: &ErhuaMorningBriefImageIdentity,
+) -> Result<ErhuaMorningBriefStorageIds> {
+    let source_idempotency_key = erhua_morning_brief_source_idempotency_key(request, identity);
+    let deterministic_source_work_item_id =
+        erhua_morning_brief_source_work_item_id(request, identity);
+    let source_work_item_id =
+        find_erhua_morning_brief_source_work_item_id(pool, &source_idempotency_key)
+            .await?
+            .unwrap_or(deterministic_source_work_item_id);
+    let deterministic_artifact_id = erhua_morning_brief_artifact_id(request, identity);
+    let artifact_id =
+        find_erhua_morning_brief_artifact_id(pool, source_work_item_id, &identity.content_hash)
+            .await?
+            .unwrap_or(deterministic_artifact_id);
+
+    Ok(ErhuaMorningBriefStorageIds {
+        artifact_id,
+        source_work_item_id,
+    })
+}
+
+async fn find_erhua_morning_brief_source_work_item_id(
+    pool: &PgPool,
+    source_idempotency_key: &str,
+) -> Result<Option<Uuid>> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM qintopia_agent_os.work_items
+        WHERE idempotency_key = $1
+          AND work_item_type = $2
+          AND capability_key = $3
+          AND requester_agent = 'xiaoman'
+          AND target_agent = 'xiaoman'
+        LIMIT 1
+        "#,
+    )
+    .bind(source_idempotency_key)
+    .bind(ERHUA_MORNING_BRIEF_WORK_ITEM_TYPE)
+    .bind(ERHUA_MORNING_BRIEF_CAPABILITY_KEY)
+    .fetch_optional(pool)
+    .await
+    .context("find existing erhua morning brief source work item")
+}
+
+async fn find_erhua_morning_brief_artifact_id(
+    pool: &PgPool,
+    source_work_item_id: Uuid,
+    content_hash: &str,
+) -> Result<Option<Uuid>> {
+    sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM qintopia_agent_os.artifacts
+        WHERE work_item_id = $1
+          AND content_hash = $2
+          AND artifact_type = 'generated_image'
+          AND created_by_agent = 'xiaoman'
+        LIMIT 1
+        "#,
+    )
+    .bind(source_work_item_id)
+    .bind(content_hash)
+    .fetch_optional(pool)
+    .await
+    .context("find existing erhua morning brief generated-image artifact")
+}
+
+fn erhua_morning_brief_feishu_artifact_uri(artifact_id: Uuid) -> String {
+    format!("{FEISHU_PRIMARY_STORAGE_URI_PREFIX}{artifact_id}")
+}
+
+fn erhua_morning_brief_media_upload_report(
+    dry_run: bool,
+    apply_requested: bool,
+    uploaded_media: Option<ErhuaMorningBriefUploadedMedia>,
+    identity: &ErhuaMorningBriefImageIdentity,
+) -> ErhuaMorningBriefMediaUploadReport {
+    let media_upload_evidence = uploaded_media.as_ref().map(|media| {
+        erhua_morning_brief_media_upload_evidence(
+            &media.artifact_uri,
+            media.boundary,
+            Some(media.artifact_id),
+            Some(media.source_work_item_id),
+            identity,
+        )
+    });
+    ErhuaMorningBriefMediaUploadReport {
+        success: true,
+        dry_run,
+        apply_requested,
+        action_status: if apply_requested {
+            "media_uploaded".to_string()
+        } else {
+            "media_upload_validated".to_string()
+        },
+        artifact_uri: uploaded_media.map(|media| media.artifact_uri),
+        media_upload_evidence,
+        content_hash: identity.content_hash.clone(),
+        file_md5: identity.file_md5.clone(),
+        byte_size: identity.byte_size,
+        mime_type: ERHUA_MORNING_BRIEF_FINAL_IMAGE_MIME_TYPE.to_string(),
+        filename: identity.filename.clone(),
+        width: identity.width,
+        height: identity.height,
+        external_send_executed: false,
+        guardrails: vec![
+            "local image paths are accepted only for media upload and are not recorded as artifact_uri".to_string(),
+            "media upload evidence must bind the reviewed Feishu storage backend and JPEG identity".to_string(),
+            "stored media must preserve the JPEG hash, byte identity, MIME type, width, and height".to_string(),
+            "Feishu-backed storage uploads are read back through the authenticated media API before send-ready".to_string(),
+        ],
+    }
+}
+
+fn erhua_morning_brief_media_upload_evidence(
+    artifact_uri: &str,
+    boundary: &str,
+    artifact_id: Option<Uuid>,
+    source_work_item_id: Option<Uuid>,
+    identity: &ErhuaMorningBriefImageIdentity,
+) -> ErhuaMorningBriefMediaUploadEvidence {
+    ErhuaMorningBriefMediaUploadEvidence {
+        boundary: boundary.to_string(),
+        storage_backend: "feishu-base".to_string(),
+        workflow_type: ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE.to_string(),
+        action_status: "media_uploaded".to_string(),
+        artifact_uri: artifact_uri.to_string(),
+        artifact_id,
+        source_work_item_id,
+        content_hash: identity.content_hash.clone(),
+        file_md5: identity.file_md5.clone(),
+        byte_size: identity.byte_size as i64,
+        mime_type: ERHUA_MORNING_BRIEF_FINAL_IMAGE_MIME_TYPE.to_string(),
+        filename: identity.filename.clone(),
+        width: identity.width,
+        height: identity.height,
+        upload_idempotency_key: erhua_morning_brief_media_upload_idempotency_key(
+            &identity.content_hash,
+        ),
+    }
+}
+
+fn normalize_erhua_morning_brief_card_publish_request(
+    request: &mut ErhuaMorningBriefCardPublishCreateRequest,
+) {
+    request.brief_date = request.brief_date.trim().to_string();
+    request.source_record_ref = request.source_record_ref.trim().to_string();
+    request.artifact_uri = request.artifact_uri.trim().to_string();
+    request.content_hash = request.content_hash.trim().to_string();
+    request.file_md5 = request.file_md5.trim().to_ascii_lowercase();
+    request.mime_type = request.mime_type.trim().to_ascii_lowercase();
+    request.filename = request.filename.trim().to_string();
+    request.target_group_id = request.target_group_id.trim().to_string();
+    request.message_text = request.message_text.trim().to_string();
+    if request.message_text.is_empty() {
+        request.message_text = "二花早报已自动生成。".to_string();
+    }
+    request.title = request.title.trim().to_string();
+    request.summary = request.summary.trim().to_string();
+    request.priority = normalize_key(&request.priority);
+    if request.metadata.is_null() {
+        request.metadata = json!({});
+    }
+    if let Some(evidence) = &mut request.media_upload_evidence {
+        normalize_erhua_morning_brief_media_upload_evidence(evidence);
+    }
+}
+
+fn normalize_erhua_morning_brief_media_upload_evidence(
+    evidence: &mut ErhuaMorningBriefMediaUploadEvidence,
+) {
+    evidence.boundary = evidence.boundary.trim().to_string();
+    evidence.storage_backend = evidence.storage_backend.trim().to_string();
+    if evidence.storage_backend.is_empty()
+        && evidence.boundary == ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY
+    {
+        evidence.storage_backend = ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND.to_string();
+    }
+    evidence.workflow_type = evidence.workflow_type.trim().to_string();
+    evidence.action_status = evidence.action_status.trim().to_string();
+    evidence.artifact_uri = evidence.artifact_uri.trim().to_string();
+    evidence.content_hash = evidence.content_hash.trim().to_string();
+    evidence.file_md5 = evidence.file_md5.trim().to_ascii_lowercase();
+    evidence.mime_type = evidence.mime_type.trim().to_ascii_lowercase();
+    evidence.filename = evidence.filename.trim().to_string();
+    evidence.upload_idempotency_key = evidence.upload_idempotency_key.trim().to_string();
+}
+
+fn validate_erhua_morning_brief_card_publish_request(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> Result<()> {
+    require_non_empty("brief_date", &request.brief_date)?;
+    require_non_empty("artifact_uri", &request.artifact_uri)?;
+    require_non_empty("content_hash", &request.content_hash)?;
+    require_non_empty("file_md5", &request.file_md5)?;
+    require_non_empty("target_group_id", &request.target_group_id)?;
+    validate_erhua_morning_brief_brief_date(&request.brief_date)?;
+    validate_canonical_sha256(&request.content_hash, "erhua morning brief content hash")?;
+    validate_canonical_md5(&request.file_md5, "erhua morning brief file_md5")?;
+    if request.mime_type != ERHUA_MORNING_BRIEF_FINAL_IMAGE_MIME_TYPE {
+        bail!("erhua morning brief artifact must be image/jpeg");
+    }
+    if request.byte_size <= 0 || request.byte_size > MAX_APPROVABLE_GENERATED_IMAGE_BYTES {
+        bail!("erhua morning brief byte_size is outside the allowed generated-image range");
+    }
+    if request.width == 0 || request.height == 0 || request.width > 4096 || request.height > 8192 {
+        bail!("erhua morning brief image dimensions are outside the reviewed bounds");
+    }
+    if !request.filename.is_empty() {
+        validate_erhua_morning_brief_filename(&request.filename)?;
+    }
+    if request.target_group_id.chars().count() > 128 {
+        bail!("target_group_id must be 128 characters or fewer");
+    }
+    if request.message_text.chars().count() > 500 {
+        bail!("message_text must be 500 characters or fewer");
+    }
+    if !ALLOWED_PRIORITIES.contains(&request.priority.as_str()) {
+        bail!("priority is not allowed");
+    }
+    if contains_sensitive_text(&request.brief_date)
+        || contains_sensitive_text(&request.source_record_ref)
+        || contains_sensitive_text(&request.message_text)
+        || contains_sensitive_text(&request.title)
+        || contains_sensitive_text(&request.summary)
+        || contains_sensitive_value(&request.metadata)
+    {
+        bail!("erhua morning brief card publish payload contains disallowed sensitive content");
+    }
+    validate_erhua_morning_brief_card_publish_media_upload_evidence(request)?;
+    Ok(())
+}
+
+fn validate_erhua_morning_brief_card_publish_media_upload_evidence(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> Result<()> {
+    let evidence = request.media_upload_evidence.as_ref().ok_or_else(|| {
+        anyhow!("erhua morning brief card publish requires media_upload_evidence from reviewed media upload")
+    })?;
+    if evidence.workflow_type != ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE {
+        bail!("erhua morning brief media_upload_evidence workflow_type does not match");
+    }
+    if evidence.action_status != "media_uploaded" {
+        bail!("erhua morning brief media_upload_evidence must come from an applied upload");
+    }
+    if evidence.boundary != ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY
+        || evidence.storage_backend != ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND
+    {
+        bail!("erhua morning brief media_upload_evidence boundary is not allowed");
+    }
+    validate_canonical_sha256(
+        &evidence.content_hash,
+        "erhua morning brief media_upload_evidence content_hash",
+    )?;
+    validate_canonical_md5(
+        &evidence.file_md5,
+        "erhua morning brief media_upload_evidence file_md5",
+    )?;
+    if evidence.content_hash != request.content_hash
+        || evidence.file_md5 != request.file_md5
+        || evidence.byte_size != request.byte_size
+        || evidence.mime_type != request.mime_type
+        || evidence.filename != request.filename
+        || evidence.width != request.width
+        || evidence.height != request.height
+    {
+        bail!("erhua morning brief media_upload_evidence identity does not match request");
+    }
+    if evidence.mime_type != ERHUA_MORNING_BRIEF_FINAL_IMAGE_MIME_TYPE {
+        bail!("erhua morning brief media_upload_evidence must be image/jpeg");
+    }
+    validate_erhua_morning_brief_filename(&evidence.filename)?;
+    if evidence.width == 0
+        || evidence.height == 0
+        || evidence.width > 4096
+        || evidence.height > 8192
+    {
+        bail!(
+            "erhua morning brief media_upload_evidence dimensions are outside the reviewed bounds"
+        );
+    }
+    if evidence.upload_idempotency_key
+        != erhua_morning_brief_media_upload_idempotency_key(&request.content_hash)
+    {
+        bail!("erhua morning brief media_upload_evidence upload idempotency key does not match");
+    }
+    let evidence_ids = erhua_morning_brief_evidence_ids(request)?;
+    if evidence_ids.source_work_item_id
+        != erhua_morning_brief_source_work_item_id_for_create(request)
+    {
+        bail!("erhua morning brief media_upload_evidence source_work_item_id does not match the deterministic workflow identity");
+    }
+    if evidence_ids.artifact_id != erhua_morning_brief_artifact_id_for_create(request) {
+        bail!("erhua morning brief media_upload_evidence artifact_id does not match the deterministic workflow identity");
+    }
+    let expected_uri = erhua_morning_brief_feishu_artifact_uri(evidence_ids.artifact_id);
+    if evidence.artifact_uri != expected_uri || request.artifact_uri != expected_uri {
+        bail!("erhua morning brief media_upload_evidence artifact_uri does not match artifact_id");
+    }
+    Ok(())
+}
+
+fn erhua_morning_brief_evidence_ids(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> Result<ErhuaMorningBriefStorageIds> {
+    let evidence = request
+        .media_upload_evidence
+        .as_ref()
+        .context("erhua morning brief media upload evidence is missing")?;
+    Ok(ErhuaMorningBriefStorageIds {
+        artifact_id: evidence
+            .artifact_id
+            .context("erhua morning brief evidence is missing artifact_id")?,
+        source_work_item_id: evidence
+            .source_work_item_id
+            .context("erhua morning brief evidence is missing source_work_item_id")?,
+    })
+}
+
+fn validate_erhua_morning_brief_persisted_source_binding(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+    source_work_item_id: Uuid,
+) -> Result<()> {
+    let evidence_ids = erhua_morning_brief_evidence_ids(request)?;
+    if evidence_ids.source_work_item_id != source_work_item_id {
+        bail!("erhua morning brief evidence source_work_item_id does not match the persisted source work item");
+    }
+    Ok(())
+}
+
+fn validate_erhua_morning_brief_persisted_media_binding(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+    artifact_id: Uuid,
+    source_work_item_id: Uuid,
+) -> Result<()> {
+    let evidence_ids = erhua_morning_brief_evidence_ids(request)?;
+    if evidence_ids.artifact_id != artifact_id
+        || evidence_ids.source_work_item_id != source_work_item_id
+    {
+        bail!("erhua morning brief evidence does not match the persisted artifact binding");
+    }
+    let expected_uri = erhua_morning_brief_feishu_artifact_uri(artifact_id);
+    if request.artifact_uri != expected_uri {
+        bail!("erhua morning brief artifact_uri does not match the persisted artifact id");
+    }
+    Ok(())
+}
+
+fn erhua_morning_brief_source_idempotency_key_for_create(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> String {
+    let digest = null_separated_digest(&[
+        "erhua-morning-brief-card-source-v1",
+        &request.brief_date,
+        &request.source_record_ref,
+        &request.content_hash,
+    ]);
+    format!("erhua_morning_brief_card_source:{}", &digest[7..31])
+}
+
+fn erhua_morning_brief_source_work_item_id_for_create(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> Uuid {
+    deterministic_uuid_from_parts(&[
+        "erhua-morning-brief-card-source-work-item-v1",
+        &erhua_morning_brief_source_idempotency_key_for_create(request),
+    ])
+}
+
+fn erhua_morning_brief_artifact_id_for_create(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> Uuid {
+    deterministic_uuid_from_parts(&[
+        "erhua-morning-brief-card-generated-image-v1",
+        &erhua_morning_brief_source_idempotency_key_for_create(request),
+    ])
+}
+
+fn erhua_morning_brief_card_publish_idempotency_key(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> String {
+    let target_group_hash = null_separated_digest(&["target-group", &request.target_group_id]);
+    let digest = null_separated_digest(&[
+        "erhua-morning-brief-card-publish-v1",
+        &request.brief_date,
+        &request.content_hash,
+        &target_group_hash,
+    ]);
+    format!("erhua_morning_brief_card_publish:{}", &digest[7..31])
+}
+
+fn erhua_morning_brief_title(request: &ErhuaMorningBriefCardPublishCreateRequest) -> String {
+    non_empty_or_default(&request.title, "二花早报卡片")
+}
+
+fn erhua_morning_brief_summary(request: &ErhuaMorningBriefCardPublishCreateRequest) -> String {
+    non_empty_or_default(&request.summary, "二花早报 JPEG 自动发布 artifact")
+}
+
+fn erhua_morning_brief_send_summary(request: &ErhuaMorningBriefCardPublishCreateRequest) -> String {
+    non_empty_or_default(&request.summary, "自动发布二花早报卡片到 QiWe 群")
+}
+
+fn erhua_morning_brief_source_refs(request: &ErhuaMorningBriefCardPublishCreateRequest) -> Value {
+    json!({
+        "workflow": "workflows/erhua-morning-brief-card",
+        "brief_date": request.brief_date,
+        "source_record_ref": request.source_record_ref,
+    })
+}
+
+fn erhua_morning_brief_source_ids(request: &ErhuaMorningBriefCardPublishCreateRequest) -> Value {
+    json!([{
+        "workflow": "workflows/erhua-morning-brief-card",
+        "brief_date": request.brief_date,
+        "source_record_ref": request.source_record_ref,
+    }])
+}
+
+fn erhua_morning_brief_payload(request: &ErhuaMorningBriefCardPublishCreateRequest) -> Value {
+    json!({
+        "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+        "brief_date": request.brief_date,
+        "source_record_ref": request.source_record_ref,
+        "content_hash": request.content_hash,
+        "artifact_uri": request.artifact_uri,
+        "media_upload_evidence": request.media_upload_evidence,
+    })
+}
+
+fn erhua_morning_brief_artifact_metadata(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+) -> Value {
+    json!({
+        "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+        "workflow": "workflows/erhua-morning-brief-card",
+        "generated_by": ERHUA_MORNING_BRIEF_GENERATED_BY,
+        "storage_backend": ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND,
+        "media_upload_boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+        "mime_type": request.mime_type,
+        "file_md5": request.file_md5,
+        "byte_size": request.byte_size,
+        "width": request.width,
+        "height": request.height,
+        "filename": request.filename,
+        "brief_date": request.brief_date,
+        "source_record_ref": request.source_record_ref,
+        "media_upload_evidence": request.media_upload_evidence,
+        "retained_source_policy": "sanitized_metadata_only",
+        "external_send_executed": false,
+        "request_metadata": request.metadata,
+    })
+}
+
+fn erhua_morning_brief_send_payload(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+    artifact_id: Uuid,
+) -> Value {
+    json!({
+        "approved_artifact_id": artifact_id,
+        "approved_artifact_type": "generated_image",
+        "approved_artifact_content_hash": request.content_hash,
+        "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+        "target_channel": "qiwe",
+        "target_group_id": request.target_group_id,
+        "message_text": request.message_text,
+        "requires_human_final_confirmation": false,
+        "automatic_publish": true,
+    })
+}
+
+fn erhua_morning_brief_card_publish_report(
+    request: &ErhuaMorningBriefCardPublishCreateRequest,
+    apply_requested: bool,
+    action_status: &str,
+    source_work_item_id: Option<Uuid>,
+    send_work_item_id: Option<Uuid>,
+    artifact_id: Option<Uuid>,
+    send_ready_recorded: bool,
+) -> ErhuaMorningBriefCardPublishCreateReport {
+    ErhuaMorningBriefCardPublishCreateReport {
+        success: true,
+        dry_run: !apply_requested,
+        apply_requested,
+        action_status: action_status.to_string(),
+        source_work_item_id,
+        send_work_item_id,
+        artifact_id,
+        artifact_type: "generated_image".to_string(),
+        review_status: "approved".to_string(),
+        content_hash: request.content_hash.clone(),
+        idempotency_key: erhua_morning_brief_card_publish_idempotency_key(request),
+        requires_human_final_confirmation: false,
+        send_ready_recorded,
+        external_send_executed: false,
+        guardrails: vec![
+            "requires reviewed media_upload_evidence bound to the durable Feishu primary storage JPEG artifact URI"
+                .to_string(),
+            "evidence artifact_id and source_work_item_id must match the deterministic workflow identity"
+                .to_string(),
+            "creates an automatic_publish group_message_request only for workflow_type=erhua_morning_brief_card"
+                .to_string(),
+            "does not call QiWe directly; the reviewed QiWe image-send adapter performs upload and send"
+                .to_string(),
+            "real target group ids must come from runtime config, not git".to_string(),
+        ],
+    }
+}
+
 pub fn create_daily_case_report_auto_publish_dry_run(
     mut request: DailyCaseReportAutoPublishCreateRequest,
 ) -> Result<DailyCaseReportAutoPublishCreateReport> {
@@ -4298,6 +5286,214 @@ pub fn create_daily_case_report_auto_publish_dry_run(
         None,
         None,
         false,
+    ))
+}
+
+pub fn create_erhua_morning_brief_card_publish_dry_run(
+    mut request: ErhuaMorningBriefCardPublishCreateRequest,
+) -> Result<ErhuaMorningBriefCardPublishCreateReport> {
+    normalize_erhua_morning_brief_card_publish_request(&mut request);
+    validate_erhua_morning_brief_card_publish_request(&request)?;
+    Ok(erhua_morning_brief_card_publish_report(
+        &request,
+        false,
+        "dry_run_ok",
+        None,
+        None,
+        None,
+        false,
+    ))
+}
+
+pub async fn create_erhua_morning_brief_card_publish(
+    pool: &PgPool,
+    _database_url: &str,
+    mut request: ErhuaMorningBriefCardPublishCreateRequest,
+    apply_requested: bool,
+) -> Result<ErhuaMorningBriefCardPublishCreateReport> {
+    normalize_erhua_morning_brief_card_publish_request(&mut request);
+    validate_erhua_morning_brief_card_publish_request(&request)?;
+    if !apply_requested {
+        return Ok(erhua_morning_brief_card_publish_report(
+            &request,
+            false,
+            "dry_run_ok",
+            None,
+            None,
+            None,
+            false,
+        ));
+    }
+    let evidence_ids = erhua_morning_brief_evidence_ids(&request)?;
+    if erhua_morning_brief_source_work_item_id_for_create(&request)
+        != evidence_ids.source_work_item_id
+        || erhua_morning_brief_artifact_id_for_create(&request) != evidence_ids.artifact_id
+    {
+        bail!("erhua morning brief evidence ids do not match the deterministic workflow identity");
+    }
+
+    let idempotency_key = erhua_morning_brief_card_publish_idempotency_key(&request);
+    let source_idempotency_key = erhua_morning_brief_source_idempotency_key_for_create(&request);
+    let send_idempotency_key = format!("{idempotency_key}:send");
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin erhua morning brief card publish transaction")?;
+
+    let source_work_item_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO qintopia_agent_os.work_items
+            (id, work_item_type, status, requester_agent, target_agent, capability_key,
+             priority, brief_summary, purpose, source_type, source_refs, dedupe_key,
+             idempotency_key, risk_level, information_class, payload,
+             payload_redaction_policy, review_policy, metadata)
+        VALUES
+            ($1, $2, 'completed', 'xiaoman', 'xiaoman', $3, $4, $5,
+             'erhua_morning_brief_card_publish', 'operations_workflow', $6, $7,
+             $7, 'high', 'internal_ops', $8, 'summary_only', 'automatic_publish', $9)
+        ON CONFLICT (idempotency_key)
+        DO UPDATE SET
+            updated_at = now(),
+            metadata = qintopia_agent_os.work_items.metadata || EXCLUDED.metadata
+        RETURNING id
+        "#,
+    )
+    .bind(evidence_ids.source_work_item_id)
+    .bind(ERHUA_MORNING_BRIEF_WORK_ITEM_TYPE)
+    .bind(ERHUA_MORNING_BRIEF_CAPABILITY_KEY)
+    .bind(&request.priority)
+    .bind(erhua_morning_brief_title(&request))
+    .bind(erhua_morning_brief_source_refs(&request))
+    .bind(&source_idempotency_key)
+    .bind(erhua_morning_brief_payload(&request))
+    .bind(json!({
+        "created_by_command": "operations-erhua-morning-brief-card-publish-create",
+        "workflow": "workflows/erhua-morning-brief-card",
+        "request_metadata": request.metadata,
+        "external_send_executed": false,
+    }))
+    .fetch_one(&mut *tx)
+    .await
+    .context("upsert erhua morning brief source work item")?;
+
+    validate_erhua_morning_brief_persisted_source_binding(&request, source_work_item_id)?;
+
+    let artifact_id: Uuid =
+        sqlx::query_scalar(ERHUA_MORNING_BRIEF_GENERATED_IMAGE_ARTIFACT_UPSERT_SQL)
+            .bind(evidence_ids.artifact_id)
+            .bind(source_work_item_id)
+            .bind(erhua_morning_brief_title(&request))
+            .bind(erhua_morning_brief_summary(&request))
+            .bind(&request.artifact_uri)
+            .bind(&request.content_hash)
+            .bind(erhua_morning_brief_source_ids(&request))
+            .bind(erhua_morning_brief_artifact_metadata(&request))
+            .fetch_one(&mut *tx)
+            .await
+            .context("upsert erhua morning brief generated-image artifact")?;
+
+    validate_erhua_morning_brief_persisted_media_binding(
+        &request,
+        artifact_id,
+        source_work_item_id,
+    )?;
+
+    append_event_once(
+        &mut tx,
+        Some(source_work_item_id),
+        Some(artifact_id),
+        "generated_image_created",
+        ERHUA_MORNING_BRIEF_ACTOR_ID,
+        json!({
+            "artifact_type": "generated_image",
+            "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+            "review_status": "approved",
+            "created_by_agent": "xiaoman",
+            "content_hash": request.content_hash,
+            "mime_type": request.mime_type,
+            "file_md5": request.file_md5,
+            "byte_size": request.byte_size,
+            "width": request.width,
+            "height": request.height,
+            "storage_backend": ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND,
+            "media_upload_boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+            "external_send_executed": false,
+            "automatic_publish": true,
+        }),
+    )
+    .await?;
+
+    let send_work_item_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO qintopia_agent_os.work_items
+            (work_item_type, status, requester_agent, target_agent, capability_key,
+             priority, brief_summary, purpose, source_type, source_refs, dedupe_key,
+             idempotency_key, risk_level, information_class, payload,
+             payload_redaction_policy, review_policy, metadata)
+        VALUES
+            ('group_message_request', 'queued', 'xiaoman', 'erhua',
+             'erhua.send_group_message', $1, $2,
+             'erhua_morning_brief_card_publish', 'operations_workflow', $3, $4,
+             $4, 'high', 'internal_ops', $5, 'summary_only', 'automatic_publish', $6)
+        ON CONFLICT (idempotency_key)
+        DO UPDATE SET
+            updated_at = now(),
+            payload = EXCLUDED.payload,
+            metadata = qintopia_agent_os.work_items.metadata || EXCLUDED.metadata
+        RETURNING id
+        "#,
+    )
+    .bind(&request.priority)
+    .bind(erhua_morning_brief_send_summary(&request))
+    .bind(erhua_morning_brief_source_refs(&request))
+    .bind(&send_idempotency_key)
+    .bind(erhua_morning_brief_send_payload(&request, artifact_id))
+    .bind(json!({
+        "created_by_command": "operations-erhua-morning-brief-card-publish-create",
+        "source_work_item_id": source_work_item_id,
+        "artifact_id": artifact_id,
+        "requires_human_final_confirmation": false,
+        "external_send_executed": false,
+    }))
+    .fetch_one(&mut *tx)
+    .await
+    .context("upsert erhua morning brief automatic send work item")?;
+
+    let send_ready_inserted = append_event_once(
+        &mut tx,
+        Some(send_work_item_id),
+        Some(artifact_id),
+        "group_message_send_ready_recorded",
+        ERHUA_MORNING_BRIEF_ACTOR_ID,
+        json!({
+            "target_channel": "qiwe",
+            "target_group_id": request.target_group_id,
+            "approved_artifact_id": artifact_id,
+            "approved_artifact_type": "generated_image",
+            "artifact_content_hash": request.content_hash,
+            "media_upload_boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+            "storage_backend": ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND,
+            "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+            "requires_human_final_confirmation": false,
+            "automatic_publish": true,
+            "send_executed": false,
+            "message_preview": message_preview(&request.message_text),
+        }),
+    )
+    .await?;
+
+    tx.commit()
+        .await
+        .context("commit erhua morning brief card publish transaction")?;
+
+    Ok(erhua_morning_brief_card_publish_report(
+        &request,
+        true,
+        "auto_publish_send_ready_recorded",
+        Some(source_work_item_id),
+        Some(send_work_item_id),
+        Some(artifact_id),
+        send_ready_inserted,
     ))
 }
 
@@ -9206,6 +10402,29 @@ mod tests {
         bytes
     }
 
+    fn erhua_morning_brief_jpeg_fixture() -> Vec<u8> {
+        let image = RgbImage::from_pixel(32, 48, image::Rgb([250, 248, 245]));
+        let mut bytes = Vec::new();
+        JpegEncoder::new_with_quality(&mut bytes, 92)
+            .write_image(image.as_raw(), 32, 48, ExtendedColorType::Rgb8)
+            .expect("fixture JPEG encodes");
+        bytes
+    }
+
+    fn erhua_morning_brief_media_upload_request_json(path: &std::path::Path) -> Value {
+        let bytes = erhua_morning_brief_jpeg_fixture();
+        json!({
+            "image_path": path,
+            "content_hash": content_hash_bytes(&bytes),
+            "file_md5": md5_hex_bytes(&bytes),
+            "byte_size": bytes.len(),
+            "filename": "erhua-2026-08-08.jpg",
+            "brief_date": "2026-08-08",
+            "source_record_ref": "erhua_morning_brief:2026-08-08",
+            "metadata": {}
+        })
+    }
+
     fn daily_case_report_media_upload_evidence_json(
         artifact_uri: &str,
         content_hash: &str,
@@ -10524,6 +11743,468 @@ mod tests {
         assert!(err
             .to_string()
             .contains("daily case report content_hash does not match image bytes"));
+    }
+
+    #[tokio::test]
+    async fn erhua_morning_brief_media_upload_dry_run_validates_jpeg_identity() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        let bytes = erhua_morning_brief_jpeg_fixture();
+        std::fs::write(&path, &bytes).expect("write fixture JPEG");
+        let report = erhua_morning_brief_media_upload(
+            serde_json::from_value(erhua_morning_brief_media_upload_request_json(&path))
+                .expect("request parses"),
+            false,
+            None,
+            None,
+        )
+        .await
+        .expect("media upload dry-run should validate");
+
+        assert_eq!(report.action_status, "media_upload_validated");
+        assert!(report.dry_run);
+        assert!(report.artifact_uri.is_none());
+        assert_eq!(report.content_hash, content_hash_bytes(&bytes));
+        assert_eq!(report.file_md5, md5_hex_bytes(&bytes));
+        assert_eq!(report.mime_type, "image/jpeg");
+        assert!(!report.external_send_executed);
+    }
+
+    #[tokio::test]
+    async fn erhua_morning_brief_media_upload_rejects_hash_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        std::fs::write(&path, erhua_morning_brief_jpeg_fixture()).expect("write fixture JPEG");
+        let err = erhua_morning_brief_media_upload(
+            serde_json::from_value(json!({
+                "image_path": path,
+                "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "filename": "erhua-2026-08-08.jpg",
+                "brief_date": "2026-08-08",
+                "source_record_ref": "erhua_morning_brief:2026-08-08"
+            }))
+            .expect("request parses"),
+            false,
+            None,
+            None,
+        )
+        .await
+        .expect_err("hash mismatch must fail");
+
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief content_hash does not match image bytes"));
+    }
+
+    #[tokio::test]
+    async fn erhua_morning_brief_media_upload_rejects_invalid_brief_date() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        std::fs::write(&path, erhua_morning_brief_jpeg_fixture()).expect("write fixture JPEG");
+        let err = erhua_morning_brief_media_upload(
+            serde_json::from_value(json!({
+                "image_path": path,
+                "filename": "erhua-2026-08-08.jpg",
+                "brief_date": "2026/08/08",
+                "source_record_ref": "erhua_morning_brief:2026-08-08"
+            }))
+            .expect("request parses"),
+            false,
+            None,
+            None,
+        )
+        .await
+        .expect_err("invalid brief_date must fail");
+
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief brief_date must be YYYY-MM-DD"));
+    }
+
+    #[tokio::test]
+    async fn erhua_morning_brief_media_upload_rejects_sensitive_metadata() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        std::fs::write(&path, erhua_morning_brief_jpeg_fixture()).expect("write fixture JPEG");
+        let err = erhua_morning_brief_media_upload(
+            serde_json::from_value(json!({
+                "image_path": path,
+                "filename": "erhua-2026-08-08.jpg",
+                "brief_date": "2026-08-08",
+                "source_record_ref": "erhua_morning_brief:2026-08-08",
+                "metadata": {"secret": "app_token"}
+            }))
+            .expect("request parses"),
+            false,
+            None,
+            None,
+        )
+        .await
+        .expect_err("sensitive metadata must fail");
+
+        assert!(err.to_string().contains(
+            "erhua morning brief media upload payload contains disallowed sensitive content"
+        ));
+    }
+
+    #[test]
+    fn erhua_morning_brief_source_idempotency_key_is_stable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        std::fs::write(&path, erhua_morning_brief_jpeg_fixture()).expect("write fixture JPEG");
+        let request: ErhuaMorningBriefMediaUploadRequest =
+            serde_json::from_value(erhua_morning_brief_media_upload_request_json(&path))
+                .expect("request parses");
+        let identity = erhua_morning_brief_image_identity(
+            &request,
+            ERHUA_MORNING_BRIEF_DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect("identity validates");
+
+        let key1 = erhua_morning_brief_source_idempotency_key(&request, &identity);
+        let key2 = erhua_morning_brief_source_idempotency_key(&request, &identity);
+        assert_eq!(key1, key2);
+        assert!(key1.starts_with("erhua_morning_brief_card_source:"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_deterministic_ids_do_not_collide_with_daily_case_report() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        std::fs::write(&path, erhua_morning_brief_jpeg_fixture()).expect("write fixture JPEG");
+        let erhua_request: ErhuaMorningBriefMediaUploadRequest =
+            serde_json::from_value(erhua_morning_brief_media_upload_request_json(&path))
+                .expect("erhua request parses");
+        let erhua_identity = erhua_morning_brief_image_identity(
+            &erhua_request,
+            ERHUA_MORNING_BRIEF_DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect("erhua identity validates");
+
+        let daily_request = DailyCaseReportMediaUploadRequest {
+            image_path: path.clone(),
+            content_hash: content_hash_bytes(&erhua_morning_brief_jpeg_fixture()),
+            file_md5: md5_hex_bytes(&erhua_morning_brief_jpeg_fixture()),
+            byte_size: Some(erhua_morning_brief_jpeg_fixture().len()),
+            filename: "xiaoman-2026-08-08.jpg".to_string(),
+            report_window: json!({"start": "2026-08-07T07:45:00+08:00", "end": "2026-08-08T07:45:00+08:00"}),
+            source_chat_ref: json!({}),
+            template_version: String::new(),
+            metadata: json!({}),
+        };
+        let daily_identity = daily_case_report_image_identity(
+            &daily_request,
+            DAILY_CASE_REPORT_DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect("daily identity validates");
+
+        let erhua_source_key =
+            erhua_morning_brief_source_idempotency_key(&erhua_request, &erhua_identity);
+        let daily_source_key =
+            daily_case_report_source_idempotency_key_from_upload(&daily_request, &daily_identity)
+                .expect("daily source key");
+        assert_ne!(erhua_source_key, daily_source_key);
+
+        let erhua_work_item_id =
+            erhua_morning_brief_source_work_item_id(&erhua_request, &erhua_identity);
+        let daily_work_item_id =
+            daily_case_report_source_work_item_id_from_upload(&daily_request, &daily_identity)
+                .expect("daily work item id");
+        assert_ne!(erhua_work_item_id, daily_work_item_id);
+
+        let erhua_artifact_id = erhua_morning_brief_artifact_id(&erhua_request, &erhua_identity);
+        let daily_artifact_id =
+            daily_case_report_artifact_id_from_upload(&daily_request, &daily_identity)
+                .expect("daily artifact id");
+        assert_ne!(erhua_artifact_id, daily_artifact_id);
+    }
+
+    #[test]
+    fn erhua_morning_brief_media_upload_idempotency_key_is_namespaced() {
+        let content_hash =
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let key = erhua_morning_brief_media_upload_idempotency_key(content_hash);
+        let daily_key = daily_case_report_media_upload_idempotency_key(content_hash);
+        assert_ne!(key, daily_key);
+        assert!(key.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_validate_filename_rejects_non_jpeg() {
+        let err = validate_erhua_morning_brief_filename("erhua-2026-08-08.png")
+            .expect_err("non-JPEG filename must fail");
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief filename must reference a JPEG object"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_validate_brief_date_accepts_yyyy_mm_dd() {
+        validate_erhua_morning_brief_brief_date("2026-08-08").expect("valid date");
+        validate_erhua_morning_brief_brief_date("2026-12-31").expect("valid date");
+    }
+
+    #[test]
+    fn erhua_morning_brief_validate_brief_date_rejects_invalid_format() {
+        let err = validate_erhua_morning_brief_brief_date("2026/08/08")
+            .expect_err("invalid date must fail");
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief brief_date must be YYYY-MM-DD"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_dry_run_binds_send_ready_boundary() {
+        let report = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(erhua_morning_brief_card_publish_request_json())
+                .expect("request parses"),
+        )
+        .expect("erhua morning brief card publish should validate");
+
+        assert!(report.success);
+        assert!(report.dry_run);
+        assert!(!report.apply_requested);
+        assert_eq!(report.action_status, "dry_run_ok");
+        assert_eq!(report.artifact_type, "generated_image");
+        assert_eq!(report.review_status, "approved");
+        assert!(!report.requires_human_final_confirmation);
+        assert!(!report.send_ready_recorded);
+        assert!(!report.external_send_executed);
+        assert!(report
+            .idempotency_key
+            .starts_with("erhua_morning_brief_card_publish:"));
+        assert!(report.source_work_item_id.is_none());
+        assert!(report.send_work_item_id.is_none());
+        assert!(report.artifact_id.is_none());
+    }
+
+    fn erhua_morning_brief_card_publish_request_json() -> Value {
+        let bytes = erhua_morning_brief_jpeg_fixture();
+        let content_hash = content_hash_bytes(&bytes);
+        let file_md5 = md5_hex_bytes(&bytes);
+        let byte_size = bytes.len() as i64;
+        let filename = "erhua-2026-08-08.jpg";
+        let brief_date = "2026-08-08";
+        let source_record_ref = "erhua_morning_brief:2026-08-08";
+        let source_key = {
+            let digest = null_separated_digest(&[
+                "erhua-morning-brief-card-source-v1",
+                brief_date,
+                source_record_ref,
+                &content_hash,
+            ]);
+            format!("erhua_morning_brief_card_source:{}", &digest[7..31])
+        };
+        let artifact_id = deterministic_uuid_from_parts(&[
+            "erhua-morning-brief-card-generated-image-v1",
+            &source_key,
+        ]);
+        let source_work_item_id = deterministic_uuid_from_parts(&[
+            "erhua-morning-brief-card-source-work-item-v1",
+            &source_key,
+        ]);
+        let artifact_uri = erhua_morning_brief_feishu_artifact_uri(artifact_id);
+        json!({
+            "brief_date": brief_date,
+            "source_record_ref": source_record_ref,
+            "artifact_uri": artifact_uri,
+            "content_hash": content_hash,
+            "file_md5": file_md5,
+            "byte_size": byte_size,
+            "mime_type": "image/jpeg",
+            "width": 32,
+            "height": 48,
+            "filename": filename,
+            "target_group_id": "runtime-configured-group",
+            "message_text": "二花早报已自动生成。",
+            "metadata": {},
+            "media_upload_evidence": {
+                "boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+                "storage_backend": ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND,
+                "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+                "action_status": "media_uploaded",
+                "artifact_uri": artifact_uri,
+                "artifact_id": artifact_id,
+                "source_work_item_id": source_work_item_id,
+                "content_hash": content_hash,
+                "file_md5": file_md5,
+                "byte_size": byte_size,
+                "mime_type": "image/jpeg",
+                "filename": filename,
+                "width": 32,
+                "height": 48,
+                "upload_idempotency_key": erhua_morning_brief_media_upload_idempotency_key(
+                    &content_hash
+                ),
+            },
+        })
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_deterministic_ids_are_stable() {
+        let request: ErhuaMorningBriefCardPublishCreateRequest =
+            serde_json::from_value(erhua_morning_brief_card_publish_request_json())
+                .expect("request parses");
+
+        let source_key_a = erhua_morning_brief_source_idempotency_key_for_create(&request);
+        let source_key_b = erhua_morning_brief_source_idempotency_key_for_create(&request);
+        assert_eq!(source_key_a, source_key_b);
+        assert!(source_key_a.starts_with("erhua_morning_brief_card_source:"));
+
+        assert_eq!(
+            erhua_morning_brief_source_work_item_id_for_create(&request),
+            erhua_morning_brief_source_work_item_id_for_create(&request)
+        );
+        assert_eq!(
+            erhua_morning_brief_artifact_id_for_create(&request),
+            erhua_morning_brief_artifact_id_for_create(&request)
+        );
+        assert_ne!(
+            erhua_morning_brief_source_work_item_id_for_create(&request),
+            erhua_morning_brief_artifact_id_for_create(&request)
+        );
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_ids_match_media_upload_identity() {
+        let bytes = erhua_morning_brief_jpeg_fixture();
+        let upload_request: ErhuaMorningBriefMediaUploadRequest = serde_json::from_value(json!({
+            "image_path": "/tmp/ignored-erhua.jpg",
+            "content_hash": content_hash_bytes(&bytes),
+            "file_md5": md5_hex_bytes(&bytes),
+            "byte_size": bytes.len(),
+            "filename": "erhua-2026-08-08.jpg",
+            "brief_date": "2026-08-08",
+            "source_record_ref": "erhua_morning_brief:2026-08-08",
+            "metadata": {}
+        }))
+        .expect("upload request parses");
+        let identity = erhua_morning_brief_image_identity(
+            &upload_request,
+            ERHUA_MORNING_BRIEF_DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect_err("fixture upload without the local file must fail");
+        assert!(identity
+            .to_string()
+            .contains("image_path must reference a local JPEG file"));
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("erhua-2026-08-08.jpg");
+        std::fs::write(&path, &bytes).expect("write fixture JPEG");
+        let upload_request: ErhuaMorningBriefMediaUploadRequest =
+            serde_json::from_value(erhua_morning_brief_media_upload_request_json(&path))
+                .expect("upload request parses");
+        let identity = erhua_morning_brief_image_identity(
+            &upload_request,
+            ERHUA_MORNING_BRIEF_DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect("identity validates");
+
+        let publish_request: ErhuaMorningBriefCardPublishCreateRequest =
+            serde_json::from_value(erhua_morning_brief_card_publish_request_json())
+                .expect("publish request parses");
+        let mut publish_request = publish_request;
+        publish_request.brief_date = upload_request.brief_date.clone();
+        publish_request.source_record_ref = upload_request.source_record_ref.clone();
+        publish_request.content_hash = identity.content_hash.clone();
+        publish_request.file_md5 = identity.file_md5.clone();
+        publish_request.byte_size = identity.byte_size as i64;
+        publish_request.filename = identity.filename.clone();
+
+        assert_eq!(
+            erhua_morning_brief_source_idempotency_key_for_create(&publish_request),
+            erhua_morning_brief_source_idempotency_key(&upload_request, &identity)
+        );
+        assert_eq!(
+            erhua_morning_brief_source_work_item_id_for_create(&publish_request),
+            erhua_morning_brief_source_work_item_id(&upload_request, &identity)
+        );
+        assert_eq!(
+            erhua_morning_brief_artifact_id_for_create(&publish_request),
+            erhua_morning_brief_artifact_id(&upload_request, &identity)
+        );
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_rejects_empty_target_group() {
+        let mut payload = erhua_morning_brief_card_publish_request_json();
+        payload["target_group_id"] = json!("  ");
+        let err = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("empty target group must fail");
+
+        assert!(err.to_string().contains("target_group_id"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_rejects_evidence_identity_drift() {
+        let mut payload = erhua_morning_brief_card_publish_request_json();
+        payload["media_upload_evidence"]["byte_size"] = json!(48301);
+        let err = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("mismatched upload evidence must fail");
+
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief media_upload_evidence identity does not match request"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_rejects_evidence_id_drift() {
+        let mut payload = erhua_morning_brief_card_publish_request_json();
+        payload["media_upload_evidence"]["artifact_id"] = json!(Uuid::new_v4());
+        let err = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("artifact id drift must fail");
+
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief media_upload_evidence artifact_id does not match"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_rejects_sensitive_payload() {
+        let mut payload = erhua_morning_brief_card_publish_request_json();
+        payload["metadata"] = json!({"secret": "app_token"});
+        let err = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("sensitive metadata must fail");
+
+        assert!(err.to_string().contains(
+            "erhua morning brief card publish payload contains disallowed sensitive content"
+        ));
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_requires_media_upload_evidence() {
+        let mut payload = erhua_morning_brief_card_publish_request_json();
+        payload["media_upload_evidence"] = Value::Null;
+        let err = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("missing evidence must fail");
+
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief card publish requires media_upload_evidence"));
+    }
+
+    #[test]
+    fn erhua_morning_brief_card_publish_rejects_wrong_workflow_type() {
+        let mut payload = erhua_morning_brief_card_publish_request_json();
+        payload["media_upload_evidence"]["workflow_type"] = json!("daily_case_report");
+        let err = create_erhua_morning_brief_card_publish_dry_run(
+            serde_json::from_value(payload).expect("request parses"),
+        )
+        .expect_err("wrong workflow type must fail");
+
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief media_upload_evidence workflow_type does not match"));
     }
 
     #[test]
@@ -12997,5 +14678,265 @@ mod tests {
         assert_eq!(report.worker, "workflow-sync-worker");
         assert_eq!(report.action_status, "no_syncable_workflow");
         assert!(report.sync_report.is_none());
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn postgres_erhua_morning_brief_card_publish_creates_claimable_send_ready_set() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 1)
+            .await
+            .expect("connect guarded integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate guarded integration database");
+
+        let unique = Uuid::new_v4();
+        let content_hash = content_hash_bytes(unique.to_string().as_bytes());
+        let file_md5 = md5_hex_bytes(unique.to_string().as_bytes());
+        let byte_size = erhua_morning_brief_jpeg_fixture().len() as i64;
+        let filename = "erhua-2026-08-08.jpg";
+        let brief_date = "2026-08-08";
+        let source_record_ref = format!("erhua_morning_brief:{unique}");
+        let target_group_id = format!("integration-group-{unique}");
+        let source_key = {
+            let digest = null_separated_digest(&[
+                "erhua-morning-brief-card-source-v1",
+                brief_date,
+                &source_record_ref,
+                &content_hash,
+            ]);
+            format!("erhua_morning_brief_card_source:{}", &digest[7..31])
+        };
+        let artifact_id = deterministic_uuid_from_parts(&[
+            "erhua-morning-brief-card-generated-image-v1",
+            &source_key,
+        ]);
+        let source_work_item_id = deterministic_uuid_from_parts(&[
+            "erhua-morning-brief-card-source-work-item-v1",
+            &source_key,
+        ]);
+        let artifact_uri = erhua_morning_brief_feishu_artifact_uri(artifact_id);
+        let payload = json!({
+            "brief_date": brief_date,
+            "source_record_ref": source_record_ref,
+            "artifact_uri": artifact_uri,
+            "content_hash": content_hash,
+            "file_md5": file_md5,
+            "byte_size": byte_size,
+            "mime_type": "image/jpeg",
+            "width": 32,
+            "height": 48,
+            "filename": filename,
+            "target_group_id": target_group_id,
+            "message_text": "二花早报已自动生成。",
+            "metadata": {},
+            "media_upload_evidence": {
+                "boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+                "storage_backend": ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND,
+                "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+                "action_status": "media_uploaded",
+                "artifact_uri": artifact_uri,
+                "artifact_id": artifact_id,
+                "source_work_item_id": source_work_item_id,
+                "content_hash": content_hash,
+                "file_md5": file_md5,
+                "byte_size": byte_size,
+                "mime_type": "image/jpeg",
+                "filename": filename,
+                "width": 32,
+                "height": 48,
+                "upload_idempotency_key": erhua_morning_brief_media_upload_idempotency_key(
+                    &content_hash
+                ),
+            },
+        });
+        let request: ErhuaMorningBriefCardPublishCreateRequest =
+            serde_json::from_value(payload).expect("request parses");
+
+        let report = create_erhua_morning_brief_card_publish(&pool, &database_url, request, true)
+            .await
+            .expect("apply erhua morning brief card publish");
+        assert_eq!(report.action_status, "auto_publish_send_ready_recorded");
+        assert!(report.send_ready_recorded);
+        assert_eq!(report.source_work_item_id, Some(source_work_item_id));
+        assert_eq!(report.artifact_id, Some(artifact_id));
+        let send_work_item_id = report.send_work_item_id.expect("send work item id");
+
+        let source_row: (String, String, String, String, String) = sqlx::query_as(
+            r#"
+            SELECT work_item_type, status, capability_key, requester_agent, target_agent
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+            "#,
+        )
+        .bind(source_work_item_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load source work item");
+        assert_eq!(source_row.0, ERHUA_MORNING_BRIEF_WORK_ITEM_TYPE);
+        assert_eq!(source_row.1, "completed");
+        assert_eq!(source_row.2, ERHUA_MORNING_BRIEF_CAPABILITY_KEY);
+        assert_eq!(source_row.3, "xiaoman");
+        assert_eq!(source_row.4, "xiaoman");
+
+        let artifact_row: (String, String, String, Value) = sqlx::query_as(
+            r#"
+            SELECT artifact_type, review_status, created_by_agent, metadata
+            FROM qintopia_agent_os.artifacts
+            WHERE id = $1
+            "#,
+        )
+        .bind(artifact_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load artifact");
+        assert_eq!(artifact_row.0, "generated_image");
+        assert_eq!(artifact_row.1, "approved");
+        assert_eq!(artifact_row.2, "xiaoman");
+        assert_eq!(
+            artifact_row.3["workflow_type"],
+            ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE
+        );
+        assert_eq!(artifact_row.3["mime_type"], "image/jpeg");
+        assert_eq!(artifact_row.3["file_md5"], file_md5);
+        assert_eq!(artifact_row.3["byte_size"], byte_size);
+        assert_eq!(artifact_row.3["width"], 32);
+        assert_eq!(artifact_row.3["height"], 48);
+
+        let send_row: (String, String, String, String, String, String, Value) = sqlx::query_as(
+            r#"
+            SELECT work_item_type, status, capability_key, requester_agent, target_agent,
+                   review_policy, payload
+            FROM qintopia_agent_os.work_items
+            WHERE id = $1
+            "#,
+        )
+        .bind(send_work_item_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load send work item");
+        assert_eq!(send_row.0, "group_message_request");
+        assert_eq!(send_row.1, "queued");
+        assert_eq!(send_row.2, "erhua.send_group_message");
+        assert_eq!(send_row.3, "xiaoman");
+        assert_eq!(send_row.4, "erhua");
+        assert_eq!(send_row.5, "automatic_publish");
+        assert_eq!(
+            send_row.6["workflow_type"],
+            ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE
+        );
+        assert_eq!(send_row.6["target_channel"], "qiwe");
+        assert_eq!(send_row.6["target_group_id"], target_group_id);
+        assert_eq!(
+            send_row.6["requires_human_final_confirmation"],
+            Value::Bool(false)
+        );
+        assert_eq!(send_row.6["approved_artifact_id"], artifact_id.to_string());
+
+        for (work_item_id, event_type) in [
+            (source_work_item_id, "generated_image_created"),
+            (send_work_item_id, "group_message_send_ready_recorded"),
+        ] {
+            let event_count: i64 = sqlx::query_scalar(
+                r#"
+                SELECT count(*)
+                FROM qintopia_agent_os.work_item_events
+                WHERE work_item_id = $1 AND event_type = $2
+                "#,
+            )
+            .bind(work_item_id)
+            .bind(event_type)
+            .fetch_one(&pool)
+            .await
+            .expect("count publish events");
+            assert_eq!(event_count, 1, "expected exactly one {event_type}");
+        }
+
+        // The same-day rerun must converge to the same rows and stay claimable.
+        let request: ErhuaMorningBriefCardPublishCreateRequest = serde_json::from_value(json!({
+            "brief_date": brief_date,
+            "source_record_ref": source_record_ref,
+            "artifact_uri": artifact_uri,
+            "content_hash": content_hash,
+            "file_md5": file_md5,
+            "byte_size": byte_size,
+            "mime_type": "image/jpeg",
+            "width": 32,
+            "height": 48,
+            "filename": filename,
+            "target_group_id": target_group_id,
+            "message_text": "二花早报已自动生成。",
+            "metadata": {},
+            "media_upload_evidence": {
+                "boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY_KEY,
+                "storage_backend": ERHUA_MORNING_BRIEF_FEISHU_STORAGE_BACKEND,
+                "workflow_type": ERHUA_MORNING_BRIEF_CARD_WORKFLOW_TYPE,
+                "action_status": "media_uploaded",
+                "artifact_uri": artifact_uri,
+                "artifact_id": artifact_id,
+                "source_work_item_id": source_work_item_id,
+                "content_hash": content_hash,
+                "file_md5": file_md5,
+                "byte_size": byte_size,
+                "mime_type": "image/jpeg",
+                "filename": filename,
+                "width": 32,
+                "height": 48,
+                "upload_idempotency_key":
+                    erhua_morning_brief_media_upload_idempotency_key(&content_hash),
+            },
+        }))
+        .expect("rerun request parses");
+        let rerun = create_erhua_morning_brief_card_publish(&pool, &database_url, request, true)
+            .await
+            .expect("same-day rerun must be idempotent");
+        assert_eq!(rerun.source_work_item_id, Some(source_work_item_id));
+        assert_eq!(rerun.artifact_id, Some(artifact_id));
+        assert_eq!(rerun.send_work_item_id, Some(send_work_item_id));
+        assert!(
+            !rerun.send_ready_recorded,
+            "rerun must not duplicate the send-ready event"
+        );
+
+        let allowed_groups = BTreeSet::from([target_group_id.clone()]);
+        let allowed_hosts = BTreeSet::new();
+        let claim = crate::qiwe_image_send_state::claim_ready_work_item(
+            &pool,
+            Some(send_work_item_id),
+            &allowed_groups,
+            &allowed_hosts,
+        )
+        .await
+        .expect("claim publish-created send work item")
+        .expect("publish-created morning brief send must be claimable");
+        assert_eq!(claim.work_item_id, send_work_item_id);
+        assert_eq!(claim.generated_image_artifact_id, artifact_id);
+        assert_eq!(claim.artifact_content_hash, content_hash);
+        assert_eq!(claim.target_group_id, target_group_id);
+
+        sqlx::query(
+            "DELETE FROM qintopia_agent_os.qiwe_image_send_attempts WHERE work_item_id = $1",
+        )
+        .bind(send_work_item_id)
+        .execute(&pool)
+        .await
+        .expect("cleanup send attempts");
+        sqlx::query("DELETE FROM qintopia_agent_os.work_item_events WHERE work_item_id = ANY($1)")
+            .bind(vec![source_work_item_id, send_work_item_id])
+            .execute(&pool)
+            .await
+            .expect("cleanup events");
+        sqlx::query("DELETE FROM qintopia_agent_os.artifacts WHERE id = $1")
+            .bind(artifact_id)
+            .execute(&pool)
+            .await
+            .expect("cleanup artifact");
+        sqlx::query("DELETE FROM qintopia_agent_os.work_items WHERE id = ANY($1)")
+            .bind(vec![source_work_item_id, send_work_item_id])
+            .execute(&pool)
+            .await
+            .expect("cleanup work items");
     }
 }

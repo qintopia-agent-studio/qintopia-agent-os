@@ -620,6 +620,27 @@ async fn main() -> Result<()> {
         } => {
             operations::run_daily_case_report_media_upload(&cli, payload_json, apply, dry_run).await
         }
+        Command::OperationsErhuaMorningBriefMediaUpload {
+            payload_json,
+            apply,
+            dry_run,
+        } => {
+            operations::run_erhua_morning_brief_media_upload(&cli, payload_json, apply, dry_run)
+                .await
+        }
+        Command::OperationsErhuaMorningBriefCardPublishCreate {
+            payload_json,
+            apply,
+            dry_run,
+        } => {
+            operations::run_erhua_morning_brief_card_publish_create(
+                &cli,
+                payload_json,
+                apply,
+                dry_run,
+            )
+            .await
+        }
         Command::DailyCaseReportCollectPreview {
             chat_id,
             start,

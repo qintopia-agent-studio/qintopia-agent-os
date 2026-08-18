@@ -62,6 +62,13 @@ const DAILY_CASE_REPORT_MEDIA_UPLOAD_BOUNDARY: &str = "daily_case_report_feishu_
 const DAILY_CASE_REPORT_STORAGE_BACKEND: &str = "feishu-base";
 #[allow(dead_code)]
 const DAILY_CASE_REPORT_MEDIA_TRANSFORM: &str = "xiaoman_daily_case_report_jpeg_render_v1";
+#[allow(dead_code)]
+const ERHUA_MORNING_BRIEF_STORAGE_SCHEMA_VERSION: &str =
+    "erhua-morning-brief-card-feishu-storage-v1";
+#[allow(dead_code)]
+const ERHUA_MORNING_BRIEF_MEDIA_TRANSFORM: &str = "erhua_morning_brief_card_jpeg_render_v1";
+#[allow(dead_code)]
+const ERHUA_MORNING_BRIEF_GENERATED_BY: &str = "erhua-morning-brief-worker";
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const MAX_FEISHU_RESPONSE_BYTES: usize = 1024 * 1024;
 const OFFICIAL_FEISHU_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
@@ -2151,6 +2158,7 @@ fn mirror_to_feishu(
 pub(crate) enum FeishuImageProfile {
     HuabaosiGenerated,
     XiaomanDailyCaseReport,
+    ErhuaMorningBrief,
 }
 
 /// Unified field carrier consumed by the shared storage flow. The two public
@@ -2321,6 +2329,27 @@ fn validate_feishu_storage_image(
                 bail!("daily case report Feishu storage filename must reference a JPEG");
             }
         }
+        FeishuImageProfile::ErhuaMorningBrief => {
+            if image.bytes.is_empty() || image.bytes.len() > max_media_bytes {
+                bail!(
+                    "erhua morning brief Feishu storage image bytes are outside the reviewed bound"
+                );
+            }
+            if image.width == 0 || image.height == 0 || image.width > 4096 || image.height > 8192 {
+                bail!("erhua morning brief Feishu storage image dimensions are invalid");
+            }
+            if !is_canonical_sha256(image.content_hash) || !is_lower_hex(image.file_md5, 32) {
+                bail!("erhua morning brief Feishu storage image identity is not canonical");
+            }
+            let filename = image.filename.unwrap_or_default();
+            if filename.contains('/') || filename.contains('\\') {
+                bail!("erhua morning brief Feishu storage filename is invalid");
+            }
+            let filename = filename.to_ascii_lowercase();
+            if !filename.ends_with(".jpg") && !filename.ends_with(".jpeg") {
+                bail!("erhua morning brief Feishu storage filename must reference a JPEG");
+            }
+        }
     }
     validate_feishu_storage_bytes(image, image.bytes)
 }
@@ -2392,6 +2421,26 @@ fn build_feishu_image_storage_fields(
             "审核状态": "已通过",
             "审核人": DAILY_CASE_REPORT_GENERATED_BY,
             "审核意见": "approved by reviewed daily case report automatic publish boundary",
+            "生成时间": now,
+        }),
+        FeishuImageProfile::ErhuaMorningBrief => json!({
+            "产物标题": "二花早报卡片（自动发布）",
+            "AgentOS产物ID": image.artifact_id.to_string(),
+            "Schema版本": ERHUA_MORNING_BRIEF_STORAGE_SCHEMA_VERSION,
+            "AgentOS工作项ID": image.workflow_root_id.to_string(),
+            "图片请求ID": image.work_item_id.to_string(),
+            "最终JPEG": [{"file_token": file_token}],
+            "JPEG SHA-256": image.content_hash,
+            "文件MD5": image.file_md5,
+            "字节数": image.bytes.len(),
+            "宽度": image.width,
+            "高度": image.height,
+            "MIME类型": REQUIRED_MIME_TYPE,
+            "源PNG SHA-256": image.content_hash,
+            "转换规则": ERHUA_MORNING_BRIEF_MEDIA_TRANSFORM,
+            "审核状态": "已通过",
+            "审核人": ERHUA_MORNING_BRIEF_GENERATED_BY,
+            "审核意见": "approved by reviewed erhua morning brief card automatic publish boundary",
             "生成时间": now,
         }),
     }
@@ -4520,6 +4569,125 @@ mod tests {
             fields.as_object().expect("daily fields are an object"),
         )
         .expect("daily Feishu record identity validates");
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn erhua_morning_brief_storage_fields_stay_byte_equivalent_to_legacy_template() {
+        let bytes = vec![9u8, 10, 11, 12];
+        let image = FeishuDailyCaseReportStorageImage {
+            artifact_id: Uuid::new_v4(),
+            workflow_root_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            content_hash: "sha256:feedface",
+            file_md5: "aabbccddeeff00112233445566778899",
+            bytes: &bytes,
+            width: 32,
+            height: 48,
+            filename: "erhua-2026-08-18.jpg",
+        };
+        let fields = build_feishu_image_storage_fields(
+            FeishuImageProfile::ErhuaMorningBrief,
+            &FeishuImageStorageInput::from(&image),
+            "fileTokenC",
+        );
+        let expected = json!({
+            "产物标题": "二花早报卡片（自动发布）",
+            "AgentOS产物ID": image.artifact_id.to_string(),
+            "Schema版本": ERHUA_MORNING_BRIEF_STORAGE_SCHEMA_VERSION,
+            "AgentOS工作项ID": image.workflow_root_id.to_string(),
+            "图片请求ID": image.work_item_id.to_string(),
+            "最终JPEG": [{"file_token": "fileTokenC"}],
+            "JPEG SHA-256": image.content_hash,
+            "文件MD5": image.file_md5,
+            "字节数": image.bytes.len(),
+            "宽度": image.width,
+            "高度": image.height,
+            "MIME类型": REQUIRED_MIME_TYPE,
+            "源PNG SHA-256": image.content_hash,
+            "转换规则": ERHUA_MORNING_BRIEF_MEDIA_TRANSFORM,
+            "审核状态": "已通过",
+            "审核人": ERHUA_MORNING_BRIEF_GENERATED_BY,
+            "审核意见": "approved by reviewed erhua morning brief card automatic publish boundary",
+            "生成时间": fields["生成时间"],
+        });
+        assert_eq!(
+            fields, expected,
+            "merged erhua morning-brief Feishu image fields drifted from the legacy template"
+        );
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn erhua_morning_brief_feishu_storage_accepts_reviewed_long_jpeg_identity() {
+        let image = RgbImage::from_pixel(32, 48, Rgb([250, 248, 245]));
+        let mut bytes = Vec::new();
+        JpegEncoder::new_with_quality(&mut bytes, 92)
+            .encode_image(&DynamicImage::ImageRgb8(image))
+            .expect("encode erhua morning-brief fixture JPEG");
+        let content_hash = format!("sha256:{}", sha256_hex(&bytes));
+        let file_md5 = md5_hex(&bytes);
+        let storage_image = FeishuDailyCaseReportStorageImage {
+            artifact_id: Uuid::new_v4(),
+            workflow_root_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            content_hash: &content_hash,
+            file_md5: &file_md5,
+            bytes: &bytes,
+            width: 32,
+            height: 48,
+            filename: "erhua-2026-08-18.jpg",
+        };
+        validate_feishu_storage_image(
+            FeishuImageProfile::ErhuaMorningBrief,
+            &FeishuImageStorageInput::from(&storage_image),
+            DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect("erhua morning-brief JPEG should satisfy storage identity");
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn erhua_morning_brief_feishu_storage_rejects_non_jpeg_filename() {
+        let image = RgbImage::from_pixel(32, 48, Rgb([250, 248, 245]));
+        let mut bytes = Vec::new();
+        JpegEncoder::new_with_quality(&mut bytes, 92)
+            .encode_image(&DynamicImage::ImageRgb8(image))
+            .expect("encode erhua morning-brief fixture JPEG");
+        let content_hash = format!("sha256:{}", sha256_hex(&bytes));
+        let file_md5 = md5_hex(&bytes);
+        let storage_image = FeishuDailyCaseReportStorageImage {
+            artifact_id: Uuid::new_v4(),
+            workflow_root_id: Uuid::new_v4(),
+            work_item_id: Uuid::new_v4(),
+            content_hash: &content_hash,
+            file_md5: &file_md5,
+            bytes: &bytes,
+            width: 32,
+            height: 48,
+            filename: "erhua-2026-08-18.png",
+        };
+        let err = validate_feishu_storage_image(
+            FeishuImageProfile::ErhuaMorningBrief,
+            &FeishuImageStorageInput::from(&storage_image),
+            DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect_err("non-JPEG filename must fail");
+        assert!(err
+            .to_string()
+            .contains("erhua morning brief Feishu storage filename must reference a JPEG"));
     }
 
     #[test]
