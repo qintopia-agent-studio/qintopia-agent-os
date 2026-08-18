@@ -19,8 +19,7 @@ use crate::{
         FeishuPrimaryStorageConfig,
     },
     media_identity::{
-        content_hash_bytes, deterministic_uuid_from_parts, md5_hex_bytes,
-        null_separated_digest,
+        content_hash_bytes, deterministic_uuid_from_parts, md5_hex_bytes, null_separated_digest,
     },
     url_policy,
 };
