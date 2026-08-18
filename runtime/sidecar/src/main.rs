@@ -628,6 +628,7 @@ async fn main() -> Result<()> {
             template: _,
             width: _,
             narrative_file: _,
+            image_format: _,
             html_path: _,
             output_path: _,
         } => daily_case_report_render::run_render_preview_cli(&cli).await,

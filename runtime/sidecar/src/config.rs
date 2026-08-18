@@ -1124,9 +1124,14 @@ pub enum Command {
         #[arg(long, default_value_t = 750)]
         width: usize,
 
-        /// Path to roast narrative markdown (required for roast-long-image).
+        /// Path to roast narrative markdown. If omitted for roast-long-image,
+        /// a deterministic fallback is rendered from the report data.
         #[arg(long)]
         narrative_file: Option<std::path::PathBuf>,
+
+        /// Output image format for downstream rasterization (jpeg or png).
+        #[arg(long, default_value = "jpeg")]
+        image_format: String,
 
         /// Optional placeholder HTML path for the rasterization request.
         #[arg(long, default_value = "daily-report.html")]

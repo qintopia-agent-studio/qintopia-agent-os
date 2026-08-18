@@ -62,6 +62,12 @@ pub struct RenderInput {
     pub template: String,
     pub width: usize,
     pub narrative_md: Option<String>,
+    #[serde(default = "default_image_format")]
+    pub image_format: String,
+}
+
+fn default_image_format() -> String {
+    DEFAULT_IMAGE_FORMAT.to_string()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -106,7 +112,7 @@ pub fn render(input: &RenderInput) -> Result<RenderOutput> {
     let raster_request = RasterizationRequest {
         template: input.template.clone(),
         width: input.width,
-        image_format: DEFAULT_IMAGE_FORMAT.to_string(),
+        image_format: input.image_format.clone(),
         quality: DEFAULT_JPEG_QUALITY,
         html_path: "daily-report.html".to_string(),
         output_path: "daily-report.jpg".to_string(),
@@ -2409,6 +2415,90 @@ mod templates {
         }
     }
 
+    /// Build a deterministic roast narrative structure from the report data.
+    ///
+    /// Mirrors Python `roast_long_image.build_fallback_parsed`: when the LLM
+    /// narrative is unavailable we still render the roast layout, but the text
+    /// is assembled from deterministic report data instead of LLM prose.
+    fn build_fallback_narrative(report: &ReportData) -> RoastNarrative {
+        let group = if report.group_name.is_empty() {
+            "秦托邦"
+        } else {
+            &report.group_name
+        };
+        let war_report = format!(
+            "{}条消息 · {}人开口",
+            report.message_count, report.participant_count
+        );
+
+        let chapters: Vec<RoastChapter> = report
+            .cases
+            .iter()
+            .take(5)
+            .filter_map(|case| {
+                let mut paragraphs = vec![case.summary.clone()];
+                paragraphs.extend(case.bullets.iter().cloned());
+                paragraphs.retain(|p| !p.trim().is_empty());
+                if paragraphs.is_empty() {
+                    return None;
+                }
+                Some(RoastChapter {
+                    title: if case.title.is_empty() {
+                        "当日话题".to_string()
+                    } else {
+                        case.title.clone()
+                    },
+                    paragraphs,
+                    golden_quote: String::new(),
+                })
+            })
+            .collect();
+
+        let characters: Vec<RoastCharacter> = report
+            .characters
+            .iter()
+            .take(6)
+            .map(|c| {
+                let mut desc = if !c.one_liner.is_empty() {
+                    c.one_liner.clone()
+                } else {
+                    c.story_function.clone()
+                };
+                if !c.role_label.is_empty() {
+                    desc = if desc.is_empty() {
+                        c.role_label.clone()
+                    } else {
+                        format!("{}｜{}", c.role_label, desc)
+                    };
+                }
+                RoastCharacter {
+                    name: c.name.clone(),
+                    desc,
+                }
+            })
+            .collect();
+
+        let final_quote = report
+            .highlight
+            .as_ref()
+            .map(|h| FinalQuote {
+                text: h.clone(),
+                author: String::new(),
+            })
+            .unwrap_or_default();
+
+        RoastNarrative {
+            kicker: format!("{}吐槽日报", group),
+            date_line: report.report_date.clone(),
+            title: "今日群聊观察".to_string(),
+            war_report,
+            chapters,
+            tomorrow: String::new(),
+            characters,
+            final_quote,
+        }
+    }
+
     fn parse_roast_chapter(title: &str, body: &str) -> RoastChapter {
         let mut paragraphs: Vec<String> = Vec::new();
         let mut golden_quote = String::new();
@@ -2692,15 +2782,14 @@ mod templates {
     }
 
     pub fn render_roast_long_image(input: &RenderInput) -> Result<String> {
-        let md = input
-            .narrative_md
-            .as_deref()
-            .ok_or_else(|| anyhow::anyhow!("roast-long-image requires narrative_md"))?;
-        if md.trim().is_empty() {
-            bail!("roast-long-image requires non-empty narrative_md");
-        }
-
-        let parsed = parse_roast_narrative(md);
+        let parsed = match input.narrative_md.as_deref() {
+            Some(md) if !md.trim().is_empty() => parse_roast_narrative(md),
+            _ => {
+                // Deterministic fallback: when the LLM narrative is unavailable,
+                // build the same roast layout from the deterministic report data.
+                build_fallback_narrative(&input.report)
+            }
+        };
         let width = input.width;
         let kicker = if parsed.kicker.is_empty() {
             "秦托邦吐槽日报"
@@ -4397,14 +4486,23 @@ mod templates {
 // ---------------------------------------------------------------------------
 
 pub async fn run_render_preview_cli(cli: &Cli) -> Result<()> {
-    let (template, width, narrative_file, html_path, output_path) = match &cli.command {
+    let (template, width, narrative_file, image_format, html_path, output_path) = match &cli.command
+    {
         crate::config::Command::DailyCaseReportRenderPreview {
             template,
             width,
             narrative_file,
+            image_format,
             html_path,
             output_path,
-        } => (template, *width, narrative_file, html_path, output_path),
+        } => (
+            template,
+            *width,
+            narrative_file,
+            image_format,
+            html_path,
+            output_path,
+        ),
         _ => bail!("unexpected command"),
     };
 
@@ -4424,15 +4522,12 @@ pub async fn run_render_preview_cli(cli: &Cli) -> Result<()> {
         None
     };
 
-    if template == "roast-long-image" && narrative_md.is_none() {
-        bail!("--narrative-file is required for roast-long-image template");
-    }
-
     let input = RenderInput {
         report,
         template: template.clone(),
         width,
         narrative_md,
+        image_format: image_format.clone(),
     };
 
     let mut output = render(&input)?;
@@ -4576,6 +4671,7 @@ mod tests {
             template: "v3".to_string(),
             width: 750,
             narrative_md: None,
+            image_format: "jpeg".to_string(),
         };
         let out = render(&input).unwrap();
         assert!(!out.html.is_empty());
@@ -4852,6 +4948,7 @@ mod tests {
             template: "roast-long-image".to_string(),
             width: 750,
             narrative_md: Some(narrative_md.to_string()),
+            image_format: "jpeg".to_string(),
         };
         let html = templates::render_roast_long_image(&input).unwrap();
         assert!(!html.is_empty());
@@ -4878,6 +4975,7 @@ mod tests {
             template: "v3".to_string(),
             width: 750,
             narrative_md: None,
+            image_format: "jpeg".to_string(),
         };
         let output = render(&input).unwrap();
         let expected =
@@ -4896,6 +4994,7 @@ mod tests {
             template: "newspaper".to_string(),
             width: 1080,
             narrative_md: None,
+            image_format: "jpeg".to_string(),
         };
         let output = render(&input).unwrap();
         let expected =
@@ -4914,6 +5013,7 @@ mod tests {
             template: "newspaper-elegant".to_string(),
             width: 1080,
             narrative_md: None,
+            image_format: "jpeg".to_string(),
         };
         let output = render(&input).unwrap();
         let expected = include_str!(
@@ -4935,6 +5035,7 @@ mod tests {
             template: "roast-long-image".to_string(),
             width: 1080,
             narrative_md: Some(narrative_md.to_string()),
+            image_format: "jpeg".to_string(),
         };
         let output = render(&input).unwrap();
         let expected = include_str!(
@@ -4944,5 +5045,38 @@ mod tests {
             output.html, expected,
             "roast-long-image HTML does not match golden fixture"
         );
+    }
+
+    #[test]
+    fn render_roast_long_image_uses_deterministic_fallback_without_narrative() {
+        let report = sample_report();
+        let input = RenderInput {
+            report,
+            template: "roast-long-image".to_string(),
+            width: 1080,
+            narrative_md: None,
+            image_format: "jpeg".to_string(),
+        };
+        let output = render(&input).unwrap();
+        assert!(output.html.contains("<!DOCTYPE html>"));
+        assert!(output.html.contains("<title>") || output.html.contains("吐槽日报"));
+        assert!(output.html.contains("42条消息 · 10人开口"));
+        // Uses the deterministic case summary instead of LLM prose.
+        assert!(output.html.contains("关于「Solidity」的讨论"));
+        assert_eq!(output.raster_request.image_format, "jpeg");
+    }
+
+    #[test]
+    fn render_preserves_non_default_image_format() {
+        let report = sample_report();
+        let input = RenderInput {
+            report,
+            template: "v3".to_string(),
+            width: 750,
+            narrative_md: None,
+            image_format: "png".to_string(),
+        };
+        let output = render(&input).unwrap();
+        assert_eq!(output.raster_request.image_format, "png");
     }
 }
