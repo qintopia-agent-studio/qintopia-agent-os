@@ -9,7 +9,8 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use crate::qiwe_claimable_image_sources::{
-    claimable_image_review_policy_condition, claimable_image_source_join_condition,
+    automatic_publish_workflow_type_in_predicate, claimable_image_review_policy_condition,
+    claimable_image_source_join_condition,
 };
 use crate::{qiwe_image_send::QiweSendReceipt, url_policy};
 
@@ -200,7 +201,7 @@ pub async fn claim_ready_work_item(
                   request.review_policy = 'human_final_confirmation'
                   OR (
                       request.review_policy = 'automatic_publish'
-                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND {automatic_workflow_types}
                       AND request.payload->>'requires_human_final_confirmation' = 'false'
                   )
               )
@@ -224,7 +225,7 @@ pub async fn claim_ready_work_item(
                   )
                   OR (
                       request.review_policy = 'automatic_publish'
-                      AND request.payload->>'workflow_type' = 'daily_case_report'
+                      AND {automatic_workflow_types}
                       AND request.payload->>'requires_human_final_confirmation' = 'false'
                   )
               )
@@ -278,6 +279,7 @@ pub async fn claim_ready_work_item(
         "#,
         source_join = claimable_image_source_join_condition("             "),
         review_policy = claimable_image_review_policy_condition("              "),
+        automatic_workflow_types = automatic_publish_workflow_type_in_predicate(),
     );
     let row = sqlx::query(&query)
         .bind(WORK_ITEM_TYPE)
@@ -449,7 +451,7 @@ pub async fn preview_ready_work_item(
               request.review_policy = 'human_final_confirmation'
               OR (
                   request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND {automatic_workflow_types}
                   AND request.payload->>'requires_human_final_confirmation' = 'false'
               )
           )
@@ -473,7 +475,7 @@ pub async fn preview_ready_work_item(
               )
               OR (
                   request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND {automatic_workflow_types}
                   AND request.payload->>'requires_human_final_confirmation' = 'false'
               )
           )
@@ -504,6 +506,7 @@ pub async fn preview_ready_work_item(
         "#,
         source_join = claimable_image_source_join_condition("         "),
         review_policy = claimable_image_review_policy_condition("          "),
+        automatic_workflow_types = automatic_publish_workflow_type_in_predicate(),
     );
     let row = sqlx::query(&query)
         .bind(WORK_ITEM_TYPE)
@@ -1752,7 +1755,7 @@ async fn lock_current_claim(
               )
               OR (
                   request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND {automatic_workflow_types}
                   AND request.payload->>'requires_human_final_confirmation' = 'false'
               )
           )
@@ -1776,6 +1779,7 @@ async fn lock_current_claim(
         "#,
         source_join = claimable_image_source_join_condition("         "),
         review_policy = claimable_image_review_policy_condition("          "),
+        automatic_workflow_types = automatic_publish_workflow_type_in_predicate(),
     );
     let current: Option<Uuid> = sqlx::query_scalar(&query)
         .bind(claim.work_item_id)
@@ -1840,7 +1844,7 @@ async fn lock_callback_policy(
               )
               OR (
                   request.review_policy = 'automatic_publish'
-                  AND request.payload->>'workflow_type' = 'daily_case_report'
+                  AND {automatic_workflow_types}
                   AND request.payload->>'requires_human_final_confirmation' = 'false'
               )
           )
@@ -1864,6 +1868,7 @@ async fn lock_callback_policy(
         "#,
         source_join = claimable_image_source_join_condition("         "),
         review_policy = claimable_image_review_policy_condition("          "),
+        automatic_workflow_types = automatic_publish_workflow_type_in_predicate(),
     );
     let row = sqlx::query(&query)
         .bind(attempt.work_item_id)
@@ -2349,6 +2354,131 @@ mod tests {
     }
 
     #[cfg(feature = "postgres-integration-tests")]
+    async fn insert_morning_brief_card_send_ready_fixture(
+        pool: &PgPool,
+        review_policy: &str,
+        requires_human_final_confirmation: bool,
+    ) -> (Uuid, Uuid, Uuid) {
+        let brief_work_item_id = Uuid::new_v4();
+        let artifact_id = Uuid::new_v4();
+        let group_work_item_id = Uuid::new_v4();
+        let suffix = Uuid::new_v4();
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, payload, review_policy)
+            VALUES
+                ($1, 'morning_brief_card_request', 'completed', 'xiaoman', 'xiaoman',
+                 'erhua.morning_brief_card_publish', 'Morning brief card fixture',
+                 'integration_test', $2, $2, '{}'::jsonb, 'automatic_publish')
+            "#,
+        )
+        .bind(brief_work_item_id)
+        .bind(format!("qiwe-state-morning-brief:{suffix}"))
+        .execute(pool)
+        .await
+        .expect("insert morning brief card work item");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.artifacts
+                (id, work_item_id, artifact_type, review_status, created_by_agent,
+                 title, summary, artifact_uri, content_hash, metadata)
+            VALUES
+                ($1, $2, 'generated_image', 'approved', 'xiaoman',
+                 'Morning brief card JPEG', 'sanitized fixture',
+                 'https://media.example.test/reports/xiaoman-morning-brief.jpg',
+                 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                 '{"mime_type":"image/jpeg","file_md5":"98e7c2acf4391f8b4a2bbd39e364c5e3","byte_size":48300,"workflow_type":"erhua_morning_brief_card"}'::jsonb)
+            "#,
+        )
+        .bind(artifact_id)
+        .bind(brief_work_item_id)
+        .execute(pool)
+        .await
+        .expect("insert approved morning brief card artifact");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_item_events
+                (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+            VALUES
+                ($1, $2, 'generated_image_created', 'worker',
+                 'erhua-morning-brief-worker',
+                 'sanitized integration fixture',
+                 '{"external_send_executed":false}'::jsonb)
+            "#,
+        )
+        .bind(brief_work_item_id)
+        .bind(artifact_id)
+        .execute(pool)
+        .await
+        .expect("insert morning brief artifact provenance event");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_agent_os.work_items
+                (id, work_item_type, status, requester_agent, target_agent,
+                 capability_key, brief_summary, source_type, dedupe_key,
+                 idempotency_key, risk_level, payload, review_policy)
+            VALUES
+                ($1, 'group_message_request', 'queued', 'xiaoman', 'erhua',
+                 'erhua.send_group_message', 'Morning brief card send',
+                 'integration_test', $2, $2, 'high', $3, $4)
+            "#,
+        )
+        .bind(group_work_item_id)
+        .bind(format!("qiwe-state-morning-brief-send:{suffix}"))
+        .bind(json!({
+            "approved_artifact_id": artifact_id,
+            "approved_artifact_type": "generated_image",
+            "workflow_type": "erhua_morning_brief_card",
+            "target_channel": "qiwe",
+            "target_group_id": "integration-group-id",
+            "requires_human_final_confirmation": requires_human_final_confirmation,
+            "message_text": "二花早报已自动生成。"
+        }))
+        .bind(review_policy)
+        .execute(pool)
+        .await
+        .expect("insert morning brief group message work item");
+        for (event_type, data) in [
+            (
+                "group_message_final_confirmation_recorded",
+                json!({
+                    "decision": "confirmed",
+                    "current_status": "queued",
+                    "send_executed": false
+                }),
+            ),
+            (
+                "group_message_send_ready_recorded",
+                json!({
+                    "approved_artifact_id": artifact_id,
+                    "target_group_id": "integration-group-id",
+                    "send_executed": false
+                }),
+            ),
+        ] {
+            sqlx::query(
+                r#"
+                INSERT INTO qintopia_agent_os.work_item_events
+                    (work_item_id, artifact_id, event_type, actor_type, actor_id, message, data)
+                VALUES ($1, $2, $3, 'integration_test', 'qiwe-state-test',
+                        'sanitized integration fixture', $4)
+                "#,
+            )
+            .bind(group_work_item_id)
+            .bind(artifact_id)
+            .bind(event_type)
+            .bind(data)
+            .execute(pool)
+            .await
+            .expect("insert morning brief send policy event");
+        }
+        (brief_work_item_id, artifact_id, group_work_item_id)
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
     async fn delete_fixture(pool: &PgPool, image_id: Uuid, group_id: Uuid) {
         sqlx::query(
             "DELETE FROM qintopia_agent_os.qiwe_image_send_attempts WHERE work_item_id = $1",
@@ -2509,6 +2639,57 @@ mod tests {
             .expect("claim automatic daily report send")
             .expect("automatic daily report send should be claimable");
         assert_eq!(claim.work_item_id, auto_group_id);
+        delete_fixture(&pool, auto_source_id, auto_group_id).await;
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_morning_brief_card_claims_on_automatic_publish_path() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let groups = BTreeSet::from(["integration-group-id".to_string()]);
+        let hosts = BTreeSet::from(["media.example.test".to_string()]);
+
+        let (human_source_id, _human_artifact_id, human_group_id) =
+            insert_morning_brief_card_send_ready_fixture(&pool, "human_final_confirmation", true)
+                .await;
+        assert_eq!(
+            preview_ready_work_item(&pool, Some(human_group_id), &groups, &hosts)
+                .await
+                .expect("preview human-confirmed morning brief send"),
+            None
+        );
+        assert!(
+            claim_ready_work_item(&pool, Some(human_group_id), &groups, &hosts)
+                .await
+                .expect("claim human-confirmed morning brief send")
+                .is_none()
+        );
+        delete_fixture(&pool, human_source_id, human_group_id).await;
+
+        let (auto_source_id, auto_artifact_id, auto_group_id) =
+            insert_morning_brief_card_send_ready_fixture(&pool, "automatic_publish", false).await;
+        assert_eq!(
+            preview_ready_work_item(&pool, Some(auto_group_id), &groups, &hosts)
+                .await
+                .expect("preview automatic morning brief send"),
+            Some(QiweUploadPreview {
+                work_item_id: auto_group_id
+            })
+        );
+        let claim = claim_ready_work_item(&pool, Some(auto_group_id), &groups, &hosts)
+            .await
+            .expect("claim automatic morning brief send")
+            .expect("automatic morning brief send should be claimable");
+        assert_eq!(claim.work_item_id, auto_group_id);
+        assert_eq!(claim.generated_image_artifact_id, auto_artifact_id);
+        assert_eq!(claim.target_group_id, "integration-group-id");
         delete_fixture(&pool, auto_source_id, auto_group_id).await;
     }
 
