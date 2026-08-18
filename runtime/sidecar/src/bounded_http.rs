@@ -114,6 +114,13 @@ impl HttpRequestError {
         self.source
     }
 
+    /// Wrap a validation failure that happened after the request completed
+    /// (response status/body/metadata checks). The POST succeeded, so the
+    /// upload may have been accepted remotely.
+    pub(crate) fn after_validation(source: anyhow::Error) -> Self {
+        Self::after_send(source, false)
+    }
+
     #[cfg(any(
         test,
         feature = "qiwe-production-adapter",

@@ -21,6 +21,7 @@ use crate::{
     media_identity::{
         content_hash_bytes, deterministic_uuid_from_parts, md5_hex_bytes, null_separated_digest,
     },
+    media_upload,
     url_policy,
 };
 
@@ -131,7 +132,6 @@ const DAILY_CASE_REPORT_MEDIA_PUBLIC_BASE_URL_ENV: &str =
 const DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS_ENV: &str =
     "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MEDIA_ALLOWED_HOSTS";
 const DAILY_CASE_REPORT_DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
-const DAILY_CASE_REPORT_MAX_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const POSTER_REVISION_PURPOSE: &str = "activity_image_revision_request";
 const POSTER_REVISION_KEY_NAMESPACE: &str = "poster-revision-source-artifact-v3";
 const POSTER_REVISION_VOLATILE_PAYLOAD_FIELDS: &[&str] = &[
@@ -431,16 +431,6 @@ pub struct DailyCaseReportMediaUploadReport {
     pub height: u32,
     pub external_send_executed: bool,
     pub guardrails: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct DailyCaseReportMediaUploadResponse {
-    uri: String,
-    content_hash: String,
-    mime_type: String,
-    byte_size: usize,
-    width: u32,
-    height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -4170,33 +4160,33 @@ pub async fn daily_case_report_media_upload(
             let upload_idempotency_key =
                 daily_case_report_media_upload_idempotency_key(&identity.content_hash);
             let client = HttpClient::production_with_timeout(Duration::from_secs(60));
-            let response = client
-                .request(
-                    "POST",
-                    &config.media_upload_endpoint,
-                    &[
-                        (
-                            "Content-Type",
-                            DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE.to_string(),
-                        ),
-                        ("Accept", "application/json".to_string()),
-                        (
-                            "X-Qintopia-Workflow",
-                            DAILY_CASE_REPORT_WORKFLOW_TYPE.to_string(),
-                        ),
-                        ("X-Qintopia-Content-Hash", identity.content_hash.clone()),
-                        ("X-Qintopia-Byte-Size", identity.byte_size.to_string()),
-                        ("X-Qintopia-Width", identity.width.to_string()),
-                        ("X-Qintopia-Height", identity.height.to_string()),
-                        ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
-                    ],
-                    &identity.bytes,
-                    DAILY_CASE_REPORT_MAX_UPLOAD_RESPONSE_BYTES,
-                )
-                .map_err(|error| anyhow!("daily case report media upload failed: {}", error))?;
-            let media = parse_daily_case_report_media_upload_response(&response)?;
-            let artifact_uri =
-                validate_daily_case_report_media_response(&config, &media, &identity)?;
+            let media = media_upload::upload_public_media(
+                &client,
+                &config.media_upload_endpoint,
+                &identity.bytes,
+                &media_upload::MediaUploadExpectation {
+                    content_hash: &identity.content_hash,
+                    mime_type: DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE,
+                    byte_size: identity.byte_size,
+                    width: identity.width,
+                    height: identity.height,
+                },
+                &[
+                    (
+                        "X-Qintopia-Workflow",
+                        DAILY_CASE_REPORT_WORKFLOW_TYPE.to_string(),
+                    ),
+                    ("X-Qintopia-Content-Hash", identity.content_hash.clone()),
+                    ("X-Qintopia-Byte-Size", identity.byte_size.to_string()),
+                    ("X-Qintopia-Width", identity.width.to_string()),
+                    ("X-Qintopia-Height", identity.height.to_string()),
+                    ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
+                ],
+                "daily case report media upload returned non-success status",
+                "daily case report media upload metadata did not match image bytes",
+            )
+            .map_err(|error| anyhow!("daily case report media upload failed: {}", error))?;
+            let artifact_uri = validate_daily_case_report_media_response(&config, &media)?;
             (
                 artifact_uri,
                 daily_case_report_artifact_id_from_upload(&request, &identity)?,
@@ -4213,7 +4203,7 @@ pub async fn daily_case_report_media_upload(
             )
             .await?;
             let config = FeishuPrimaryStorageConfig::from_env(database_url)?;
-            let result = huabaosi_feishu_artifact_mirror::store_daily_case_report_image(
+            let result = store_feishu_daily_case_report_image(
                 &config,
                 &FeishuDailyCaseReportStorageImage {
                     artifact_id: ids.artifact_id,
@@ -4258,6 +4248,42 @@ pub async fn daily_case_report_media_upload(
         }),
         &identity,
     ))
+}
+
+/// Store the daily case report image through the shared Feishu storage flow.
+/// In builds without a Feishu mirror adapter this fails closed, matching the
+/// legacy wrapper behavior.
+fn store_feishu_daily_case_report_image(
+    config: &FeishuPrimaryStorageConfig,
+    image: &FeishuDailyCaseReportStorageImage<'_>,
+) -> std::result::Result<
+    huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageResult,
+    huabaosi_feishu_artifact_mirror::MirrorFailure,
+> {
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
+    {
+        let _ = (config, image);
+        Err(huabaosi_feishu_artifact_mirror::MirrorFailure::policy(
+            "adapter_not_compiled",
+        ))
+    }
+
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    {
+        huabaosi_feishu_artifact_mirror::store_feishu_image(
+            config,
+            huabaosi_feishu_artifact_mirror::FeishuImageProfile::XiaomanDailyCaseReport,
+            &huabaosi_feishu_artifact_mirror::FeishuImageStorageInput::from(image),
+        )
+    }
 }
 
 pub fn create_daily_case_report_auto_publish_dry_run(
@@ -5695,34 +5721,15 @@ fn daily_case_report_image_identity(
     })
 }
 
-fn parse_daily_case_report_media_upload_response(
-    response: &HttpResponse,
-) -> Result<DailyCaseReportMediaUploadResponse> {
-    if !(200..300).contains(&response.status) {
-        bail!("daily case report media upload returned non-success status");
-    }
-    serde_json::from_slice(&response.body).context("parse daily case report media upload response")
-}
-
 fn validate_daily_case_report_media_response(
     config: &DailyCaseReportHttpMediaConfig,
-    media: &DailyCaseReportMediaUploadResponse,
-    identity: &DailyCaseReportImageIdentity,
+    media: &media_upload::MediaUploadMetadata,
 ) -> Result<String> {
-    let artifact_uri = validate_daily_case_report_public_media_uri(
+    validate_daily_case_report_public_media_uri(
         config,
         &media.uri,
         "daily case report media response URI",
-    )?;
-    if media.content_hash != identity.content_hash
-        || media.mime_type != DAILY_CASE_REPORT_FINAL_IMAGE_MIME_TYPE
-        || media.byte_size != identity.byte_size
-        || media.width != identity.width
-        || media.height != identity.height
-    {
-        bail!("daily case report media upload metadata did not match image bytes");
-    }
-    Ok(artifact_uri)
+    )
 }
 
 fn daily_case_report_media_upload_report(

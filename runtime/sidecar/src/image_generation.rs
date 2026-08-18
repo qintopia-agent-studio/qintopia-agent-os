@@ -17,7 +17,16 @@ use image::{
     codecs::jpeg::JpegEncoder, ExtendedColorType, GenericImageView, ImageFormat, ImageReader,
     Limits, RgbaImage,
 };
-use serde::{Deserialize, Serialize};
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
+use serde::Deserialize;
+use serde::Serialize;
+
+#[cfg(test)]
+use crate::huabaosi_feishu_artifact_mirror::MirrorFailure;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPool, Postgres, Row, Transaction};
@@ -40,8 +49,23 @@ use crate::{
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter"
 ))]
+use crate::huabaosi_feishu_artifact_mirror::{primary_storage_error, FeishuPrimaryStorageImage};
+
+// Only referenced by the adapter/test-gated Feishu storage call site below;
+// a mirror-only build neither compiles that call site nor these items'
+// definitions there, so the import must stay out of that configuration.
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
 use crate::huabaosi_feishu_artifact_mirror::{
-    primary_storage_error, store_primary_generated_image, FeishuPrimaryStorageImage,
+    store_feishu_image, FeishuImageProfile, FeishuImageStorageInput,
 };
 
 #[cfg(any(
@@ -57,6 +81,12 @@ use crate::huabaosi_feishu_artifact_mirror::resolve_workflow_root_pool;
 ))]
 use crate::bounded_http::{HttpClient, HttpResponse};
 use crate::media_identity::content_hash_bytes;
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
+use crate::media_upload::{upload_public_media, MediaUploadExpectation, MediaUploadMetadata};
 
 #[cfg(test)]
 use crate::bounded_http::{
@@ -78,7 +108,6 @@ const JPEG_QUALITY: u8 = 92;
 const ALPHA_BACKGROUND: &str = "#ffffff";
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const MAX_IMAGE_DECODER_ALLOC_BYTES: u64 = 32 * 1024 * 1024;
-const MAX_MEDIA_UPLOAD_RESPONSE_BYTES: usize = 64 * 1024;
 const PROVIDER_RESPONSE_OVERHEAD_BYTES: usize = 64 * 1024;
 const MAX_GENERATION_ATTEMPTS: i32 = 3;
 const BASE_RETRY_DELAY_SECONDS: i64 = 60;
@@ -236,16 +265,6 @@ struct ProviderResponse {
 #[derive(Debug, Deserialize)]
 struct ProviderImage {
     b64_json: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct MediaUploadResponse {
-    uri: String,
-    content_hash: String,
-    mime_type: String,
-    byte_size: usize,
-    width: u32,
-    height: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1214,17 +1233,9 @@ fn parse_provider_response(response: &HttpResponse) -> Result<String> {
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter"
 ))]
-fn parse_media_upload_response(response: &HttpResponse) -> Result<MediaUploadResponse> {
-    ensure_success(response, "media upload")?;
-    serde_json::from_slice(&response.body).context("parse media upload response")
-}
-
 fn validate_media_response(
     config: &HttpMediaConfig,
-    media: &MediaUploadResponse,
-    content_hash: &str,
-    metadata: &ImageMetadata,
-    byte_size: usize,
+    media: &MediaUploadMetadata,
     allow_insecure_http: bool,
 ) -> Result<Url> {
     let uri = media_response_url(&media.uri, allow_insecure_http)?;
@@ -1240,14 +1251,6 @@ fn validate_media_response(
         || !same_public_base(&config.media_public_base_url, &uri)
     {
         bail!("media response URI is outside the configured media boundary");
-    }
-    if media.content_hash != content_hash
-        || media.mime_type != FINAL_IMAGE_MIME_TYPE
-        || media.byte_size != byte_size
-        || media.width != metadata.width
-        || media.height != metadata.height
-    {
-        bail!("media upload metadata did not match generated image");
     }
     Ok(uri)
 }
@@ -2276,42 +2279,37 @@ fn generate_and_store_with(
         StorageConfig::Http(storage) => {
             let upload_idempotency_key =
                 media_upload_idempotency_key(&work_item.prompt_hash, &content_hash);
-            let upload_response = client
-                .request(
-                    "POST",
-                    &storage.media_upload_endpoint,
-                    &[
-                        ("Content-Type", FINAL_IMAGE_MIME_TYPE.to_string()),
-                        ("Accept", "application/json".to_string()),
-                        ("X-Qintopia-Content-Hash", content_hash.clone()),
-                        ("X-Qintopia-Byte-Size", bytes.len().to_string()),
-                        ("X-Qintopia-Width", metadata.width.to_string()),
-                        ("X-Qintopia-Height", metadata.height.to_string()),
-                        ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
-                        ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
-                    ],
-                    &bytes,
-                    MAX_MEDIA_UPLOAD_RESPONSE_BYTES,
-                )
-                .map_err(|error| {
-                    GenerationAttemptError::terminal(
-                        "media_upload",
-                        Some(true),
-                        None,
-                        error.into_source(),
-                    )
-                })?;
-            let media = parse_media_upload_response(&upload_response).map_err(|source| {
-                GenerationAttemptError::terminal("media_upload", Some(true), None, source)
-            })?;
-            let media_url = validate_media_response(
-                storage,
-                &media,
-                &content_hash,
-                &metadata,
-                bytes.len(),
-                client.allows_insecure_http(),
+            let media = upload_public_media(
+                client,
+                &storage.media_upload_endpoint,
+                &bytes,
+                &MediaUploadExpectation {
+                    content_hash: &content_hash,
+                    mime_type: FINAL_IMAGE_MIME_TYPE,
+                    byte_size: bytes.len(),
+                    width: metadata.width,
+                    height: metadata.height,
+                },
+                &[
+                    ("X-Qintopia-Content-Hash", content_hash.clone()),
+                    ("X-Qintopia-Byte-Size", bytes.len().to_string()),
+                    ("X-Qintopia-Width", metadata.width.to_string()),
+                    ("X-Qintopia-Height", metadata.height.to_string()),
+                    ("X-Qintopia-Work-Item-Id", work_item.id.to_string()),
+                    ("X-Qintopia-Idempotency-Key", upload_idempotency_key),
+                ],
+                "media upload",
+                "media upload metadata did not match generated image",
             )
+            .map_err(|error| {
+                GenerationAttemptError::terminal(
+                    "media_upload",
+                    Some(true),
+                    None,
+                    error.into_source(),
+                )
+            })?;
+            let media_url = validate_media_response(storage, &media, client.allows_insecure_http())
             .map_err(|source| {
                 GenerationAttemptError::terminal("media_upload", Some(true), None, source)
             })?;
@@ -2365,7 +2363,7 @@ fn generate_and_store_with(
             (media.uri, HTTP_STORAGE_BACKEND, None)
         }
         StorageConfig::Feishu(storage) => {
-            let result = store_primary_generated_image(
+            let result = store_feishu_primary_generated_image(
                 storage,
                 &FeishuPrimaryStorageImage {
                     artifact_id,
@@ -2425,6 +2423,45 @@ fn provider_response_limit(max_media_bytes: usize) -> usize {
         .and_then(|value| value.checked_div(3))
         .and_then(|value| value.checked_add(PROVIDER_RESPONSE_OVERHEAD_BYTES))
         .expect("configured media size limit keeps provider response limit representable")
+}
+
+/// Store the generated image through the shared Feishu storage flow. In
+/// builds without a Feishu mirror adapter this fails closed, matching the
+/// legacy wrapper behavior.
+#[cfg(any(
+    test,
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter"
+))]
+fn store_feishu_primary_generated_image(
+    config: &FeishuPrimaryStorageConfig,
+    image: &FeishuPrimaryStorageImage<'_>,
+) -> std::result::Result<
+    crate::huabaosi_feishu_artifact_mirror::FeishuPrimaryStorageResult,
+    MirrorFailure,
+> {
+    #[cfg(not(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    )))]
+    {
+        let _ = (config, image);
+        Err(MirrorFailure::policy("adapter_not_compiled"))
+    }
+
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    {
+        store_feishu_image(
+            config,
+            FeishuImageProfile::HuabaosiGenerated,
+            &FeishuImageStorageInput::from(image),
+        )
+    }
 }
 
 #[cfg(test)]
@@ -3318,11 +3355,7 @@ mod tests {
     #[test]
     fn media_response_must_stay_within_public_base_and_allowlist() {
         let config = test_config("https://media.example.test/public");
-        let metadata = ImageMetadata {
-            width: super::IMAGE_WIDTH,
-            height: super::IMAGE_HEIGHT,
-        };
-        let media = MediaUploadResponse {
+        let media = MediaUploadMetadata {
             uri: "https://other.example.test/public/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
@@ -3330,25 +3363,13 @@ mod tests {
             width: super::IMAGE_WIDTH,
             height: super::IMAGE_HEIGHT,
         };
-        assert!(validate_media_response(
-            http_storage(&config),
-            &media,
-            "sha256:abc",
-            &metadata,
-            12,
-            false,
-        )
-        .is_err());
+        assert!(validate_media_response(http_storage(&config), &media, false).is_err());
     }
 
     #[test]
     fn media_response_cannot_escape_public_path_prefix() {
         let config = test_config("https://media.example.test/public");
-        let metadata = ImageMetadata {
-            width: super::IMAGE_WIDTH,
-            height: super::IMAGE_HEIGHT,
-        };
-        let media = MediaUploadResponse {
+        let media = MediaUploadMetadata {
             uri: "https://media.example.test/publicity/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
@@ -3356,17 +3377,9 @@ mod tests {
             width: super::IMAGE_WIDTH,
             height: super::IMAGE_HEIGHT,
         };
-        assert!(validate_media_response(
-            http_storage(&config),
-            &media,
-            "sha256:abc",
-            &metadata,
-            12,
-            false,
-        )
-        .is_err());
+        assert!(validate_media_response(http_storage(&config), &media, false).is_err());
 
-        let media = MediaUploadResponse {
+        let media = MediaUploadMetadata {
             uri: "https://media.example.test/public%2Fprivate/image.jpg".to_string(),
             content_hash: "sha256:abc".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
@@ -3374,15 +3387,7 @@ mod tests {
             width: super::IMAGE_WIDTH,
             height: super::IMAGE_HEIGHT,
         };
-        assert!(validate_media_response(
-            http_storage(&config),
-            &media,
-            "sha256:abc",
-            &metadata,
-            12,
-            false,
-        )
-        .is_err());
+        assert!(validate_media_response(http_storage(&config), &media, false).is_err());
     }
 
     #[test]
@@ -3412,26 +3417,23 @@ mod tests {
 
     #[test]
     fn media_upload_metadata_must_match_generated_image() {
-        let config = test_config("https://media.example.test/public");
-        let metadata = ImageMetadata {
-            width: super::IMAGE_WIDTH,
-            height: super::IMAGE_HEIGHT,
+        let response = HttpResponse {
+            status: 200,
+            headers: BTreeMap::new(),
+            body: br#"{"uri":"https://media.example.test/public/image.jpg","content_hash":"sha256:unexpected","mime_type":"image/jpeg","byte_size":12,"width":1254,"height":1254}"#
+                .to_vec(),
         };
-        let media = MediaUploadResponse {
-            uri: "https://media.example.test/public/image.jpg".to_string(),
-            content_hash: "sha256:unexpected".to_string(),
-            mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
-            byte_size: 12,
-            width: super::IMAGE_WIDTH,
-            height: super::IMAGE_HEIGHT,
-        };
-        let error = validate_media_response(
-            http_storage(&config),
-            &media,
-            "sha256:expected",
-            &metadata,
-            12,
-            false,
+        let error = crate::media_upload::validate_uploaded_media_metadata(
+            &response,
+            &MediaUploadExpectation {
+                content_hash: "sha256:expected",
+                mime_type: FINAL_IMAGE_MIME_TYPE,
+                byte_size: 12,
+                width: super::IMAGE_WIDTH,
+                height: super::IMAGE_HEIGHT,
+            },
+            "media upload returned non-success status",
+            "media upload metadata did not match generated image",
         )
         .expect_err("upload metadata must match generated image");
 
@@ -3441,11 +3443,7 @@ mod tests {
     #[test]
     fn media_upload_uri_must_name_the_final_jpeg_object() {
         let config = test_config("https://media.example.test/public");
-        let metadata = ImageMetadata {
-            width: super::IMAGE_WIDTH,
-            height: super::IMAGE_HEIGHT,
-        };
-        let media = MediaUploadResponse {
+        let media = MediaUploadMetadata {
             uri: "https://media.example.test/public/image.png".to_string(),
             content_hash: "sha256:expected".to_string(),
             mime_type: FINAL_IMAGE_MIME_TYPE.to_string(),
@@ -3454,15 +3452,8 @@ mod tests {
             height: super::IMAGE_HEIGHT,
         };
 
-        let error = validate_media_response(
-            http_storage(&config),
-            &media,
-            "sha256:expected",
-            &metadata,
-            12,
-            false,
-        )
-        .expect_err("final media URI must use a JPEG suffix");
+        let error = validate_media_response(http_storage(&config), &media, false)
+            .expect_err("final media URI must use a JPEG suffix");
 
         assert!(error.to_string().contains("JPEG object"));
     }
