@@ -50,13 +50,28 @@ const ASYNC_UPLOAD_METHOD: &str = "/cloud/cdnUploadByUrlAsync";
 ))]
 const TEMPORARY_STORAGE_UPLOAD_METHOD: &str = "/cloud/cloudUpload";
 const SEND_IMAGE_METHOD: &str = "/msg/sendImage";
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 const SEND_TEXT_METHOD: &str = "/msg/sendHyperText";
 /// Feature flag (default off) that prepends the work item's `message_text`
 /// chat intro before the image. Kept behind a flag so the no-confirm
 /// auto-publish send path only changes when explicitly enabled.
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 const INTRO_TEXT_ENABLED_ENV: &str = "QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED";
 /// Upper bound on intro text length; anything longer is treated as a policy
 /// violation and the whole send is rejected before any external call.
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 const MAX_INTRO_TEXT_CHARS: usize = 500;
 #[cfg(any(
     test,
@@ -277,12 +292,20 @@ struct ApiResponse<T> {
 
 /// Loose response shape for the chat intro text call. The text endpoint
 /// (`/msg/sendHyperText`) returns `code` + optional `msg`, unlike the typed
-/// image-send response, so we only need the success code here.
+/// image-send response, so we only need the success code here. Gated to the
+/// real adapter features (not `test`) so `--all-targets --no-default-features`
+/// test compilation does not treat it as dead code.
+#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 #[derive(Deserialize)]
 struct TextApiResponse {
     code: Option<i64>,
 }
 
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SendTextParams<'a> {
@@ -294,6 +317,11 @@ struct SendTextParams<'a> {
     content: Vec<HyperTextSegment<'a>>,
 }
 
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 #[derive(Serialize)]
 struct HyperTextSegment<'a> {
     #[serde(rename = "type")]
@@ -1817,11 +1845,9 @@ fn build_send_text_request(
 /// Deliver the chat intro text. Returns `true` only on a confirmed business
 /// success; any HTTP error, non-success status, unparseable body, or non-zero
 /// business code returns `false` so the caller can abort the image send.
-#[cfg(any(
-    test,
-    feature = "qiwe-staging-adapter",
-    feature = "qiwe-production-adapter"
-))]
+/// Gated to the real adapter features (not `test`) so `--all-targets
+/// --no-default-features` test compilation does not treat it as dead code.
+#[cfg(any(feature = "qiwe-staging-adapter", feature = "qiwe-production-adapter"))]
 fn request_send_text_with(config: &AdapterConfig, body: &[u8], client: &HttpClient) -> bool {
     let Ok(response) = client.request(
         "POST",
@@ -2891,12 +2917,22 @@ fn validate_plain_value(value: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn contains_control(value: &str) -> bool {
     value.chars().any(char::is_control)
 }
 
 /// Whether the intro-text prepend is enabled. Defaults to off; only an
 /// explicit `1`/`true` turns it on.
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn intro_text_enabled() -> bool {
     matches!(
         std::env::var(INTRO_TEXT_ENABLED_ENV)
@@ -2908,6 +2944,11 @@ fn intro_text_enabled() -> bool {
 
 /// Short sanitized preview of the intro text for audit metadata. Single line,
 /// capped, never contains the raw payload beyond a short prefix.
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
 fn intro_message_preview(value: &str) -> String {
     let mut preview = value.trim().replace('\n', " ");
     if preview.chars().count() > 80 {
