@@ -127,24 +127,35 @@ pub struct CollectPreviewReport {
     limitations: [&'static str; 4],
 }
 
-type MessageTuple = (String, String, String, DateTime<Utc>, Option<String>);
+type MessageTuple = (
+    String,
+    String,
+    String,
+    String,
+    DateTime<Utc>,
+    Option<String>,
+);
 type CharacterMemoryTuple = (String, i32, i32, String);
-type CreativeProfileTuple = (String, bool, i32);
+type CreativeProfileTuple = (String, serde_json::Value, serde_json::Value, bool, i32);
 
 #[derive(Debug, Clone, PartialEq)]
-struct MessageRow {
-    id: String,
-    sender_id: String,
-    text: String,
-    report_time: DateTime<Utc>,
-    sender_person_id: Option<String>,
+pub struct MessageRow {
+    pub id: String,
+    pub sender_id: String,
+    pub sender_name: String,
+    pub text: String,
+    pub report_time: DateTime<Utc>,
+    pub sender_person_id: Option<String>,
 }
 
 impl From<MessageTuple> for MessageRow {
-    fn from((id, sender_id, text, report_time, sender_person_id): MessageTuple) -> Self {
+    fn from(
+        (id, sender_id, sender_name, text, report_time, sender_person_id): MessageTuple,
+    ) -> Self {
         Self {
             id,
             sender_id,
+            sender_name,
             text,
             report_time,
             sender_person_id,
@@ -153,11 +164,11 @@ impl From<MessageTuple> for MessageRow {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct CharacterMemoryRow {
-    person_id: String,
-    recent_fact_count: i32,
-    lifetime_fact_count: i32,
-    dominant_fact_type: String,
+pub struct CharacterMemoryRow {
+    pub person_id: String,
+    pub recent_fact_count: i32,
+    pub lifetime_fact_count: i32,
+    pub dominant_fact_type: String,
 }
 
 impl From<CharacterMemoryTuple> for CharacterMemoryRow {
@@ -174,18 +185,28 @@ impl From<CharacterMemoryTuple> for CharacterMemoryRow {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct CreativeProfileRow {
-    person_id: String,
-    communication_style_present: bool,
-    safe_reply_hints_key_count: i32,
+pub struct CreativeProfileRow {
+    pub person_id: String,
+    pub communication_style: serde_json::Value,
+    pub safe_reply_hints: serde_json::Value,
+    pub communication_style_present: bool,
+    pub safe_reply_hints_key_count: i32,
 }
 
 impl From<CreativeProfileTuple> for CreativeProfileRow {
     fn from(
-        (person_id, communication_style_present, safe_reply_hints_key_count): CreativeProfileTuple,
+        (
+            person_id,
+            communication_style,
+            safe_reply_hints,
+            communication_style_present,
+            safe_reply_hints_key_count,
+        ): CreativeProfileTuple,
     ) -> Self {
         Self {
             person_id,
+            communication_style,
+            safe_reply_hints,
             communication_style_present,
             safe_reply_hints_key_count,
         }
@@ -196,6 +217,7 @@ const MESSAGES_SQL: &str = r#"
     SELECT
         m.id::text AS id,
         COALESCE(m.sender_id, '') AS sender_id,
+        COALESCE(m.sender_name, '') AS sender_name,
         COALESCE(m.text, '') AS text,
         COALESCE(m.sent_at, m.received_at) AS report_time,
         m.sender_person_id::text AS sender_person_id
@@ -245,6 +267,8 @@ const CHARACTER_MEMORY_SQL: &str = r#"
 const CREATIVE_PROFILE_SQL: &str = r#"
     SELECT DISTINCT ON (s.person_id)
         s.person_id::text AS person_id,
+        COALESCE(s.communication_style, '{}'::jsonb) AS communication_style,
+        COALESCE(s.safe_reply_hints, '{}'::jsonb) AS safe_reply_hints,
         (s.communication_style IS NOT NULL) AS communication_style_present,
         COALESCE(
             (SELECT count(*)::int FROM jsonb_object_keys(s.safe_reply_hints)),
@@ -319,7 +343,7 @@ async fn fetch_creative_profiles(
     Ok(rows.into_iter().map(CreativeProfileRow::from).collect())
 }
 
-fn collected_person_ids(messages: &[MessageRow]) -> Vec<String> {
+pub(crate) fn collected_person_ids(messages: &[MessageRow]) -> Vec<String> {
     let mut person_ids: Vec<String> = messages
         .iter()
         .filter_map(|row| row.sender_person_id.clone())
@@ -328,6 +352,34 @@ fn collected_person_ids(messages: &[MessageRow]) -> Vec<String> {
     person_ids.sort();
     person_ids.dedup();
     person_ids
+}
+
+pub async fn collect_for_report(
+    pool: &PgPool,
+    chat_id: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<(
+    Vec<MessageRow>,
+    Vec<CharacterMemoryRow>,
+    Vec<CreativeProfileRow>,
+)> {
+    let args = CollectPreviewArgs {
+        chat_id: Some(chat_id.to_string()),
+        start,
+        end,
+    };
+    let messages = fetch_messages(pool, &args).await?;
+    let person_ids = collected_person_ids(&messages);
+    let (character_rows, creative_rows) = if person_ids.is_empty() {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            fetch_character_memory(pool, &person_ids, end).await?,
+            fetch_creative_profiles(pool, &person_ids, end).await?,
+        )
+    };
+    Ok((messages, character_rows, creative_rows))
 }
 
 pub async fn collect_preview(
@@ -485,6 +537,7 @@ mod tests {
             MessageRow {
                 id: "message-id-1".to_string(),
                 sender_id: "sender-1".to_string(),
+                sender_name: "Sender One".to_string(),
                 text: "secret text one".to_string(),
                 report_time: DateTime::parse_from_rfc3339("2026-08-15T01:00:00+00:00")
                     .unwrap()
@@ -494,6 +547,7 @@ mod tests {
             MessageRow {
                 id: "message-id-2".to_string(),
                 sender_id: "sender-1".to_string(),
+                sender_name: "Sender One".to_string(),
                 text: "secret text two".to_string(),
                 report_time: DateTime::parse_from_rfc3339("2026-08-15T02:00:00+00:00")
                     .unwrap()
@@ -503,6 +557,7 @@ mod tests {
             MessageRow {
                 id: "message-id-3".to_string(),
                 sender_id: "sender-2".to_string(),
+                sender_name: "Sender Two".to_string(),
                 text: "secret text three".to_string(),
                 report_time: DateTime::parse_from_rfc3339("2026-08-15T03:00:00+00:00")
                     .unwrap()
@@ -530,6 +585,8 @@ mod tests {
         ];
         let creative_rows = vec![CreativeProfileRow {
             person_id: person_a(),
+            communication_style: serde_json::json!({}),
+            safe_reply_hints: serde_json::json!({}),
             communication_style_present: true,
             safe_reply_hints_key_count: 4,
         }];
@@ -589,6 +646,7 @@ mod tests {
             rows.push(MessageRow {
                 id: format!("message-id-{index}"),
                 sender_id: "sender-1".to_string(),
+                sender_name: "Sender One".to_string(),
                 text: "x".to_string(),
                 report_time: args.start,
                 sender_person_id: None,

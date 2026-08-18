@@ -1,6 +1,9 @@
 # Xiaoman Daily Case Report Rust Migration Plan
 
-Status: plan draft; implementation not started
+Status: PR 6 cutover implemented; Rust pipeline default with Python fallback. Local
+validation passed: `cargo fmt --check`,
+`cargo clippy --all-targets --all-features --tests -- -D warnings`,
+`RUST_MIN_STACK=33554432 cargo test`, `bash -n`, and `python3 -m py_compile` are green.
 
 Scope: migrate the deterministic logic of the Xiaoman daily case report from the Python
 workflow package into the Rust sidecar, leaving only HTML-to-JPEG rasterization
