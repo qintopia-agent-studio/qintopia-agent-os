@@ -58,6 +58,9 @@ pub struct QiweCallbackSendClaim {
     pub claim_token: String,
     pub filename: String,
     pub target_group_id: String,
+    /// Optional chat intro text to deliver immediately before the image. Empty
+    /// when the source work item did not carry one.
+    pub message_text: String,
 }
 
 pub struct QiweCallbackFileIdentity<'a> {
@@ -832,6 +835,7 @@ pub async fn claim_callback_for_send(
 
     let (target_group_id, filename, claim_is_current) =
         lock_callback_policy(&mut tx, &attempt, callback_file).await?;
+    let message_text = load_send_message_text(&mut tx, attempt.work_item_id).await?;
     if !claim_is_current {
         expire_awaiting_callback_attempt(&mut tx, &attempt, Some(&callback_payload_sha256)).await?;
         tx.commit()
@@ -910,7 +914,81 @@ pub async fn claim_callback_for_send(
         claim_token: attempt.claim_token,
         filename,
         target_group_id,
+        message_text,
     }))
+}
+
+/// Read the optional chat intro text stored on the send work item payload.
+/// Returns an empty string when absent or blank so non-intro sends are
+/// unaffected.
+async fn load_send_message_text(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    work_item_id: Uuid,
+) -> Result<String> {
+    let value: Option<String> = sqlx::query_scalar(
+        r#"
+        SELECT payload->>'message_text'
+        FROM qintopia_agent_os.work_items
+        WHERE id = $1
+        "#,
+    )
+    .bind(work_item_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .context("load QiWe send intro message_text")?
+    .flatten();
+    Ok(value.unwrap_or_default().trim().to_string())
+}
+
+/// The chat intro was already delivered for this work item. Used to avoid
+/// re-sending the intro text when an image send is retried after an ambiguous
+/// or partial failure.
+pub async fn intro_already_sent(pool: &PgPool, work_item_id: Uuid) -> Result<bool> {
+    let exists: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS (
+            SELECT 1
+            FROM qintopia_agent_os.work_item_events
+            WHERE work_item_id = $1
+              AND event_type = 'qiwe_image_intro_text_sent'
+        )
+        "#,
+    )
+    .bind(work_item_id)
+    .fetch_one(pool)
+    .await
+    .context("check QiWe intro-text sent marker")?;
+    Ok(exists)
+}
+
+/// Record that the chat intro text was delivered. The marker is only written
+/// while the send attempt is still in the current `sending` state owned by this
+/// claim, so a stale retry cannot resurrect it.
+pub async fn mark_intro_sent(
+    pool: &PgPool,
+    claim: &QiweCallbackSendClaim,
+    message_preview: &str,
+) -> Result<()> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe intro-sent marker transaction")?;
+    lock_sending_claim(&mut tx, claim).await?;
+    append_event(
+        &mut tx,
+        claim.work_item_id,
+        Some(claim.generated_image_artifact_id),
+        "qiwe_image_intro_text_sent",
+        json!({
+            "attempt_id": claim.attempt_id,
+            "message_preview": message_preview,
+            "callback_credentials_persisted": false,
+            "send_executed": false
+        }),
+    )
+    .await?;
+    tx.commit().await.context("commit QiWe intro-sent marker")?;
+    Ok(())
 }
 
 pub async fn record_send_success(
@@ -2559,6 +2637,7 @@ mod tests {
             claim_token: "qiwe-image-send-adapter:test-token".to_string(),
             filename: "activity.jpg".to_string(),
             target_group_id: "test-group-id".to_string(),
+            message_text: String::new(),
         }
     }
 
@@ -2998,6 +3077,7 @@ mod tests {
             claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
             filename: "secret-approved.jpg".to_string(),
             target_group_id: "secret-group-id".to_string(),
+            message_text: "secret intro text".to_string(),
         };
 
         let debug = format!("{claim:?}");
@@ -3021,6 +3101,7 @@ mod tests {
             claim_token: "qiwe-image-send-adapter:secret-token".to_string(),
             filename: "secret-approved.jpg".to_string(),
             target_group_id: "secret-group-id".to_string(),
+            message_text: "secret intro text".to_string(),
         });
 
         let debug = format!("{outcome:?}");
@@ -3029,6 +3110,7 @@ mod tests {
         assert!(!debug.contains("secret-token"));
         assert!(!debug.contains("secret-approved.jpg"));
         assert!(!debug.contains("secret-group-id"));
+        assert!(!debug.contains("secret intro text"));
     }
 
     #[tokio::test]
