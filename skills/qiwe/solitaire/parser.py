@@ -4,7 +4,7 @@ import hashlib
 import calendar
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -231,10 +231,191 @@ def _epoch_datetime(value: Any) -> datetime | None:
         return None
 
 
+_CN_NUM = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+# Day-offset keywords for Chinese relative dates. Longest match wins.
+_DAY_OFFSETS = [
+    ("大后天", 3),
+    ("后天", 2),
+    ("明天", 1),
+    ("明日", 1),
+    ("今晚", 0),
+    ("明晚", 1),
+    ("今天", 0),
+    ("今日", 0),
+]
+
+_WEEKDAY_CN = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+
+
+def _cn_or_arabic_int(text: str) -> int | None:
+    """Parse a small Chinese or Arabic integer (e.g. 三/3/十二/十五/二十)."""
+    text = _text(text)
+    if not text:
+        return None
+    if text.isdigit():
+        return int(text)
+    if text in _CN_NUM:
+        return _CN_NUM[text]
+    # 十X / X十 / X十Y forms for 10..59.
+    m = re.fullmatch(r"([一二两三四五六七八九])?十([一二两三四五六七八九])?", text)
+    if m:
+        tens = _CN_NUM.get(m.group(1), 1) if m.group(1) else 1
+        ones = _CN_NUM.get(m.group(2), 0) if m.group(2) else 0
+        return tens * 10 + ones
+    m = re.fullmatch(r"([一二两三四五六七八九])十([一二两三四五六七八九])", text)
+    if m:
+        return _CN_NUM[m.group(1)] * 10 + _CN_NUM[m.group(2)]
+    return None
+
+
+def _parse_time_of_day(text: str) -> tuple[int, int] | None:
+    """Parse a time-of-day from Chinese text. Returns (hour, minute) or None.
+
+    Handles: 下午六点/下午6点/晚上8点半/8点/18:00/中午12点/凌晨2点 etc.
+    Daypart words (早上/上午/中午/下午/晚上/今晚/明晚/凌晨) adjust the hour.
+    """
+    t = _text(text)
+    if not t:
+        return None
+    daypart = ""
+    for kw in ("凌晨", "早上", "早晨", "上午", "中午", "下午", "傍晚", "晚上", "今晚", "明晚", "午间"):
+        if kw in t:
+            daypart = kw
+            break
+
+    hour: int | None = None
+    minute = 0
+    m = re.search(r"([01]?\d|2[0-3])[:：]([0-5]\d)", t)
+    if m:
+        hour = int(m.group(1))
+        minute = int(m.group(2))
+    else:
+        m = re.search(r"([零一二两三四五六七八九十]{1,3}|\d{1,2})点(半|[零一二两三四五六七八九十]{1,3}|\d{1,2})?", t)
+        if not m:
+            return None
+        hour = _cn_or_arabic_int(m.group(1))
+        if hour is None:
+            return None
+        tail = m.group(2)
+        if tail == "半":
+            minute = 30
+        elif tail:
+            minute = _cn_or_arabic_int(tail) or 0
+
+    if daypart in ("下午", "傍晚", "晚上", "今晚", "明晚") and hour < 12:
+        hour += 12
+    elif daypart == "中午" and hour < 12:
+        # 中午1点 -> 13:00; 中午12点 stays 12.
+        if hour != 12:
+            hour += 12
+    elif daypart == "凌晨" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour, minute
+
+
+def _resolve_cn_relative_date(text: str, anchor_local: datetime) -> datetime | None:
+    """Resolve a Chinese relative date to a concrete local date using anchor.
+
+    anchor_local is the solitaire's first-creation time in the activity timezone.
+    Returns a tz-aware datetime (date possibly combined with a parsed time), or
+    None when the text carries no recognisable relative date.
+    """
+    t = _text(text)
+    if not t:
+        return None
+
+    base_date = anchor_local.date()
+    # Explicit weekday: 下周三 / 周五 / 星期三 (this-or-next occurrence).
+    wm = re.search(r"(下?)(?:周|星期)([一二三四五六日天])", t)
+    weekday_target: int | None = None
+    if wm:
+        weekday_target = _WEEKDAY_CN[wm.group(2)]
+        next_week = wm.group(1) == "下"
+
+    day_offset: int | None = None
+    for kw, off in _DAY_OFFSETS:
+        if kw in t:
+            day_offset = off
+            break
+
+    target_date = None
+    if weekday_target is not None:
+        days_ahead = (weekday_target - anchor_local.weekday()) % 7
+        if next_week:
+            days_ahead = days_ahead + 7 if days_ahead else 7
+        elif days_ahead == 0:
+            days_ahead = 7  # "周五" on Friday means the coming Friday.
+        target_date = base_date + timedelta(days=days_ahead)
+    elif day_offset is not None:
+        target_date = base_date + timedelta(days=day_offset)
+
+    if target_date is None:
+        return None
+
+    tod = _parse_time_of_day(t)
+    if tod is not None:
+        hour, minute = tod
+        return anchor_local.replace(
+            year=target_date.year, month=target_date.month, day=target_date.day,
+            hour=hour, minute=minute, second=0, microsecond=0,
+        )
+    # Date only: keep date, no specific time.
+    return anchor_local.replace(
+        year=target_date.year, month=target_date.month, day=target_date.day,
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+
+
+def resolve_relative_start_time(phrase: Any, event: Any) -> tuple[str, str]:
+    """Deterministically resolve a Chinese relative-time phrase to start_time.
+
+    Anchored to the solitaire's FIRST creation time (not the parse/forward time),
+    so "明天" is computed from when the solitaire was created. Returns
+    (start_time, note); both empty when the phrase is not a recognisable
+    relative time. Output format matches the downstream contract
+    ("%Y-%m-%d %H:%M" or "%Y-%m-%d").
+    """
+    text = _text(phrase)
+    if not text:
+        return "", ""
+    anchor_iso = solitaire_created_at_from_event(event)
+    anchor_dt: datetime | None = None
+    if anchor_iso:
+        try:
+            anchor_dt = datetime.fromisoformat(anchor_iso)
+        except ValueError:
+            anchor_dt = None
+    if anchor_dt is None:
+        anchor_dt = getattr(event, "timestamp", None)
+    if not isinstance(anchor_dt, datetime):
+        return "", ""
+    zone = _activity_timezone()
+    anchor_local = anchor_dt.astimezone(zone) if anchor_dt.tzinfo else anchor_dt.replace(tzinfo=zone)
+    resolved = _resolve_cn_relative_date(text, anchor_local)
+    if resolved is None:
+        return "", ""
+    has_time = _parse_time_of_day(text) is not None
+    rendered = _format_activity_datetime(resolved, has_time=has_time)
+    note = f"相对时间已按接龙首次发起时间换算为 {rendered}。"
+    return rendered, note
+
+
 def normalize_start_time_from_event(start_time: Any, event: Any) -> tuple[str, str]:
     normalized = _text(start_time)
     if not normalized:
         return "", ""
+    # Relative-time phrases (明天/今晚/周五...) are resolved deterministically
+    # against the solitaire's first-creation time, so the LLM never has to do
+    # date arithmetic (which it anchors to the wrong day). Only kicks in when
+    # the value is not already an absolute date.
+    if _parse_activity_datetime(normalized) is None:
+        resolved, rel_note = resolve_relative_start_time(normalized, event)
+        if resolved:
+            return resolved, rel_note
+        return normalized, ""
     parsed = _parse_activity_datetime(normalized)
     sent_at = getattr(event, "timestamp", None)
     if parsed is None or not isinstance(sent_at, datetime):
