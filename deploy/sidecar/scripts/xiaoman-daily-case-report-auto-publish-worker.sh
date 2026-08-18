@@ -55,29 +55,34 @@ if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE}" != "1" ]]; the
   exit 1
 fi
 
-if [[ ! -f "$WORKFLOW_PY" ]]; then
-  echo "xiaoman daily case report workflow is missing from release/current" >&2
-  exit 1
-fi
-
 if [[ ! -x "$SIDECAR_BIN" ]]; then
   echo "xiaoman daily case report auto-publish requires the reviewed QiWe sidecar companion" >&2
   exit 1
 fi
 
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  echo "python3 is required for xiaoman daily case report rendering" >&2
-  exit 1
-fi
-if [[ ! -x "$PSQL_BIN" ]]; then
-  echo "psql is required for xiaoman daily case report database read-through" >&2
-  exit 1
-fi
-if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1; then
+if [[ "${USE_PYTHON_PIPELINE:-}" == "1" ]]; then
+  if [[ ! -f "$WORKFLOW_PY" ]]; then
+    echo "xiaoman daily case report workflow is missing from release/current" >&2
+    exit 1
+  fi
+
+  if [[ ! -x "$PYTHON_BIN" ]]; then
+    echo "python3 is required for xiaoman daily case report rendering" >&2
+    exit 1
+  fi
+  if [[ ! -x "$PSQL_BIN" ]]; then
+    echo "psql is required for xiaoman daily case report database read-through" >&2
+    exit 1
+  fi
+  if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1; then
 from PIL import Image, ImageDraw, ImageFont
 PY
-  echo "Pillow is required for xiaoman daily case report local image rendering" >&2
-  exit 1
+    echo "Pillow is required for xiaoman daily case report local image rendering" >&2
+    exit 1
+  fi
+else
+  "$SIDECAR_BIN" run-daily-case-report-auto-publish-worker --once --apply
+  exit 0
 fi
 
 report_date_args=()
@@ -120,25 +125,28 @@ render_report="${tmp_dir}/render.json"
 upload_report="${tmp_dir}/upload.json"
 publish_report="${tmp_dir}/publish.json"
 
-"$PYTHON_BIN" "$WORKFLOW_PY" \
-  --render image \
-  --image-format jpeg \
-  --template "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TEMPLATE:-roast-long-image}" \
-  --narrative "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_NARRATIVE:-roast}" \
-  "${report_date_args[@]}" \
-  --chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID" \
-  --output-dir "$tmp_dir" \
-  --json \
-  --json-summary-only >"$render_report"
+if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE:-}" == "1" ]]; then
+  echo "xiaoman daily case report: using Python fallback pipeline" >&2
 
-# Send quality gate: refuse to auto-publish a report that should never reach the
-# group. A render that is empty or off-template must stop here instead of being
-# uploaded and sent. This prevents blank/wrong-template reports from being
-# flushed to the group after an outage. Override only for an explicitly approved
-# recovery: ..._SEND_GATE_BYPASS=1.
-if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_SEND_GATE_BYPASS:-}" != "1" ]]; then
-  SEND_GATE_TEMPLATE="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TEMPLATE:-roast-long-image}" \
-  "$PYTHON_BIN" - "$render_report" <<'PY'
+  "$PYTHON_BIN" "$WORKFLOW_PY" \
+    --render image \
+    --image-format jpeg \
+    --template "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TEMPLATE:-roast-long-image}" \
+    --narrative "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_NARRATIVE:-roast}" \
+    "${report_date_args[@]}" \
+    --chat-id "$QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID" \
+    --output-dir "$tmp_dir" \
+    --json \
+    --json-summary-only >"$render_report"
+
+  # Send quality gate: refuse to auto-publish a report that should never reach the
+  # group. A render that is empty or off-template must stop here instead of being
+  # uploaded and sent. This prevents blank/wrong-template reports from being
+  # flushed to the group after an outage. Override only for an explicitly approved
+  # recovery: ..._SEND_GATE_BYPASS=1.
+  if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_SEND_GATE_BYPASS:-}" != "1" ]]; then
+    SEND_GATE_TEMPLATE="${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_TEMPLATE:-roast-long-image}" \
+    "$PYTHON_BIN" - "$render_report" <<'PY'
 import json
 import os
 import sys
@@ -153,22 +161,17 @@ template = os.environ.get("SEND_GATE_TEMPLATE", "roast-long-image")
 message_count = int(rendered.get("message_count") or 0)
 participant_count = int(rendered.get("participant_count") or 0)
 
-# Only the roast long-image (吐槽日报) is an approved public deliverable.
-# roast-long-image requires a non-empty LLM narrative to render at all, so a
-# successfully rendered roast image always has narrative content; anything that
-# fell back to another layout would not reach this point as roast-long-image.
 if template != "roast-long-image":
     raise SystemExit(f"send gate: template {template!r} is not the approved roast-long-image")
 
-# Never publish an empty report.
 if message_count <= 0:
     raise SystemExit("send gate: report has 0 messages; refusing to publish a blank report")
 if participant_count <= 0:
     raise SystemExit("send gate: report has 0 participants; refusing to publish a blank report")
 PY
-fi
+  fi
 
-upload_payload="$("$PYTHON_BIN" - "$render_report" <<'PY'
+  upload_payload="$("$PYTHON_BIN" - "$render_report" <<'PY'
 import json
 import sys
 
@@ -193,13 +196,13 @@ print(json.dumps({
     "template_version": candidate.get("template_version", ""),
 }, ensure_ascii=False))
 PY
-)"
+  )"
 
-"$SIDECAR_BIN" operations-daily-case-report-media-upload \
-  --apply \
-  --payload-json "$upload_payload" >"$upload_report"
+  "$SIDECAR_BIN" operations-daily-case-report-media-upload \
+    --apply \
+    --payload-json "$upload_payload" >"$upload_report"
 
-publish_payload="$("$PYTHON_BIN" - "$render_report" "$upload_report" <<'PY'
+  publish_payload="$("$PYTHON_BIN" - "$render_report" "$upload_report" <<'PY'
 import json
 import os
 import sys
@@ -333,13 +336,13 @@ print(json.dumps({
     },
 }, ensure_ascii=False))
 PY
-)"
+  )"
 
-"$SIDECAR_BIN" operations-daily-case-report-auto-publish-create \
-  --apply \
-  --payload-json "$publish_payload" >"$publish_report"
+  "$SIDECAR_BIN" operations-daily-case-report-auto-publish-create \
+    --apply \
+    --payload-json "$publish_payload" >"$publish_report"
 
-"$PYTHON_BIN" - "$render_report" "$upload_report" "$publish_report" <<'PY'
+  "$PYTHON_BIN" - "$render_report" "$upload_report" "$publish_report" <<'PY'
 import json
 import sys
 
@@ -409,3 +412,8 @@ print(json.dumps({
     },
 }, ensure_ascii=False, indent=2))
 PY
+else
+  echo "xiaoman daily case report: using Rust pipeline" >&2
+  QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_OUTPUT_DIR="$tmp_dir" \
+    "$SIDECAR_BIN" run-daily-case-report-auto-publish-worker --once --apply
+fi

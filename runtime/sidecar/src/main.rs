@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod activity_lifecycle;
 #[allow(dead_code)]
 mod bounded_http;
@@ -8,8 +10,10 @@ mod context_mcp_server;
 mod context_tools;
 mod conversation_ingress;
 mod conversation_policy;
+
 mod daily_case_report;
 mod daily_case_report_analyze;
+mod daily_case_report_cutover;
 mod daily_case_report_mcp;
 mod daily_case_report_narrative;
 mod daily_case_report_render;
@@ -634,6 +638,9 @@ async fn main() -> Result<()> {
             html_path: _,
             output_path: _,
         } => daily_case_report_render::run_render_preview_cli(&cli).await,
+        Command::RunDailyCaseReportAutoPublishWorker { once, apply } => {
+            daily_case_report_cutover::run_worker(&cli, once, apply).await
+        }
         Command::OperationsCapabilityList { use_db } => {
             operations::run_capability_list(&cli, use_db).await
         }

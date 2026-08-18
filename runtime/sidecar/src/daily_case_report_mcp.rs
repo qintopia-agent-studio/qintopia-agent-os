@@ -23,6 +23,7 @@ use tempfile::TempDir;
 
 use crate::{
     config::Cli,
+    daily_case_report_cutover::{resolve_release_path, run_pipeline, PipelineOptions},
     operations::{
         create_daily_case_report_auto_publish, daily_case_report_media_upload,
         DailyCaseReportAutoPublishCreateRequest, DailyCaseReportMediaUploadRequest,
@@ -39,6 +40,7 @@ pub(crate) struct DailyCaseReportMcpConfig {
     pub allowed_caller: String,
     pub python_bin: String,
     pub workflow_py: Option<PathBuf>,
+    pub rasterize_py: Option<PathBuf>,
     pub render_timeout: Duration,
 }
 
@@ -50,6 +52,10 @@ impl DailyCaseReportMcpConfig {
             python_bin: cli.daily_case_report_mcp_python_bin.clone(),
             workflow_py: cli
                 .daily_case_report_mcp_workflow_py
+                .clone()
+                .map(PathBuf::from),
+            rasterize_py: cli
+                .daily_case_report_mcp_rasterize_py
                 .clone()
                 .map(PathBuf::from),
             render_timeout: Duration::from_secs(cli.daily_case_report_mcp_render_timeout_seconds),
@@ -161,6 +167,22 @@ fn resolve_workflow_path(workflow: &Path) -> PathBuf {
 }
 
 pub(crate) async fn render_report(
+    pool: &PgPool,
+    config: &DailyCaseReportMcpConfig,
+    arguments: &GenerateArguments,
+) -> Result<(TempDir, Value)> {
+    if use_python_pipeline() {
+        render_report_python(config, arguments).await
+    } else {
+        render_report_rust_pipeline(pool, config, arguments).await
+    }
+}
+
+fn use_python_pipeline() -> bool {
+    std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE").as_deref() == Ok("1")
+}
+
+async fn render_report_python(
     config: &DailyCaseReportMcpConfig,
     arguments: &GenerateArguments,
 ) -> Result<(TempDir, Value)> {
@@ -168,8 +190,6 @@ pub(crate) async fn render_report(
         .prefix("xiaoman-daily-case-report-mcp-")
         .tempdir()
         .context("create render temp dir")?;
-    // The workflow requires a dedicated private 0700 output directory; the
-    // default tempdir mode (0755 under a normal umask) is rejected.
     set_dir_mode_private(tmp.path())?;
     let workflow = config
         .workflow_py
@@ -225,6 +245,73 @@ pub(crate) async fn render_report(
     Ok((tmp, parsed))
 }
 
+async fn render_report_rust_pipeline(
+    pool: &PgPool,
+    config: &DailyCaseReportMcpConfig,
+    arguments: &GenerateArguments,
+) -> Result<(TempDir, Value)> {
+    let tmp = tempfile::Builder::new()
+        .prefix("xiaoman-daily-case-report-mcp-")
+        .tempdir()
+        .context("create render temp dir")?;
+    set_dir_mode_private(tmp.path())?;
+
+    let rasterize_py = config
+        .rasterize_py
+        .as_deref()
+        .or_else(|| {
+            Some(Path::new(
+                "workflows/xiaoman-daily-case-report/rasterize.py",
+            ))
+        })
+        .map(resolve_release_path)
+        .context("daily case report rasterize script is not configured")?;
+    if !rasterize_py.is_file() {
+        bail!(
+            "daily case report rasterize script is missing: {}",
+            rasterize_py.display()
+        );
+    }
+
+    let chat_id = std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID").context(
+        "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID is required for the Rust render pipeline",
+    )?;
+    let options = PipelineOptions {
+        chat_id,
+        date: arguments.date.clone(),
+        template: arguments.template.clone(),
+        narrative_style: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_NARRATIVE")
+            .unwrap_or_else(|_| "roast".to_string()),
+        output_dir: tmp.path().to_path_buf(),
+        apply: false,
+        group_name: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_GROUP_NAME").ok(),
+        report_title: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_REPORT_TITLE").ok(),
+        width: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_OUTPUT_WIDTH")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1080),
+    };
+
+    let narrative_config = if options.narrative_style != "none" {
+        crate::daily_case_report_narrative::NarrativeConfig::from_env_with_overrides(None, None)
+            .ok()
+    } else {
+        None
+    };
+
+    let summary = run_pipeline(
+        pool,
+        &options,
+        &rasterize_py,
+        None,
+        narrative_config.as_ref(),
+    )
+    .await
+    .context("daily case report Rust pipeline render")?;
+    validate_render_summary(&summary)?;
+    Ok((tmp, summary))
+}
+
 fn run_render_command(mut command: Command) -> Result<std::process::Output> {
     let output = command.output().context("spawn daily case report render")?;
     if output.stdout.len() > MAX_RENDER_OUTPUT_BYTES {
@@ -266,8 +353,12 @@ fn validate_render_summary(render: &Value) -> Result<()> {
         .get("artifact_candidate")
         .cloned()
         .unwrap_or_default();
-    if candidate.get("mime_type").and_then(Value::as_str) != Some("image/jpeg") {
-        bail!("rendered daily report image must be JPEG");
+    let mime_type = candidate
+        .get("mime_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if mime_type != "image/jpeg" && mime_type != "image/png" {
+        bail!("rendered daily report image must be JPEG or PNG");
     }
     Ok(())
 }
@@ -282,14 +373,8 @@ pub(crate) async fn call_tool(
     if request.caller.trim() != config.allowed_caller {
         bail!("{TOOL_NAME} is only available to {}", config.allowed_caller);
     }
-    if config.workflow_py.is_none() {
-        bail!(
-            "{} requires QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MCP_WORKFLOW_PY pointing at the reviewed release workflow daily_case_report.py",
-            TOOL_NAME
-        );
-    }
 
-    let (_tmp, render) = render_report(config, &request).await?;
+    let (_tmp, render) = render_report(pool, config, &request).await?;
     let candidate = render
         .get("artifact_candidate")
         .cloned()
@@ -599,6 +684,7 @@ mod tests {
             allowed_caller: "wenyuange".to_string(),
             python_bin: "/usr/bin/python3".to_string(),
             workflow_py: Some(PathBuf::from("/tmp/daily_case_report.py")),
+            rasterize_py: None,
             render_timeout: Duration::from_secs(60),
         };
         let request = GenerateArguments::from_json(json!({"caller": "erhua"})).expect("parses");
@@ -606,41 +692,50 @@ mod tests {
     }
 
     #[test]
-    fn missing_workflow_py_fails_with_clear_error() {
+    fn missing_workflow_py_fails_with_clear_error_when_python_pipeline_forced() {
         let config = DailyCaseReportMcpConfig {
             database_url: "postgresql://unit".to_string(),
             allowed_caller: "wenyuange".to_string(),
             python_bin: "/usr/bin/python3".to_string(),
             workflow_py: None,
+            rasterize_py: None,
             render_timeout: Duration::from_secs(60),
         };
         let runtime = tokio::runtime::Runtime::new().expect("runtime");
         let error = runtime
             .block_on(async {
+                std::env::set_var(
+                    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE",
+                    "1",
+                );
                 let pool = sqlx::postgres::PgPoolOptions::new()
                     .max_connections(1)
                     .connect_lazy(&config.database_url)
                     .expect("lazy pool");
-                call_tool(
+                let result = call_tool(
                     &pool,
                     &config,
                     json!({"caller": "wenyuange", "dry_run": true}),
                 )
-                .await
+                .await;
+                std::env::remove_var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE");
+                result
             })
             .expect_err("missing workflow rejected");
-        assert!(error.to_string().contains("MCP_WORKFLOW_PY"));
+        assert!(error
+            .to_string()
+            .contains("workflow script is not configured"));
     }
 
     #[test]
-    fn render_summary_validation_rejects_non_jpeg() {
+    fn render_summary_validation_rejects_unsupported_mime_type() {
         let render = json!({
             "success": true,
-            "image_path": "/tmp/x.jpg",
-            "artifact_candidate": {"mime_type": "image/png"},
+            "image_path": "/tmp/x.gif",
+            "artifact_candidate": {"mime_type": "image/gif"},
         });
-        let error = validate_render_summary(&render).expect_err("png rejected");
-        assert!(error.to_string().contains("must be JPEG"));
+        let error = validate_render_summary(&render).expect_err("gif rejected");
+        assert!(error.to_string().contains("must be JPEG or PNG"));
     }
 
     #[test]
@@ -793,6 +888,7 @@ print(json.dumps({
             allowed_caller: "wenyuange".to_string(),
             python_bin: "/usr/bin/python3".to_string(),
             workflow_py: Some(workflow),
+            rasterize_py: None,
             render_timeout: Duration::from_secs(60),
         };
         let arguments = GenerateArguments::from_json(json!({
@@ -803,7 +899,19 @@ print(json.dumps({
         .expect("parses");
         let runtime = tokio::runtime::Runtime::new().expect("runtime");
         let (_dir, render) = runtime
-            .block_on(render_report(&config, &arguments))
+            .block_on(async {
+                std::env::set_var(
+                    "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE",
+                    "1",
+                );
+                let pool = sqlx::postgres::PgPoolOptions::new()
+                    .max_connections(1)
+                    .connect_lazy(&config.database_url)
+                    .expect("lazy pool");
+                let result = render_report(&pool, &config, &arguments).await;
+                std::env::remove_var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE");
+                result
+            })
             .expect("render succeeds");
         assert_eq!(render["success"], true);
         assert_eq!(render["message_count"], 3);
@@ -820,15 +928,20 @@ print(json.dumps({
             allowed_caller: "wenyuange".to_string(),
             python_bin: "/usr/bin/python3".to_string(),
             workflow_py: Some(workflow),
+            rasterize_py: None,
             render_timeout: Duration::from_secs(60),
         };
         let runtime = tokio::runtime::Runtime::new().expect("runtime");
         let result = runtime.block_on(async {
+            std::env::set_var(
+                "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE",
+                "1",
+            );
             let pool = sqlx::postgres::PgPoolOptions::new()
                 .max_connections(1)
                 .connect_lazy(&config.database_url)
                 .expect("lazy pool");
-            call_tool(
+            let result = call_tool(
                 &pool,
                 &config,
                 json!({
@@ -838,7 +951,9 @@ print(json.dumps({
                     "caller": "wenyuange",
                 }),
             )
-            .await
+            .await;
+            std::env::remove_var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE");
+            result
         });
         let preview = result.expect("dry run call succeeds");
         assert_eq!(preview["success"], true);
@@ -849,5 +964,64 @@ print(json.dumps({
             "media_upload_validated"
         );
         assert!(preview["auto_publish"].is_null());
+    }
+
+    #[test]
+    fn use_python_pipeline_env_switch() {
+        std::env::remove_var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE");
+        assert!(!use_python_pipeline());
+        std::env::set_var(
+            "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE",
+            "1",
+        );
+        assert!(use_python_pipeline());
+        std::env::remove_var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE");
+    }
+
+    #[test]
+    fn rasterize_html_invokes_subprocess_and_parses_metadata() {
+        const FAKE_RASTERIZE_PY: &str = r#"#!/usr/bin/env python3
+import argparse, base64, json, pathlib, sys
+
+JPEG_B64 = "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
+
+p = argparse.ArgumentParser()
+p.add_argument("template")
+a = p.parse_args()
+request = json.load(sys.stdin)
+out = pathlib.Path(request["output_path"])
+out.parent.mkdir(parents=True, exist_ok=True)
+jpeg_bytes = base64.b64decode(JPEG_B64)
+out.write_bytes(jpeg_bytes)
+print(json.dumps({
+    "success": True,
+    "image_path": str(out),
+    "mime_type": "image/jpeg",
+    "byte_size": len(jpeg_bytes),
+    "width": 2,
+    "height": 3,
+    "image_format": "jpeg",
+}, ensure_ascii=False))
+"#;
+
+        let tmp = tempfile::tempdir().expect("tmp");
+        let rasterize = tmp.path().join("rasterize.py");
+        fs::write(&rasterize, FAKE_RASTERIZE_PY).expect("write fake rasterize");
+        let runtime = tokio::runtime::Runtime::new().expect("runtime");
+        let (_image_path, output) = runtime
+            .block_on(crate::daily_case_report_cutover::rasterize_html(
+                &rasterize,
+                "<html></html>",
+                tmp.path(),
+                "roast-long-image",
+                750,
+                "jpeg",
+            ))
+            .expect("rasterize succeeds");
+        assert_eq!(output.image_format, "jpeg");
+        assert_eq!(output.mime_type, "image/jpeg");
+        assert_eq!(output.width, 2);
+        assert_eq!(output.height, 3);
+        assert!(output.byte_size > 0);
     }
 }

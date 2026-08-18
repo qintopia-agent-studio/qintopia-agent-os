@@ -138,7 +138,7 @@ pub fn render(input: &RenderInput) -> Result<RenderOutput> {
 // Report assembly
 // ---------------------------------------------------------------------------
 
-mod assembly {
+pub(crate) mod assembly {
     #![allow(dead_code)]
     #![allow(
         clippy::obfuscated_if_else,
@@ -152,7 +152,7 @@ mod assembly {
     const DEFAULT_SUSPECT_LIMIT: usize = 5;
     const DEFAULT_CHARACTER_LIMIT: usize = 4;
     const REVIEW_DRAFT_REVIEWED_BY: &str = "xiaoman-daily-case-report-review-draft";
-    const TEMPLATE_VERSION: &str = "xiaoman-daily-case-report-v5-roast-long-image";
+    pub const TEMPLATE_VERSION: &str = "xiaoman-daily-case-report-v5-roast-long-image";
     const MEMORY_LOOKBACK_DAYS: i64 = 90;
 
     const LOCAL_LIFE_HINTS: &[&str] = &[
