@@ -1776,6 +1776,10 @@ const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
                   artifact.created_by_agent = 'xiaoman'
                   AND event.actor_id = 'xiaoman-daily-case-report-auto-publisher'
               )
+              OR (
+                  artifact.created_by_agent = 'xiaoman'
+                  AND event.actor_id = 'erhua-morning-brief-card-publisher'
+              )
           )
         ORDER BY event.created_at DESC, event.id DESC
         LIMIT 1
@@ -1795,6 +1799,14 @@ const PRIMARY_STORAGE_ARTIFACT_SELECT: &str = r#"
               AND artifact.metadata->>'workflow_type' = 'daily_case_report'
               AND item.work_item_type = 'daily_case_report_request'
               AND item.capability_key = 'xiaoman.daily_case_report_auto_publish'
+              AND item.target_agent = 'xiaoman'
+              AND item.status = 'completed'
+          )
+          OR (
+              artifact.created_by_agent = 'xiaoman'
+              AND artifact.metadata->>'workflow_type' = 'erhua_morning_brief_card'
+              AND item.work_item_type = 'morning_brief_card_request'
+              AND item.capability_key = 'erhua.morning_brief_card_publish'
               AND item.target_agent = 'xiaoman'
               AND item.status = 'completed'
           )
