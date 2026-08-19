@@ -45,6 +45,10 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             worker,
         )
         self.assertIn(
+            'export QINTOPIA_AGENT_OS_RELEASE_CURRENT="${RELEASE_DIR}"',
+            worker,
+        )
+        self.assertIn(
             "--json-summary-only",
             worker,
         )

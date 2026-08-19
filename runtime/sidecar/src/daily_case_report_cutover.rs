@@ -883,6 +883,44 @@ fn media_upload_request_from_summary(
     })
 }
 
+/// Dynamic one-line chat intro delivered before the report image so the group
+/// knows what the image is before opening it. Mirrors the pre-cutover Python
+/// `_default_intro_text`; operators may still override the whole line with
+/// `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT`.
+pub(crate) fn default_intro_text(render: &Value) -> String {
+    let report_date = render
+        .get("report_date")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let group_name = render
+        .get("group_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let message_count = render
+        .get("message_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let participant_count = render
+        .get("participant_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let date_part = if report_date.is_empty() {
+        "昨天".to_string()
+    } else {
+        report_date.to_string()
+    };
+    let group_part = if group_name.is_empty() {
+        "咱们群".to_string()
+    } else {
+        format!("「{group_name}」")
+    };
+    format!(
+        "小满日报来啦 📰 {date_part} {group_part}的群聊，共 {message_count} 条消息、{participant_count} 位邻居发言。昨天的新鲜事都在下面这张长图里，点开看看 👇"
+    )
+}
+
 fn auto_publish_request_from_summary(
     render: &Value,
     artifact_uri: &str,
@@ -944,7 +982,7 @@ fn auto_publish_request_from_summary(
         filename: evidence.filename.clone(),
         target_group_id,
         message_text: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT")
-            .unwrap_or_else(|_| "小满日报已自动生成。".to_string()),
+            .unwrap_or_else(|_| default_intro_text(render)),
         title: render
             .get("report_date")
             .and_then(Value::as_str)
@@ -1302,5 +1340,28 @@ mod tests {
         assert!(send_gate_allows("roast-long-image", 5, 3));
         assert!(!send_gate_allows("newspaper-elegant", 5, 3));
         assert!(!send_gate_allows("roast-long-image", 0, 3));
+    }
+
+    #[test]
+    fn default_intro_text_matches_python_copy() {
+        let render = json!({
+            "report_date": "2026年08月18日",
+            "group_name": "秦托邦的小伙伴（新）",
+            "message_count": 38,
+            "participant_count": 12,
+        });
+        let intro = default_intro_text(&render);
+        assert_eq!(
+            intro,
+            "小满日报来啦 📰 2026年08月18日 「秦托邦的小伙伴（新）」的群聊，共 38 条消息、12 位邻居发言。昨天的新鲜事都在下面这张长图里，点开看看 👇"
+        );
+    }
+
+    #[test]
+    fn default_intro_text_falls_back_for_missing_fields() {
+        let render = json!({});
+        let intro = default_intro_text(&render);
+        assert!(intro.contains("昨天 咱们群的群聊"));
+        assert!(intro.contains("共 0 条消息、0 位邻居发言"));
     }
 }

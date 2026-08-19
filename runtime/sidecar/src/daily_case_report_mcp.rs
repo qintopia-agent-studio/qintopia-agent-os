@@ -13,6 +13,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+#[cfg(test)]
+use std::sync::Mutex;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
@@ -21,9 +23,20 @@ use serde_json::{json, Value};
 use sqlx::postgres::PgPool;
 use tempfile::TempDir;
 
+/// `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE` is a
+/// process-global env switch that several tests toggle. Cargo runs tests in
+/// parallel threads, so without serialization one test's remove_var can land
+/// between another test's set_var and render_report, forcing the Rust pipeline
+/// (which then fails on the missing real rasterize.py). Tests that touch the
+/// switch hold this lock for their whole duration.
+#[cfg(test)]
+static PYTHON_PIPELINE_ENV_LOCK: Mutex<()> = Mutex::new(());
+
 use crate::{
     config::Cli,
-    daily_case_report_cutover::{resolve_release_path, run_pipeline, PipelineOptions},
+    daily_case_report_cutover::{
+        default_intro_text, resolve_release_path, run_pipeline, PipelineOptions,
+    },
     operations::{
         create_daily_case_report_auto_publish, daily_case_report_media_upload,
         DailyCaseReportAutoPublishCreateRequest, DailyCaseReportMediaUploadRequest,
@@ -540,7 +553,8 @@ fn auto_publish_request_from_render(
         height: evidence.height,
         filename: evidence.filename.clone(),
         target_group_id,
-        message_text: "小满日报已自动生成。".to_string(),
+        message_text: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT")
+            .unwrap_or_else(|_| default_intro_text(render)),
         title: render
             .get("report_date")
             .and_then(Value::as_str)
@@ -693,6 +707,9 @@ mod tests {
 
     #[test]
     fn missing_workflow_py_fails_with_clear_error_when_python_pipeline_forced() {
+        let _env_guard = PYTHON_PIPELINE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let config = DailyCaseReportMcpConfig {
             database_url: "postgresql://unit".to_string(),
             allowed_caller: "wenyuange".to_string(),
@@ -882,6 +899,9 @@ print(json.dumps({
 
     #[test]
     fn render_report_invokes_workflow_with_template_and_parses_summary() {
+        let _env_guard = PYTHON_PIPELINE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (_tmp, workflow) = fake_workflow_dir();
         let config = DailyCaseReportMcpConfig {
             database_url: "postgresql://unit".to_string(),
@@ -922,6 +942,9 @@ print(json.dumps({
 
     #[test]
     fn call_tool_dry_run_returns_preview_without_db() {
+        let _env_guard = PYTHON_PIPELINE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let (_tmp, workflow) = fake_workflow_dir();
         let config = DailyCaseReportMcpConfig {
             database_url: "postgresql://unit".to_string(),
@@ -968,6 +991,9 @@ print(json.dumps({
 
     #[test]
     fn use_python_pipeline_env_switch() {
+        let _env_guard = PYTHON_PIPELINE_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         std::env::remove_var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE");
         assert!(!use_python_pipeline());
         std::env::set_var(
