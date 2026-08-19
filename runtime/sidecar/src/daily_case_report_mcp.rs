@@ -33,7 +33,9 @@ static PYTHON_PIPELINE_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 use crate::{
     config::Cli,
-    daily_case_report_cutover::{resolve_release_path, run_pipeline, PipelineOptions},
+    daily_case_report_cutover::{
+        default_intro_text, resolve_release_path, run_pipeline, PipelineOptions,
+    },
     operations::{
         create_daily_case_report_auto_publish, daily_case_report_media_upload,
         DailyCaseReportAutoPublishCreateRequest, DailyCaseReportMediaUploadRequest,
@@ -550,7 +552,8 @@ fn auto_publish_request_from_render(
         height: evidence.height,
         filename: evidence.filename.clone(),
         target_group_id,
-        message_text: "小满日报已自动生成。".to_string(),
+        message_text: std::env::var("QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT")
+            .unwrap_or_else(|_| default_intro_text(render)),
         title: render
             .get("report_date")
             .and_then(Value::as_str)

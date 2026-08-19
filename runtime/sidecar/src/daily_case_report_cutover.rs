@@ -887,7 +887,7 @@ fn media_upload_request_from_summary(
 /// knows what the image is before opening it. Mirrors the pre-cutover Python
 /// `_default_intro_text`; operators may still override the whole line with
 /// `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_MESSAGE_TEXT`.
-fn default_intro_text(render: &Value) -> String {
+pub(crate) fn default_intro_text(render: &Value) -> String {
     let report_date = render
         .get("report_date")
         .and_then(Value::as_str)
