@@ -450,9 +450,14 @@ if not isinstance(media_upload_evidence, dict):
 brief_date = (report.get("date") or "").strip()
 if not brief_date:
     raise SystemExit("brief date missing from morning brief report")
-message_text = (report.get("morning_brief_text") or "").strip()
-if not message_text:
-    raise SystemExit("morning brief message text missing")
+# The full brief lives inside the rendered card image; message_text is only a
+# short caption that card-publish-create caps at 500 characters. Passing the
+# whole morning_brief_text here (5+ translated news items easily exceeds 500
+# chars) made the publish fail with "message_text must be 500 characters or
+# fewer" and the worker degrade the card to the text brief.
+message_text = f"二花早报 {brief_date} 已生成，完整内容见卡片。"
+if len(message_text) > 500:
+    raise SystemExit("card caption exceeds the 500-character sidecar cap")
 
 print(json.dumps({
     "brief_date": brief_date,
