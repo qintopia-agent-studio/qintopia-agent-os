@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.159](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.158...v0.2.159) (2026-08-19)
+
+
+### Bug Fixes
+
+* **erhua:** card caption instead of full brief in card-publish message_text ([#652](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/652)) ([2308f26](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2308f26249c220f3607f95ef7fd8a125efd46ddc))
+
 ## [0.2.158](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.157...v0.2.158) (2026-08-18)
 
 
