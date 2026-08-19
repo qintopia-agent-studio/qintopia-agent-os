@@ -106,6 +106,15 @@ impl PipelineOptions {
 }
 
 /// Resolve a script path relative to the release root that owns the sidecar binary.
+///
+/// Resolution order:
+/// 1. Absolute paths are returned unchanged.
+/// 2. `QINTOPIA_AGENT_OS_RELEASE_CURRENT` (set by worker scripts and the MCP entry) is
+///    tried first when present.
+/// 3. As a fallback, walk up from the sidecar binary's location to the release root
+///    (identified by a `workflows/` directory) and join the script there. This keeps
+///    direct binary invocations working for profile builds such as
+///    `sidecar-profiles/qiwe-production/` whose layout is deeper than two levels.
 pub fn resolve_release_path(script: &Path) -> PathBuf {
     if script.is_absolute() {
         return script.to_path_buf();
@@ -117,13 +126,17 @@ pub fn resolve_release_path(script: &Path) -> PathBuf {
         }
     }
     if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(sidecar_dir) = current_exe.parent() {
-            if let Some(release_dir) = sidecar_dir.parent() {
-                let candidate = release_dir.join(script);
-                if candidate.is_file() {
-                    return candidate;
-                }
+        let mut dir = current_exe.parent();
+        while let Some(candidate_dir) = dir {
+            let candidate = candidate_dir.join(script);
+            if candidate.is_file() {
+                return candidate;
             }
+            // Stop once we reach the release root so we never resolve above it.
+            if candidate_dir.join("workflows").is_dir() {
+                break;
+            }
+            dir = candidate_dir.parent();
         }
     }
     script.to_path_buf()
@@ -1363,5 +1376,34 @@ mod tests {
         let intro = default_intro_text(&render);
         assert!(intro.contains("昨天 咱们群的群聊"));
         assert!(intro.contains("共 0 条消息、0 位邻居发言"));
+    }
+
+    #[test]
+    fn resolve_release_path_returns_absolute_unchanged() {
+        let abs = std::env::temp_dir().join("some-script.py");
+        assert_eq!(resolve_release_path(&abs), abs);
+    }
+
+    #[test]
+    fn resolve_release_path_walks_up_to_release_root() {
+        // The test binary lives under the repo release root (which contains `workflows/`),
+        // so the real rasterize script must resolve to an existing file.
+        let resolved = resolve_release_path(Path::new(
+            "workflows/xiaoman-daily-case-report/rasterize.py",
+        ));
+        assert!(
+            resolved.is_file(),
+            "expected rasterize.py under release root, got {}",
+            resolved.display()
+        );
+        assert!(resolved.ends_with("workflows/xiaoman-daily-case-report/rasterize.py"));
+    }
+
+    #[test]
+    fn resolve_release_path_falls_back_to_relative_when_unresolvable() {
+        // No env override and no matching file in the walk: returns the input unchanged.
+        std::env::remove_var("QINTOPIA_AGENT_OS_RELEASE_CURRENT");
+        let unresolved = Path::new("workflows/__nonexistent_xyz__/rasterize.py");
+        assert_eq!(resolve_release_path(unresolved), unresolved.to_path_buf());
     }
 }

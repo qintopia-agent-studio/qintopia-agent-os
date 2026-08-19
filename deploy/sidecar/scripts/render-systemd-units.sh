@@ -158,6 +158,7 @@ render_long_running_service() {
   local restart_sec="$5"
   local extra_env_file="${6:-}"
   local runtime_directory="${7:-}"
+  local extra_release_env="${8:-}"
   local runtime_directory_lines=""
   if [[ -n "$runtime_directory" ]]; then
     runtime_directory_lines="RuntimeDirectory=${runtime_directory}
@@ -182,7 +183,7 @@ ${runtime_directory_lines}
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 # EnvironmentFile values override Environment values. Bind immutable release identity
 # at the final exec boundary so stale persistent values cannot shadow this release.
-ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} ${BIN} ${command}
+ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} ${extra_release_env:+$extra_release_env }${BIN} ${command}
 Restart=always
 RestartSec=${restart_sec}
 NoNewPrivileges=true
@@ -431,7 +432,10 @@ render_all() {
     "Qintopia Message Sidecar" \
     "nats-server.service network-online.target" \
     "run" \
-    "5"
+    "5" \
+    "" \
+    "" \
+    "$huabaosi_feishu_release_environment"
 
   render_long_running_service \
     "qintopia-agentos-operations-intake.service" \
@@ -490,7 +494,10 @@ render_all() {
     "Qintopia Agent OS Daily Digest Feishu Publisher" \
     "network-online.target postgresql.service qintopia-agentos-daily-digest-worker.service" \
     "run-daily-digest-publisher-worker" \
-    "30"
+    "30" \
+    "" \
+    "" \
+    "$huabaosi_feishu_release_environment"
 
   render_long_running_service \
     "qintopia-agentos-raw-archive-worker.service" \
