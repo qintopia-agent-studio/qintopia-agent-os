@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.160](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.159...v0.2.160) (2026-08-19)
+
+
+### Bug Fixes
+
+* **sidecar:** include erhua morning brief card in Feishu delivery peek ([#655](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/655)) ([105c4d9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/105c4d90bd40079c6e6cbcadcc9443cee1535f57))
+* **xiaoman:** restore daily report auto-publish after Rust cutover (rasterize path, output bounds, chat intro) ([#654](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/654)) ([e87573d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e87573db373638fd0381d040a3727015d24e29ef))
+
 ## [0.2.159](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.158...v0.2.159) (2026-08-19)
 
 
