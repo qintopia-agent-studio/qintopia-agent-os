@@ -137,7 +137,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
   const releaseExecPrefix = `/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`;
   for (const required of [
     `WorkingDirectory=${resolvedReleaseDir}`,
-    `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run`,
+    `ExecStart=${releaseExecPrefix} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run`,
   ]) {
     if (!sidecarUnit.includes(required)) {
       throw new Error(`sidecar unit is missing ${required}`);
