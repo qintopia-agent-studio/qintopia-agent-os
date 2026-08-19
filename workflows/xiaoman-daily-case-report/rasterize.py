@@ -15,6 +15,14 @@ from typing import Any
 
 DEFAULT_JPEG_QUALITY = 92
 
+# Reviewed output bounds enforced by the sidecar media upload
+# (runtime/sidecar/src/operations.rs `daily_case_report_image_identity`):
+# the rasterized JPEG must stay within these maxima or upload fails closed.
+# The base density matches the pre-cutover Python renderer's 2x output.
+MAX_OUTPUT_WIDTH = 4096
+MAX_OUTPUT_HEIGHT = 8192
+BASE_DEVICE_SCALE_FACTOR = 2
+
 # Cross-platform font files that indicate CJK text is likely to render
 # correctly in Chromium. If none are present, we fail closed rather than
 # producing a screenshot full of tofu.
@@ -40,6 +48,25 @@ def _fail(message: str) -> None:
 
 def _has_cjk_font() -> bool:
     return any(Path(path).exists() for path in CJK_FONT_PATHS)
+
+
+def _output_scale(width: int, page_height: int) -> float:
+    """Pick the device scale factor for the screenshot.
+
+    Prefer the base 2x density but clamp so the output stays within the
+    reviewed media-upload bounds (width <= MAX_OUTPUT_WIDTH and
+    height <= MAX_OUTPUT_HEIGHT). Flowing roast HTML is taller than the old
+    fixed canvas renderer, so an unbounded 2x would exceed the height limit
+    and fail the upload for long reports.
+    """
+    if width <= 0 or page_height <= 0:
+        return BASE_DEVICE_SCALE_FACTOR
+    scale = BASE_DEVICE_SCALE_FACTOR
+    if width * scale > MAX_OUTPUT_WIDTH:
+        scale = MAX_OUTPUT_WIDTH / width
+    if page_height * scale > MAX_OUTPUT_HEIGHT:
+        scale = min(scale, MAX_OUTPUT_HEIGHT / page_height)
+    return scale
 
 
 def _route_handler(route: Any) -> None:
@@ -104,14 +131,25 @@ def main() -> int:
 
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
-            page = browser.new_page(
+            # Measure the laid-out page height first (CSS pixels, independent
+            # of device scale) so the screenshot scale can be clamped to the
+            # reviewed output bounds instead of failing media upload later.
+            measure = browser.new_page(
                 viewport={"width": width, "height": 100},
-                device_scale_factor=2,
+                device_scale_factor=1,
+            )
+            measure.route("**/*", _route_handler)
+            measure.goto(html_path.as_uri(), wait_until="load")
+            page_height = measure.evaluate("document.body.scrollHeight")
+            measure.close()
+
+            scale = _output_scale(width, page_height)
+            page = browser.new_page(
+                viewport={"width": width, "height": page_height},
+                device_scale_factor=scale,
             )
             page.route("**/*", _route_handler)
             page.goto(html_path.as_uri(), wait_until="load")
-            page_height = page.evaluate("document.body.scrollHeight")
-            page.set_viewport_size({"width": width, "height": page_height})
             page.screenshot(**screenshot_options)
             browser.close()
 
