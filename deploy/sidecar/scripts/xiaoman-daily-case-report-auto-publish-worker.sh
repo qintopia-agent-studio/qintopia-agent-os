@@ -8,6 +8,14 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RELEASE_DIR="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+# The Rust daily-case-report pipeline resolves relative script paths (e.g.
+# workflows/xiaoman-daily-case-report/rasterize.py) against the release root
+# that owns the sidecar binary. The QiWe production profile binary sits at
+# sidecar-profiles/<profile>/ - one level deeper than the default sidecar/
+# layout - so the exe-parent fallback in resolve_release_path cannot find the
+# release root on its own. Pin it explicitly so the pipeline always resolves
+# scripts against release/current.
+export QINTOPIA_AGENT_OS_RELEASE_CURRENT="${RELEASE_DIR}"
 WORKFLOW_PY="${RELEASE_DIR}/workflows/xiaoman-daily-case-report/daily_case_report.py"
 SIDECAR_BIN="${RELEASE_DIR}/sidecar-profiles/qiwe-production/qintopia-message-sidecar"
 PYTHON_BIN="/usr/bin/python3"
