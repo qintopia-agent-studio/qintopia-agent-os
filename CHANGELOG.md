@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.161](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.160...v0.2.161) (2026-08-19)
+
+
+### Bug Fixes
+
+* **deploy:** allow deploy-runner to write xiaoman daily report state dir ([#660](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/660)) ([f8095e0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f8095e035d5ce53bd6bf85e79141e5f68d0f0012))
+* **sidecar:** bind Huabaosi Feishu release SHA into main sidecar ExecStart ([#657](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/657)) ([2985706](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2985706fecec52797d8557c22e774367dee7de8b))
+* **sidecar:** harden resolve_release_path against profile build layouts ([#658](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/658)) ([2bcdb2f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2bcdb2f816b11270039b23c86d7856d7402118b2))
+
 ## [0.2.160](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.159...v0.2.160) (2026-08-19)
 
 
