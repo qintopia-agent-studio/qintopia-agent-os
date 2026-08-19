@@ -69,6 +69,13 @@ const ERHUA_MORNING_BRIEF_STORAGE_SCHEMA_VERSION: &str =
 const ERHUA_MORNING_BRIEF_MEDIA_TRANSFORM: &str = "erhua_morning_brief_card_jpeg_render_v1";
 #[allow(dead_code)]
 const ERHUA_MORNING_BRIEF_GENERATED_BY: &str = "erhua-morning-brief-worker";
+#[allow(dead_code)]
+const ERHUA_MORNING_BRIEF_WORKFLOW_TYPE: &str = "erhua_morning_brief_card";
+#[allow(dead_code)]
+const ERHUA_MORNING_BRIEF_STORAGE_BACKEND: &str = "feishu-base";
+#[allow(dead_code)]
+const ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY: &str =
+    "erhua_morning_brief_card_feishu_primary_storage_v1";
 const DEFAULT_MAX_MEDIA_BYTES: usize = 10 * 1024 * 1024;
 const MAX_FEISHU_RESPONSE_BYTES: usize = 1024 * 1024;
 const OFFICIAL_FEISHU_API_ROOT: &str = "https://open.feishu.cn/open-apis/";
@@ -700,6 +707,17 @@ pub(crate) async fn revalidate_primary_storage_for_delivery(
         validate_daily_case_report_delivery_approval(&artifact)?;
         let validated = validate_daily_case_report_storage_artifact(&artifact)?;
         let bytes = read_revalidated_daily_case_report_storage_bytes(
+            &artifact,
+            &validated,
+            workflow_root_id,
+            &config,
+        )
+        .map_err(primary_storage_error)?;
+        (validated, bytes)
+    } else if is_erhua_morning_brief_storage_artifact(&artifact) {
+        validate_erhua_morning_brief_delivery_approval(&artifact)?;
+        let validated = validate_erhua_morning_brief_storage_artifact(&artifact)?;
+        let bytes = read_revalidated_erhua_morning_brief_storage_bytes(
             &artifact,
             &validated,
             workflow_root_id,
@@ -2543,6 +2561,133 @@ fn is_daily_case_report_storage_artifact(artifact: &MirrorArtifact) -> bool {
             == Some(DAILY_CASE_REPORT_WORKFLOW_TYPE)
 }
 
+#[allow(dead_code)]
+fn is_erhua_morning_brief_storage_artifact(artifact: &MirrorArtifact) -> bool {
+    artifact.created_by_agent == "xiaoman"
+        && artifact
+            .metadata
+            .get("workflow_type")
+            .and_then(Value::as_str)
+            == Some(ERHUA_MORNING_BRIEF_WORKFLOW_TYPE)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_erhua_morning_brief_delivery_approval(artifact: &MirrorArtifact) -> Result<()> {
+    if artifact.review_status != "approved" || artifact.reviewed_at.is_none() {
+        bail!("erhua morning brief Feishu-backed delivery artifact is not boundary-approved");
+    }
+    let metadata = artifact
+        .metadata
+        .as_object()
+        .context("erhua morning brief Feishu-backed metadata must be an object")?;
+    if metadata.get("requires_human_final_confirmation").is_some() {
+        bail!("erhua morning brief artifact metadata must not redefine confirmation policy");
+    }
+    if metadata_text(metadata, "storage_backend")? != ERHUA_MORNING_BRIEF_STORAGE_BACKEND
+        || metadata_text(metadata, "media_upload_boundary")?
+            != ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY
+    {
+        bail!("erhua morning brief Feishu-backed delivery metadata is not boundary-bound");
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_erhua_morning_brief_storage_artifact(
+    artifact: &MirrorArtifact,
+) -> Result<ValidatedPrimaryStorageArtifact> {
+    let expected_uri = primary_storage_artifact_uri(artifact.id);
+    if artifact.artifact_uri != expected_uri {
+        bail!("erhua morning brief Feishu-backed artifact URI does not match artifact id");
+    }
+    if !is_canonical_sha256(&artifact.content_hash) {
+        bail!("erhua morning brief Feishu-backed content hash is not canonical");
+    }
+    let metadata = artifact
+        .metadata
+        .as_object()
+        .context("erhua morning brief Feishu-backed metadata must be an object")?;
+    if metadata_text(metadata, "workflow_type")? != ERHUA_MORNING_BRIEF_WORKFLOW_TYPE
+        || metadata_text(metadata, "generated_by")? != ERHUA_MORNING_BRIEF_GENERATED_BY
+        || metadata_text(metadata, "storage_backend")? != ERHUA_MORNING_BRIEF_STORAGE_BACKEND
+        || metadata_text(metadata, "media_upload_boundary")?
+            != ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY
+        || metadata_text(metadata, "mime_type")? != REQUIRED_MIME_TYPE
+    {
+        bail!("erhua morning brief Feishu-backed metadata does not match the reviewed contract");
+    }
+    let file_md5 = metadata_text(metadata, "file_md5")?;
+    if !is_lower_hex(&file_md5, 32) {
+        bail!("erhua morning brief Feishu-backed file MD5 is not canonical");
+    }
+    let width = metadata_i64(metadata, "width")?;
+    let height = metadata_i64(metadata, "height")?;
+    let byte_size = metadata_i64(metadata, "byte_size")?;
+    if width <= 0 || height <= 0 || width > 4096 || height > 8192 {
+        bail!("erhua morning brief Feishu-backed dimensions are outside the reviewed bounds");
+    }
+    let byte_size = usize::try_from(byte_size)
+        .ok()
+        .filter(|size| *size > 0 && *size <= DEFAULT_MAX_MEDIA_BYTES)
+        .context("erhua morning brief Feishu-backed byte size is outside the reviewed bound")?;
+    validate_erhua_morning_brief_creation_event(artifact, metadata)?;
+    Ok(ValidatedPrimaryStorageArtifact {
+        file_md5,
+        source_content_hash: artifact.content_hash.clone(),
+        byte_size,
+        width: u32::try_from(width)
+            .context("erhua morning brief Feishu-backed width is invalid")?,
+        height: u32::try_from(height)
+            .context("erhua morning brief Feishu-backed height is invalid")?,
+    })
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_erhua_morning_brief_creation_event(
+    artifact: &MirrorArtifact,
+    metadata: &Map<String, Value>,
+) -> Result<()> {
+    let event = artifact
+        .creation_event_data
+        .as_object()
+        .context("erhua morning brief creation audit is missing")?;
+    for key in [
+        "mime_type",
+        "file_md5",
+        "byte_size",
+        "width",
+        "height",
+        "storage_backend",
+        "media_upload_boundary",
+    ] {
+        if event.get(key) != metadata.get(key) {
+            bail!("erhua morning brief creation audit does not match artifact metadata");
+        }
+    }
+    if event.get("content_hash").and_then(Value::as_str) != Some(&artifact.content_hash) {
+        bail!("erhua morning brief creation audit does not match artifact content hash");
+    }
+    if event.get("external_send_executed").and_then(Value::as_bool) != Some(false) {
+        bail!("erhua morning brief creation audit does not prove pre-send state");
+    }
+    if event.get("automatic_publish").and_then(Value::as_bool) != Some(true) {
+        bail!("erhua morning brief creation audit does not prove automatic publish");
+    }
+    Ok(())
+}
+
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
@@ -2756,6 +2901,39 @@ fn read_revalidated_daily_case_report_storage_bytes(
 #[cfg(any(
     feature = "huabaosi-production-adapter",
     feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn read_revalidated_erhua_morning_brief_storage_bytes(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
+    config: &FeishuPrimaryStorageConfig,
+) -> std::result::Result<Zeroizing<Vec<u8>>, MirrorFailure> {
+    let credentials = read_feishu_credentials(&config.profile_env_path)?;
+    let client = FeishuClient::authenticate(&config.api_root, &credentials)?;
+    let record = client
+        .search_record(&config.base_token, &config.table_id, artifact.id)?
+        .ok_or_else(|| {
+            MirrorFailure::external("record_search", "record_missing", Some(false), false)
+        })?;
+    let fields = record.fields.as_object().ok_or_else(|| {
+        MirrorFailure::external("record_search", "record_fields_missing", Some(false), false)
+    })?;
+    validate_erhua_morning_brief_storage_record_fields(
+        artifact,
+        validated,
+        workflow_root_id,
+        fields,
+    )?;
+    let file_token = primary_storage_attachment_token(fields)?;
+    let readback = client.download_media(file_token.as_str(), config.max_media_bytes)?;
+    validate_primary_storage_readback(artifact, validated, &readback)?;
+    Ok(readback)
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
     feature = "huabaosi-feishu-mirror-adapter",
     feature = "xiaoman-feishu-poster-adapter"
 ))]
@@ -2829,6 +3007,60 @@ fn validate_daily_case_report_storage_record_fields(
         ("MIME类型", REQUIRED_MIME_TYPE.to_string()),
         ("源PNG SHA-256", artifact.content_hash.clone()),
         ("转换规则", DAILY_CASE_REPORT_MEDIA_TRANSFORM.to_string()),
+    ] {
+        if field_text(fields, field).as_deref() != Some(expected.as_str()) {
+            return Err(MirrorFailure::external(
+                "record_search",
+                "record_identity_mismatch",
+                Some(false),
+                false,
+            ));
+        }
+    }
+    for (field, expected) in [
+        (
+            "字节数",
+            i64::try_from(validated.byte_size).unwrap_or(i64::MAX),
+        ),
+        ("宽度", i64::from(validated.width)),
+        ("高度", i64::from(validated.height)),
+    ] {
+        if field_i64(fields, field) != Some(expected) {
+            return Err(MirrorFailure::external(
+                "record_search",
+                "record_identity_mismatch",
+                Some(false),
+                false,
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(
+    feature = "huabaosi-production-adapter",
+    feature = "huabaosi-staging-adapter",
+    feature = "huabaosi-feishu-mirror-adapter"
+))]
+fn validate_erhua_morning_brief_storage_record_fields(
+    artifact: &MirrorArtifact,
+    validated: &ValidatedPrimaryStorageArtifact,
+    workflow_root_id: Uuid,
+    fields: &Map<String, Value>,
+) -> std::result::Result<(), MirrorFailure> {
+    for (field, expected) in [
+        ("AgentOS产物ID", artifact.id.to_string()),
+        (
+            "Schema版本",
+            ERHUA_MORNING_BRIEF_STORAGE_SCHEMA_VERSION.to_string(),
+        ),
+        ("AgentOS工作项ID", workflow_root_id.to_string()),
+        ("图片请求ID", artifact.work_item_id.to_string()),
+        ("JPEG SHA-256", artifact.content_hash.clone()),
+        ("文件MD5", validated.file_md5.clone()),
+        ("MIME类型", REQUIRED_MIME_TYPE.to_string()),
+        ("源PNG SHA-256", artifact.content_hash.clone()),
+        ("转换规则", ERHUA_MORNING_BRIEF_MEDIA_TRANSFORM.to_string()),
     ] {
         if field_text(fields, field).as_deref() != Some(expected.as_str()) {
             return Err(MirrorFailure::external(
@@ -4569,6 +4801,104 @@ mod tests {
             fields.as_object().expect("daily fields are an object"),
         )
         .expect("daily Feishu record identity validates");
+    }
+
+    #[test]
+    #[cfg(any(
+        feature = "huabaosi-production-adapter",
+        feature = "huabaosi-staging-adapter",
+        feature = "huabaosi-feishu-mirror-adapter"
+    ))]
+    fn erhua_morning_brief_feishu_storage_accepts_automatic_publish_delivery() {
+        let image = RgbImage::from_pixel(16, 24, Rgb([242, 244, 248]));
+        let mut bytes = Vec::new();
+        JpegEncoder::new_with_quality(&mut bytes, 92)
+            .encode_image(&DynamicImage::ImageRgb8(image))
+            .expect("encode erhua fixture JPEG");
+        let artifact_id = Uuid::new_v4();
+        let work_item_id = Uuid::new_v4();
+        let content_hash = format!("sha256:{}", sha256_hex(&bytes));
+        let file_md5 = md5_hex(&bytes);
+        let storage_image = FeishuDailyCaseReportStorageImage {
+            artifact_id,
+            workflow_root_id: work_item_id,
+            work_item_id,
+            content_hash: &content_hash,
+            file_md5: &file_md5,
+            bytes: &bytes,
+            width: 16,
+            height: 24,
+            filename: "erhua-morning-brief-card-2026-08-19.jpg",
+        };
+        validate_feishu_storage_image(
+            FeishuImageProfile::ErhuaMorningBrief,
+            &FeishuImageStorageInput::from(&storage_image),
+            DEFAULT_MAX_MEDIA_BYTES,
+        )
+        .expect("erhua long JPEG should satisfy storage identity");
+        let fields = build_feishu_image_storage_fields(
+            FeishuImageProfile::ErhuaMorningBrief,
+            &FeishuImageStorageInput::from(&storage_image),
+            "fileFixture",
+        );
+        let created_at = Utc
+            .with_ymd_and_hms(2026, 8, 19, 8, 10, 0)
+            .single()
+            .expect("fixture timestamp");
+        let artifact = MirrorArtifact {
+            id: artifact_id,
+            work_item_id,
+            created_by_agent: "xiaoman".to_string(),
+            review_status: "approved".to_string(),
+            title: "二花早报卡片（自动发布）".to_string(),
+            artifact_uri: primary_storage_artifact_uri(artifact_id),
+            content_hash: content_hash.clone(),
+            source_ids: Value::Null,
+            metadata: json!({
+                "workflow_type": ERHUA_MORNING_BRIEF_WORKFLOW_TYPE,
+                "generated_by": ERHUA_MORNING_BRIEF_GENERATED_BY,
+                "storage_backend": ERHUA_MORNING_BRIEF_STORAGE_BACKEND,
+                "media_upload_boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY,
+                "mime_type": REQUIRED_MIME_TYPE,
+                "file_md5": file_md5,
+                "byte_size": bytes.len(),
+                "width": 16,
+                "height": 24,
+            }),
+            creation_event_data: json!({
+                "content_hash": content_hash,
+                "mime_type": REQUIRED_MIME_TYPE,
+                "file_md5": file_md5,
+                "byte_size": bytes.len(),
+                "width": 16,
+                "height": 24,
+                "storage_backend": ERHUA_MORNING_BRIEF_STORAGE_BACKEND,
+                "media_upload_boundary": ERHUA_MORNING_BRIEF_MEDIA_UPLOAD_BOUNDARY,
+                "external_send_executed": false,
+                "automatic_publish": true,
+            }),
+            reviewed_at: Some(created_at),
+            reviewed_by: None,
+            review_decision_reason: None,
+            created_at,
+            updated_at: created_at,
+            last_synced_at: None,
+            workbench_status: None,
+        };
+        validate_erhua_morning_brief_delivery_approval(&artifact)
+            .expect("erhua automatic-publish approval boundary validates");
+        let validated = validate_erhua_morning_brief_storage_artifact(&artifact)
+            .expect("erhua artifact metadata validates");
+
+        assert_eq!(validated.width, 16);
+        assert_eq!(validated.height, 24);
+        validate_erhua_morning_brief_storage_record_fields(
+            &artifact,
+            &validated,
+            work_item_id,
+            fields.as_object().expect("erhua fields are an object"),
+        )
+        .expect("erhua Feishu record identity validates");
     }
 
     #[test]
