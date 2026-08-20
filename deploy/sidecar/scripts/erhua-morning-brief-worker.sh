@@ -171,6 +171,9 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --apply-artifact-create \
   --publish-plan \
   --allow-news-unavailable \
+  --news-recency-days 14 \
+  --news-dedup-days 7 \
+  --news-history-path "$WORK_DIR/news-history.json" \
   --render-image "$card_image" \
   --render-image-format jpeg \
   --json >"$report_json"

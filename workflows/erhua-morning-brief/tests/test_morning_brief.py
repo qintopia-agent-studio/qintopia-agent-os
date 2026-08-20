@@ -598,6 +598,140 @@ class ErhuaMorningBriefTests(unittest.TestCase):
 
         self.assertEqual(module._feed_urls(args), ["https://openai.com/news/rss.xml"])
 
+    def _fake_feed_opener(self, body: bytes, final_url: str = "https://openai.com/news/rss.xml"):
+        class FakeResponse:
+            def __init__(self, b: bytes):
+                self.body = b
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def geturl(self):
+                return final_url
+
+            def read(self, limit: int):
+                return self.body[:limit]
+
+        class FakeOpener:
+            def open(self, request, timeout):
+                return FakeResponse(body)
+
+        return FakeOpener()
+
+    def test_news_recency_drops_items_older_than_window(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>新发布的研究更新</title>
+      <description>今天的内容。</description>
+      <pubDate>Wed, 19 Aug 2026 10:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>三年前的旧闻</title>
+      <description>很旧的内容。</description>
+      <pubDate>Wed, 19 Aug 2020 10:00:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>""".encode()
+        args = SimpleNamespace(
+            news_feed_url=["https://openai.com/news/rss.xml"],
+            news_feed_timeout_seconds=1,
+            news_limit=5,
+            news_recency_days=14,
+            news_dedup_days=0,
+            news_history_path="",
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        original = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original
+
+        self.assertEqual([item.title for item in items], ["新发布的研究更新"])
+
+    def test_cross_day_dedup_suppresses_recently_sent_titles(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>早报条目甲</title>
+      <description>甲的内容。</description>
+    </item>
+    <item>
+      <title>早报条目乙</title>
+      <description>乙的内容。</description>
+    </item>
+  </channel>
+</rss>""".encode()
+        history = os.path.join(tempfile.mkdtemp(), "news-history.json")
+        base = dict(
+            news_feed_url=["https://openai.com/news/rss.xml"],
+            news_feed_timeout_seconds=1,
+            news_limit=5,
+            news_recency_days=0,
+            news_dedup_days=7,
+            news_history_path=history,
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        original = module.urllib.request.build_opener
+
+        module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
+        try:
+            run1 = module._fetch_feed_news_items(SimpleNamespace(**base))
+            run2 = module._fetch_feed_news_items(SimpleNamespace(**base))
+        finally:
+            module.urllib.request.build_opener = original
+
+        self.assertEqual([item.title for item in run1], ["早报条目甲", "早报条目乙"])
+        # Both titles were recorded on the first run, so the second run shows none.
+        self.assertEqual(run2, [])
+        self.assertTrue(os.path.exists(history), "dedup must persist a history file")
+
+    def test_news_dedup_disabled_without_history_path(self):
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>早报条目甲</title>
+      <description>甲的内容。</description>
+    </item>
+    <item>
+      <title>早报条目乙</title>
+      <description>乙的内容。</description>
+    </item>
+  </channel>
+</rss>""".encode()
+        args = SimpleNamespace(
+            news_feed_url=["https://openai.com/news/rss.xml"],
+            news_feed_timeout_seconds=1,
+            news_limit=5,
+            news_recency_days=0,
+            news_dedup_days=7,
+            news_history_path="",
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        original = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original
+
+        # Without a history path dedup is off, so every fetched item is returned.
+        self.assertEqual([item.title for item in items], ["早报条目甲", "早报条目乙"])
+
     def test_news_llm_args_fall_back_to_shared_llm_env(self):
         module = load_module()
         old_base = os.environ.get("QINTOPIA_LLM_BASE_URL")
