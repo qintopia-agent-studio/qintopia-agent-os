@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -623,18 +625,23 @@ class ErhuaMorningBriefTests(unittest.TestCase):
 
     def test_news_recency_drops_items_older_than_window(self):
         module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+        # Publish dates are generated relative to "now" so the test stays valid
+        # after the originally hard-coded 2026-08-19 falls outside the window.
+        now = datetime.now(timezone.utc)
+        recent = format_datetime(now - timedelta(days=1))
+        old = format_datetime(now - timedelta(days=365 * 3))
+        rss = f"""<?xml version="1.0" encoding="UTF-8" ?>
 <rss version="2.0">
   <channel>
     <item>
       <title>新发布的研究更新</title>
       <description>今天的内容。</description>
-      <pubDate>Wed, 19 Aug 2026 10:00:00 +0000</pubDate>
+      <pubDate>{recent}</pubDate>
     </item>
     <item>
       <title>三年前的旧闻</title>
       <description>很旧的内容。</description>
-      <pubDate>Wed, 19 Aug 2020 10:00:00 +0000</pubDate>
+      <pubDate>{old}</pubDate>
     </item>
   </channel>
 </rss>""".encode()
@@ -877,13 +884,19 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         # would fill the cap and the newer items below them would never enter
         # the brief. Recency pre-filtering during extraction avoids that.
         module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+        # Old entries are years ago and new entries are just yesterday, both
+        # generated relative to "now" so the test does not rot after the
+        # hard-coded 2026-08-19 leaves the recency window.
+        now = datetime.now(timezone.utc)
+        old = format_datetime(now - timedelta(days=365 * 3))
+        recent = format_datetime(now - timedelta(days=1))
+        rss = f"""<?xml version="1.0" encoding="UTF-8" ?>
 <rss version="2.0">
   <channel>
-    <item><title>置顶旧闻一</title><description>很旧。</description><pubDate>Wed, 19 Aug 2020 10:00:00 +0000</pubDate></item>
-    <item><title>置顶旧闻二</title><description>很旧。</description><pubDate>Wed, 19 Aug 2020 10:00:00 +0000</pubDate></item>
-    <item><title>新发布的研究更新A</title><description>新内容A。</description><pubDate>Wed, 19 Aug 2026 10:00:00 +0000</pubDate></item>
-    <item><title>新发布的研究更新B</title><description>新内容B。</description><pubDate>Wed, 19 Aug 2026 11:00:00 +0000</pubDate></item>
+    <item><title>置顶旧闻一</title><description>很旧。</description><pubDate>{old}</pubDate></item>
+    <item><title>置顶旧闻二</title><description>很旧。</description><pubDate>{old}</pubDate></item>
+    <item><title>新发布的研究更新A</title><description>新内容A。</description><pubDate>{recent}</pubDate></item>
+    <item><title>新发布的研究更新B</title><description>新内容B。</description><pubDate>{recent}</pubDate></item>
   </channel>
 </rss>""".encode()
         args = SimpleNamespace(
@@ -905,6 +918,54 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertEqual(
             [item.title for item in items],
             ["新发布的研究更新A", "新发布的研究更新B"],
+        )
+
+    def test_fetch_stops_after_first_feed_satisfies_cap(self):
+        # Regression: once the first feed fills the fetch cap, do not pay extra
+        # timeout waits on downstream feeds (which would stall the brief when
+        # QunMind is down and a later feed is slow/unreachable).
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item><title>早报条目一</title><description>1。</description></item>
+    <item><title>早报条目二</title><description>2。</description></item>
+    <item><title>早报条目三</title><description>3。</description></item>
+    <item><title>早报条目四</title><description>4。</description></item>
+    <item><title>早报条目五</title><description>5。</description></item>
+  </channel>
+</rss>""".encode()
+        calls: list[str] = []
+        base_opener = self._fake_feed_opener(rss)
+
+        class CountingOpener:
+            def open(self, request, timeout):
+                calls.append(request.get_full_url())
+                return base_opener.open(request, timeout)
+
+        args = SimpleNamespace(
+            news_feed_url=[
+                "https://openai.com/news/rss.xml",
+                "https://huggingface.co/blog/feed.xml",
+                "https://arxiv.org/rss/cs.AI",
+            ],
+            news_feed_timeout_seconds=1,
+            news_limit=5,
+            news_recency_days=0,
+            news_dedup_days=0,
+            news_history_path="",
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        original = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_h: CountingOpener()
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original
+        self.assertEqual(len(items), 5)
+        self.assertEqual(
+            len(calls), 1, "should not request further feeds once cap is satisfied"
         )
 
     def test_news_llm_args_fall_back_to_shared_llm_env(self):

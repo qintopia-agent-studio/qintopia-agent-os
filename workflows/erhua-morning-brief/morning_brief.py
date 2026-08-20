@@ -689,6 +689,11 @@ def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
             UnsafeNewsFeedXml,
         ):
             continue
+        # Stop requesting further feeds once we have enough candidates: when
+        # QunMind is down and the first feed already satisfies the cap, we must
+        # not pay extra news_feed_timeout_seconds waits on slower downstream feeds.
+        if len(collected) >= fetch_cap:
+            break
     if recency_days > 0:
         collected = _apply_news_recency(collected, recency_days)
     if history_path and dedup_days > 0:
