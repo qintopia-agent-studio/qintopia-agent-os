@@ -312,6 +312,13 @@ def _prepare_activity(date: str, args: argparse.Namespace) -> dict[str, Any]:
                 "mode": "same_day_preview",
                 "operator_name": args.operator_name,
                 "community_audience": args.audience,
+                # The Erhua morning-brief worker runs under the Erhua Hermes
+                # profile (QINTOPIA_PROFILE_ID=erhua). The activity preview is
+                # Xiaoman's capability, which is gated on actor_agent=xiaoman.
+                # The setdefault("QINTOPIA_PROFILE_ID", "xiaoman") above is a
+                # no-op when the profile already injected erhua, so pass the
+                # actor explicitly instead of relying on the env fallback.
+                "actor_agent": "xiaoman",
             }
         )
     )
