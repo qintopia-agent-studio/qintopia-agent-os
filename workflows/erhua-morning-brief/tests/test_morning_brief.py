@@ -688,14 +688,114 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
         try:
             run1 = module._fetch_feed_news_items(SimpleNamespace(**base))
+            # History is written only on the brief's success path, not during
+            # fetch. Simulate that here, the way build_morning_brief does.
+            module._record_sent_titles(
+                history, module._date_for(SimpleNamespace(**base)),
+                [item.title for item in run1], 7,
+            )
             run2 = module._fetch_feed_news_items(SimpleNamespace(**base))
         finally:
             module.urllib.request.build_opener = original
 
         self.assertEqual([item.title for item in run1], ["早报条目甲", "早报条目乙"])
-        # Both titles were recorded on the first run, so the second run shows none.
+        # Both titles were recorded on the first run's success path, so run2 shows none.
         self.assertEqual(run2, [])
         self.assertTrue(os.path.exists(history), "dedup must persist a history file")
+
+    def test_fetch_does_not_record_history_before_success(self):
+        # Regression: the dedup write must NOT happen during RSS fetch, otherwise a
+        # later render/artifact/send failure would mark undelivered news as sent.
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item><title>早报条目甲</title><description>甲。</description></item>
+    <item><title>早报条目乙</title><description>乙。</description></item>
+  </channel>
+</rss>""".encode()
+        history = os.path.join(tempfile.mkdtemp(), "news-history.json")
+        args = SimpleNamespace(
+            news_feed_url=["https://openai.com/news/rss.xml"],
+            news_feed_timeout_seconds=1,
+            news_limit=5,
+            news_recency_days=0,
+            news_dedup_days=7,
+            news_history_path=history,
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        original = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
+        try:
+            module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original
+        # Fetch alone must leave no history; a downstream failure thus cannot
+        # suppress these titles on the next run.
+        self.assertFalse(
+            os.path.exists(history),
+            "fetch must not write history before the brief succeeds",
+        )
+
+    def test_build_morning_brief_records_rss_history_on_success(self):
+        # The dedup write must happen on the brief's success path, not during
+        # fetch. Drive build_morning_brief through the RSS fallback with an
+        # artifact committed and assert the history file is written only then.
+        from unittest import mock
+
+        module = load_module()
+        rss = (
+            b'<?xml version="1.0" encoding="UTF-8" ?>\n'
+            b'<rss version="2.0"><channel>'
+            b'<item><title>\xe6\x97\xa9\xe6\x8a\xa5\xe6\x9d\xa1\xe7\x9b\xae\xe7\x94\xb2'
+            b'</title><description>\xe7\x94\xb2\xe3\x80\x82</description></item>'
+            b'<item><title>\xe6\x97\xa9\xe6\x8a\xa5\xe6\x9d\xa1\xe7\x9b\xae\xe4\xb9\x99'
+            b'</title><description>\xe4\xb9\x99\xe3\x80\x82</description></item>'
+            b"</channel></rss>"
+        )
+        tmp_root = tempfile.mkdtemp()
+        history = os.path.join(tmp_root, "news-history.json")
+        render_path = os.path.join(tmp_root, "card.png")
+        argv = [
+            "morning_brief.py",
+            "--date", "2026-08-20",
+            "--allow-news-unavailable",
+            "--render-image", render_path,
+            "--render-image-format", "jpeg",
+            "--prepare-artifact",
+            "--execute-artifact-create",
+            "--apply-artifact-create",
+            "--publish-plan",
+            "--news-recency-days", "0",
+            "--news-dedup-days", "7",
+            "--news-history-path", history,
+            "--news-feed-url", "https://openai.com/news/rss.xml",
+        ]
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            args = module._parse_args()
+        finally:
+            sys.argv = old_argv
+
+        with mock.patch.object(module, "_run_qunmind_report", side_effect=RuntimeError("no qunmind")), \
+                mock.patch.object(module, "_prepare_activity", return_value={}), \
+                mock.patch.object(module, "_activity_section", return_value=("", 0, False)), \
+                mock.patch.object(module, "_prepare_weather", return_value=None), \
+                mock.patch.object(module, "_build_card", return_value=None), \
+                mock.patch.object(module.morning_brief_renderer, "render", side_effect=lambda card, path, image_format: Path(path).write_text("x")), \
+                mock.patch.object(module, "_artifact_create_payload", return_value={}), \
+                mock.patch.object(module, "_artifact_create_action", return_value={}), \
+                mock.patch.object(module, "_publish_plan", return_value={}), \
+                mock.patch.object(module.urllib.request, "build_opener", return_value=self._fake_feed_opener(rss)):
+            result = module.build_morning_brief(args)
+
+        self.assertEqual(result["ai_news_source"], "public_rss_fallback")
+        self.assertTrue(os.path.exists(history), "success path must write history")
+        data = json.loads(Path(history).read_text(encoding="utf-8"))
+        today = module._date_for(args)
+        self.assertEqual(data[today], ["早报条目甲", "早报条目乙"])
 
     def test_news_dedup_disabled_without_history_path(self):
         module = load_module()

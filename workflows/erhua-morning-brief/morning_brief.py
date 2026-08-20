@@ -631,19 +631,17 @@ def _apply_news_dedup(
 ) -> list[AiNewsItem]:
     """Prefer items not sent in the last ``dedup_days`` days.
 
+    Pure filter: this only suppresses recently-sent titles during selection.
+    It does NOT write history. Writing happens on the successful return path of
+    build_morning_brief so a failed render/artifact/send-validation cannot mark
+    undelivered news as already sent (which would silently drop it on retry).
+
     Deliberately does NOT backfill with already-sent items: on a quiet day the
     brief should show fewer (or zero) fresh items rather than repeat yesterday's
-    list. The history file is best-effort — a write failure must never break the
-    morning brief.
+    list.
     """
     recent = _load_recent_sent_titles(history_path, dedup_days)
-    unsent = [item for item in items if item.title.casefold() not in recent]
-    ordered = unsent[:limit]
-    try:
-        _record_sent_titles(history_path, _date_for(args), [item.title for item in ordered], dedup_days)
-    except Exception:
-        pass
-    return ordered
+    return [item for item in items if item.title.casefold() not in recent][:limit]
 
 
 def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
@@ -1562,6 +1560,28 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         result["guardrails"].append("prepared text_announcement artifact remains pending until reviewed")
     if args.publish_plan:
         result["publish_plan"] = _publish_plan(args, result)
+
+    # Record the RSS titles actually selected for this brief only here, on the
+    # successful return path. Any failure above (compose validation, render,
+    # artifact create, send-request prepare) raises and skips this, so undelivered
+    # news is never marked sent and a retry can still surface it. We only record
+    # when an artifact was actually committed, matching the production worker.
+    if (
+        ai_news_source == "public_rss_fallback"
+        and getattr(args, "apply_artifact_create", False)
+    ):
+        _news_history_path = (getattr(args, "news_history_path", "") or "").strip()
+        _news_dedup_days = getattr(args, "news_dedup_days", DEFAULT_NEWS_DEDUP_DAYS) or 0
+        if _news_history_path and _news_dedup_days > 0:
+            try:
+                _record_sent_titles(
+                    _news_history_path,
+                    date,
+                    [item.title for item in news_items],
+                    _news_dedup_days,
+                )
+            except Exception:
+                pass
     return result
 
 
