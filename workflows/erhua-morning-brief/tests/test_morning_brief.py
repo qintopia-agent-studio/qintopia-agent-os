@@ -732,6 +732,81 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         # Without a history path dedup is off, so every fetched item is returned.
         self.assertEqual([item.title for item in items], ["早报条目甲", "早报条目乙"])
 
+    def test_record_sent_titles_merges_same_day_runs(self):
+        # Regression: a same-day re-run yields an empty dedup result (everything
+        # was already sent). _record_sent_titles must merge rather than overwrite,
+        # otherwise the day's history is wiped and titles reappear on the next run.
+        module = load_module()
+        history = os.path.join(tempfile.mkdtemp(), "news-history.json")
+        args = SimpleNamespace(
+            news_feed_url=["https://openai.com/news/rss.xml"],
+            news_feed_timeout_seconds=1,
+            news_limit=5,
+            news_recency_days=0,
+            news_dedup_days=7,
+            news_history_path=history,
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        today = module._date_for(args)
+        module._record_sent_titles(history, today, ["早报条目甲", "早报条目乙"], 7)
+        module._record_sent_titles(history, today, [], 7)
+        data = json.loads(Path(history).read_text(encoding="utf-8"))
+        # Order is preserved (existing first, no overwrite), and nothing wiped.
+        self.assertEqual(data[today], ["早报条目甲", "早报条目乙"])
+
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item><title>早报条目甲</title><description>甲。</description></item>
+    <item><title>早报条目乙</title><description>乙。</description></item>
+  </channel>
+</rss>""".encode()
+        original = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
+        try:
+            run3 = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original
+        # Because history survived, a later same-day run is still suppressed.
+        self.assertEqual(run3, [])
+
+    def test_recency_prefilter_keeps_newer_items_when_old_come_first(self):
+        # Regression: old pinned/static entries appear first in the feed. If
+        # recency were applied only after a per-feed extract cap, the old items
+        # would fill the cap and the newer items below them would never enter
+        # the brief. Recency pre-filtering during extraction avoids that.
+        module = load_module()
+        rss = """<?xml version="1.0" encoding="UTF-8" ?>
+<rss version="2.0">
+  <channel>
+    <item><title>置顶旧闻一</title><description>很旧。</description><pubDate>Wed, 19 Aug 2020 10:00:00 +0000</pubDate></item>
+    <item><title>置顶旧闻二</title><description>很旧。</description><pubDate>Wed, 19 Aug 2020 10:00:00 +0000</pubDate></item>
+    <item><title>新发布的研究更新A</title><description>新内容A。</description><pubDate>Wed, 19 Aug 2026 10:00:00 +0000</pubDate></item>
+    <item><title>新发布的研究更新B</title><description>新内容B。</description><pubDate>Wed, 19 Aug 2026 11:00:00 +0000</pubDate></item>
+  </channel>
+</rss>""".encode()
+        args = SimpleNamespace(
+            news_feed_url=["https://openai.com/news/rss.xml"],
+            news_feed_timeout_seconds=1,
+            news_limit=2,
+            news_recency_days=14,
+            news_dedup_days=0,
+            news_history_path="",
+            timezone="Asia/Shanghai",
+            date=None,
+        )
+        original = module.urllib.request.build_opener
+        module.urllib.request.build_opener = lambda *_h: self._fake_feed_opener(rss)
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.urllib.request.build_opener = original
+        self.assertEqual(
+            [item.title for item in items],
+            ["新发布的研究更新A", "新发布的研究更新B"],
+        )
+
     def test_news_llm_args_fall_back_to_shared_llm_env(self):
         module = load_module()
         old_base = os.environ.get("QINTOPIA_LLM_BASE_URL")

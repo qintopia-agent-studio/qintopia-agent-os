@@ -480,7 +480,10 @@ def _feed_item_published(item: ET.Element) -> Optional[datetime]:
 
 
 def _extract_feed_news_items(
-    xml_text: str, limit: int, args: argparse.Namespace | None = None
+    xml_text: str,
+    limit: int,
+    args: argparse.Namespace | None = None,
+    recency_cutoff: datetime | None = None,
 ) -> list[AiNewsItem]:
     if limit <= 0:
         raise RuntimeError("news limit must be positive")
@@ -520,6 +523,16 @@ def _extract_feed_news_items(
         candidate = AiNewsItem(
             title=title[:90], summary=summary, published=_feed_item_published(item)
         )
+        # Recency pre-filter during extraction so old, dated, pinned/static
+        # entries do not consume the per-feed extract cap and crowd out newer
+        # items that appear later in the feed. Undated items are kept because
+        # we cannot judge their age.
+        if (
+            recency_cutoff is not None
+            and candidate.published is not None
+            and candidate.published < recency_cutoff
+        ):
+            continue
         if _needs_chinese_translation(candidate):
             if args is not None:
                 translated = _translate_news_item_with_llm(candidate, args)
@@ -583,7 +596,16 @@ def _record_sent_titles(history_path: str, date_str: str, titles: list[str], ded
         data = {}
     if not isinstance(data, dict):
         data = {}
-    data[date_str] = list(titles)
+    # Merge with titles already recorded for this day instead of overwriting.
+    # A same-day re-run produces an empty dedup result (everything was already
+    # sent), and a naive overwrite would wipe the day's history and let those
+    # titles reappear on the next run. Merging keeps them suppressed.
+    existing = data.get(date_str)
+    merged: list[str] = list(existing) if isinstance(existing, list) else []
+    for title in titles:
+        if title.casefold() not in {t.casefold() for t in merged}:
+            merged.append(title)
+    data[date_str] = merged
     cutoff = datetime.now(timezone.utc).date() - timedelta(days=dedup_days)
     pruned = {}
     for day, entries in data.items():
@@ -631,11 +653,15 @@ def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
     recency_days = getattr(args, "news_recency_days", 0) or 0
     history_path = (getattr(args, "news_history_path", "") or "").strip()
     dedup_days = getattr(args, "news_dedup_days", DEFAULT_NEWS_DEDUP_DAYS) or 0
-    # When dedup is on, fetch more than the brief limit so we can rotate past
-    # titles already sent recently instead of repeating the same top items.
+    # Fetch more than the brief limit whenever we need to filter/rotate:
+    #  - dedup on    -> rotate past titles already sent recently
+    #  - recency on  -> old dated entries must not crowd out newer items
+    recency_cutoff = None
+    if recency_days > 0:
+        recency_cutoff = datetime.now(timezone.utc) - timedelta(days=recency_days)
     fetch_cap = args.news_limit
-    if history_path and dedup_days > 0:
-        fetch_cap = max(args.news_limit * 3, 15)
+    if recency_days > 0 or (history_path and dedup_days > 0):
+        fetch_cap = max(args.news_limit * 4, 20)
     collected: list[AiNewsItem] = []
     seen: set[str] = set()
     for url in _feed_urls(args):
@@ -649,7 +675,7 @@ def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
                 if not _is_allowed_news_feed_url(final_url):
                     continue
                 xml_text = response.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
-            for item in _extract_feed_news_items(xml_text, fetch_cap, args):
+            for item in _extract_feed_news_items(xml_text, fetch_cap, args, recency_cutoff):
                 key = item.title.casefold()
                 if key in seen:
                     continue
