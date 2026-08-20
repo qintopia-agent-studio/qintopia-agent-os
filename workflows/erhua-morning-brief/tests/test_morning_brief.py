@@ -1117,6 +1117,50 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         finally:
             renderer._render_with_playwright = original_playwright
 
+    def test_prepare_activity_passes_actor_agent_xiaoman_under_erhua_profile(self):
+        """Activity preview must explicitly declare actor_agent=xiaoman.
+
+        The Erhua morning-brief worker runs under the Erhua Hermes profile,
+        whose env sets QINTOPIA_PROFILE_ID=erhua. The xiaoman activity wrapper
+        gates on actor_agent=xiaoman; without an explicit actor_agent the env
+        fallback resolves to "erhua" and the wrapper rejects the preview with
+        "actor_agent must be xiaoman", failing the whole worker (the
+        run=failed regression that started 2026-08-15). The explicit arg must
+        win regardless of the profile env.
+        """
+        from unittest import mock
+
+        module = load_module()
+        captured: dict = {}
+
+        def fake_prepare(args):
+            captured.update(args)
+            return json.dumps(
+                {"success": True, "publishable_count": 0, "announcement_text": "今日无活动"}
+            )
+
+        fake_variant = mock.Mock()
+        fake_variant.handle_qintopia_xiaoman_activity_announcement_prepare.side_effect = (
+            fake_prepare
+        )
+        env_patch = mock.patch.dict(
+            os.environ,
+            {
+                "QINTOPIA_PROFILE_ID": "erhua",
+                "QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE": "1",
+                "QINTOPIA_XIAOMAN_ACTIVITY_USE_FEISHU_BASE": "1",
+                "QINTOPIA_XIAOMAN_ACTIVITY_READ_THROUGH_ENABLE": "1",
+            },
+        )
+        args = SimpleNamespace(activity_fixture=None, operator_name="op", audience="社区群成员")
+        with env_patch, mock.patch.object(
+            module, "_load_xiaoman_variant", return_value=fake_variant
+        ):
+            result = module._prepare_activity("2026-08-08", args)
+
+        self.assertEqual(captured.get("actor_agent"), "xiaoman")
+        self.assertIs(result.get("success"), True)
+
 
 if __name__ == "__main__":
     unittest.main()
