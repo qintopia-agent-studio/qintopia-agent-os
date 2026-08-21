@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import email.utils
 import hashlib
-import html
 import importlib.util
 import json
 import os
@@ -15,11 +13,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-import urllib.error
-import urllib.parse
-import urllib.request
 import uuid
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,28 +36,7 @@ DEFAULT_AUDIENCE = "社区群成员"
 DEFAULT_QUNMIND_TIMEOUT_SECONDS = 180
 DEFAULT_NEWS_LIMIT = 5
 DEFAULT_NEWS_FEED_TIMEOUT_SECONDS = 12
-# Recency + cross-day dedup keep the public RSS fallback from repeating the same
-# static vendor posts forever when QunMind is unavailable. Recency drops items
-# older than this many days (0 disables); dedup suppresses titles already sent
-# in the last NEWS_DEDUP_DAYS days using a persistent history file.
-DEFAULT_NEWS_RECENCY_DAYS = 0
 DEFAULT_NEWS_DEDUP_DAYS = 7
-DEFAULT_NEWS_FEED_URLS = [
-    "https://openai.com/news/rss.xml",
-    "https://blog.google/technology/ai/rss/",
-    "https://deepmind.google/blog/rss.xml",
-    "https://huggingface.co/blog/feed.xml",
-    "https://arxiv.org/rss/cs.AI",
-]
-NEWS_FEED_ALLOWED_HOSTS = frozenset(
-    {
-        "openai.com",
-        "blog.google",
-        "deepmind.google",
-        "huggingface.co",
-        "arxiv.org",
-    }
-)
 WORKFLOW_ID = "workflows/erhua-morning-brief"
 
 _THIS = Path(__file__).resolve()
@@ -77,23 +50,6 @@ class AiNewsItem:
     title_zh: str = ""
     summary_zh: str = ""
     published: Optional[datetime] = None
-
-
-class UnsafeNewsFeedXml(RuntimeError):
-    pass
-
-
-class NoNewsFeedRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # Pass None instead of fp to avoid ResourceWarning about an unclosed
-        # response object when urllib re-raises the HTTPError.
-        raise urllib.error.HTTPError(
-            req.full_url,
-            code,
-            "news feed redirects are not allowed",
-            headers,
-            None,
-        )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -165,7 +121,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--news-recency-days",
         type=int,
-        default=DEFAULT_NEWS_RECENCY_DAYS,
+        default=0,
         help="Drop RSS items published more than this many days ago (0 disables).",
     )
     parser.add_argument(
@@ -366,41 +322,6 @@ def _qunmind_available(args: argparse.Namespace) -> bool:
     return shutil.which(args.qunmind_bin) is not None
 
 
-def _feed_urls(args: argparse.Namespace) -> list[str]:
-    if args.news_feed_url:
-        candidates = args.news_feed_url
-    else:
-        env_value = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS", "")
-        candidates = env_value.split(",") if env_value else DEFAULT_NEWS_FEED_URLS
-
-    urls: list[str] = []
-    for raw in candidates:
-        url = raw.strip()
-        if _is_allowed_news_feed_url(url):
-            urls.append(url)
-    return urls
-
-
-def _is_allowed_news_feed_url(url: str) -> bool:
-    parsed = urllib.parse.urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in NEWS_FEED_ALLOWED_HOSTS
-
-
-def _plain_feed_text(value: str) -> str:
-    text = html.unescape(value)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    return _sanitize_public_line(text, max_len=180)
-
-
-def _child_text(element: ET.Element, names: tuple[str, ...]) -> str:
-    for name in names:
-        child = element.find(name)
-        if child is not None and child.text:
-            return child.text
-    return ""
-
-
 def _translate_news_item_with_llm(
     item: AiNewsItem, args: argparse.Namespace
 ) -> AiNewsItem | None:
@@ -455,250 +376,69 @@ def _translate_news_item_with_llm(
         return None
 
 
-def _feed_item_published(item: ET.Element) -> Optional[datetime]:
-    raw = _child_text(
-        item,
-        (
-            "pubDate",
-            "published",
-            "updated",
-            "{http://www.w3.org/2005/Atom}published",
-            "{http://www.w3.org/2005/Atom}updated",
-        ),
-    )
-    if not raw:
-        return None
-    try:
-        dt = email.utils.parsedate_to_datetime(raw.strip())
-    except (TypeError, ValueError, OverflowError):
-        return None
-    if dt is None:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def _extract_feed_news_items(
-    xml_text: str,
-    limit: int,
-    args: argparse.Namespace | None = None,
-    recency_cutoff: datetime | None = None,
-) -> list[AiNewsItem]:
-    if limit <= 0:
-        raise RuntimeError("news limit must be positive")
-    if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b", xml_text, flags=re.IGNORECASE):
-        raise UnsafeNewsFeedXml(
-            "news feed XML must not contain DTD or entity declarations"
-        )
-    root = ET.fromstring(xml_text)
-    feed_items = [
-        *root.findall(".//channel/item"),
-        *root.findall(".//{http://www.w3.org/2005/Atom}entry"),
-    ]
-    items: list[AiNewsItem] = []
-    seen: set[str] = set()
-    for item in feed_items:
-        title = _plain_feed_text(
-            _child_text(item, ("title", "{http://www.w3.org/2005/Atom}title"))
-        )
-        summary = _plain_feed_text(
-            _child_text(
-                item,
-                (
-                    "description",
-                    "summary",
-                    "content",
-                    "{http://www.w3.org/2005/Atom}summary",
-                    "{http://www.w3.org/2005/Atom}content",
-                ),
-            )
-        )
-        if not summary:
-            summary = title
-        key = title.casefold()
-        if not title or key in seen:
-            continue
-        seen.add(key)
-        candidate = AiNewsItem(
-            title=title[:90], summary=summary, published=_feed_item_published(item)
-        )
-        # Recency pre-filter during extraction so old, dated, pinned/static
-        # entries do not consume the per-feed extract cap and crowd out newer
-        # items that appear later in the feed. Undated items are kept because
-        # we cannot judge their age.
-        if (
-            recency_cutoff is not None
-            and candidate.published is not None
-            and candidate.published < recency_cutoff
-        ):
-            continue
-        if _needs_chinese_translation(candidate):
-            if args is not None:
-                translated = _translate_news_item_with_llm(candidate, args)
-                if translated is not None:
-                    items.append(translated)
-                    if len(items) >= limit:
-                        break
-                    continue
-            # No translation available: skip the English-only item rather than
-            # sending untranslated English to the community group.
-            continue
-        items.append(candidate)
-        if len(items) >= limit:
-            break
-    return items
-
-
-def _apply_news_recency(items: list[AiNewsItem], recency_days: int) -> list[AiNewsItem]:
-    """Drop items published more than ``recency_days`` ago.
-
-    Items without a parseable publish date are kept: we cannot judge their age,
-    and dropping them would silently empty the brief on feeds that omit dates.
-    """
-    if recency_days <= 0:
-        return items
-    cutoff = datetime.now(timezone.utc) - timedelta(days=recency_days)
-    kept: list[AiNewsItem] = []
-    for item in items:
-        if item.published is None or item.published >= cutoff:
-            kept.append(item)
-    return kept
-
-
-def _load_recent_sent_titles(history_path: str, dedup_days: int) -> set[str]:
-    cutoff = datetime.now(timezone.utc).date() - timedelta(days=dedup_days)
-    titles: set[str] = set()
-    try:
-        data = json.loads(Path(history_path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return titles
-    if not isinstance(data, dict):
-        return titles
-    for date_str, entries in data.items():
-        try:
-            entry_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        if entry_date < cutoff:
-            continue
-        if isinstance(entries, list):
-            titles.update(str(entry).casefold() for entry in entries)
-    return titles
-
-
-def _record_sent_titles(history_path: str, date_str: str, titles: list[str], dedup_days: int) -> None:
-    path = Path(history_path)
-    try:
-        raw = path.read_text(encoding="utf-8")
-        data = json.loads(raw) if raw.strip() else {}
-    except (OSError, ValueError):
-        data = {}
-    if not isinstance(data, dict):
-        data = {}
-    # Merge with titles already recorded for this day instead of overwriting.
-    # A same-day re-run produces an empty dedup result (everything was already
-    # sent), and a naive overwrite would wipe the day's history and let those
-    # titles reappear on the next run. Merging keeps them suppressed.
-    existing = data.get(date_str)
-    merged: list[str] = list(existing) if isinstance(existing, list) else []
-    for title in titles:
-        if title.casefold() not in {t.casefold() for t in merged}:
-            merged.append(title)
-    data[date_str] = merged
-    cutoff = datetime.now(timezone.utc).date() - timedelta(days=dedup_days)
-    pruned = {}
-    for day, entries in data.items():
-        try:
-            entry_date = datetime.strptime(day, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        if entry_date < cutoff:
-            continue
-        pruned[day] = entries
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(pruned, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
-
-
-def _apply_news_dedup(
-    items: list[AiNewsItem],
-    history_path: str,
-    dedup_days: int,
-    limit: int,
-    args: argparse.Namespace,
-) -> list[AiNewsItem]:
-    """Prefer items not sent in the last ``dedup_days`` days.
-
-    Pure filter: this only suppresses recently-sent titles during selection.
-    It does NOT write history. Writing happens on the successful return path of
-    build_morning_brief so a failed render/artifact/send-validation cannot mark
-    undelivered news as already sent (which would silently drop it on retry).
-
-    Deliberately does NOT backfill with already-sent items: on a quiet day the
-    brief should show fewer (or zero) fresh items rather than repeat yesterday's
-    list.
-    """
-    recent = _load_recent_sent_titles(history_path, dedup_days)
-    return [item for item in items if item.title.casefold() not in recent][:limit]
-
-
 def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
-    if args.news_feed_timeout_seconds <= 0:
-        raise RuntimeError("news feed timeout must be positive")
-    opener = urllib.request.build_opener(NoNewsFeedRedirect)
+    """Fetch fresh AI news via the Rust sidecar, then translate to Chinese.
+
+    The fetch / RSS parse / recency / cross-day dedup logic now lives in the
+    sidecar binary (``OperationsErhuaMorningBriefNewsFetch``). Python is a thin
+    orchestrator here: it shells out for the raw items and runs the LLM
+    translation the Rust layer cannot perform. The history record (written only
+    on the successful publish path) is also a sidecar call; see
+    ``build_morning_brief``.
+    """
     recency_days = getattr(args, "news_recency_days", 0) or 0
-    history_path = (getattr(args, "news_history_path", "") or "").strip()
     dedup_days = getattr(args, "news_dedup_days", DEFAULT_NEWS_DEDUP_DAYS) or 0
-    # Fetch more than the brief limit whenever we need to filter/rotate:
-    #  - dedup on    -> rotate past titles already sent recently
-    #  - recency on  -> old dated entries must not crowd out newer items
-    recency_cutoff = None
-    if recency_days > 0:
-        recency_cutoff = datetime.now(timezone.utc) - timedelta(days=recency_days)
-    fetch_cap = args.news_limit
-    if recency_days > 0 or (history_path and dedup_days > 0):
-        fetch_cap = max(args.news_limit * 4, 20)
-    collected: list[AiNewsItem] = []
-    seen: set[str] = set()
-    for url in _feed_urls(args):
-        request = urllib.request.Request(
-            url,
-            headers={"User-Agent": "qintopia-erhua-morning-brief/1.0"},
+    history_path = (getattr(args, "news_history_path", "") or "").strip()
+    command = [
+        args.sidecar_bin,
+        "operations-erhua-morning-brief-news-fetch",
+        "--news-feed-timeout-seconds",
+        str(args.news_feed_timeout_seconds),
+        "--news-limit",
+        str(args.news_limit),
+        "--news-recency-days",
+        str(recency_days),
+        "--news-dedup-days",
+        str(dedup_days),
+        "--news-history-path",
+        history_path,
+    ]
+    try:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+    except OSError as exc:
+        if getattr(args, "allow_news_unavailable", False):
+            return []
+        raise RuntimeError(f"news sidecar fetch failed: {exc}") from exc
+    if completed.returncode != 0:
+        if getattr(args, "allow_news_unavailable", False):
+            return []
+        raise RuntimeError(
+            "news sidecar fetch failed: " + (completed.stderr.strip() or "non-zero exit")
         )
-        try:
-            with opener.open(request, timeout=args.news_feed_timeout_seconds) as response:
-                final_url = response.geturl() if hasattr(response, "geturl") else url
-                if not _is_allowed_news_feed_url(final_url):
-                    continue
-                xml_text = response.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
-            for item in _extract_feed_news_items(xml_text, fetch_cap, args, recency_cutoff):
-                key = item.title.casefold()
-                if key in seen:
-                    continue
-                seen.add(key)
-                collected.append(item)
-                if len(collected) >= fetch_cap:
-                    break
-        except (
-            OSError,
-            urllib.error.URLError,
-            ET.ParseError,
-            UnicodeError,
-            UnsafeNewsFeedXml,
-        ):
+    try:
+        raw_items = json.loads(completed.stdout)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"news sidecar returned invalid JSON: {exc}") from exc
+    if not isinstance(raw_items, list):
+        raise RuntimeError("news sidecar returned a non-list payload")
+
+    translated: list[AiNewsItem] = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
             continue
-        # Stop requesting further feeds once we have enough candidates: when
-        # QunMind is down and the first feed already satisfies the cap, we must
-        # not pay extra news_feed_timeout_seconds waits on slower downstream feeds.
-        if len(collected) >= fetch_cap:
+        item = AiNewsItem(title=str(raw.get("title", "")), summary=str(raw.get("summary", "")))
+        if _needs_chinese_translation(item):
+            translated_item = _translate_news_item_with_llm(item, args)
+            if translated_item is None:
+                # Skip English-only items we cannot translate rather than send
+                # raw English into the community group.
+                continue
+            translated.append(translated_item)
+        else:
+            translated.append(item)
+        if len(translated) >= args.news_limit:
             break
-    if recency_days > 0:
-        collected = _apply_news_recency(collected, recency_days)
-    if history_path and dedup_days > 0:
-        collected = _apply_news_dedup(collected, history_path, dedup_days, args.news_limit, args)
-    return collected[: args.news_limit]
+    return translated
 
 
 def _strip_markdown(value: str) -> str:
@@ -1571,6 +1311,8 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
     # artifact create, send-request prepare) raises and skips this, so undelivered
     # news is never marked sent and a retry can still surface it. We only record
     # when an artifact was actually committed, matching the production worker.
+    # The record itself is a Rust sidecar call (OperationsErhuaMorningBriefNewsRecord)
+    # so the dedup merge/prune logic stays in one place (the sidecar).
     if (
         ai_news_source == "public_rss_fallback"
         and getattr(args, "apply_artifact_create", False)
@@ -1579,13 +1321,22 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         _news_dedup_days = getattr(args, "news_dedup_days", DEFAULT_NEWS_DEDUP_DAYS) or 0
         if _news_history_path and _news_dedup_days > 0:
             try:
-                _record_sent_titles(
-                    _news_history_path,
+                command = [
+                    args.sidecar_bin,
+                    "operations-erhua-morning-brief-news-record",
+                    "--date",
                     date,
-                    [item.title for item in news_items],
-                    _news_dedup_days,
-                )
-            except Exception:
+                    "--titles-json",
+                    json.dumps(
+                        [item.title for item in news_items], ensure_ascii=False
+                    ),
+                    "--news-history-path",
+                    _news_history_path,
+                    "--news-dedup-days",
+                    str(_news_dedup_days),
+                ]
+                subprocess.run(command, check=False, capture_output=True, text=True)
+            except OSError:
                 pass
     return result
 

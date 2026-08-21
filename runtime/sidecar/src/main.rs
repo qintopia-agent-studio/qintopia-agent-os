@@ -20,6 +20,7 @@ mod daily_case_report_render;
 mod daily_digest_publisher;
 mod db;
 mod embedding_worker;
+mod erhua_morning_brief_news;
 mod event;
 mod event_signal;
 mod evidence;
@@ -638,6 +639,40 @@ async fn main() -> Result<()> {
                 payload_json,
                 apply,
                 dry_run,
+            )
+            .await
+        }
+        Command::OperationsErhuaMorningBriefNewsFetch {
+            news_feed_url,
+            news_feed_timeout_seconds,
+            news_limit,
+            news_recency_days,
+            news_dedup_days,
+            news_history_path,
+        } => {
+            erhua_morning_brief_news::run_news_fetch(
+                &cli,
+                news_feed_url,
+                news_feed_timeout_seconds,
+                news_limit,
+                news_recency_days,
+                news_dedup_days,
+                news_history_path,
+            )
+            .await
+        }
+        Command::OperationsErhuaMorningBriefNewsRecord {
+            date,
+            titles_json,
+            news_history_path,
+            news_dedup_days,
+        } => {
+            erhua_morning_brief_news::run_news_record(
+                &cli,
+                date,
+                titles_json,
+                news_history_path,
+                news_dedup_days,
             )
             .await
         }
