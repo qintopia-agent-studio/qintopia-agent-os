@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.162](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.161...v0.2.162) (2026-08-21)
+
+
+### Bug Fixes
+
+* **erhua-morning-brief:** 新闻源新鲜度过滤 + 跨天去重（解决每天重复） ([#662](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/662)) ([41c5728](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/41c572875f2da72e48ccbb59e24cd63eba7656b2))
+* **erhua:** pass explicit actor_agent=xiaoman in morning-brief activity preview ([#661](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/661)) ([1f40efa](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1f40efab9e4968960c6c6ac016965ec4c7328860))
+
 ## [0.2.161](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.160...v0.2.161) (2026-08-19)
 
 
