@@ -1123,6 +1123,53 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Fetch fresh AI news items for the Erhua morning brief (RSS fallback) and
+    /// emit them as JSON. Owned by Rust; Python shells out here.
+    OperationsErhuaMorningBriefNewsFetch {
+        /// RSS feed URLs. Defaults to the built-in allowlisted fallback list.
+        #[arg(long)]
+        news_feed_url: Vec<String>,
+
+        /// Per-feed socket timeout in seconds.
+        #[arg(long, default_value_t = crate::erhua_morning_brief_news::DEFAULT_NEWS_FEED_TIMEOUT_SECONDS)]
+        news_feed_timeout_seconds: u64,
+
+        /// Maximum number of items to return.
+        #[arg(long, default_value_t = crate::erhua_morning_brief_news::DEFAULT_NEWS_LIMIT)]
+        news_limit: usize,
+
+        /// Drop items older than this many days by publish date (0 disables).
+        #[arg(long, default_value_t = 0)]
+        news_recency_days: i64,
+
+        /// Suppress titles sent in the last N days via the history file (0 disables).
+        #[arg(long, default_value_t = 0)]
+        news_dedup_days: i64,
+
+        /// Path to the persistent dedup history JSON (empty disables dedup).
+        #[arg(long, default_value = "")]
+        news_history_path: String,
+    },
+    /// Persist selected news titles into the dedup history. Call only after the
+    /// morning brief has actually been published, so a failed run never marks
+    /// titles as sent.
+    OperationsErhuaMorningBriefNewsRecord {
+        /// Brief date key (YYYY-MM-DD).
+        #[arg(long)]
+        date: String,
+
+        /// JSON array of selected title strings.
+        #[arg(long)]
+        titles_json: String,
+
+        /// Path to the persistent dedup history JSON.
+        #[arg(long, default_value = "")]
+        news_history_path: String,
+
+        /// History retention window in days.
+        #[arg(long, default_value_t = crate::erhua_morning_brief_news::DEFAULT_NEWS_DEDUP_DAYS)]
+        news_dedup_days: i64,
+    },
     /// Preview daily case-report collection sources with sanitized output.
     DailyCaseReportCollectPreview {
         /// Restrict collection to one chat id.

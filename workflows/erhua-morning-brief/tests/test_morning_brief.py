@@ -281,81 +281,88 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("QunMind 的公开新闻源暂时没读到", result.stdout)
 
-    def test_rss_fallback_parser_extracts_public_items(self):
-        module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>OpenAI 发布新的研究更新</title>
-      <description><![CDATA[<p>重点是更稳定的工具调用与评估。</p>]]></description>
-    </item>
-    <item>
-      <title>Anthropic 更新企业安全实践</title>
-      <description>面向团队协作的模型治理建议。</description>
-    </item>
-  </channel>
-</rss>"""
+    # --- News domain (Rust sidecar) -------------------------------------------
+    # The fetch / RSS parse / recency / cross-day dedup logic now lives in the
+    # Rust sidecar. Python is a thin orchestrator that shells out for the raw
+    # items and translates them. These tests cover the thin caller boundary and
+    # the success-path history record; the logic itself is unit-tested in Rust.
 
-        items = module._extract_feed_news_items(rss, 2)
-
-        self.assertEqual(
-            [item.title for item in items],
-            ["OpenAI 发布新的研究更新", "Anthropic 更新企业安全实践"],
+    def _news_args(self, **overrides):
+        base = dict(
+            sidecar_bin="qintopia-message-sidecar",
+            news_feed_timeout_seconds=12,
+            news_limit=5,
+            news_recency_days=0,
+            news_dedup_days=0,
+            news_history_path="",
+            allow_news_unavailable=False,
+            news_llm_base_url="",
+            news_llm_api_key="",
+            news_llm_model="",
         )
-        self.assertIn("工具调用", items[0].summary)
+        base.update(overrides)
+        return SimpleNamespace(**base)
 
-    def test_rss_fallback_parser_skips_english_items_without_translation(self):
+    def _fake_sidecar_completed(self, items):
+        class FakeCompleted:
+            returncode = 0
+            stdout = json.dumps(items, ensure_ascii=False)
+            stderr = ""
+
+        return FakeCompleted()
+
+    def test_fetch_feed_news_items_shells_out_to_sidecar(self):
+        # The thin caller must invoke the Rust sidecar news-fetch subcommand and
+        # map its JSON payload into AiNewsItem rows.
         module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>OpenAI launches a new agent guide</title>
-      <description>Teams can use the guide before connecting agents to production systems.</description>
-    </item>
-    <item>
-      <title>Google 发布 Gemini 更新</title>
-      <description>面向开发者的模型工具更新。</description>
-    </item>
-  </channel>
-</rss>"""
+        args = self._news_args(news_recency_days=14, news_dedup_days=7)
+        captured = {}
 
-        items = module._extract_feed_news_items(rss, 5)
+        def fake_run(command, check=False, capture_output=False, text=False):
+            captured["command"] = command
+            return self._fake_sidecar_completed(
+                [
+                    {"title": "OpenAI 发布新的研究更新", "summary": "更稳定的工具调用。"},
+                    {"title": "Google 发布 Gemini 更新", "summary": "面向开发者。"},
+                ]
+            )
 
-        self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
+        original = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.subprocess.run = original
 
-    def test_rss_fallback_translates_english_items_when_llm_configured(self):
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].title, "OpenAI 发布新的研究更新")
+        self.assertIn("operations-erhua-morning-brief-news-fetch", captured["command"])
+        self.assertIn("--news-recency-days", captured["command"])
+        self.assertIn("14", captured["command"])
+        self.assertIn("--news-dedup-days", captured["command"])
+
+    def test_fetch_feed_news_items_translates_english_items(self):
+        # English rows returned by the sidecar are translated via the LLM before
+        # entering the brief.
         module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>OpenAI launches a new agent guide</title>
-      <description>Teams can use the guide before connecting agents to production systems.</description>
-    </item>
-  </channel>
-</rss>"""
-        args = SimpleNamespace(
+        args = self._news_args(
             news_llm_base_url="https://llm.example.test/v1",
             news_llm_api_key="fixture-key",
             news_llm_model="gpt-5.2",
-            news_feed_timeout_seconds=12,
         )
-        captured = {}
 
         class FakeResponse:
-            def raise_for_status(self) -> None:
+            def raise_for_status(self):
                 return None
 
-            def json(self) -> dict:
+            def json(self):
                 return {
                     "choices": [
                         {
                             "message": {
                                 "content": (
                                     '{"title_zh": "OpenAI 发布新的智能体指南", '
-                                    '"summary_zh": "团队可以在连接生产系统前使用该指南。"}'
+                                    '"summary_zh": "团队可在连接生产系统前使用该指南。"}'
                                 )
                             }
                         }
@@ -363,16 +370,26 @@ class ErhuaMorningBriefTests(unittest.TestCase):
                 }
 
         def fake_post(url, headers=None, json=None, timeout=None):
-            captured["url"] = url
-            captured["headers"] = headers
-            captured["payload"] = json
             return FakeResponse()
 
+        def fake_run(command, check=False, capture_output=False, text=False):
+            return self._fake_sidecar_completed(
+                [
+                    {
+                        "title": "OpenAI launches a new agent guide",
+                        "summary": "Teams can use the guide before connecting agents.",
+                    }
+                ]
+            )
+
+        original_run = module.subprocess.run
+        module.subprocess.run = fake_run
         original_httpx = sys.modules.get("httpx")
         sys.modules["httpx"] = SimpleNamespace(post=fake_post)
         try:
-            items = module._extract_feed_news_items(rss, 5, args)
+            items = module._fetch_feed_news_items(args)
         finally:
+            module.subprocess.run = original_run
             if original_httpx is None:
                 sys.modules.pop("httpx", None)
             else:
@@ -381,222 +398,144 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0].title, "OpenAI launches a new agent guide")
         self.assertEqual(items[0].title_zh, "OpenAI 发布新的智能体指南")
-        self.assertIn("连接生产系统", items[0].summary_zh)
-        self.assertTrue(captured["url"].endswith("/chat/completions"))
-        self.assertEqual(captured["payload"]["model"], "gpt-5.2")
 
-    def test_rss_fallback_translation_failure_keeps_english_item_skipped(self):
+    def test_fetch_feed_news_items_skips_english_without_translation(self):
+        # Without an LLM config, English-only rows are dropped rather than sent raw.
         module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>OpenAI launches a new agent guide</title>
-      <description>Teams can use the guide before connecting agents to production systems.</description>
-    </item>
-  </channel>
-</rss>"""
-        args = SimpleNamespace(
-            news_llm_base_url="https://llm.example.test/v1",
-            news_llm_api_key="fixture-key",
-            news_llm_model="gpt-5.2",
-            news_feed_timeout_seconds=12,
-        )
+        args = self._news_args()
 
-        def failing_post(url, headers=None, json=None, timeout=None):
-            raise RuntimeError("translation endpoint unavailable")
-
-        original_httpx = sys.modules.get("httpx")
-        sys.modules["httpx"] = SimpleNamespace(post=failing_post)
-        try:
-            items = module._extract_feed_news_items(rss, 5, args)
-        finally:
-            if original_httpx is None:
-                sys.modules.pop("httpx", None)
-            else:
-                sys.modules["httpx"] = original_httpx
-
-        self.assertEqual(items, [])
-
-    def test_rss_fallback_without_llm_config_skips_english(self):
-        module = load_module()
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>OpenAI launches a new agent guide</title>
-      <description>Teams can use the guide before connecting agents to production systems.</description>
-    </item>
-  </channel>
-</rss>"""
-        args = SimpleNamespace(
-            news_llm_base_url="",
-            news_llm_api_key="",
-            news_llm_model="",
-            news_feed_timeout_seconds=12,
-        )
-        items = module._extract_feed_news_items(rss, 5, args)
-        self.assertEqual(items, [])
-
-    def test_rss_fallback_parser_rejects_dtd_and_entities(self):
-        module = load_module()
-
-        for xml in (
-            """<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY xxe "blocked">]><rss />""",
-            """<?xml version="1.0"?><rss><!ENTITY xxe "blocked"></rss>""",
-        ):
-            with self.subTest(xml=xml):
-                with self.assertRaisesRegex(RuntimeError, "DTD or entity"):
-                    module._extract_feed_news_items(xml, 1)
-
-    def test_rss_fallback_skips_unsafe_feed_and_uses_next_feed(self):
-        module = load_module()
-        args = SimpleNamespace(
-            news_feed_url=[
-                "https://openai.com/news/rss.xml",
-                "https://blog.google/technology/ai/rss/",
-            ],
-            news_feed_timeout_seconds=1,
-            news_limit=1,
-        )
-        unsafe = b'<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY xxe "blocked">]><rss />'
-        valid = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>Google 发布 Gemini 更新</title>
-      <description>面向开发者的模型工具更新。</description>
-    </item>
-  </channel>
-</rss>""".encode()
-        calls = []
-
-        class FakeResponse:
-            def __init__(self, body: bytes, final_url: str):
-                self.body = body
-                self.final_url = final_url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_value, traceback):
-                return False
-
-            def geturl(self) -> str:
-                return self.final_url
-
-            def read(self, limit: int) -> bytes:
-                return self.body[:limit]
-
-        class FakeOpener:
-            def open(self, request, timeout):
-                calls.append((request.full_url, timeout))
-                if request.full_url.startswith("https://openai.com/"):
-                    return FakeResponse(unsafe, request.full_url)
-                return FakeResponse(valid, request.full_url)
-
-        original_build_opener = module.urllib.request.build_opener
-        module.urllib.request.build_opener = lambda *_handlers: FakeOpener()
-        try:
-            items = module._fetch_feed_news_items(args)
-        finally:
-            module.urllib.request.build_opener = original_build_opener
-
-        self.assertEqual([url for url, _timeout in calls], args.news_feed_url)
-        self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
-
-    def test_rss_fallback_rejects_unsafe_final_response_url(self):
-        module = load_module()
-        args = SimpleNamespace(
-            news_feed_url=[
-                "https://openai.com/news/rss.xml",
-                "https://blog.google/technology/ai/rss/",
-            ],
-            news_feed_timeout_seconds=1,
-            news_limit=1,
-        )
-        rss = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>Should Not Be Read</title>
-      <description>Unsafe redirected target.</description>
-    </item>
-  </channel>
-</rss>""".encode()
-        valid = """<?xml version="1.0" encoding="UTF-8" ?>
-<rss version="2.0">
-  <channel>
-    <item>
-      <title>Google 发布 Gemini 更新</title>
-      <description>面向开发者的模型工具更新。</description>
-    </item>
-  </channel>
-</rss>""".encode()
-        reads = []
-
-        class FakeResponse:
-            def __init__(self, body: bytes, final_url: str):
-                self.body = body
-                self.final_url = final_url
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, exc_type, exc_value, traceback):
-                return False
-
-            def geturl(self) -> str:
-                return self.final_url
-
-            def read(self, limit: int) -> bytes:
-                reads.append(self.final_url)
-                return self.body[:limit]
-
-        class FakeOpener:
-            def open(self, request, timeout):
-                if request.full_url.startswith("https://openai.com/"):
-                    return FakeResponse(rss, "https://169.254.169.254/latest/meta-data")
-                return FakeResponse(valid, request.full_url)
-
-        original_build_opener = module.urllib.request.build_opener
-        module.urllib.request.build_opener = lambda *_handlers: FakeOpener()
-        try:
-            items = module._fetch_feed_news_items(args)
-        finally:
-            module.urllib.request.build_opener = original_build_opener
-
-        self.assertEqual(reads, ["https://blog.google/technology/ai/rss/"])
-        self.assertEqual([item.title for item in items], ["Google 发布 Gemini 更新"])
-
-    def test_news_feed_redirect_handler_rejects_redirects(self):
-        module = load_module()
-        handler = module.NoNewsFeedRedirect()
-        request = module.urllib.request.Request("https://openai.com/news/rss.xml")
-
-        try:
-            handler.redirect_request(
-                request,
-                None,
-                302,
-                "Found",
-                {},
-                "https://127.0.0.1/internal",
+        def fake_run(command, check=False, capture_output=False, text=False):
+            return self._fake_sidecar_completed(
+                [
+                    {
+                        "title": "OpenAI launches a new agent guide",
+                        "summary": "Teams can use the guide.",
+                    }
+                ]
             )
-            self.fail("redirect_request must raise HTTPError")
-        except module.urllib.error.HTTPError as exc:
-            self.assertEqual(exc.code, 302)
 
-    def test_feed_urls_reject_non_allowlisted_hosts(self):
+        original = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.subprocess.run = original
+        self.assertEqual(items, [])
+
+    def test_fetch_feed_news_items_degrades_when_sidecar_fails(self):
+        # With --allow-news-unavailable the brief must tolerate a sidecar failure.
         module = load_module()
-        args = SimpleNamespace(
-            news_feed_url=[
-                "https://127.0.0.1:1/rss",
-                "https://openai.com/news/rss.xml",
-            ]
-        )
+        args = self._news_args(allow_news_unavailable=True)
 
-        self.assertEqual(module._feed_urls(args), ["https://openai.com/news/rss.xml"])
+        class FakeFailed:
+            returncode = 1
+            stdout = ""
+            stderr = "boom"
+
+        def fake_run(command, check=False, capture_output=False, text=False):
+            return FakeFailed()
+
+        original = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            items = module._fetch_feed_news_items(args)
+        finally:
+            module.subprocess.run = original
+        self.assertEqual(items, [])
+
+    def test_fetch_feed_news_items_raises_when_sidecar_fails_non_allowable(self):
+        # Without --allow-news-unavailable a sidecar failure is a hard error.
+        module = load_module()
+        args = self._news_args()
+
+        class FakeFailed:
+            returncode = 1
+            stdout = ""
+            stderr = "boom"
+
+        def fake_run(command, check=False, capture_output=False, text=False):
+            return FakeFailed()
+
+        original = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            with self.assertRaises(RuntimeError):
+                module._fetch_feed_news_items(args)
+        finally:
+            module.subprocess.run = original
+
+    def test_build_morning_brief_records_rss_history_on_success(self):
+        # Regression: the dedup record is a Rust sidecar call made only on the
+        # brief's success path (RSS fallback + artifact committed). Drive
+        # build_morning_brief end-to-end with the sidecar (and QunMind) stubbed.
+        from unittest import mock
+
+        module = load_module()
+        tmp_root = tempfile.mkdtemp()
+        history = os.path.join(tmp_root, "news-history.json")
+        render_path = os.path.join(tmp_root, "card.png")
+
+        recorded = {}
+        fetched = False
+
+        def fake_run(command, check=False, capture_output=False, text=False):
+            if "operations-erhua-morning-brief-news-fetch" in command:
+                nonlocal fetched
+                fetched = True
+                return self._fake_sidecar_completed(
+                    [{"title": "OpenAI 发布新的研究更新", "summary": "更稳定的工具调用。"}]
+                )
+            if "operations-erhua-morning-brief-news-record" in command:
+                recorded["command"] = command
+            return self._fake_sidecar_completed([])
+
+        argv = [
+            "morning_brief.py",
+            "--date", "2026-08-20",
+            "--render-image", render_path,
+            "--render-image-format", "jpeg",
+            "--prepare-artifact",
+            "--execute-artifact-create",
+            "--apply-artifact-create",
+            "--news-recency-days", "0",
+            "--news-dedup-days", "7",
+            "--news-history-path", history,
+        ]
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            args = module._parse_args()
+        finally:
+            sys.argv = old_argv
+
+        original_run = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            with mock.patch.object(module, "_run_qunmind_report", side_effect=RuntimeError("no qunmind")), \
+                    mock.patch.object(module, "_prepare_activity", return_value={"success": True, "publishable_count": 0, "announcement_text": ""}), \
+                    mock.patch.object(module, "_activity_section", return_value=("", 0, False)), \
+                    mock.patch.object(module, "_prepare_weather", return_value=None), \
+                    mock.patch.object(module, "_build_card", return_value=None), \
+                    mock.patch.object(module.morning_brief_renderer, "render", side_effect=lambda card, path, image_format: Path(path).write_text("x")), \
+                    mock.patch.object(module, "_artifact_create_payload", return_value={}), \
+                    mock.patch.object(module, "_artifact_create_action", return_value={}), \
+                    mock.patch.object(module, "_publish_plan", return_value={}):
+                result = module.build_morning_brief(args)
+        finally:
+            module.subprocess.run = original_run
+
+        self.assertEqual(result["ai_news_source"], "public_rss_fallback")
+        self.assertTrue(fetched)
+        self.assertIn(
+            "operations-erhua-morning-brief-news-record",
+            recorded["command"],
+            "success path must record sent titles via the sidecar",
+        )
+        self.assertIn(
+            '"OpenAI 发布新的研究更新"',
+            " ".join(recorded["command"]),
+            "selected titles must be passed to the sidecar record call",
+        )
 
     def test_news_llm_args_fall_back_to_shared_llm_env(self):
         module = load_module()
