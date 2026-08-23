@@ -772,7 +772,7 @@ render_all() {
     "qintopia-agentos-erhua-morning-brief.service" \
     "Qintopia AgentOS Erhua morning brief draft artifact worker" \
     "${MONOREPO_DIR}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh" \
-    "$erhua_morning_brief_python_environment"
+    "$erhua_morning_brief_python_environment $huabaosi_feishu_release_environment"
   render_calendar_timer \
     "qintopia-agentos-erhua-morning-brief.timer" \
     "Run Qintopia AgentOS Erhua morning brief draft artifact worker" \

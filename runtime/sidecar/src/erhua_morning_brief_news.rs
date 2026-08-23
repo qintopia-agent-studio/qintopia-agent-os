@@ -27,12 +27,22 @@ pub const DEFAULT_NEWS_FEED_TIMEOUT_SECONDS: u64 = 12;
 pub const DEFAULT_NEWS_DEDUP_DAYS: i64 = 7;
 
 const NEWS_FEED_MAX_BYTES: usize = 2 * 1024 * 1024;
+/// Maximum number of 3xx redirects the fetcher follows per feed. The bounded
+/// HTTP client does not auto-follow, and several allowlisted feeds (e.g.
+/// arxiv.org) issue a 302 to a sibling host (export.arxiv.org). We follow a
+/// small bounded number of redirects but still require every redirect target
+/// host to be allowlisted, so a feed can never pivot to an arbitrary external
+/// host.
+const NEWS_FEED_MAX_REDIRECTS: usize = 4;
 const DEFAULT_NEWS_FEED_URLS: &[&str] = &[
     "https://openai.com/news/rss.xml",
     "https://blog.google/technology/ai/rss/",
     "https://deepmind.google/blog/rss.xml",
     "https://huggingface.co/blog/feed.xml",
     "https://arxiv.org/rss/cs.AI",
+    // Domestic, reachable fallback so the brief still has news when the
+    // Google/OpenAI/HuggingFace hosts are blocked on the production network.
+    "https://sspai.com/feed",
 ];
 const NEWS_FEED_ALLOWED_HOSTS: &[&str] = &[
     "openai.com",
@@ -40,6 +50,10 @@ const NEWS_FEED_ALLOWED_HOSTS: &[&str] = &[
     "deepmind.google",
     "huggingface.co",
     "arxiv.org",
+    // arxiv.org 302-redirects here; keep it allowlisted so the redirect is
+    // followed instead of treated as a dead feed.
+    "export.arxiv.org",
+    "sspai.com",
 ];
 const NEWS_USER_AGENT: &str = "qintopia-erhua-morning-brief/1.0";
 
@@ -140,18 +154,60 @@ pub fn news_fetch_core(
 
     let mut feeds_xml: Vec<(Url, String)> = Vec::with_capacity(feeds.len());
     for url in &feeds {
-        let response = client
-            .request(
+        // Follow a bounded number of redirects manually (the bounded client
+        // does not auto-follow), but only onto other allowlisted hosts. A
+        // network error or a redirect to a disallowed host is skipped so one
+        // bad feed can never abort the whole brief.
+        let mut current = url.clone();
+        let mut redirects = 0usize;
+        let response = loop {
+            let resp = match client.request(
                 "GET",
-                url,
+                &current,
                 &[("User-Agent", NEWS_USER_AGENT.to_string())],
                 &[],
                 NEWS_FEED_MAX_BYTES,
-            )
-            .map_err(|e| e.into_source())
-            .with_context(|| format!("fetch news feed {url}"))?;
-        // The bounded client never follows redirects, so a 3xx is treated as a
-        // dead feed (mirrors the Python NoNewsFeedRedirect behavior).
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("erhua-news: fetch {current} failed: {e:?}");
+                    break None;
+                }
+            };
+            let status = resp.status;
+            if (300..=399).contains(&status) && status != 304 {
+                if redirects >= NEWS_FEED_MAX_REDIRECTS {
+                    eprintln!("erhua-news: {current} exceeded redirect limit");
+                    break None;
+                }
+                let location = resp
+                    .headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("location"))
+                    .map(|(_, v)| v.clone());
+                let Some(location) = location else {
+                    break None;
+                };
+                let next = if let Ok(abs) = Url::parse(&location) {
+                    abs
+                } else if let Ok(rel) = current.join(&location) {
+                    rel
+                } else {
+                    break None;
+                };
+                if !is_allowed_news_host(&next) {
+                    eprintln!("erhua-news: redirect target not allowlisted: {next}");
+                    break None;
+                }
+                current = next;
+                redirects += 1;
+                continue;
+            }
+            break Some(resp);
+        };
+        let Some(response) = response else {
+            continue;
+        };
         if response.status != 200 {
             continue;
         }
@@ -350,6 +406,15 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
                     }
                 }
             }
+            Ok(Event::CData(e)) => {
+                if in_item {
+                    // CDATA sections carry literal text (no entity decoding
+                    // needed); several feeds (e.g. OpenAI) wrap titles and
+                    // descriptions in CDATA, so without this branch those
+                    // fields parse as empty.
+                    text.push_str(&String::from_utf8_lossy(e.as_ref()));
+                }
+            }
             Ok(Event::Eof) => break,
             Err(_) => break,
             _ => {}
@@ -473,6 +538,25 @@ mod tests {
         let cutoff = Some(Utc::now() - Duration::days(14));
         let items = parse_feed_items(&xml, cutoff);
         assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn cdata_title_and_summary_are_parsed() {
+        // Several feeds (e.g. OpenAI) wrap title/description in CDATA. Without
+        // handling Event::CData they parse as empty strings.
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0">
+<channel>
+<item>
+<title><![CDATA[Introducing AI Futures]]></title>
+<description><![CDATA[A new blog exploring transformative AI.]]></description>
+<pubDate>Thu, 20 Aug 2026 07:00:00 GMT</pubDate>
+</item>
+</channel></rss>"#;
+        let items = parse_feed_items(xml, None);
+        assert_eq!(items.len(), 1, "expected one item");
+        assert_eq!(items[0].title, "Introducing AI Futures");
+        assert_eq!(items[0].summary, "A new blog exploring transformative AI.");
+        assert!(items[0].published.is_some());
     }
 
     #[test]
