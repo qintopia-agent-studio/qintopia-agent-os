@@ -2263,6 +2263,118 @@ mod templates {
             .collect()
     }
 
+    /// Escape HTML then convert the small inline-Markdown subset the roast
+    /// narrative uses (`**bold**`, `*italic*`, `` `code` ``) into real tags.
+    ///
+    /// The LLM roast narrative is authored in Markdown, but the long-image
+    /// renderer emits HTML. Without this, raw `**` markers leak into the
+    /// poster (visible as stray asterisks) instead of rendering as bold.
+    ///
+    /// Conversion is strictly pair-based: a marker only becomes a tag when a
+    /// matching closing marker exists later in the same text. Lone or
+    /// unmatched markers (e.g. the `*` in `2 * 3`, a wildcard, or an
+    /// unterminated `**bold`) are emitted as plain escaped text, so they can
+    /// never swallow characters or inject an unclosed tag that breaks the
+    /// rest of the poster. Inline code is dropped to plain text (no `<code>`
+    /// styling in the poster), matching the old Pillow `_strip_md_inline`
+    /// behaviour of keeping the text but dropping the markers.
+    pub fn render_inline(text: &str) -> String {
+        fn push_escaped(out: &mut String, c: char) {
+            match c {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                '"' => out.push_str("&quot;"),
+                _ => out.push(c),
+            }
+        }
+
+        // Find the byte index of the matching closer for a marker that opens
+        // at `from`. `delim` is either "*" or "**"; a closer must contain at
+        // least one non-delimiter, non-whitespace character before it so we do
+        // not treat `** **` or `* *` as a valid span. For the single `*`
+        // delimiter the closer must not be part of a `**` run, otherwise the
+        // `*` in `2 * 3 **bold**` would greedily swallow text up to the bold
+        // marker.
+        fn find_closer(text: &str, from: usize, delim: &str) -> Option<usize> {
+            let mut idx = from;
+            while let Some(pos) = text[idx..].find(delim) {
+                let abs = idx + pos;
+                if delim == "*" {
+                    let after = &text[abs + 1..];
+                    let before_ok = !text[..abs].ends_with('*');
+                    let after_ok = !after.starts_with('*');
+                    if !(before_ok && after_ok) {
+                        idx = abs + 1;
+                        continue;
+                    }
+                }
+                let between = &text[idx..abs];
+                if between.chars().any(|c| !c.is_whitespace() && c != '*') {
+                    return Some(abs);
+                }
+                idx = abs + delim.len();
+            }
+            None
+        }
+
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0;
+        let len = text.len();
+        while i < len {
+            let rest = &text[i..];
+            if let Some(after_tick) = rest.strip_prefix('`') {
+                // Toggle inline code only when a closing backtick exists;
+                // otherwise emit the backtick as a normal character.
+                if let Some(close) = after_tick.find('`') {
+                    let inner = &after_tick[..close];
+                    for c in inner.chars() {
+                        push_escaped(&mut out, c);
+                    }
+                    i += 1 + close + 1;
+                } else {
+                    out.push('`');
+                    i += 1;
+                }
+                continue;
+            }
+            if rest.starts_with("**") {
+                if let Some(close) = find_closer(text, i + 2, "**") {
+                    out.push_str("<strong>");
+                    let inner = &text[i + 2..close];
+                    for c in inner.chars() {
+                        push_escaped(&mut out, c);
+                    }
+                    out.push_str("</strong>");
+                    i = close + 2;
+                } else {
+                    out.push_str("**");
+                    i += 2;
+                }
+                continue;
+            }
+            if rest.starts_with('*') {
+                if let Some(close) = find_closer(text, i + 1, "*") {
+                    out.push_str("<em>");
+                    let inner = &text[i + 1..close];
+                    for c in inner.chars() {
+                        push_escaped(&mut out, c);
+                    }
+                    out.push_str("</em>");
+                    i = close + 1;
+                } else {
+                    out.push('*');
+                    i += 1;
+                }
+                continue;
+            }
+            let c = rest.chars().next().unwrap();
+            push_escaped(&mut out, c);
+            i += c.len_utf8();
+        }
+        out
+    }
+
     /// Match Python `_bar_svg` exactly, including integer truncation of bar heights.
     pub fn bar_svg(counts: &[i32], max_count: i32, width: usize, height: usize) -> String {
         if counts.is_empty() || max_count == 0 {
@@ -2821,7 +2933,7 @@ mod templates {
   {}
 </div>
 "#,
-                escape_html(&parsed.war_report)
+                render_inline(&parsed.war_report)
             )
         };
 
@@ -2830,7 +2942,7 @@ mod templates {
             let paras = ch
                 .paragraphs
                 .iter()
-                .map(|p| format!("  <p>{}</p>\n", escape_html(p)))
+                .map(|p| format!("  <p>{}</p>\n", render_inline(p)))
                 .collect::<String>();
             let gq = if ch.golden_quote.is_empty() {
                 String::new()
@@ -2838,7 +2950,7 @@ mod templates {
                 format!(
                     r#"  <div class="golden-quote">{}</div>
 "#,
-                    escape_html(&ch.golden_quote)
+                    render_inline(&ch.golden_quote)
                 )
             };
             chapters_html.push_str(&format!(
@@ -2846,7 +2958,7 @@ mod templates {
   <h2>{}</h2>
 {}{}</div>
 "#,
-                escape_html(&ch.title),
+                render_inline(&ch.title),
                 paras,
                 gq
             ));
@@ -2861,7 +2973,7 @@ mod templates {
   <p>{}</p>
 </div>
 "#,
-                escape_html(&parsed.tomorrow)
+                render_inline(&parsed.tomorrow)
             )
         };
 
@@ -2878,8 +2990,8 @@ mod templates {
       <div class="desc">{}</div>
     </div>
 "#,
-                        escape_html(&c.name),
-                        escape_html(&c.desc)
+                        render_inline(&c.name),
+                        render_inline(&c.desc)
                     )
                 })
                 .collect::<String>();
@@ -2898,7 +3010,7 @@ mod templates {
             let author = if parsed.final_quote.author.is_empty() {
                 String::new()
             } else {
-                format!("—— {}", escape_html(&parsed.final_quote.author))
+                format!("—— {}", render_inline(&parsed.final_quote.author))
             };
             format!(
                 r#"<div class="final-quote">
@@ -2907,7 +3019,7 @@ mod templates {
   <div class="author">{}</div>
 </div>
 "#,
-                escape_html(&parsed.final_quote.text),
+                render_inline(&parsed.final_quote.text),
                 author
             )
         };
@@ -4869,6 +4981,48 @@ mod tests {
     }
 
     #[test]
+    fn render_inline_converts_bold_italic_code_and_escapes() {
+        use crate::daily_case_report_render::templates::render_inline;
+        // Bold converts to <strong>, no stray asterisks.
+        assert_eq!(
+            render_inline("**明日线索**：据透露"),
+            "<strong>明日线索</strong>：据透露"
+        );
+        // Italic converts to <em>.
+        assert_eq!(render_inline("这是*重点*内容"), "这是<em>重点</em>内容");
+        // Inline code markers are dropped, content kept.
+        assert_eq!(render_inline("运行`cargo test`即可"), "运行cargo test即可");
+        // HTML is still escaped alongside markdown conversion.
+        assert_eq!(
+            render_inline("**a < b** & \"c\""),
+            "<strong>a &lt; b</strong> &amp; &quot;c&quot;"
+        );
+        // Plain text passes through unchanged.
+        assert_eq!(render_inline("无标记文本"), "无标记文本");
+    }
+
+    #[test]
+    fn render_inline_leaves_unmatched_markers_as_plain_text() {
+        use crate::daily_case_report_render::templates::render_inline;
+        // A lone `*` (multiplication, wildcard) stays a literal asterisk and
+        // does NOT open an <em> that would swallow the rest of the poster.
+        assert_eq!(render_inline("2 * 3 = 6"), "2 * 3 = 6");
+        assert_eq!(render_inline("匹配 *.log 文件"), "匹配 *.log 文件");
+        // An unterminated bold marker is emitted verbatim, no <strong> injected.
+        assert_eq!(render_inline("这是**没闭合的加粗"), "这是**没闭合的加粗");
+        assert_eq!(render_inline("这是*没闭合的斜体"), "这是*没闭合的斜体");
+        // An empty span `** **` is not treated as bold; markers stay literal.
+        assert_eq!(render_inline("a ** ** b"), "a ** ** b");
+        // An unmatched backtick stays literal too.
+        assert_eq!(render_inline("命令 ` 没闭合"), "命令 ` 没闭合");
+        // A later valid pair still converts even after an earlier lone marker.
+        assert_eq!(
+            render_inline("2 * 3 然后**加粗**"),
+            "2 * 3 然后<strong>加粗</strong>"
+        );
+    }
+
+    #[test]
     fn bar_svg_matches_python_golden() {
         use crate::daily_case_report_render::templates::bar_svg;
         let svg = bar_svg(
@@ -5045,6 +5199,30 @@ mod tests {
             output.html, expected,
             "roast-long-image HTML does not match golden fixture"
         );
+    }
+
+    #[test]
+    #[ignore = "regenerates the roast golden fixture on demand"]
+    fn regenerate_roast_long_image_golden_fixture() {
+        let report = load_fixture_report();
+        let narrative_md =
+            include_str!("../fixtures/daily_case_report_render_preview_roast_narrative.md");
+        let input = RenderInput {
+            report,
+            template: "roast-long-image".to_string(),
+            width: 1080,
+            narrative_md: Some(narrative_md.to_string()),
+            image_format: "jpeg".to_string(),
+        };
+        let output = render(&input).unwrap();
+        std::fs::write(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/fixtures/daily_case_report_render_preview_roast_long_image_expected.html"
+            ),
+            output.html,
+        )
+        .unwrap();
     }
 
     #[test]
