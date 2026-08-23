@@ -2269,32 +2269,17 @@ mod templates {
     /// The LLM roast narrative is authored in Markdown, but the long-image
     /// renderer emits HTML. Without this, raw `**` markers leak into the
     /// poster (visible as stray asterisks) instead of rendering as bold.
-    /// Inline code is escaped to plain text (no `<code>` styling in the
-    /// poster), matching the old Pillow `_strip_md_inline` behaviour of
-    /// keeping the text but dropping the markers.
+    ///
+    /// Conversion is strictly pair-based: a marker only becomes a tag when a
+    /// matching closing marker exists later in the same text. Lone or
+    /// unmatched markers (e.g. the `*` in `2 * 3`, a wildcard, or an
+    /// unterminated `**bold`) are emitted as plain escaped text, so they can
+    /// never swallow characters or inject an unclosed tag that breaks the
+    /// rest of the poster. Inline code is dropped to plain text (no `<code>`
+    /// styling in the poster), matching the old Pillow `_strip_md_inline`
+    /// behaviour of keeping the text but dropping the markers.
     pub fn render_inline(text: &str) -> String {
-        let mut out = String::with_capacity(text.len());
-        let mut bold = false;
-        let mut italic = false;
-        let mut code = false;
-        let mut chars = text.chars().peekable();
-        while let Some(c) = chars.next() {
-            if c == '`' {
-                // Toggle inline code; markers themselves are dropped.
-                code = !code;
-                continue;
-            }
-            if c == '*' && !code {
-                if chars.peek() == Some(&'*') {
-                    chars.next();
-                    out.push_str(if bold { "</strong>" } else { "<strong>" });
-                    bold = !bold;
-                } else {
-                    out.push_str(if italic { "</em>" } else { "<em>" });
-                    italic = !italic;
-                }
-                continue;
-            }
+        fn push_escaped(out: &mut String, c: char) {
             match c {
                 '&' => out.push_str("&amp;"),
                 '<' => out.push_str("&lt;"),
@@ -2302,6 +2287,90 @@ mod templates {
                 '"' => out.push_str("&quot;"),
                 _ => out.push(c),
             }
+        }
+
+        // Find the byte index of the matching closer for a marker that opens
+        // at `from`. `delim` is either "*" or "**"; a closer must contain at
+        // least one non-delimiter, non-whitespace character before it so we do
+        // not treat `** **` or `* *` as a valid span. For the single `*`
+        // delimiter the closer must not be part of a `**` run, otherwise the
+        // `*` in `2 * 3 **bold**` would greedily swallow text up to the bold
+        // marker.
+        fn find_closer(text: &str, from: usize, delim: &str) -> Option<usize> {
+            let mut idx = from;
+            while let Some(pos) = text[idx..].find(delim) {
+                let abs = idx + pos;
+                if delim == "*" {
+                    let after = &text[abs + 1..];
+                    let before_ok = !text[..abs].ends_with('*');
+                    let after_ok = !after.starts_with('*');
+                    if !(before_ok && after_ok) {
+                        idx = abs + 1;
+                        continue;
+                    }
+                }
+                let between = &text[idx..abs];
+                if between.chars().any(|c| !c.is_whitespace() && c != '*') {
+                    return Some(abs);
+                }
+                idx = abs + delim.len();
+            }
+            None
+        }
+
+        let mut out = String::with_capacity(text.len());
+        let mut i = 0;
+        let len = text.len();
+        while i < len {
+            let rest = &text[i..];
+            if rest.starts_with('`') {
+                // Toggle inline code only when a closing backtick exists;
+                // otherwise emit the backtick as a normal character.
+                if let Some(close) = rest[1..].find('`') {
+                    let inner = &rest[1..1 + close];
+                    for c in inner.chars() {
+                        push_escaped(&mut out, c);
+                    }
+                    i += 1 + close + 1;
+                } else {
+                    out.push('`');
+                    i += 1;
+                }
+                continue;
+            }
+            if rest.starts_with("**") {
+                if let Some(close) = find_closer(text, i + 2, "**") {
+                    out.push_str("<strong>");
+                    let inner = &text[i + 2..close];
+                    for c in inner.chars() {
+                        push_escaped(&mut out, c);
+                    }
+                    out.push_str("</strong>");
+                    i = close + 2;
+                } else {
+                    out.push_str("**");
+                    i += 2;
+                }
+                continue;
+            }
+            if rest.starts_with('*') {
+                if let Some(close) = find_closer(text, i + 1, "*") {
+                    out.push_str("<em>");
+                    let inner = &text[i + 1..close];
+                    for c in inner.chars() {
+                        push_escaped(&mut out, c);
+                    }
+                    out.push_str("</em>");
+                    i = close + 1;
+                } else {
+                    out.push('*');
+                    i += 1;
+                }
+                continue;
+            }
+            let c = rest.chars().next().unwrap();
+            push_escaped(&mut out, c);
+            i += c.len_utf8();
         }
         out
     }
@@ -4930,6 +4999,27 @@ mod tests {
         );
         // Plain text passes through unchanged.
         assert_eq!(render_inline("无标记文本"), "无标记文本");
+    }
+
+    #[test]
+    fn render_inline_leaves_unmatched_markers_as_plain_text() {
+        use crate::daily_case_report_render::templates::render_inline;
+        // A lone `*` (multiplication, wildcard) stays a literal asterisk and
+        // does NOT open an <em> that would swallow the rest of the poster.
+        assert_eq!(render_inline("2 * 3 = 6"), "2 * 3 = 6");
+        assert_eq!(render_inline("匹配 *.log 文件"), "匹配 *.log 文件");
+        // An unterminated bold marker is emitted verbatim, no <strong> injected.
+        assert_eq!(render_inline("这是**没闭合的加粗"), "这是**没闭合的加粗");
+        assert_eq!(render_inline("这是*没闭合的斜体"), "这是*没闭合的斜体");
+        // An empty span `** **` is not treated as bold; markers stay literal.
+        assert_eq!(render_inline("a ** ** b"), "a ** ** b");
+        // An unmatched backtick stays literal too.
+        assert_eq!(render_inline("命令 ` 没闭合"), "命令 ` 没闭合");
+        // A later valid pair still converts even after an earlier lone marker.
+        assert_eq!(
+            render_inline("2 * 3 然后**加粗**"),
+            "2 * 3 然后<strong>加粗</strong>"
+        );
     }
 
     #[test]
