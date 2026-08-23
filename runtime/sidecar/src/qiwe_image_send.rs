@@ -4491,6 +4491,81 @@ mod tests {
         assert_eq!(send["params"]["toId"], "group-id");
     }
 
+    // Mirror the production ordering guarantee: the intro text is delivered
+    // before the image, and the image is only attempted after the intro is
+    // confirmed. This drives the same client calls in the same sequence as
+    // `run_enabled_callback_processor` (intro -> image) against a fake server.
+    #[test]
+    fn intro_text_is_sent_before_image() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind fake QiWe server");
+        let port = listener.local_addr().expect("fake QiWe address").port();
+        let server = thread::spawn(move || {
+            let mut captured = Vec::new();
+            for response_body in [
+                // intro text (`/msg/sendHyperText`) business-success response
+                r#"{"code":0}"#,
+                // image send (`/msg/sendImage`) business-success response
+                r#"{"code":0,"data":{"isSendSuccess":1,"msgUniqueIdentifier":"fake-message-id","seq":2,"timestamp":3}}"#,
+            ] {
+                let (mut stream, _) = listener.accept().expect("accept fake QiWe request");
+                let request = read_test_request(&mut stream);
+                captured.push(request);
+                stream
+                    .write_all(&json_response(response_body))
+                    .expect("write fake QiWe response");
+            }
+            captured
+        });
+
+        let config = test_adapter_config(port);
+        let intro_body = build_send_text_request(
+            &config.guid,
+            "group-id",
+            "小满日报来啦 📰 今日群内故事线已生成，详见下方海报。",
+        )
+        .expect("build intro text request");
+        let intro_sent = request_send_text_with(&config, &intro_body, &HttpClient::test_only());
+        assert!(intro_sent, "intro text send must be confirmed before image");
+
+        let claim = test_upload_claim();
+        let callback = parse_single_async_upload_callback(
+            br#"{
+              "code":0,
+              "data":[{
+                "requestId":"fake-upload-request",
+                "cmd":20000,
+                "msgData":{
+                  "fileAesKey":"fake-aes-secret",
+                  "fileId":"fake-file-secret",
+                  "fileMd5":"98e7c2acf4391f8b4a2bbd39e364c5e3",
+                  "fileSize":48300
+                }
+              }]
+            }"#,
+        )
+        .expect("parse fake callback");
+        let send_body = build_send_image_request(
+            &config.guid,
+            "group-id",
+            &claim.filename,
+            &callback.credentials,
+            &config.allowed_groups,
+        )
+        .expect("build fake send request");
+        let receipt = request_send_image_with(&config, &send_body, &HttpClient::test_only())
+            .expect("fake image send succeeds");
+        assert_eq!(receipt.message_identifier, "fake-message-id");
+
+        let captured = server.join().expect("join fake QiWe server");
+        assert_eq!(captured.len(), 2, "expected intro then image, in order");
+        let intro: Value = serde_json::from_slice(&captured[0].body).expect("parse intro body");
+        assert_eq!(intro["method"], SEND_TEXT_METHOD);
+        assert_eq!(intro["params"]["toId"], "group-id");
+        let image: Value = serde_json::from_slice(&captured[1].body).expect("parse image body");
+        assert_eq!(image["method"], SEND_IMAGE_METHOD);
+        assert_eq!(image["params"]["toId"], "group-id");
+    }
+
     #[test]
     fn post_send_failures_are_ambiguous() {
         let oversized_listener =
