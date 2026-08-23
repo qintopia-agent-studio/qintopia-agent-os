@@ -154,7 +154,10 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
   );
   for (const required of [
     `WorkingDirectory=${resolvedReleaseDir}`,
-    `ExecStart=${releaseExecPrefix} QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python ${resolvedReleaseDir}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh`,
+    // The Erhua unit binds the Huabaosi Feishu production release SHA at the
+    // exec boundary (like the Xiaoman/QiWe units) so card publishing never
+    // falls back to a stale value from the env file.
+    `ExecStart=${releaseExecPrefix} QINTOPIA_ERHUA_MORNING_BRIEF_PYTHON=/home/ubuntu/.hermes/hermes-agent/venv/bin/python QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha} ${resolvedReleaseDir}/deploy/sidecar/scripts/erhua-morning-brief-worker.sh`,
   ]) {
     if (!erhuaMorningBriefUnit.includes(required)) {
       throw new Error(`Erhua morning brief unit is missing ${required}`);
