@@ -18,10 +18,10 @@ set +a
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 
 # Recruitment reuses Erhua's home-group send identity (same resident group as the
-# morning brief). Keep these explicit so the Hermes run does not depend on a
-# possibly-stale persistent env value.
-export QINTOPIA_ERHUA_MORNING_BRIEF_ENABLED=1
-export QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1
+# morning brief). Do NOT force the morning-brief / auto-publish enable switches
+# here: the worker reads them from the persistent env file and fails closed when
+# they are not "1", so an operator can still disable the broadcast as a rollback
+# or stop-bleed measure by editing /etc/qintopia/message-sidecar.env.
 
 # The release binding must win over any stale persistent env value; resolve
 # release/current once and use that immutable path for both identity and execution.

@@ -96,9 +96,6 @@ fi
 if [[ "${QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_APPROVAL:-}" != "$AUTO_PUBLISH_APPROVAL" ]]; then
   fail "Erhua auto-publish approval is missing"
 fi
-if [[ ! -f "$WORKFLOW_PY" && -n "${WORKFLOW_PY:-}" ]]; then
-  :
-fi
 if [[ ! -x "$SIDECAR_BIN" ]]; then
   fail "reviewed primary sidecar binary is missing"
 fi
