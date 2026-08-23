@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.163](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.162...v0.2.163) (2026-08-23)
+
+
+### Features
+
+* **deploy:** add one-shot to enable QiWe image-send intro text ([#667](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/667)) ([44afc2f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/44afc2f6784193e670ef8149e58fdbbca7e45337))
+* **erhua:** add reviewed Hermes cron for weekly activity-recruitment broadcast ([#665](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/665)) ([a19779d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a19779d05e4e76b8d332dcc8fe29c759b3cd8749))
+
+
+### Bug Fixes
+
+* **erhua-morning-brief:** stop card-to-text fallback (Feishu SHA binding) + restore AI news fetch ([#664](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/664)) ([9f90c3c](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9f90c3cd1f6db2542521753f71e46ff8a8979d60))
+
 ## [0.2.162](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.161...v0.2.162) (2026-08-21)
 
 
