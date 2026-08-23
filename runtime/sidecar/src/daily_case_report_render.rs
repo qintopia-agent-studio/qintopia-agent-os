@@ -2263,6 +2263,49 @@ mod templates {
             .collect()
     }
 
+    /// Escape HTML then convert the small inline-Markdown subset the roast
+    /// narrative uses (`**bold**`, `*italic*`, `` `code` ``) into real tags.
+    ///
+    /// The LLM roast narrative is authored in Markdown, but the long-image
+    /// renderer emits HTML. Without this, raw `**` markers leak into the
+    /// poster (visible as stray asterisks) instead of rendering as bold.
+    /// Inline code is escaped to plain text (no `<code>` styling in the
+    /// poster), matching the old Pillow `_strip_md_inline` behaviour of
+    /// keeping the text but dropping the markers.
+    pub fn render_inline(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut bold = false;
+        let mut italic = false;
+        let mut code = false;
+        let mut chars = text.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '`' {
+                // Toggle inline code; markers themselves are dropped.
+                code = !code;
+                continue;
+            }
+            if c == '*' && !code {
+                if chars.peek() == Some(&'*') {
+                    chars.next();
+                    out.push_str(if bold { "</strong>" } else { "<strong>" });
+                    bold = !bold;
+                } else {
+                    out.push_str(if italic { "</em>" } else { "<em>" });
+                    italic = !italic;
+                }
+                continue;
+            }
+            match c {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                '"' => out.push_str("&quot;"),
+                _ => out.push(c),
+            }
+        }
+        out
+    }
+
     /// Match Python `_bar_svg` exactly, including integer truncation of bar heights.
     pub fn bar_svg(counts: &[i32], max_count: i32, width: usize, height: usize) -> String {
         if counts.is_empty() || max_count == 0 {
@@ -2821,7 +2864,7 @@ mod templates {
   {}
 </div>
 "#,
-                escape_html(&parsed.war_report)
+                render_inline(&parsed.war_report)
             )
         };
 
@@ -2830,7 +2873,7 @@ mod templates {
             let paras = ch
                 .paragraphs
                 .iter()
-                .map(|p| format!("  <p>{}</p>\n", escape_html(p)))
+                .map(|p| format!("  <p>{}</p>\n", render_inline(p)))
                 .collect::<String>();
             let gq = if ch.golden_quote.is_empty() {
                 String::new()
@@ -2838,7 +2881,7 @@ mod templates {
                 format!(
                     r#"  <div class="golden-quote">{}</div>
 "#,
-                    escape_html(&ch.golden_quote)
+                    render_inline(&ch.golden_quote)
                 )
             };
             chapters_html.push_str(&format!(
@@ -2846,7 +2889,7 @@ mod templates {
   <h2>{}</h2>
 {}{}</div>
 "#,
-                escape_html(&ch.title),
+                render_inline(&ch.title),
                 paras,
                 gq
             ));
@@ -2861,7 +2904,7 @@ mod templates {
   <p>{}</p>
 </div>
 "#,
-                escape_html(&parsed.tomorrow)
+                render_inline(&parsed.tomorrow)
             )
         };
 
@@ -2878,8 +2921,8 @@ mod templates {
       <div class="desc">{}</div>
     </div>
 "#,
-                        escape_html(&c.name),
-                        escape_html(&c.desc)
+                        render_inline(&c.name),
+                        render_inline(&c.desc)
                     )
                 })
                 .collect::<String>();
@@ -2898,7 +2941,7 @@ mod templates {
             let author = if parsed.final_quote.author.is_empty() {
                 String::new()
             } else {
-                format!("—— {}", escape_html(&parsed.final_quote.author))
+                format!("—— {}", render_inline(&parsed.final_quote.author))
             };
             format!(
                 r#"<div class="final-quote">
@@ -2907,7 +2950,7 @@ mod templates {
   <div class="author">{}</div>
 </div>
 "#,
-                escape_html(&parsed.final_quote.text),
+                render_inline(&parsed.final_quote.text),
                 author
             )
         };
@@ -4869,6 +4912,27 @@ mod tests {
     }
 
     #[test]
+    fn render_inline_converts_bold_italic_code_and_escapes() {
+        use crate::daily_case_report_render::templates::render_inline;
+        // Bold converts to <strong>, no stray asterisks.
+        assert_eq!(
+            render_inline("**明日线索**：据透露"),
+            "<strong>明日线索</strong>：据透露"
+        );
+        // Italic converts to <em>.
+        assert_eq!(render_inline("这是*重点*内容"), "这是<em>重点</em>内容");
+        // Inline code markers are dropped, content kept.
+        assert_eq!(render_inline("运行`cargo test`即可"), "运行cargo test即可");
+        // HTML is still escaped alongside markdown conversion.
+        assert_eq!(
+            render_inline("**a < b** & \"c\""),
+            "<strong>a &lt; b</strong> &amp; &quot;c&quot;"
+        );
+        // Plain text passes through unchanged.
+        assert_eq!(render_inline("无标记文本"), "无标记文本");
+    }
+
+    #[test]
     fn bar_svg_matches_python_golden() {
         use crate::daily_case_report_render::templates::bar_svg;
         let svg = bar_svg(
@@ -5045,6 +5109,30 @@ mod tests {
             output.html, expected,
             "roast-long-image HTML does not match golden fixture"
         );
+    }
+
+    #[test]
+    #[ignore = "regenerates the roast golden fixture on demand"]
+    fn regenerate_roast_long_image_golden_fixture() {
+        let report = load_fixture_report();
+        let narrative_md =
+            include_str!("../fixtures/daily_case_report_render_preview_roast_narrative.md");
+        let input = RenderInput {
+            report,
+            template: "roast-long-image".to_string(),
+            width: 1080,
+            narrative_md: Some(narrative_md.to_string()),
+            image_format: "jpeg".to_string(),
+        };
+        let output = render(&input).unwrap();
+        std::fs::write(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/fixtures/daily_case_report_render_preview_roast_long_image_expected.html"
+            ),
+            output.html,
+        )
+        .unwrap();
     }
 
     #[test]
