@@ -132,6 +132,7 @@ allowed_observation_targets = {
 allowed_runtime_one_shot_targets = {
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
+    "qiwe-image-send-intro-text-enable",
     "xiaoman-daily-case-report-auto-publish-backfill",
     "xiaoman-daily-case-report-approval-repair",
     "xiaoman-daily-case-report-read-through-repair",
@@ -344,6 +345,7 @@ if "production-runtime-one-shot" in release_scope:
     expected_approvals = {
         "erhua-morning-brief": "approved-production-erhua-morning-brief-one-shot",
         "hermes-cron-snapshot-install": "approved-production-hermes-cron-snapshot",
+        "qiwe-image-send-intro-text-enable": "approved-production-qiwe-image-send-intro-text-v1",
         "xiaoman-daily-case-report-auto-publish-backfill": "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
         "xiaoman-daily-case-report-approval-repair": "approved-production-xiaoman-daily-case-report-config-v1",
         "xiaoman-daily-case-report-read-through-repair": "approved-production-xiaoman-daily-case-report-config-v1",
@@ -1089,6 +1091,9 @@ runtime_one_shot_success_detail() {
     xiaoman-daily-case-report-read-through-repair)
       printf 'xiaoman_daily_case_report_read_through_repair=completed'
       ;;
+    qiwe-image-send-intro-text-enable)
+      printf 'qiwe_image_send_intro_text_enable=completed'
+      ;;
     xiaoman-daily-case-report-chat-id-repair)
       printf 'xiaoman_daily_case_report_chat_id_repair=completed'
       ;;
@@ -1392,6 +1397,12 @@ run_runtime_one_shot_target() {
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_REPAIR=approved-production-xiaoman-daily-case-report-config-v1 \
         QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_REPAIR_RELEASE_SHA="$release_sha" \
         "${script_dir}/repair-xiaoman-daily-case-report-read-through-production.sh" >/dev/null || return $?
+      ;;
+    qiwe-image-send-intro-text-enable)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLE=approved-production-qiwe-image-send-intro-text-v1 \
+        QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLE_RELEASE_SHA="$release_sha" \
+        "${script_dir}/enable-qiwe-image-send-intro-text-production.sh" >/dev/null || return $?
       ;;
     xiaoman-daily-case-report-chat-id-repair)
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \

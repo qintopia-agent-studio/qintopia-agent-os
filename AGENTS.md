@@ -109,6 +109,16 @@
   `/etc/qintopia/message-sidecar.env`, must fail closed on duplicate/wrong values, and
   must never accept or expose chat ids, group ids, DB hashes, payload JSON, env values,
   or arbitrary config fields.
+- QiWe image-send intro-text production enable is the only reviewed one-shot path for
+  turning on the optional chat intro text (`小满日报` / `二花早报` caption before the
+  poster image). Use `Run Production Runtime One-Shot` with
+  `runtime_one_shot_target=qiwe-image-send-intro-text-enable` and
+  `approval=approved-production-qiwe-image-send-intro-text-v1`; it may write only the
+  fixed `QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1` constant to
+  `/etc/qintopia/message-sidecar.env`, must fail closed on duplicate/wrong values, and
+  must never accept or expose chat ids, group ids, DB hashes, payload JSON, env values,
+  or arbitrary config fields. The Rust sidecar reads this flag at `qiwe_image_send.rs`
+  (`QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED`); default off.
 
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
@@ -581,6 +591,8 @@
   `xiaoman-daily-case-report-read-through-repair` /
   `xiaoman-daily-case-report-chat-id-repair` with
   `approved-production-xiaoman-daily-case-report-config-v1`, or
+  `qiwe-image-send-intro-text-enable` with
+  `approved-production-qiwe-image-send-intro-text-v1`, or
   `xiaoman-creative-profile-candidates-apply` with
   `approved-production-xiaoman-creative-profile-candidates` and the 64-hex SHA-256 of
   the fixed server-local reviewed payload, or `hermes-cron-snapshot-install` with
