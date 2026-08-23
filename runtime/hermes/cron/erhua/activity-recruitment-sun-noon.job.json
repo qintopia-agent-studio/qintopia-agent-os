@@ -1,0 +1,15 @@
+{
+  "name": "二花·周日中午活动发起者招募",
+  "schedule": { "kind": "cron", "expr": "0 12 * * 0", "display": "0 12 * * 0" },
+  "no_agent": true,
+  "script": "qintopia_erhua_activity_recruitment.sh",
+  "deliver": "origin",
+  "origin": {
+    "platform": "wecom",
+    "chat_id": "{{QINTOPIA_ERHUA_TECHNICAL_HOME_CHANNEL}}",
+    "chat_name": null,
+    "thread_id": null
+  },
+  "enabled": false,
+  "skills": []
+}
