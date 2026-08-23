@@ -290,6 +290,25 @@ echo "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID=must-not-leak"
   writeExecutable(
     path.relative(
       tmpRoot,
+      path.join(scriptsDir, "enable-qiwe-image-send-intro-text-production.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLE:-}" != "approved-production-qiwe-image-send-intro-text-v1" ]]; then
+  exit 74
+fi
+if [[ "\${QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLE_RELEASE_SHA:-}" != ${JSON.stringify(
+      sha
+    )} ]]; then
+  exit 75
+fi
+printf 'run-qiwe-intro-text-enable\\n' >> ${JSON.stringify(oneShotLog)}
+echo "QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=must-not-leak"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
       path.join(
         scriptsDir,
         "repair-xiaoman-daily-case-report-target-group-id-production.sh"
@@ -542,6 +561,42 @@ exit 72
     throw new Error("daily chat-id repair evidence leaked raw script output");
   }
 
+  const qiweIntroTextRequestId = "deploy-20260810T000010Z-abcdef123456";
+  result = runRequest(qiweIntroTextRequestId, {
+    targets: ["qiwe-image-send-intro-text-enable"],
+    approval: "approved-production-qiwe-image-send-intro-text-v1",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `qiwe intro-text enable one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${qiweIntroTextRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  if (!oneShotCheck || oneShotCheck.status !== "passed") {
+    throw new Error("qiwe intro-text enable check was not recorded as passed");
+  }
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "qiwe-image-send-intro-text-enable" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !== "qiwe_image_send_intro_text_enable=completed"
+  ) {
+    throw new Error(
+      `unexpected qiwe intro-text enable evidence ${oneShotCheck.detail}`
+    );
+  }
+  if (oneShotCheck.detail.includes("must-not-leak")) {
+    throw new Error("qiwe intro-text enable evidence leaked raw script output");
+  }
+
   const dailyTargetGroupIdRepairRequestId = "deploy-20260810T000010Z-abcdef123456";
   result = runRequest(dailyTargetGroupIdRepairRequestId, {
     targets: ["xiaoman-daily-case-report-target-group-id-repair"],
@@ -761,6 +816,7 @@ exit 72
     "run-daily-approval-repair",
     "run-daily-read-through-repair",
     "run-daily-chat-id-repair",
+    "run-qiwe-intro-text-enable",
   ]) {
     if (!commandLog.includes(expected)) {
       throw new Error(`missing one-shot command log entry: ${expected}`);

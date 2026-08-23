@@ -22,6 +22,7 @@ on:
           - xiaoman-creative-profile-candidates-apply
           - erhua-morning-brief
           - hermes-cron-snapshot-install
+          - qiwe-image-send-intro-text-enable
       backfill_date:
         description: YYYY-MM-DD, required only for Xiaoman daily report backfill.
         required: false
@@ -138,7 +139,7 @@ jobs:
           runtime_one_shot_target="$(require_allowed_value \
             runtime_one_shot_target \
             "$INPUT_RUNTIME_ONE_SHOT_TARGET" \
-            "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install")"
+            "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install,qiwe-image-send-intro-text-enable")"
 
           require_single_line backfill_date "$INPUT_BACKFILL_DATE"
           require_single_line payload_sha256 "$INPUT_PAYLOAD_SHA256"
@@ -198,6 +199,20 @@ jobs:
               fi
               if [[ "$INPUT_APPROVAL" != "approved-production-xiaoman-daily-case-report-config-v1" ]]; then
                 echo "approval does not match Xiaoman daily report chat-id repair." >&2
+                exit 2
+              fi
+              ;;
+            qiwe-image-send-intro-text-enable)
+              if [[ -n "$INPUT_BACKFILL_DATE" ]]; then
+                echo "backfill_date must be empty for QiWe image send intro-text enable." >&2
+                exit 2
+              fi
+              if [[ -n "$INPUT_PAYLOAD_SHA256" ]]; then
+                echo "payload_sha256 must be empty for QiWe image send intro-text enable." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-qiwe-image-send-intro-text-v1" ]]; then
+                echo "approval does not match QiWe image send intro-text enable." >&2
                 exit 2
               fi
               ;;

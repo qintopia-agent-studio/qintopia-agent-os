@@ -221,6 +221,7 @@
             "enum": [
               "erhua-morning-brief",
               "hermes-cron-snapshot-install",
+              "qiwe-image-send-intro-text-enable",
               "xiaoman-daily-case-report-auto-publish-backfill",
               "xiaoman-daily-case-report-approval-repair",
               "xiaoman-daily-case-report-read-through-repair",
@@ -243,6 +244,7 @@
           "enum": [
             "approved-production-hermes-cron-snapshot",
             "approved-production-erhua-morning-brief-one-shot",
+            "approved-production-qiwe-image-send-intro-text-v1",
             "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
             "approved-production-xiaoman-daily-case-report-config-v1",
             "approved-production-xiaoman-creative-profile-candidates"

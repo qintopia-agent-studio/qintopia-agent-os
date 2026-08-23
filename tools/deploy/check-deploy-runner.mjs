@@ -1642,6 +1642,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "xiaoman-creative-profile-candidates-apply",
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
+    "qiwe-image-send-intro-text-enable",
   ]) {
     if (!targetOptions.includes(expectedTarget)) {
       addError(
@@ -1676,7 +1677,7 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "require_allowed_value()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install",
+    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install,qiwe-image-send-intro-text-enable",
     "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
     "approved-production-xiaoman-daily-case-report-config-v1",
     "approved-production-xiaoman-creative-profile-candidates",
@@ -1814,6 +1815,7 @@ for (const fragment of [
   "repair-xiaoman-daily-case-report-production-approval.sh",
   "repair-xiaoman-daily-case-report-read-through-production.sh",
   "repair-xiaoman-daily-case-report-chat-id-production.sh",
+  "enable-qiwe-image-send-intro-text-production.sh",
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "qiwe-image-send-production-observation-smoke.sh",
   "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
@@ -2648,6 +2650,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-production-approval.sh",
     "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-read-through-production.sh",
     "deploy/sidecar/scripts/repair-xiaoman-daily-case-report-chat-id-production.sh",
+    "deploy/sidecar/scripts/enable-qiwe-image-send-intro-text-production.sh",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-xiaoman-daily-case-report-auto-publish-production.sh",
     "deploy/sidecar/scripts/rollback-xiaoman-daily-case-report-auto-publish-production.sh",

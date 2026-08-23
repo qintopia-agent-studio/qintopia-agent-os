@@ -17,6 +17,7 @@ runner accepts exactly one target per request:
 - `xiaoman-daily-case-report-approval-repair`
 - `xiaoman-daily-case-report-read-through-repair`
 - `xiaoman-daily-case-report-chat-id-repair`
+- `qiwe-image-send-intro-text-enable`
 - `xiaoman-creative-profile-candidates-apply`
 - `erhua-morning-brief`
 - `hermes-cron-snapshot-install`
@@ -123,6 +124,36 @@ The repair script validates the current release SHA, the fixed persistent env fi
 the fixed Xiaoman profile env file. It no-ops when the exact chat id already exists,
 fails closed on duplicate or wrong values, and emits only sanitized runtime one-shot
 evidence.
+
+### QiWe Image-Send Intro-Text Enable
+
+Use this target to turn on the optional chat intro text: the sidecar sends the work
+item's `message_text` (the `小满日报` / `二花早报` caption) immediately before the
+poster image. The Rust sidecar gates this behind
+`QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED` (`qiwe_image_send.rs`), which defaults to
+off and is not written by any activation script. This target may write only the fixed
+`QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1` constant to
+`/etc/qintopia/message-sidecar.env`. It does not accept chat ids, group ids, database
+hashes, payload JSON, env values, or arbitrary config fields.
+
+Workflow inputs:
+
+```text
+release_sha=<current-production-release-sha>
+runtime_one_shot_target=qiwe-image-send-intro-text-enable
+backfill_date=
+payload_sha256=
+approval=approved-production-qiwe-image-send-intro-text-v1
+```
+
+The script validates the current release SHA and the fixed persistent env file, no-ops
+when the exact `=1` line already exists, fails closed on duplicate or wrong values, and
+emits only sanitized runtime one-shot evidence. After it applies, restart
+`qintopia-message-sidecar.service` (or wait for the next release restart) so the sidecar
+re-reads the env. Verify on the next daily/morning brief that the caption text arrives
+before the image; if the intro-text send fails, the sidecar fails closed and skips the
+image (`intro_text_send_failed`), so confirm QiWe `sendHyperText` works in production
+first.
 
 ### Xiaoman Daily Case Report Target-Group-ID Repair
 
