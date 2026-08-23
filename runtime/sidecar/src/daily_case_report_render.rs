@@ -2323,11 +2323,11 @@ mod templates {
         let len = text.len();
         while i < len {
             let rest = &text[i..];
-            if rest.starts_with('`') {
+            if let Some(after_tick) = rest.strip_prefix('`') {
                 // Toggle inline code only when a closing backtick exists;
                 // otherwise emit the backtick as a normal character.
-                if let Some(close) = rest[1..].find('`') {
-                    let inner = &rest[1..1 + close];
+                if let Some(close) = after_tick.find('`') {
+                    let inner = &after_tick[..close];
                     for c in inner.chars() {
                         push_escaped(&mut out, c);
                     }
