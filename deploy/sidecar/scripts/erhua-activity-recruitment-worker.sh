@@ -144,9 +144,24 @@ confirm_json="${tmp_dir}/recruitment-confirm.json"
 ready_json="${tmp_dir}/recruitment-send-ready.json"
 send_json="${tmp_dir}/recruitment-send.json"
 
-DEFAULT_MESSAGE='【活动发起者招募】
-下周社区活动开始募集啦！想发起活动的伙伴请填写「活动招募表单」，写明活动主题、时间意向、地点和需要的支持。
-小满会汇总到计划表，确认后整理下周预告。'
+DEFAULT_MESSAGE='周末过半，这周的招募还在继续。还没提想法的邻居别急，不用想得多周全，一个念头就够。趁着周末，想到什么就随手记一笔。
+
+很多事开始前都觉得难，其实社区里的小活动，大多是从一句“我有个想法”开始的。你拿手的菜想请大家尝尝，收藏了很久的东西想找人聊聊，或者有个一直想试的小体验，都可以拿来当起点。
+
+发起不需要专业，也不用复杂的准备。你出想法，剩下的我们一起张罗。
+
+报名链接：
+https://ranuox3qst4.feishu.cn/share/base/form/shrcnmjtfcf6sEexZXZxUnTNFHc
+
+发起后，我们会陪你一起筹备，现场也有人搭把手。
+
+参与的人会收到一份秦托邦小礼物。
+
+一次小活动，也能让你认识更多邻居，收获支持或共同回忆。
+
+想到什么就写什么，我们等你。
+
+你的社区搭子 二花🐱'
 MESSAGE_TEXT="${QINTOPIA_ERHUA_ACTIVITY_RECRUITMENT_MESSAGE:-$DEFAULT_MESSAGE}"
 
 send_text_recruitment() {
