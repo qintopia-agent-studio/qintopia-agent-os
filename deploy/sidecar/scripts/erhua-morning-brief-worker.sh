@@ -183,7 +183,7 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
 # aborting the run.
 use_card=false
 if [[ "$card_env_ready" == "true" ]]; then
-  if "$SYSTEM_PYTHON" - "$report_json" <<'PY'
+  card_image_check_output="$("$SYSTEM_PYTHON" - "$report_json" <<'PY'
 import json
 import os
 import sys
@@ -193,14 +193,18 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 
 image_path = (report.get("rendered_image_path") or "").strip()
 if not image_path:
-    raise SystemExit("rendered_image_path is empty; card degraded")
+    print("rendered_image_path is empty")
+    raise SystemExit(1)
 if not os.path.isfile(image_path):
-    raise SystemExit("rendered card image file is missing; card degraded")
+    print(f"rendered card image file is missing: {image_path}")
+    raise SystemExit(1)
+print(f"rendered card image exists: {image_path}")
 PY
-  then
+  )" || true
+  if [[ "$card_image_check_output" == rendered*exists* ]]; then
     use_card=true
   else
-    echo "erhua morning brief worker: card image unavailable; falling back to text brief" >&2
+    echo "erhua morning brief worker: card image unavailable (${card_image_check_output:-unknown reason}); falling back to text brief" >&2
   fi
 fi
 
@@ -431,6 +435,28 @@ PY
     --payload-json "$upload_payload" \
     --apply >"$upload_json"
 
+  if ! "$SYSTEM_PYTHON" - "$upload_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    upload = json.load(fh)
+
+if upload.get("success") is True and upload.get("action_status") == "media_uploaded":
+    sys.exit(0)
+
+print(
+    f"media-upload success={upload.get('success')} "
+    f"action_status={upload.get('action_status')} "
+    f"error={upload.get('error') or upload.get('message') or 'unknown'}"
+)
+sys.exit(1)
+PY
+  then
+    echo "erhua morning brief worker: card media-upload did not succeed; falling back to text brief" >&2
+    return 1
+  fi
+
   publish_payload="$("$SYSTEM_PYTHON" - "$report_json" "$upload_json" <<'PY'
 import json
 import os
@@ -484,6 +510,29 @@ PY
   "$SIDECAR_BIN" operations-erhua-morning-brief-card-publish-create \
     --payload-json "$publish_payload" \
     --apply >"$publish_json"
+
+  if ! "$SYSTEM_PYTHON" - "$publish_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    publish = json.load(fh)
+
+if publish.get("send_work_item_id"):
+    sys.exit(0)
+
+print(
+    f"card-publish success={publish.get('success')} "
+    f"action_status={publish.get('action_status')} "
+    f"error={publish.get('error') or publish.get('message') or 'unknown'} "
+    f"send_work_item_id={publish.get('send_work_item_id')}"
+)
+sys.exit(1)
+PY
+  then
+    echo "erhua morning brief worker: card publish-create did not commit send work item; falling back to text brief" >&2
+    return 1
+  fi
 
   # The publish-create command commits the card send work item only after its
   # transaction succeeds; send_work_item_id is present in the report ONLY then
