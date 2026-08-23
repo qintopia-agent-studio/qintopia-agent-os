@@ -1,7 +1,9 @@
 # 二花早报 / 小满日报发送 stabilization plan
 
-Status: pending production observation evidence. Do not implement runtime changes until
-the root cause of the recent text fallback is confirmed.
+Status: **root cause confirmed 2026-08-23; fixed.** Production env corrected
+(`QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA` aligned to the deployed commit) and
+the systemd render bug that let it drift was fixed in `render-systemd-units.sh`. Observe
+the next 08:10 run to confirm the card is delivered.
 
 Scope: stabilize the Erhua morning-brief card send path and decide whether to enable the
 QiWe image-send intro-text feature so that both the morning brief and the daily case
@@ -33,8 +35,48 @@ degrades to the text-brief path. The code distinguishes three fallback reasons:
    env was ready, but `operations-erhua-morning-brief-media-upload` or
    `operations-erhua-morning-brief-card-publish-create` failed.
 
-The first step is to identify which of these three messages appeared in the 2026-08-22
-production Hermes cron log.
+#### Root cause (confirmed 2026-08-23 from production logs)
+
+The 2026-08-23 systemd run
+(`journalctl -u qintopia-agentos-erhua-morning-brief.service`) showed: the text artifact
+was created, then the card chain failed at
+`operations-erhua-morning-brief-card-publish-create` with
+`Error: Huabaosi Feishu production release SHA does not match deployed commit`,
+producing an empty publish payload and the
+`card delivery failed; falling back to text brief` message. The brief then sent as text
+(`external_send_executed: true`).
+
+The mismatch was between `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA` (read from
+`/etc/qintopia/message-sidecar.env`, stale value `067e923…`) and the deployed commit
+`78b4888ac11e4d6f43b305dd62f0473a96545af2` (the systemd unit's `WorkingDirectory` /
+`QINTOPIA_DEPLOYED_COMMIT_SHA`).
+
+Root defect in the repo: `render-systemd-units.sh` renders the erhua unit via
+`render_release_script_oneshot_service`, which only binds `QINTOPIA_DEPLOYED_COMMIT_SHA`
+at the exec boundary and does **not** pass `huabaosi_feishu_release_environment`, unlike
+the Xiaoman daily-case-report and QiWe units. So the erhua unit always sourced the stale
+Feishu release SHA from the persistent env file and drifted on every deploy. (AGENTS.md
+§"do not rely on stale persistent env release keys" — the erhua unit was the exception.)
+
+Fixes applied:
+
+- Production: set `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=78b4888…` in
+  `/etc/qintopia/message-sidecar.env` (backup `message-sidecar.env.bak.20260823175251`).
+  `EnvironmentFile` is re-read each service start, so the next 08:10 run picks it up; no
+  daemon-reload required.
+- Repo: `render-systemd-units.sh` now passes
+  `"$erhua_morning_brief_python_environment $huabaosi_feishu_release_environment"` so
+  the Feishu release SHA is bound to `TARGET_SHA` at the exec boundary like the other
+  units.
+
+#### Separate issue observed (not the card/text complaint)
+
+The Hermes cron wrapper `qintopia_erhua_morning_brief.sh` has logged `run=failed exit=1`
+every day from 2026-08-15 through 2026-08-23 with
+`ERROR: activity preview failed: QINTOPIA_XIAOMAN_ACTIVITY_WRAPPERS_ENABLE=1 is required`
+(since 08-22; earlier `actor_agent must be xiaoman`). This is a redundant/duplicate
+08:10 scheduler that fails before reaching the worker; it does not send the brief. Track
+separately from the card fallback.
 
 ### Problem B: no text intro before image/card
 
