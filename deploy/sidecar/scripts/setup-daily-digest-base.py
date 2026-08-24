@@ -19,9 +19,11 @@ from pathlib import Path
 from typing import Any, NoReturn
 
 
-DEFAULT_BASE_TOKEN = "QIlqblr9oamGlWsx3frcl5WGnvh"
-DEFAULT_DAILY_TABLE_ID = "tblcDfEdBTke4voG"
 DEFAULT_PROFILE_ENV = "/home/ubuntu/.hermes/profiles/xiaoman/.env"
+
+# Feishu Base token / table id are read from the environment, never hardcoded.
+# QINTOPIA_DAILY_DIGEST_FEISHU_BASE_TOKEN and QINTOPIA_DAILY_DIGEST_FEISHU_DAILY_TABLE_ID
+# are the production-configured values (see server-deploy.sh env template).
 
 
 def load_profile_env(path: str) -> tuple[str, str]:
@@ -239,14 +241,28 @@ def link(name: str, target_table_id: str, _target_table_name: str) -> dict[str, 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-token", default=DEFAULT_BASE_TOKEN)
-    parser.add_argument("--daily-table-id", default=DEFAULT_DAILY_TABLE_ID)
+    parser.add_argument(
+        "--base-token",
+        default=os.environ.get("QINTOPIA_DAILY_DIGEST_FEISHU_BASE_TOKEN", ""),
+    )
+    parser.add_argument(
+        "--daily-table-id",
+        default=os.environ.get("QINTOPIA_DAILY_DIGEST_FEISHU_DAILY_TABLE_ID", ""),
+    )
     parser.add_argument("--profile-env", default=DEFAULT_PROFILE_ENV)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.apply and args.dry_run:
         parser.error("use either --apply or --dry-run")
+    if not args.base_token.strip():
+        parser.error(
+            "--base-token is required (or set QINTOPIA_DAILY_DIGEST_FEISHU_BASE_TOKEN)"
+        )
+    if not args.daily_table_id.strip():
+        parser.error(
+            "--daily-table-id is required (or set QINTOPIA_DAILY_DIGEST_FEISHU_DAILY_TABLE_ID)"
+        )
     dry_run = not args.apply
 
     app_id, app_secret = load_profile_env(args.profile_env)
