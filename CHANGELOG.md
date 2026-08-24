@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.164](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.163...v0.2.164) (2026-08-24)
+
+
+### Bug Fixes
+
+* **qiwe:** pass intro-text flag through callback bridge env allowlist ([#670](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/670)) ([00bec59](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/00bec594f7dd1622da3d4c27f1ac43e4f8488d7f))
+* **security:** drop hardcoded Feishu tokens and stale secret-bearing backups ([#671](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/671)) ([f43d28b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f43d28ba1c84eaef60529028b7054f2f98cd678d))
+* **xiaoman:** render inline markdown bold/italic in roast long image ([#668](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/668)) ([6378e6a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6378e6a2baf9065dba5a0edf1a2065101a382dad))
+
 ## [0.2.163](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.162...v0.2.163) (2026-08-23)
 
 
