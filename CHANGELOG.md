@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.165](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.164...v0.2.165) (2026-08-25)
+
+
+### Bug Fixes
+
+* **hermes:** default-enable qiwe image-send intro-text flag in erhua env ([#672](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/672)) ([9417f05](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9417f05255d2aaa7d43bbb77e9952e7a0bf14d5e))
+
 ## [0.2.164](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.163...v0.2.164) (2026-08-24)
 
 
