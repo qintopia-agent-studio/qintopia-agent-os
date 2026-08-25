@@ -331,6 +331,104 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), repeated.read_bytes())
             self.assertEqual("existing", json.loads(repeated_report.read_text())["status"])
 
+    def test_env_migration_enables_intro_text_by_default_and_respects_override(self) -> None:
+        default_config = FIXTURES / "default-with-livecool.yaml"
+
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).resolve()
+            env = directory / "erhua.env"
+            env.write_text("OTHER=value\n")
+            output = directory / "candidate.env"
+            report = directory / "report.json"
+            self.run_tool(
+                MIGRATOR,
+                "prepare",
+                "--env",
+                str(env),
+                "--default-config",
+                str(default_config),
+                "--output",
+                str(output),
+                "--report",
+                str(report),
+            )
+            rendered = output.read_text()
+            self.assertIn("QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1", rendered)
+            self.assertEqual(
+                "enabled", json.loads(report.read_text())["intro_text_enabled"]
+            )
+
+            repeated = directory / "repeated.env"
+            repeated_report = directory / "repeated-report.json"
+            self.run_tool(
+                MIGRATOR,
+                "prepare",
+                "--env",
+                str(output),
+                "--default-config",
+                str(default_config),
+                "--output",
+                str(repeated),
+                "--report",
+                str(repeated_report),
+            )
+            self.assertEqual(output.read_bytes(), repeated.read_bytes())
+            self.assertEqual(
+                "existing", json.loads(repeated_report.read_text())["intro_text_enabled"]
+            )
+
+        for override in (
+            "OTHER=value\nQINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=0\n",
+            "OTHER=value\nQINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=false\n",
+        ):
+            with self.subTest(override=override), tempfile.TemporaryDirectory() as directory:
+                directory = Path(directory).resolve()
+                env = directory / "erhua.env"
+                env.write_text(override)
+                output = directory / "candidate.env"
+                report = directory / "report.json"
+                self.run_tool(
+                    MIGRATOR,
+                    "prepare",
+                    "--env",
+                    str(env),
+                    "--default-config",
+                    str(default_config),
+                    "--output",
+                    str(output),
+                    "--report",
+                    str(report),
+                )
+                rendered = output.read_text()
+                self.assertIn(override.strip().splitlines()[-1], rendered)
+                self.assertEqual(
+                    "existing", json.loads(report.read_text())["intro_text_enabled"]
+                )
+
+    def test_env_migration_rejects_duplicate_intro_text_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).resolve()
+            env = directory / "erhua.env"
+            env.write_text(
+                "QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1\n"
+                "QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=0\n"
+            )
+            output = directory / "candidate.env"
+            self.run_tool(
+                MIGRATOR,
+                "prepare",
+                "--env",
+                str(env),
+                "--default-config",
+                str(FIXTURES / "default-with-livecool.yaml"),
+                "--output",
+                str(output),
+                "--report",
+                str(directory / "report.json"),
+                expect=1,
+            )
+            self.assertFalse(output.exists())
+
     def test_env_conflict_fails_before_writing(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory).resolve()

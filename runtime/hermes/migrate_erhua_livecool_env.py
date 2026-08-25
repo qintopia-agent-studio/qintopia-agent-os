@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Prepare Erhua's server-local Livecool binding without disclosing its value."""
+"""Prepare Erhua's server-local Livecool binding without disclosing its value.
+
+The Erhua gateway is what actually sends the morning brief and daily case report
+cards/images, so this script also guarantees the QiWe image-send intro-text flag
+(``QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED``) is present. The feature is
+desired on for Erhua (it prepends a short text explanation before the card), and
+carrying it in the migrated env prevents the hand-set flag from being lost when
+the profile is re-rendered or freshly provisioned. An explicit ``=0`` still
+disables it for rollback.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +29,14 @@ from render_profile_overlay import (
 
 BINDING = "LIVECOOL_API_KEY"
 BINDING_RE = re.compile(r"^\s*(?:export\s+)?LIVECOOL_API_KEY\s*=\s*(.*)$")
+
+# The Erhua gateway sends both the morning brief and the daily case report, so the
+# image-send intro-text flag defaults to on for this profile. Callers may set it to
+# `=0` to roll back to bare-image sends; any other explicit value is left untouched.
+INTRO_TEXT_ENABLED = "QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED"
+INTRO_TEXT_ENABLED_RE = re.compile(
+    r"^\s*(?:export\s+)?" + re.escape(INTRO_TEXT_ENABLED) + r"\s*=(.*)$"
+)
 
 
 def env_bindings(text: str) -> list[str]:
@@ -114,11 +131,23 @@ def prepare(args: argparse.Namespace) -> None:
     elif binding_value(bindings[0]) != credential:
         raise ValueError(f"{BINDING} conflicts with the approved Livecool credential")
 
+    intro_lines = [
+        match.group(0) for line in text.splitlines() if (match := INTRO_TEXT_ENABLED_RE.match(line))
+    ]
+    if len(intro_lines) > 1:
+        raise ValueError(f"{INTRO_TEXT_ENABLED} is duplicated in Erhua .env")
+    intro_status = "existing"
+    if not intro_lines:
+        suffix = "" if not text or text.endswith("\n") else "\n"
+        text = f"{text}{suffix}{INTRO_TEXT_ENABLED}=1\n"
+        intro_status = "enabled"
+
     report = {
         "schema_version": 1,
         "agent_id": "erhua",
         "binding": BINDING,
         "status": status,
+        "intro_text_enabled": intro_status,
         "before_sha256": digest_bytes(before_bytes),
         "after_sha256": digest_bytes(text.encode("utf-8")),
         "output_mode": "0600",
