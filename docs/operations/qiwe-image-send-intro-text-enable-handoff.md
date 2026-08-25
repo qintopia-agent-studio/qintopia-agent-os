@@ -75,6 +75,17 @@ grep '^QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1$' /etc/qintopia/message-sid
 
 ## 七、本次仓库改动（供 review / 追溯）
 
+> **Erhua 路径已默认开启**：`二花早报` 卡片与 `小满日报` 海报实际由 Erhua 的 Hermes
+> gateway 发出，它读取
+> `/home/ubuntu/.hermes/profiles/erhua/.env`。该 profile 在每次激活时由
+> `runtime/hermes/migrate_erhua_livecool_env.py` 生成 `.env`，现在会**默认追加**
+> `QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1`（仅在缺失时补写；若已是 `=0`
+> 等显式值则保留）。因此 Erhua 这一路无需再跑上面的 one-shot，重新部署/重新渲染也不会丢失该开关。回滚方式：把该行改为
+> `=0` 后重新激活 profile 即可。
+>
+> 上面的 one-shot 只作用于主 sidecar 的 `/etc/qintopia/message-sidecar.env`，**不影响**
+> Erhua 的 `.env`；两路相互独立。
+
 新增并接入了这个 one-shot 目标，共 8 个文件：
 
 | 文件                                                                     | 改动                                          |

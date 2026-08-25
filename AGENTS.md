@@ -120,6 +120,13 @@
   or arbitrary config fields. The Rust sidecar reads this flag at `qiwe_image_send.rs`
   (`QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED`); default off.
 
+  The Erhua Hermes profile (the gateway that actually sends the `二花早报` card and the
+  `小满日报` poster) gets `QINTOPIA_QIWE_IMAGE_SEND_INTRO_TEXT_ENABLED=1` by default
+  from `runtime/hermes/migrate_erhua_livecool_env.py` during profile activation, so the
+  flag survives re-renders and fresh provisioning without a manual one-shot. An explicit
+  `=0` in `/home/ubuntu/.hermes/profiles/erhua/.env` still disables it for rollback
+  (re-activate the profile to apply).
+
 - PR readiness: `pnpm pr:doctor`
 - PR body validation: `pnpm pr:check-body`
 - Local PR quick tier: `pnpm check:pr:quick`
