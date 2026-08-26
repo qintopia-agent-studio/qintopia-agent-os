@@ -68,7 +68,7 @@ if [[ ! -x "$SIDECAR_BIN" ]]; then
   exit 1
 fi
 
-if [[ "${USE_PYTHON_PIPELINE:-}" == "1" ]]; then
+ensure_python_pipeline_dependencies() {
   if [[ ! -f "$WORKFLOW_PY" ]]; then
     echo "xiaoman daily case report workflow is missing from release/current" >&2
     exit 1
@@ -88,9 +88,29 @@ PY
     echo "Pillow is required for xiaoman daily case report local image rendering" >&2
     exit 1
   fi
+}
+
+if [[ "${USE_PYTHON_PIPELINE:-}" == "1" || "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE:-}" == "1" ]]; then
+  ensure_python_pipeline_dependencies
+  export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE=1
 else
-  "$SIDECAR_BIN" run-daily-case-report-auto-publish-worker --once --apply
-  exit 0
+  echo "xiaoman daily case report: using Rust pipeline" >&2
+  set +e
+  rust_output="$("$SIDECAR_BIN" run-daily-case-report-auto-publish-worker --once --apply 2>&1)"
+  rust_rc=$?
+  set -e
+  if [[ "$rust_rc" == "0" ]]; then
+    printf '%s\n' "$rust_output"
+    exit 0
+  fi
+  if [[ "${QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_RASTERIZE_FALLBACK:-1}" == "1" && "$rust_output" == *"rasterize rendered HTML"* ]]; then
+    echo "xiaoman daily case report: Rust rasterize failed; falling back to Python pipeline" >&2
+    ensure_python_pipeline_dependencies
+    export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE=1
+  else
+    printf '%s\n' "$rust_output" >&2
+    exit "$rust_rc"
+  fi
 fi
 
 report_date_args=()

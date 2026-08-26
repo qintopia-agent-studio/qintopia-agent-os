@@ -324,11 +324,12 @@ candidate text.
   Markdown/universe/review-bundle outputs. Production evidence can prove the upgraded
   character universe and private review bundle paths ran, without retaining people
   labels, story labels, quote text, relationship labels, or source excerpts.
-- The auto-publish worker invokes `daily_case_report.py --json --json-summary-only`.
-  That JSON contains paths, artifact identity, `public_output_style`,
-  `character_universe_summary`, and review-bundle counts/flags only; it deliberately
-  omits full Markdown, full character-universe nodes, quote-map, wiki-bundle,
-  draft-bundle, run-manifest, and operator-review text from the send chain.
+- The auto-publish worker's Python/Pillow fallback invokes
+  `daily_case_report.py --json --json-summary-only`. That JSON contains paths, artifact
+  identity, `public_output_style`, `character_universe_summary`, and review-bundle
+  counts/flags only; it deliberately omits full Markdown, full character-universe nodes,
+  quote-map, wiki-bundle, draft-bundle, run-manifest, and operator-review text from the
+  send chain.
 - The visible Markdown/poster output also emits a fixed `public_output_style` contract
   so production evidence can prove the character-daily, storyline-first, image-first,
   PDF-non-default, roast-review, and private-draft boundaries without retaining rendered
@@ -338,10 +339,11 @@ candidate text.
   read-through prefers `psycopg` when already present and otherwise falls back to the
   reviewed `/usr/bin/psql` boundary without placing the database URL in command
   arguments, with a minimal `PATH`, `PG*` connection fields, and SQL on stdin so `psql`
-  variable substitution is applied. Image rendering prefers Python Playwright when
-  available and otherwise uses the system Pillow renderer plus system fonts.
-  Hand-installed Python packages or browsers remain outside the approved production
-  boundary.
+  variable substitution is applied. Auto-publish uses the Rust renderer as the primary
+  path. If that path fails before upload at `rasterize rendered HTML`, the worker may
+  fall back to the reviewed Python/Pillow renderer; upload, publish-create, and QiWe
+  send-state failures must not trigger a rerender fallback. Hand-installed Python
+  packages or browsers remain outside the approved production boundary.
 - The automatic publisher uses the dedicated `xiaoman.daily_case_report_auto_publish`
   capability and `review_policy=automatic_publish`; only
   `workflow_type=daily_case_report` may bypass per-day human final confirmation.

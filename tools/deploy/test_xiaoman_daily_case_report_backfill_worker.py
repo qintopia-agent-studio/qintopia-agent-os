@@ -49,6 +49,22 @@ class XiaomanDailyCaseReportBackfillWorkerTests(unittest.TestCase):
             worker,
         )
         self.assertIn(
+            'ensure_python_pipeline_dependencies()',
+            worker,
+        )
+        self.assertIn(
+            'QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_RASTERIZE_FALLBACK:-1',
+            worker,
+        )
+        self.assertIn(
+            'Rust rasterize failed; falling back to Python pipeline',
+            worker,
+        )
+        self.assertIn(
+            'export QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE=1',
+            worker,
+        )
+        self.assertIn(
             "--json-summary-only",
             worker,
         )
