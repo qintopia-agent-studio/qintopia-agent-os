@@ -39,8 +39,8 @@ if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
   exit 2
 fi
 
-download_url="${COSCLI_DOWNLOAD_URL:-https://cosbrowser.cloud.tencent.com/software/coscli/coscli-linux-amd64}"
-expected_sha256="${COSCLI_SHA256:-7165f2ae16c5f7ac495864c963ca574a76e04ec72680d7bc8a8eee3234d8cf91}"
+download_url="${COSCLI_DOWNLOAD_URL:-https://github.com/tencentyun/coscli/releases/download/v1.0.9/coscli-v1.0.9-linux-amd64}"
+expected_sha256="${COSCLI_SHA256:-a07de5ba2800147a700ed29036b0c76a4229088cee68e1682d0eae19b638a915}"
 
 if [[ -z "$output_path" ]]; then
   output_dir="${RUNNER_TEMP:-/tmp}/qintopia-coscli"
