@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.169](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.168...v0.2.169) (2026-08-26)
+
+
+### Bug Fixes
+
+* **deploy:** pin coscli v1.0.9 installer ([8b7f803](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8b7f8030f852a98326684755be5247c6730d1c62))
+* **deploy:** pin coscli v1.0.9 installer ([b27d0e7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b27d0e7261ac3d823bd00b742ffb547a62571eab))
+
 ## [0.2.168](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.167...v0.2.168) (2026-08-26)
 
 
