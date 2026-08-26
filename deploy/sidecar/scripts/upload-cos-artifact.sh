@@ -463,14 +463,58 @@ fi
 run_coscli "configure COS bucket ${TENCENT_COS_BUCKET}" config add \
   "${bucket_config_args[@]}"
 
+# Authoritative post-upload verification: re-download the just-uploaded object
+# and confirm its SHA256 against SHA256SUMS. COSCLI's own post-upload read-back
+# verify has shown transient mismatches on CI runners (it writes that warning
+# straight to the terminal, bypassing our output capture, so we cannot rely on
+# parsing coscli's exit status). Re-downloading and running sha256sum -c is the
+# same authoritative check fetch-cos-artifact.sh performs, so genuine corruption
+# still fails the deploy (fail-closed at the right boundary).
+verify_uploaded_object() {
+  local file_name="$1"
+  local remote="cos://${bucket_alias}/${remote_base}/${file_name}"
+  local verify_dir
+  verify_dir="$(mktemp -d)"
+  local rc=0
+  ( COSCLI_TOLERATE_PATTERN="$upload_verify_tolerate_pattern" run_coscli "verify ${file_name}" cp \
+    "$remote" \
+    "${verify_dir}/${file_name}" \
+    -c "$config_path" \
+    --disable-log \
+    "${transfer_args[@]}" ) || rc=1
+  if [[ "$rc" -eq 0 && -f "${verify_dir}/${file_name}" ]]; then
+    # Compare the re-downloaded object's SHA256 against the local source of truth.
+    # This is authoritative for every payload file (including SHA256SUMS, which has
+    # no self-entry) and matches the check fetch-cos-artifact.sh performs at deploy time.
+    local local_sha remote_sha
+    local_sha="$(sha256sum "$artifact_dir/${file_name}" | awk '{print $1}')"
+    remote_sha="$(sha256sum "${verify_dir}/${file_name}" | awk '{print $1}')"
+    if [[ "$local_sha" != "$remote_sha" ]]; then
+      rc=1
+    fi
+  else
+    rc=1
+  fi
+  rm -rf "$verify_dir"
+  return "$rc"
+}
+
 for file_name in "${payload_files[@]}"; do
   log "Uploading ${file_name} to cos://${bucket_alias}/${remote_base}/${file_name}"
-  COSCLI_TOLERATE_PATTERN="$upload_verify_tolerate_pattern" run_coscli "upload ${file_name}" cp \
+  # Tolerate coscli's flaky post-upload read-back exit status; the authoritative
+  # re-download verify below is what actually decides success.
+  ( COSCLI_TOLERATE_PATTERN="$upload_verify_tolerate_pattern" run_coscli "upload ${file_name}" cp \
     "${artifact_dir}/${file_name}" \
     "cos://${bucket_alias}/${remote_base}/${file_name}" \
     -c "$config_path" \
     --disable-log \
-    "${transfer_args[@]}"
+    "${transfer_args[@]}" ) || true
+  if verify_uploaded_object "$file_name"; then
+    echo "Authoritative sha256 verify passed for ${file_name} (upload body intact)." >&2
+  else
+    echo "Uploaded object failed authoritative sha256 verify: ${file_name}" >&2
+    exit 1
+  fi
 done
 
 echo "Uploaded ${artifact_type} artifact to cos://${bucket_alias}/${remote_base}/"
