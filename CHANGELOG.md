@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.166](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.165...v0.2.166) (2026-08-26)
+
+
+### Bug Fixes
+
+* **deploy:** disable coscli post-upload CRC64 verification on COS upload ([#674](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/674)) ([e46c8b9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e46c8b9b190a327c32f73503d32f06c1c645a40d))
+
 ## [0.2.165](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.164...v0.2.165) (2026-08-25)
 
 
