@@ -405,6 +405,12 @@ transfer_args=(
   --thread-num "$(positive_int_env COSCLI_THREAD_NUM 8)"
   --err-retry-num "$(positive_int_env COSCLI_ERR_RETRY_NUM 3)"
   --err-retry-interval "$(positive_int_env COSCLI_ERR_RETRY_INTERVAL_SECONDS 3)"
+  # Skip coscli's post-upload re-download CRC64 verification. COS has shown
+  # transient read-back inconsistency for CI runners on large multipart objects
+  # (e.g. the sidecar .tar.gz), which made otherwise-correct uploads fail the
+  # verify step. Integrity is still enforced at download time by
+  # fetch-cos-artifact.sh's sha256sum -c against SHA256SUMS.
+  --disable-crc64
 )
 config_auth_args=(
   --mode SecretKey
