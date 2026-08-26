@@ -74,6 +74,11 @@
   `public_output_style`, private-review counts, artifact identity, and paths. Do not
   parse or forward full `daily_report_markdown`, full `character_universe`, quote-map,
   wiki, draft, run-manifest, or operator-review text in the send chain.
+- Xiaoman daily case-report auto-publish uses the Rust renderer as the primary path, but
+  the worker may fall back to the reviewed Python/Pillow pipeline only when the Rust
+  path fails before upload at `rasterize rendered HTML`. Do not fallback after media
+  upload, auto-publish creation, or QiWe send-state errors; those phases are idempotency
+  and delivery boundaries, not safe rerender triggers.
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash

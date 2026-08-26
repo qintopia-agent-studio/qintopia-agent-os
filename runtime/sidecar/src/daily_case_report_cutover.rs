@@ -700,6 +700,34 @@ fn sha256_hex(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+fn rasterize_failure_detail(stdout: &[u8], stderr: &[u8]) -> String {
+    let stderr = String::from_utf8_lossy(stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+
+    if let Ok(parsed) = serde_json::from_slice::<Value>(stdout) {
+        if let Some(error) = parsed.get("error").and_then(Value::as_str) {
+            let error = error.trim();
+            if !error.is_empty() {
+                return error.to_string();
+            }
+        }
+    }
+
+    let stdout = String::from_utf8_lossy(stdout).trim().to_string();
+    if stdout.is_empty() {
+        "no stderr/stdout from rasterize subprocess".to_string()
+    } else if stdout.chars().count() > 500 {
+        format!(
+            "rasterize stdout: {}",
+            stdout.chars().take(500).collect::<String>()
+        )
+    } else {
+        format!("rasterize stdout: {stdout}")
+    }
+}
+
 /// Write the rendered HTML to a private temp directory and invoke the Python
 /// rasterizer as a bounded subprocess.
 pub async fn rasterize_html(
@@ -780,13 +808,9 @@ pub async fn rasterize_html(
     .context("rasterize timed out")?;
 
     let output = output.context("rasterize subprocess")?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
     if !output.status.success() {
-        bail!(
-            "rasterize failed (status {}): {}",
-            output.status,
-            stderr.trim()
-        );
+        let detail = rasterize_failure_detail(&output.stdout, &output.stderr);
+        bail!("rasterize failed (status {}): {}", output.status, detail);
     }
 
     let parsed: Value = serde_json::from_slice(&output.stdout).context("parse rasterize JSON")?;
@@ -1405,5 +1429,23 @@ mod tests {
         std::env::remove_var("QINTOPIA_AGENT_OS_RELEASE_CURRENT");
         let unresolved = Path::new("workflows/__nonexistent_xyz__/rasterize.py");
         assert_eq!(resolve_release_path(unresolved), unresolved.to_path_buf());
+    }
+
+    #[test]
+    fn rasterize_failure_detail_reads_json_stdout_error_when_stderr_is_empty() {
+        let stdout = br#"{"success":false,"error":"BrowserType.launch: chromium crashed"}"#;
+        assert_eq!(
+            rasterize_failure_detail(stdout, b""),
+            "BrowserType.launch: chromium crashed"
+        );
+    }
+
+    #[test]
+    fn rasterize_failure_detail_prefers_stderr() {
+        let stdout = br#"{"success":false,"error":"hidden stdout error"}"#;
+        assert_eq!(
+            rasterize_failure_detail(stdout, b"stderr error\n"),
+            "stderr error"
+        );
     }
 }
