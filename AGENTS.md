@@ -137,6 +137,10 @@
 - Local PR quick tier: `pnpm check:pr:quick`
 - Local PR heavy tier: `pnpm check:pr:heavy`
 - Local PR auto tier: `pnpm check:pr:auto`
+- COSCLI installer defaults must use a versioned official GitHub release asset and the
+  matching asset digest, not the floating `coscli-linux-amd64` alias. The alias can move
+  before Tencent download docs update their SHA table and break production release
+  deploys at install-time checksum verification.
 - Erhua morning brief fixture test:
   `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/erhua-morning-brief/tests -v`
 - Erhua morning brief systemd timer observation (rollback-to-timer path only):

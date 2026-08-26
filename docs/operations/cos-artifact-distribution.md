@@ -128,6 +128,12 @@ TencentCloud also publishes `TencentCloud/cos-action`, but the current
 GitHub Actions on Node.js 24-compatible action runtimes, so the CI path calls COSCLI
 directly instead of depending on that action.
 
+`deploy/sidecar/scripts/install-coscli.sh` must pin a versioned COSCLI release asset and
+the matching GitHub release asset digest. Do not default to the floating
+`coscli-linux-amd64` alias: on 2026-08-26 that alias moved to COSCLI `v1.0.9` before the
+download documentation's Linux SHA table caught up, which broke production release
+deploys at install-time checksum verification.
+
 ## Network Path Decision
 
 Direct GitHub-hosted runner upload to the Shanghai bucket without acceleration was too
