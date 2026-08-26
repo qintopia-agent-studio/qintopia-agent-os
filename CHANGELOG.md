@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.168](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.167...v0.2.168) (2026-08-26)
+
+
+### Bug Fixes
+
+* **deploy:** verify COS upload authoritatively via re-download sha256 ([#678](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/678)) ([050c36e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/050c36e285aa5247dd6061dc366545620166d2b2))
+* fallback daily report rasterization ([#680](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/680)) ([4882938](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/48829389d2855c22050d238a919b8ae0dfa4e37e))
+
 ## [0.2.167](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.166...v0.2.167) (2026-08-26)
 
 
