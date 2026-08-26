@@ -426,7 +426,7 @@ transfer_args=(
   # fetch-cos-artifact.sh's sha256sum -c against SHA256SUMS.
   --disable-crc64
 )
-# COSCLI_TOLERATE_PATTERN lets the upload cp calls tolerate coscli's internal
+# COSCLI_TOLERATE_PATTERN lets the upload invocations tolerate coscli's internal
 # post-upload SHA256 read-back mismatch (GNU "sha256sum: WARNING: ... computed
 # checksum did NOT match"). CRC64 is already skipped via --disable-crc64 above;
 # the SHA256 read-back is a separate, also-flaky check that we cannot disable
