@@ -23,6 +23,7 @@ Allowed targets:
 
 ```text
 erhua-morning-brief
+erhua-activity-recruitment
 xiaoman-daily-case-report
 xiaoman-weekly-recruitment
 xiaoman-weekly-plan-confirmation

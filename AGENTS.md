@@ -263,14 +263,17 @@
   wrapper content is already current; preserving a stale root-owned wrapper can make
   Hermes report install success while the ubuntu profile cannot execute it. The approval
   strings authorize the production action boundary, not a cryptographic signature over
-  `jobs.json`. The workflow must not accept chat ids, cron JSON, script paths, approval
-  strings, env-file paths, systemctl commands, or arbitrary shell from inputs, and
-  deploy results must not record live cron content, group ids, prompts, env values, or
-  raw script output. Apply scripts may emit a bounded safe failure reason only through
-  the explicit `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must
-  ignore all other stdout/stderr for result details. Because each apply ends by running
-  `sync-hermes-cron-snapshot.sh`, the deploy-runner service must grant `ReadWritePaths`
-  to the fixed server-local snapshot repo
+  `jobs.json`. When adding reviewed registry entries, update the workflow input
+  allowlist, deploy-request schema, deploy-runner target allowlist, runner dispatch, and
+  fixtures in the same PR; otherwise live parity can require a job that the reviewed
+  apply workflow cannot install. The workflow must not accept chat ids, cron JSON,
+  script paths, approval strings, env-file paths, systemctl commands, or arbitrary shell
+  from inputs, and deploy results must not record live cron content, group ids, prompts,
+  env values, or raw script output. Apply scripts may emit a bounded safe failure reason
+  only through the explicit `qintopia_hermes_cron_apply_safe_failure=` marker; the
+  deploy runner must ignore all other stdout/stderr for result details. Because each
+  apply ends by running `sync-hermes-cron-snapshot.sh`, the deploy-runner service must
+  grant `ReadWritePaths` to the fixed server-local snapshot repo
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; do not broaden this
   to the whole qintopia-agentos state directory or whole home. Live Hermes cron
   `jobs.json` envelopes may exceed 64 KiB after multiple reviewed jobs are installed;

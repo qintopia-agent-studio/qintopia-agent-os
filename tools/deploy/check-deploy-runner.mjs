@@ -1432,10 +1432,10 @@ if (exists(".github/workflows/apply-production-hermes-crons.yml")) {
   }
   if (
     targetsInput?.default !==
-    "erhua-morning-brief,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview"
+    "erhua-morning-brief,erhua-activity-recruitment,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview"
   ) {
     addError(
-      ".github/workflows/apply-production-hermes-crons.yml: default targets must stay limited to the five reviewed Hermes cron jobs"
+      ".github/workflows/apply-production-hermes-crons.yml: default targets must stay limited to the reviewed Hermes cron jobs"
     );
   }
   const uploadJobNames = Object.entries(workflow?.jobs || {})
@@ -1466,7 +1466,7 @@ if (exists(".github/workflows/apply-production-hermes-crons.yml")) {
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
     "apply_mode must be install or enable.",
-    "erhua-morning-brief,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview",
+    "erhua-morning-brief,erhua-activity-recruitment,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-hermes-cron-apply",
     "DEPLOY_RESTART_TARGETS: qintopia-system-services",
@@ -1823,11 +1823,13 @@ for (const fragment of [
   "hermes-cron-snapshot-observation-smoke.sh",
   "hermes-cron-live-parity-observation-smoke.sh",
   "apply-erhua-morning-brief-hermes-cron.sh",
+  "apply-erhua-activity-recruitment-hermes-cron.sh",
   "apply-xiaoman-daily-case-report-hermes-cron.sh",
   "apply-xiaoman-weekly-recruitment-hermes-cron.sh",
   "apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
   "apply-xiaoman-weekly-preview-hermes-cron.sh",
   "approved-production-erhua-morning-brief-hermes-cron",
+  "approved-production-erhua-activity-recruitment-hermes-cron",
   "approved-production-xiaoman-daily-case-report-hermes-cron",
   "approved-production-xiaoman-weekly-recruitment-hermes-cron",
   "approved-production-xiaoman-weekly-plan-confirmation-hermes-cron",

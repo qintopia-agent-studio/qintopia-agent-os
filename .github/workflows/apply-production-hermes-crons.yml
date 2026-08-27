@@ -19,10 +19,11 @@ on:
       hermes_cron_apply_targets:
         description: >-
           Comma-separated fixed targets: erhua-morning-brief,
+          erhua-activity-recruitment,
           xiaoman-daily-case-report,xiaoman-weekly-recruitment,
           xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview.
         required: true
-        default: erhua-morning-brief,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview
+        default: erhua-morning-brief,erhua-activity-recruitment,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview
         type: string
       notes:
         description: Operator notes for the Hermes cron apply request.
@@ -177,7 +178,7 @@ jobs:
           hermes_cron_apply_targets="$(normalize_csv_allowlist \
             hermes_cron_apply_targets \
             "$INPUT_HERMES_CRON_APPLY_TARGETS" \
-            "erhua-morning-brief,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview")"
+            "erhua-morning-brief,erhua-activity-recruitment,xiaoman-daily-case-report,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview")"
 
           notes_delimiter="hermes_cron_apply_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {

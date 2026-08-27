@@ -112,6 +112,7 @@ allowed_legacy_cron_retirement_targets = {
 }
 allowed_hermes_cron_apply_targets = {
     "erhua-morning-brief",
+    "erhua-activity-recruitment",
     "xiaoman-daily-case-report",
     "xiaoman-weekly-recruitment",
     "xiaoman-weekly-plan-confirmation",
@@ -1276,6 +1277,11 @@ run_hermes_cron_apply_target() {
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
         QINTOPIA_ERHUA_MORNING_BRIEF_HERMES_CRON=approved-production-erhua-morning-brief-hermes-cron \
         "${script_dir}/apply-erhua-morning-brief-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
+      ;;
+    erhua-activity-recruitment)
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_ERHUA_ACTIVITY_RECRUITMENT_HERMES_CRON=approved-production-erhua-activity-recruitment-hermes-cron \
+        "${script_dir}/apply-erhua-activity-recruitment-hermes-cron.sh" "$mode_arg" >/dev/null || return $?
       ;;
     xiaoman-daily-case-report)
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
