@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.171](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.170...v0.2.171) (2026-08-27)
+
+
+### Bug Fixes
+
+* wire Erhua activity cron apply ([d7a2e68](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d7a2e68e57945d866a0ce67421c672b7c10b5125))
+* wire Erhua activity cron apply ([47a8b79](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/47a8b79f6b66068408f54c192985a7c0944b3486))
+
 ## [0.2.170](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.169...v0.2.170) (2026-08-27)
 
 
