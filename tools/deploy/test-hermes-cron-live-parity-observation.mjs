@@ -56,6 +56,24 @@ const reviewedJobs = [
     "qintopia_xiaoman_daily_case_report.sh",
   ],
   ["erhua", "二花·每日早报", "10 8 * * *", "qintopia_erhua_morning_brief.sh"],
+  [
+    "erhua",
+    "二花·周六中午活动发起者招募",
+    "0 12 * * 6",
+    "qintopia_erhua_activity_recruitment.sh",
+  ],
+  [
+    "erhua",
+    "二花·周六晚间活动发起者招募",
+    "0 21 * * 6",
+    "qintopia_erhua_activity_recruitment.sh",
+  ],
+  [
+    "erhua",
+    "二花·周日中午活动发起者招募",
+    "0 12 * * 0",
+    "qintopia_erhua_activity_recruitment.sh",
+  ],
 ];
 
 const liveJob = ([profile, name, expr, script], chatId) => ({
@@ -165,7 +183,8 @@ try {
   }
   if (
     !result.stdout.includes("hermes_cron_live_parity_result=success") ||
-    !result.stdout.includes("hermes_cron_live_parity_live_count=5") ||
+    !result.stdout.includes("hermes_cron_live_parity_reviewed_count=8") ||
+    !result.stdout.includes("hermes_cron_live_parity_live_count=8") ||
     !result.stdout.includes("hermes_cron_live_parity_enabled_count=0")
   ) {
     throw new Error(`unexpected live parity success output\n${result.stdout}`);
@@ -187,7 +206,7 @@ try {
   }
   if (
     !result.stdout.includes("hermes_cron_live_parity_result=success") ||
-    !result.stdout.includes("hermes_cron_live_parity_live_count=5")
+    !result.stdout.includes("hermes_cron_live_parity_live_count=8")
   ) {
     throw new Error(`unexpected legacy envelope success output\n${result.stdout}`);
   }

@@ -132,7 +132,7 @@ expected = [
     for job in reviewed_jobs
     if isinstance(job, dict) and job.get("profile") in profiles
 ]
-if len(expected) != 5:
+if not expected:
     fail("registry_invalid")
 
 chat_ids = {profile: resolve_chat_id(path) for profile, path in env_files.items()}
