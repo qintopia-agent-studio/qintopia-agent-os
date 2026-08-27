@@ -67,6 +67,7 @@ const buildRequest = (overrides = {}) => {
       mode: "install",
       targets: [
         "erhua-morning-brief",
+        "erhua-activity-recruitment",
         "xiaoman-daily-case-report",
         "xiaoman-weekly-recruitment",
         "xiaoman-weekly-plan-confirmation",
@@ -165,6 +166,11 @@ fi
       "approved-production-erhua-morning-brief-hermes-cron",
     ],
     [
+      "apply-erhua-activity-recruitment-hermes-cron.sh",
+      "QINTOPIA_ERHUA_ACTIVITY_RECRUITMENT_HERMES_CRON",
+      "approved-production-erhua-activity-recruitment-hermes-cron",
+    ],
+    [
       "apply-xiaoman-daily-case-report-hermes-cron.sh",
       "QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON",
       "approved-production-xiaoman-daily-case-report-hermes-cron",
@@ -258,6 +264,7 @@ exit 99
   ]);
   const expectedTargets = [
     ["erhua-morning-brief", "install", "passed", "mode=install"],
+    ["erhua-activity-recruitment", "install", "passed", "mode=install"],
     ["xiaoman-daily-case-report", "install", "passed", "mode=install"],
     ["xiaoman-weekly-recruitment", "install", "passed", "mode=install"],
     ["xiaoman-weekly-plan-confirmation", "install", "passed", "mode=install"],
@@ -270,6 +277,7 @@ exit 99
   }
   const expectedLog = [
     "apply-erhua-morning-brief-hermes-cron.sh --install",
+    "apply-erhua-activity-recruitment-hermes-cron.sh --install",
     "apply-xiaoman-daily-case-report-hermes-cron.sh --install",
     "apply-xiaoman-weekly-recruitment-hermes-cron.sh --install",
     "apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh --install",

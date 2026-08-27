@@ -147,6 +147,23 @@ try {
     last_error: null,
     repeat: { completed: 7 },
   });
+  const legacyPlaceholder = (name, overrides = {}) => ({
+    id: `legacy-${name.length}`,
+    name,
+    schedule: { kind: "cron", expr: "0 12 * * 6", display: "0 12 * * 6" },
+    no_agent: true,
+    script: null,
+    deliver: "origin",
+    origin: {
+      platform: "wecom",
+      chat_id: chatIdFixture,
+      chat_name: null,
+      thread_id: null,
+    },
+    enabled: false,
+    skills: [],
+    ...overrides,
+  });
   const emptyEnvelope = () => ({
     schema_version: 1,
     retired_by: "retire-xiaoman-legacy-cron-production.sh",
@@ -266,8 +283,54 @@ try {
     "install backup did not preserve the previous cron bytes"
   );
 
+  // The installer prunes only the fixed disabled/scriptless legacy placeholders that
+  // would otherwise keep live-parity red after the reviewed weekly job is installed.
+  const legacyNames = [
+    "小满·周六中午活动发起者招募",
+    "小满·周六晚间活动发起者招募",
+    "小满·周日中午活动发起者招募提醒",
+  ];
+  const withLegacyPlaceholders = emptyEnvelope();
+  withLegacyPlaceholders.jobs = [
+    runningJob(),
+    ...legacyNames.map((name) => legacyPlaceholder(name)),
+  ];
+  writeCron(withLegacyPlaceholders);
+  result = runApproved(["--install"]);
+  check(
+    result.status === 0 && result.stdout.includes('"legacy_placeholders_pruned":3'),
+    `install did not prune fixed legacy placeholders\n${result.stdout}\n${result.stderr}`
+  );
+  cron = readJson(cronFile);
+  check(
+    cron.jobs.length === 2 &&
+      cron.jobs.some((job) => job.name === jobName) &&
+      cron.jobs.some((job) => job.name === "小满·每日案例日报") &&
+      !cron.jobs.some((job) => legacyNames.includes(job.name)),
+    "install did not keep only the unrelated and reviewed jobs after pruning"
+  );
+
+  const unsafeLegacy = emptyEnvelope();
+  unsafeLegacy.jobs = [
+    legacyPlaceholder("小满·周六中午活动发起者招募", {
+      enabled: true,
+      script: "unexpected.sh",
+    }),
+  ];
+  writeCron(unsafeLegacy);
+  result = runApproved(["--install"]);
+  check(
+    result.status !== 0 &&
+      result.stderr.includes(
+        "legacy weekly recruitment placeholder is not safe to prune"
+      ),
+    "install pruned an enabled or scripted legacy placeholder"
+  );
+
   // A second install refreshes the reviewed wrapper and must not append twice.
+  writeCron(cron);
   baselineSha = sha256(fs.readFileSync(cronFile));
+  const repeatInstallBackupCount = listBackups(cronDir).length;
   fs.writeFileSync(installedWrapper, "#!/usr/bin/env bash\necho old-wrapper\n", "utf8");
   fs.chmodSync(installedWrapper, 0o600);
   result = runApproved(["--install"]);
@@ -281,7 +344,7 @@ try {
     ) &&
       result.stdout.includes('"wrapper_installed":true') &&
       sha256(fs.readFileSync(cronFile)) === baselineSha &&
-      listBackups(cronDir).length === 1 &&
+      listBackups(cronDir).length === repeatInstallBackupCount &&
       modeOf(installedWrapper) === 0o700 &&
       fs.readFileSync(installedWrapper, "utf8") ===
         fs.readFileSync(releaseWrapper, "utf8"),
@@ -301,9 +364,10 @@ try {
   // --enable flips only the reviewed job and preserves daemon runtime fields.
   const other = runningJob();
   cron = readJson(cronFile);
-  cron.jobs = [other, cron.jobs[0]];
+  cron.jobs = [other, cron.jobs.find((job) => job.name === jobName)];
   writeCron(cron);
   baselineSha = sha256(fs.readFileSync(cronFile));
+  const enableBackupCount = listBackups(cronDir).length;
   result = runApproved(["--enable"]);
   check(result.status === 0, `enable failed\n${result.stdout}\n${result.stderr}`);
   forbidLeak(result, "enable");
@@ -325,10 +389,14 @@ try {
     reviewed.enabled === true && reviewed.origin.chat_id === chatIdFixture,
     "enable did not flip the reviewed job"
   );
-  check(listBackups(cronDir).length === 2, "enable did not create a backup");
+  check(
+    listBackups(cronDir).length === enableBackupCount + 1,
+    "enable did not create a backup"
+  );
 
   // --enable is idempotent and must not rewrite an already enabled job.
   baselineSha = sha256(fs.readFileSync(cronFile));
+  const repeatEnableBackupCount = listBackups(cronDir).length;
   result = runApproved(["--enable"]);
   check(result.status === 0, `repeat enable failed\n${result.stderr}`);
   check(
@@ -337,7 +405,7 @@ try {
     ) &&
       result.stdout.includes('"live_profile_modified":false') &&
       sha256(fs.readFileSync(cronFile)) === baselineSha &&
-      listBackups(cronDir).length === 2,
+      listBackups(cronDir).length === repeatEnableBackupCount,
     "repeat enable was not idempotent"
   );
 

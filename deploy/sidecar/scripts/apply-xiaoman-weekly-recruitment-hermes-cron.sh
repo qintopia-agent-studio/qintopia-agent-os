@@ -60,6 +60,11 @@ JOB_SCHEDULE_EXPR = "0 10 * * 6"
 JOB_SCRIPT = "qintopia_xiaoman_weekly_recruitment.sh"
 STATUS_INSTALLED = "weekly_recruitment_hermes_cron_installed"
 STATUS_ALREADY_INSTALLED = "weekly_recruitment_hermes_cron_already_installed"
+LEGACY_PLACEHOLDER_NAMES = {
+    "小满·周六中午活动发起者招募",
+    "小满·周六晚间活动发起者招募",
+    "小满·周日中午活动发起者招募提醒",
+}
 CHAT_ID_KEY = "WECOM_HOME_CHANNEL"
 MAX_CRON_BYTES = 1024 * 1024
 MAX_ENV_BYTES = 1024 * 1024
@@ -284,6 +289,21 @@ def find_reviewed_job(jobs: list[dict]) -> tuple[int, dict]:
     return index, job
 
 
+def prune_legacy_placeholders(jobs: list[dict]) -> int:
+    retained: list[dict] = []
+    removed = 0
+    for job in jobs:
+        if job.get("name") in LEGACY_PLACEHOLDER_NAMES:
+            if job.get("enabled") is not False or job.get("script") not in (None, ""):
+                fail("legacy weekly recruitment placeholder is not safe to prune")
+            removed += 1
+            continue
+        retained.append(job)
+    if removed:
+        jobs[:] = retained
+    return removed
+
+
 document, previous_payload, entry_stat = load_cron()
 jobs = document["jobs"]
 schema_normalized = False
@@ -292,6 +312,7 @@ if document.get("schema_version") != 1:
     schema_normalized = True
 
 if mode == "--install":
+    legacy_placeholders_pruned = prune_legacy_placeholders(jobs)
     matching_name = [job for job in jobs if job.get("name") == JOB_NAME]
     if len(matching_name) > 1:
         fail("Hermes cron file contains duplicate weekly recruitment jobs")
@@ -343,6 +364,7 @@ if mode == "--install":
         "status": status,
         "profile": "xiaoman",
         "job_enabled": job_enabled,
+        "legacy_placeholders_pruned": legacy_placeholders_pruned,
         "wrapper_installed": wrapper_installed,
         "origin_chat_id_resolved": True,
         "job_count": len(jobs),
@@ -357,6 +379,7 @@ else:
             "status": "weekly_recruitment_hermes_cron_already_enabled",
             "profile": "xiaoman",
             "job_enabled": True,
+            "legacy_placeholders_pruned": 0,
             "wrapper_installed": False,
             "origin_chat_id_resolved": True,
             "job_count": len(jobs),
@@ -376,6 +399,7 @@ else:
             else "weekly_recruitment_hermes_cron_already_enabled",
             "profile": "xiaoman",
             "job_enabled": True,
+            "legacy_placeholders_pruned": 0,
             "wrapper_installed": False,
             "origin_chat_id_resolved": True,
             "job_count": len(jobs),
