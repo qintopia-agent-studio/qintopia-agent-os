@@ -15,17 +15,23 @@ task_name=""
 log_path=""
 summary_path=""
 expected_worker=""
+schedule_local_time=""
+schedule_local_days=""
 
 case "$target" in
   erhua-morning-brief-worker-run)
     evidence_key="erhua_morning_brief"
     task_name="erhua-morning-brief"
     log_path="/home/ubuntu/.local/state/qintopia-agentos/erhua-morning-brief/hermes-cron.log"
+    schedule_local_time="08:10"
+    schedule_local_days="0,1,2,3,4,5,6"
     ;;
   xiaoman-daily-case-report-worker-run)
     evidence_key="xiaoman_daily_case_report"
     task_name="xiaoman-daily-case-report"
     log_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-daily-case-report/hermes-cron.log"
+    schedule_local_time="09:00"
+    schedule_local_days="0,1,2,3,4,5,6"
     ;;
   xiaoman-weekly-recruitment-worker-run)
     evidence_key="xiaoman_weekly_recruitment"
@@ -33,6 +39,8 @@ case "$target" in
     log_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-recruitment/hermes-cron.log"
     summary_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-recruitment/latest-summary.json"
     expected_worker="xiaoman-weekly-recruitment-worker"
+    schedule_local_time="10:00"
+    schedule_local_days="6"
     ;;
   xiaoman-weekly-plan-confirmation-worker-run)
     evidence_key="xiaoman_weekly_plan_confirmation"
@@ -40,6 +48,8 @@ case "$target" in
     log_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-plan-confirmation/hermes-cron.log"
     summary_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-plan-confirmation/latest-summary.json"
     expected_worker="xiaoman-weekly-plan-confirmation-worker"
+    schedule_local_time="20:00"
+    schedule_local_days="0"
     ;;
   xiaoman-weekly-preview-worker-run)
     evidence_key="xiaoman_weekly_preview"
@@ -47,6 +57,8 @@ case "$target" in
     log_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview/hermes-cron.log"
     summary_path="/home/ubuntu/.local/state/qintopia-agentos/xiaoman-weekly-preview/latest-summary.json"
     expected_worker="xiaoman-weekly-preview-worker"
+    schedule_local_time="09:30"
+    schedule_local_days="1"
     ;;
   *)
     echo "unsupported production worker-run evidence target: ${target}" >&2
@@ -144,19 +156,40 @@ fi
 
 run_epoch=""
 set +e
-run_epoch="$("$PYTHON_BIN" - "$log_path" "$task_name" <<'PY'
+run_epoch="$("$PYTHON_BIN" - "$log_path" "$task_name" "$schedule_local_time" "$schedule_local_days" <<'PY'
 import datetime as dt
+import os
 import re
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 task = sys.argv[2]
+schedule_time = sys.argv[3]
+schedule_days = {
+    int(day)
+    for day in sys.argv[4].split(",")
+    if day.strip().isdigit() and 0 <= int(day) <= 6
+}
 pattern = re.compile(
     r"^(?P<ts>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z) "
     + re.escape(task)
     + r" run=(?P<status>ok|failed)(?: exit=[0-9]+)?$"
 )
+
+def local_cron_day(value: dt.date) -> int:
+    return (value.weekday() + 1) % 7
+
+
+def expected_local_date(now_local: dt.datetime) -> dt.date:
+    override = os.environ.get("QINTOPIA_PRODUCTION_WORKER_RUN_EXPECTED_LOCAL_DATE", "")
+    if not override:
+        return now_local.date()
+    try:
+        return dt.datetime.strptime(override, "%Y-%m-%d").date()
+    except ValueError:
+        raise SystemExit(3)
+
 
 latest = None
 try:
@@ -170,14 +203,28 @@ except OSError:
 
 if latest is None:
     raise SystemExit(2)
-if latest.group("status") != "ok":
-    raise SystemExit(1)
 
 try:
     timestamp = dt.datetime.strptime(
         latest.group("ts"), "%Y-%m-%dT%H:%M:%SZ"
     ).replace(tzinfo=dt.timezone.utc)
 except ValueError:
+    raise SystemExit(1)
+
+local_tz = dt.timezone(dt.timedelta(hours=8))
+now_local = dt.datetime.now(dt.timezone.utc).astimezone(local_tz)
+expected_date = expected_local_date(now_local)
+expected_time = dt.datetime.strptime(schedule_time, "%H:%M").time()
+expected_due = (
+    local_cron_day(expected_date) in schedule_days
+    and (
+        os.environ.get("QINTOPIA_PRODUCTION_WORKER_RUN_EXPECTED_LOCAL_DATE")
+        or now_local >= dt.datetime.combine(expected_date, expected_time, tzinfo=local_tz)
+    )
+)
+if expected_due and timestamp.astimezone(local_tz).date() != expected_date:
+    raise SystemExit(4)
+if latest.group("status") != "ok":
     raise SystemExit(1)
 print(int(timestamp.timestamp()))
 PY
@@ -192,6 +239,9 @@ case "$parse_status" in
     ;;
   1)
     fail_evidence "$(classify_failed_worker_run)"
+    ;;
+  4)
+    fail_evidence "scheduled_run_missing"
     ;;
   *)
     fail_evidence "worker_failed"

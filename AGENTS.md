@@ -577,9 +577,13 @@
   `xiaoman-weekly-preview-worker-run`. `hermes-cron-snapshot` reports only safe
   server-local snapshot unit/repo facts, and `hermes-cron-live-parity` reports only
   reviewed/live/enabled counts after comparing the reviewed registry to live
-  declarations including `deliver` and `origin` boundaries. Migrated worker-run targets
-  prove the reviewed Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok`
-  sentinel and the worker exited successfully. Erhua morning brief observation must also
+  declarations including `deliver` and `origin` boundaries. Do not hard-code the
+  reviewed job count in live-parity observation; the registry may grow while the safe
+  output remains bounded counts only. Migrated worker-run targets prove the reviewed
+  Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok` sentinel for the
+  expected Asia/Shanghai schedule date and the worker exited successfully; stale
+  sentinels from an older scheduled date must fail as `scheduled_run_missing`, not be
+  classified as the current worker result. Erhua morning brief observation must also
   parse the worker's sanitized summary from that latest log segment and verify the text
   artifact was created plus the optional auto-publish summary reports
   `external_send_executed=true`; never fall back to sentinel-only success for Erhua

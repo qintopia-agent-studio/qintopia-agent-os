@@ -50,6 +50,7 @@ const run = (target) =>
     env: {
       ...process.env,
       QINTOPIA_PRODUCTION_WORKER_RUN_EVIDENCE_ENABLE: "1",
+      QINTOPIA_PRODUCTION_WORKER_RUN_EXPECTED_LOCAL_DATE: "2026-08-10",
     },
     encoding: "utf8",
   });
@@ -603,6 +604,23 @@ expectNoLeak(result, "latest failed sentinel");
 check(
   result.stdout.trim() === "xiaoman_weekly_recruitment_worker_run_error=worker_failed",
   `latest failed sentinel emitted unexpected evidence\n${result.stdout}`
+);
+
+writeFile(
+  "state/xiaoman-daily-case-report/hermes-cron.log",
+  [
+    "2026-08-09T01:30:00Z xiaoman-daily-case-report run=failed exit=1",
+    "raw worker output with group-id-fixture",
+    "",
+  ].join("\n")
+);
+result = run("xiaoman-daily-case-report-worker-run");
+expectStatus(result, 1, "daily stale sentinel");
+expectNoLeak(result, "daily stale sentinel");
+check(
+  result.stdout.trim() ===
+    "xiaoman_daily_case_report_worker_run_error=scheduled_run_missing",
+  `daily stale sentinel emitted unexpected evidence\n${result.stdout}`
 );
 
 writeFile(

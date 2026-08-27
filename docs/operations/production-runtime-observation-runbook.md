@@ -75,8 +75,8 @@ live Hermes profile `jobs.json` files. It verifies schedule, script, `no_agent`,
 the reviewed server-local profile env files. Successful evidence is limited to:
 
 - `hermes_cron_live_parity_result=success`
-- `hermes_cron_live_parity_reviewed_count=5`
-- `hermes_cron_live_parity_live_count=5`
+- `hermes_cron_live_parity_reviewed_count=<count>`
+- `hermes_cron_live_parity_live_count=<count>`
 - `hermes_cron_live_parity_enabled_count=<count>`
 
 Both targets emit only fixed failure reason tokens through
@@ -93,8 +93,10 @@ target checks, through the fixed release-local
 `production-worker-run-evidence-smoke.sh`:
 
 - The fixed server-local Hermes cron log for the target contains a latest
-  `<timestamp> <task> run=ok` sentinel. If the latest sentinel is `run=failed`, the
-  observation fails with `worker_failed`.
+  `<timestamp> <task> run=ok` sentinel for the expected Asia/Shanghai schedule date. If
+  the latest sentinel belongs to an older scheduled date after the expected schedule is
+  due, the observation fails with `scheduled_run_missing`. If the latest current
+  sentinel is `run=failed`, the observation fails with `worker_failed`.
 - For the three Xiaoman weekly loop targets, the worker's fixed `latest-summary.json`
   exists and keeps the reviewed draft invariants (`requires_human_confirmation=true`,
   `external_send_executed=false`, `safe_for_member_chat=false`) plus a valid
@@ -129,8 +131,8 @@ Hermes job has not fired yet, not a regression. Rerun the observation after the
 scheduled time; `not_started` after the scheduled time means the Hermes job did not
 reach the reviewed wrapper and needs reviewed investigation. Failure evidence records
 only the fixed reason token, one of `worker_failed`, `summary_missing`,
-`summary_invalid`, or `python_unavailable`. The script echoes no log output, env values,
-group ids, or summary text.
+`summary_invalid`, `scheduled_run_missing`, or `python_unavailable`. The script echoes
+no log output, env values, group ids, or summary text.
 
 Worker-run evidence is read-only: it inspects the fixed Hermes cron log and reads the
 worker's summary JSON only. It does not start or stop services, write state, or call
