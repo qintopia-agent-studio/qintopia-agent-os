@@ -6676,6 +6676,7 @@ if (!exists(xiaomanProductionCompletionEvidenceTemplatePath)) {
 
 const hermesCronApplyScripts = [
   "deploy/sidecar/scripts/apply-erhua-morning-brief-hermes-cron.sh",
+  "deploy/sidecar/scripts/apply-erhua-activity-recruitment-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-recruitment-hermes-cron.sh",
   "deploy/sidecar/scripts/apply-xiaoman-weekly-plan-confirmation-hermes-cron.sh",
