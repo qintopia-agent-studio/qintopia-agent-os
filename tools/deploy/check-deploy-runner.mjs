@@ -2643,6 +2643,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/erhua-activity-recruitment-worker.sh",
+    "deploy/sidecar/scripts/apply-erhua-activity-recruitment-hermes-cron.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
