@@ -251,10 +251,11 @@
   GitHub workflow after the reviewed release containing the runner support is deployed.
   It creates a signed `production-hermes-cron-apply` deploy-runner request and accepts
   only `apply_mode=install|enable` plus these fixed targets: `erhua-morning-brief`,
-  `xiaoman-daily-case-report`, `xiaoman-weekly-recruitment`,
-  `xiaoman-weekly-plan-confirmation`, and `xiaoman-weekly-preview`. This is the
-  repository-to-live step for `/home/ubuntu/.hermes/profiles/<profile>/cron/jobs.json`:
-  install first writes the reviewed job disabled and installs the reviewed wrapper under
+  `erhua-activity-recruitment`, `xiaoman-daily-case-report`,
+  `xiaoman-weekly-recruitment`, `xiaoman-weekly-plan-confirmation`, and
+  `xiaoman-weekly-preview`. This is the repository-to-live step for
+  `/home/ubuntu/.hermes/profiles/<profile>/cron/jobs.json`: install first writes the
+  reviewed job disabled and installs the reviewed wrapper under
   `/home/ubuntu/.hermes/profiles/<profile>/scripts/`; enable is a later explicit request
   after live declaration parity is proven. Hermes no-agent scheduler resolves the
   `script` field from this profile-local scripts directory, not from the global
@@ -266,14 +267,17 @@
   `jobs.json`. When adding reviewed registry entries, update the workflow input
   allowlist, deploy-request schema, deploy-runner target allowlist, runner dispatch, and
   fixtures in the same PR; otherwise live parity can require a job that the reviewed
-  apply workflow cannot install. The workflow must not accept chat ids, cron JSON,
-  script paths, approval strings, env-file paths, systemctl commands, or arbitrary shell
-  from inputs, and deploy results must not record live cron content, group ids, prompts,
-  env values, or raw script output. Apply scripts may emit a bounded safe failure reason
-  only through the explicit `qintopia_hermes_cron_apply_safe_failure=` marker; the
-  deploy runner must ignore all other stdout/stderr for result details. Because each
-  apply ends by running `sync-hermes-cron-snapshot.sh`, the deploy-runner service must
-  grant `ReadWritePaths` to the fixed server-local snapshot repo
+  apply workflow cannot install. Any runner-invoked apply script and its wrapped worker
+  must also be listed in `tools/deploy/build-deploy-bundle.mjs`; otherwise production
+  deploy can pass while the server release tree still lacks the script and returns
+  `exit 127`. The workflow must not accept chat ids, cron JSON, script paths, approval
+  strings, env-file paths, systemctl commands, or arbitrary shell from inputs, and
+  deploy results must not record live cron content, group ids, prompts, env values, or
+  raw script output. Apply scripts may emit a bounded safe failure reason only through
+  the explicit `qintopia_hermes_cron_apply_safe_failure=` marker; the deploy runner must
+  ignore all other stdout/stderr for result details. Because each apply ends by running
+  `sync-hermes-cron-snapshot.sh`, the deploy-runner service must grant `ReadWritePaths`
+  to the fixed server-local snapshot repo
   `/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot`; do not broaden this
   to the whole qintopia-agentos state directory or whole home. Live Hermes cron
   `jobs.json` envelopes may exceed 64 KiB after multiple reviewed jobs are installed;

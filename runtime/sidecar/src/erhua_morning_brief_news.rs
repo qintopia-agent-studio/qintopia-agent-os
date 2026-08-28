@@ -592,9 +592,10 @@ mod tests {
         let path = dir.join("hist.json");
         let _ = std::fs::remove_file(&path);
         let history_path = path.to_string_lossy().to_string();
+        let date = date_key_offset(1).format("%Y-%m-%d").to_string();
 
         news_record_core(
-            "2026-08-20".to_string(),
+            date.clone(),
             serde_json::to_string(&vec!["甲", "乙"]).unwrap(),
             history_path.clone(),
             7,
@@ -602,7 +603,7 @@ mod tests {
         .unwrap();
         // A same-day re-run with no new titles must merge, not overwrite.
         news_record_core(
-            "2026-08-20".to_string(),
+            date.clone(),
             serde_json::to_string(&vec!["甲", "乙"]).unwrap(),
             history_path.clone(),
             7,
@@ -612,7 +613,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         let map: HashMap<String, Vec<String>> = serde_json::from_str(&text).unwrap();
         assert_eq!(
-            map.get("2026-08-20").unwrap(),
+            map.get(&date).unwrap(),
             &vec!["甲".to_string(), "乙".to_string()]
         );
         let _ = std::fs::remove_file(&path);
@@ -625,9 +626,10 @@ mod tests {
         let path = dir.join("hist.json");
         let _ = std::fs::remove_file(&path);
         let history_path = path.to_string_lossy().to_string();
+        let date = date_key_offset(1).format("%Y-%m-%d").to_string();
 
         news_record_core(
-            "2026-08-20".to_string(),
+            date.clone(),
             serde_json::to_string(&vec!["甲", "乙"]).unwrap(),
             history_path.clone(),
             7,
@@ -635,7 +637,7 @@ mod tests {
         .unwrap();
         // A same-day re-run that would record nothing must leave the day intact.
         news_record_core(
-            "2026-08-20".to_string(),
+            date.clone(),
             serde_json::to_string(&Vec::<String>::new()).unwrap(),
             history_path.clone(),
             7,
@@ -645,7 +647,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         let map: HashMap<String, Vec<String>> = serde_json::from_str(&text).unwrap();
         assert_eq!(
-            map.get("2026-08-20").unwrap(),
+            map.get(&date).unwrap(),
             &vec!["甲".to_string(), "乙".to_string()]
         );
         let _ = std::fs::remove_file(&path);
