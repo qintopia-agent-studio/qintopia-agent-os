@@ -1,9 +1,14 @@
 # Xiaoman Daily Case Report Rust Migration Plan
 
-Status: PR 6 cutover implemented; Rust pipeline default with Python fallback. Local
-validation passed: `cargo fmt --check`,
+Status: PR 6 cutover implemented; Rust pipeline default with Python/Pillow fallback.
+Local validation passed: `cargo fmt --check`,
 `cargo clippy --all-targets --all-features --tests -- -D warnings`,
 `RUST_MIN_STACK=33554432 cargo test`, `bash -n`, and `python3 -m py_compile` are green.
+Production `v0.2.173` deployed on 2026-08-28, Hermes cron live parity passed, and the
+2026-08-28 backfill completed through the reviewed one-shot path. Final closure is still
+pending one normal 09:00 Asia/Shanghai Hermes scheduled-run observation; keep
+`workflows/xiaoman-daily-case-report/workflow.yaml` at `status: draft` and keep the
+Python rollback/fallback path until that observation window passes.
 
 Scope: migrate the deterministic logic of the Xiaoman daily case report from the Python
 workflow package into the Rust sidecar, leaving only HTML-to-JPEG rasterization
