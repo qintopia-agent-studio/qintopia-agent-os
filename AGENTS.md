@@ -916,6 +916,10 @@ Use `rg` and `rg --files` for search.
 - Release Please PRs and draft GitHub Releases must be merged or published only through
   an explicit manual owner decision. Do not enable or use auto-merge, automatic release
   publishing, or bot/agent-driven release merging.
+- If any earlier Release Please version or draft GitHub Release in the current release
+  sequence was not published, do not publish the newest version. Stop, reconcile or
+  delete the unpublished drafts as an explicit release decision, then regenerate and
+  validate a fresh Release Please PR instead of skipping ahead.
 - Do not describe a Xiaoman-adjacent Release as production-complete unless
   `docs/plans/active/xiaoman-production-completion-gate.md` is satisfied. Infrastructure
   or activation-ready Releases may ship staging/provisioning/deploy tooling, but they
