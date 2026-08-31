@@ -1,11 +1,12 @@
 //! MCP tool for on-demand Xiaoman daily case-report generation.
 //!
 //! This tool is a thin orchestration layer over the reviewed production
-//! chain: it renders the daily report via the Python workflow, uploads the
-//! JPEG through the governed media-upload boundary, and (only when the caller
-//! opts out of dry-run) creates the automatic QiWe publish work item.  It
-//! reuses the same `operations` functions as the CLI worker so scheduled and
-//! on-demand paths stay identical.
+//! chain: it renders the daily report through the Rust pipeline, delegates
+//! only HTML-to-JPEG rasterization to Python, uploads the JPEG through the
+//! governed media-upload boundary, and (only when the caller opts out of
+//! dry-run) creates the automatic QiWe publish work item. It reuses the same
+//! `operations` functions as the CLI worker so scheduled and on-demand paths
+//! stay identical.
 //!
 //! The tool never writes the DB itself; `apply=false` returns a preview of
 //! everything that *would* be uploaded / published.  `apply=true` runs the
@@ -147,8 +148,8 @@ impl GenerateArguments {
     }
 }
 
-/// Render the daily report to JPEG via the Python workflow and return the
-/// parsed render summary JSON (paths, counts, flags; no raw message rows).
+/// Render the daily report to JPEG and return the parsed render summary JSON
+/// (paths, counts, flags; no raw message rows).
 /// Resolve the configured workflow path to a concrete file.  Absolute paths
 /// are used as-is; relative paths resolve against the release root the sidecar
 /// runs from (QINTOPIA_AGENT_OS_RELEASE_CURRENT, or the sidecar binary's

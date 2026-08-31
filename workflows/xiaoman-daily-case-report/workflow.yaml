@@ -9,8 +9,10 @@ description:
   production target is daily automatic publication through the reviewed QiWe image-send
   boundary without per-day human confirmation.
 source:
-  path: workflows/xiaoman-daily-case-report/daily_case_report.py
-  reference: standalone Python script with optional Postgres read-through
+  path: runtime/sidecar/src/daily_case_report_cutover.rs
+  reference:
+    Rust sidecar pipeline with Python reserved for Playwright rasterization and explicit
+    rollback fallback
   disposition: adopt
 production_boundary:
   external_sends: true
@@ -20,8 +22,8 @@ production_boundary:
 validation:
   commands:
     - pnpm workflows:check
-    - "python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run
-      --render html"
+    - node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs
+    - cargo llvm-cov nextest --manifest-path runtime/sidecar/Cargo.toml --summary-only
 dependencies:
   - skills/qiwe
   - runtime/postgres
