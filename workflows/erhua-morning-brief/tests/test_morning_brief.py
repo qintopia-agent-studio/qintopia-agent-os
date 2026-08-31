@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -98,7 +99,7 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertNotIn("已确认", result.stdout)
         self.assertNotIn("可宣发", result.stdout)
         self.assertNotIn("需要前置", result.stdout)
-        self.assertNotIn("https://example.test", result.stdout)
+        self.assertIn("来源：https://example.test/openai-agent", result.stdout)
         self.assertNotIn("链上治理工具更新", result.stdout)
         self.assertIn('"sunday_no_publishable_activity_followup": false', result.stdout)
 
@@ -152,6 +153,128 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn('"activity_publishable_count": 1', result.stdout)
         self.assertIn('"ai_news_item_count": 5', result.stdout)
         self.assertIn('"external_send_executed": false', result.stdout)
+
+    def test_qunmind_news_tops_up_from_rss_when_below_default_limit(self):
+        module = load_module()
+        old_argv = sys.argv
+        sys.argv = ["morning_brief.py", "--date", "2026-08-08"]
+        try:
+            args = module._parse_args()
+        finally:
+            sys.argv = old_argv
+
+        rss_items = [
+            module.AiNewsItem(title="RSS 补充一", summary="社区可读的一句话摘要。"),
+            module.AiNewsItem(title="RSS 补充二", summary="第二条补位新闻。"),
+            module.AiNewsItem(title="RSS 补充三", summary="第三条补位新闻。"),
+        ]
+        with mock.patch.object(
+            module,
+            "_run_qunmind_report",
+            return_value=(FIXTURES / "qunmind-ai-report.md").read_text(encoding="utf-8"),
+        ), mock.patch.object(
+            module,
+            "_fetch_feed_news_items",
+            return_value=rss_items,
+        ), mock.patch.object(
+            module,
+            "_prepare_activity",
+            return_value={"success": True, "publishable_count": 1, "announcement_text": "今日活动预告\nAI 工具共学"},
+        ), mock.patch.object(
+            module,
+            "_prepare_weather",
+            return_value=None,
+        ):
+            result = module.build_morning_brief(args)
+
+        self.assertEqual(result["ai_news_item_count"], 8)
+        self.assertEqual(result["ai_news_source"], "qunmind_public_only_with_public_rss_top_up")
+        self.assertIn("RSS 补充三", result["morning_brief_text"])
+
+    def test_newsletter_style_news_keeps_source_links(self):
+        module = load_module()
+        markdown = """📮 TinTinAI Weekly｜AI 一周资讯（08.24-08.30）
+
+字节AI 生产力整合：TRAE、扣子并入豆包，将推统一办公品牌 "豆包工作"
+https://36kr.com/p/3953230805876099
+
+Claude Code反超GitHub Copilot登顶第一、90%程序员已用上Agent，最新AI编码调查报告来了
+https://36kr.com/p/3954326503144584
+
+你最关注哪条 AI 新闻？欢迎在群里一起讨论！
+"""
+
+        items = module._extract_ai_news_items(markdown, 8)
+
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].url, "https://36kr.com/p/3953230805876099")
+        self.assertIn("豆包工作", items[0].title)
+        self.assertNotIn("你最关注", [item.title for item in items])
+
+    def test_public_source_urls_must_be_https_without_credentials(self):
+        module = load_module()
+
+        self.assertEqual(
+            module._sanitize_public_url("https://36kr.com/p/3953230805876099"),
+            "https://36kr.com/p/3953230805876099",
+        )
+        self.assertEqual(module._sanitize_public_url("http://36kr.com/p/3953230805876099"), "")
+        self.assertEqual(module._sanitize_public_url("https://user:pass@example.com/ai"), "")
+
+    def test_news_display_uses_source_and_discussion_prompt(self):
+        module = load_module()
+        text, blocks, _ = module._compose_brief(
+            date="2026-08-31",
+            weekday_label="星期一",
+            weather=None,
+            activity_text="今天暂时没有安排好的活动。",
+            activity_count=0,
+            news_items=[
+                module.AiNewsItem(
+                    title="Claude Code 反超 GitHub Copilot 登顶第一",
+                    summary="最新 AI 编码调查显示 Agent 已经进入高频开发工作流。",
+                    url="https://36kr.com/p/3954326503144584",
+                )
+            ],
+            news_unavailable=False,
+        )
+
+        self.assertIn("二花 AI 早报｜今日资讯", text)
+        self.assertIn("看点：最新 AI 编码调查显示 Agent 已经进入高频开发工作流。", text)
+        self.assertIn("来源：https://36kr.com/p/3954326503144584", text)
+        self.assertIn("你最关注哪条 AI 新闻？欢迎在群里一起讨论。", text)
+
+    def test_news_parser_ignores_label_like_rows(self):
+        module = load_module()
+        markdown = """## AI 前沿
+
+- 摘要：本段只是栏目说明，不应当变成新闻标题。
+- 来源：https://example.test/source-index
+- OpenAI 发布新的 Agent 编排实践：多工具协作进入更稳定的工作流。
+- 你最关注哪条 AI 新闻？欢迎在群里一起讨论。
+"""
+
+        items = module._extract_ai_news_items(markdown, 8)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].title, "OpenAI 发布新的 Agent 编排实践")
+
+    def test_news_parser_keeps_open_source_titles(self):
+        module = load_module()
+        markdown = """## AI 前沿
+
+### AI｜Open-source AI agents gain a new deployment guide
+
+Summary: Teams can use the guide before connecting agents to production systems.
+中文标题：开源 AI Agent 部署指南发布
+中文摘要：团队可以用这份指南把 Agent 更稳地接入生产环境。
+"""
+
+        items = module._extract_ai_news_items(markdown, 8)
+
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].title, "Open-source AI agents gain a new deployment guide")
+        self.assertEqual(items[0].title_zh, "开源 AI Agent 部署指南发布")
 
     def test_internal_planning_wording_blocks_chat_facing_brief(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -291,7 +414,8 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         base = dict(
             sidecar_bin="qintopia-message-sidecar",
             news_feed_timeout_seconds=12,
-            news_limit=5,
+            news_limit=8,
+            news_feed_url=[],
             news_recency_days=0,
             news_dedup_days=0,
             news_history_path="",
@@ -315,7 +439,11 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         # The thin caller must invoke the Rust sidecar news-fetch subcommand and
         # map its JSON payload into AiNewsItem rows.
         module = load_module()
-        args = self._news_args(news_recency_days=14, news_dedup_days=7)
+        args = self._news_args(
+            news_recency_days=14,
+            news_dedup_days=7,
+            news_feed_url=["https://openai.com/news/rss.xml"],
+        )
         captured = {}
 
         def fake_run(command, check=False, capture_output=False, text=False):
@@ -340,6 +468,10 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn("--news-recency-days", captured["command"])
         self.assertIn("14", captured["command"])
         self.assertIn("--news-dedup-days", captured["command"])
+        self.assertIn("--news-limit", captured["command"])
+        self.assertIn("8", captured["command"])
+        self.assertIn("--news-feed-url", captured["command"])
+        self.assertIn("https://openai.com/news/rss.xml", captured["command"])
 
     def test_fetch_feed_news_items_translates_english_items(self):
         # English rows returned by the sidecar are translated via the LLM before
@@ -468,8 +600,6 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         # Regression: the dedup record is a Rust sidecar call made only on the
         # brief's success path (RSS fallback + artifact committed). Drive
         # build_morning_brief end-to-end with the sidecar (and QunMind) stubbed.
-        from unittest import mock
-
         module = load_module()
         tmp_root = tempfile.mkdtemp()
         history = os.path.join(tmp_root, "news-history.json")
@@ -537,6 +667,82 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             "selected titles must be passed to the sidecar record call",
         )
 
+    def test_qunmind_top_up_records_only_rss_history_titles_on_success(self):
+        module = load_module()
+        tmp_root = tempfile.mkdtemp()
+        history = os.path.join(tmp_root, "news-history.json")
+
+        recorded = {}
+        rss_items = [
+            module.AiNewsItem(title="RSS 补充一", summary="社区可读的一句话摘要。"),
+            module.AiNewsItem(title="RSS 补充二", summary="第二条补位新闻。"),
+            module.AiNewsItem(title="RSS 补充三", summary="第三条补位新闻。"),
+        ]
+
+        def fake_run(command, check=False, capture_output=False, text=False):
+            if "operations-erhua-morning-brief-news-record" in command:
+                recorded["command"] = command
+            return self._fake_sidecar_completed([])
+
+        argv = [
+            "morning_brief.py",
+            "--date", "2026-08-20",
+            "--prepare-artifact",
+            "--execute-artifact-create",
+            "--apply-artifact-create",
+            "--news-dedup-days", "7",
+            "--news-history-path", history,
+        ]
+        old_argv = sys.argv
+        sys.argv = argv
+        try:
+            args = module._parse_args()
+        finally:
+            sys.argv = old_argv
+
+        original_run = module.subprocess.run
+        module.subprocess.run = fake_run
+        try:
+            with mock.patch.object(
+                module,
+                "_run_qunmind_report",
+                return_value=(FIXTURES / "qunmind-ai-report.md").read_text(encoding="utf-8"),
+            ), mock.patch.object(
+                module,
+                "_fetch_feed_news_items",
+                return_value=rss_items,
+            ), mock.patch.object(
+                module,
+                "_prepare_activity",
+                return_value={"success": True, "publishable_count": 0, "announcement_text": ""},
+            ), mock.patch.object(
+                module,
+                "_activity_section",
+                return_value=("", 0, False),
+            ), mock.patch.object(
+                module,
+                "_prepare_weather",
+                return_value=None,
+            ), mock.patch.object(
+                module,
+                "_artifact_create_payload",
+                return_value={},
+            ), mock.patch.object(
+                module,
+                "_artifact_create_action",
+                return_value={},
+            ):
+                result = module.build_morning_brief(args)
+        finally:
+            module.subprocess.run = original_run
+
+        self.assertEqual(result["ai_news_source"], "qunmind_public_only_with_public_rss_top_up")
+        self.assertIn("operations-erhua-morning-brief-news-record", recorded["command"])
+        titles_index = recorded["command"].index("--titles-json") + 1
+        recorded_titles = json.loads(recorded["command"][titles_index])
+        self.assertEqual(recorded_titles, ["RSS 补充一", "RSS 补充二", "RSS 补充三"])
+        self.assertNotIn("OpenAI 发布新的 Agent 编排实践", recorded_titles)
+
     def test_news_llm_args_fall_back_to_shared_llm_env(self):
         module = load_module()
         old_base = os.environ.get("QINTOPIA_LLM_BASE_URL")
@@ -567,6 +773,35 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertEqual(args.news_llm_api_key, "shared-key")
         self.assertEqual(args.news_llm_model, "gpt-5.2")
 
+    def test_parse_args_uses_eight_news_default_and_env_feeds(self):
+        module = load_module()
+        old_feed_urls = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS")
+        old_limit = os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LIMIT")
+        os.environ["QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS"] = (
+            "https://openai.com/news/rss.xml, https://huggingface.co/blog/feed.xml"
+        )
+        os.environ.pop("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LIMIT", None)
+        old_argv = sys.argv
+        sys.argv = ["morning_brief.py", "--date", "2026-08-08"]
+        try:
+            args = module._parse_args()
+        finally:
+            sys.argv = old_argv
+            for key, old in (
+                ("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS", old_feed_urls),
+                ("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LIMIT", old_limit),
+            ):
+                if old is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = old
+
+        self.assertEqual(args.news_limit, 8)
+        self.assertEqual(
+            args.news_feed_url,
+            ["https://openai.com/news/rss.xml", "https://huggingface.co/blog/feed.xml"],
+        )
+
     def test_ai_section_parser_handles_qunmind_headings(self):
         module = load_module()
         markdown = (FIXTURES / "qunmind-ai-report.md").read_text(encoding="utf-8")
@@ -591,7 +826,7 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn("repeatable checks", translated.summary)
         self.assertIn("可重复检查", translated.summary_zh)
         self.assertIn(
-            "中文：OpenAI 发布实时 Agent 评估更新",
+            "4. OpenAI 发布实时 Agent 评估更新",
             "\n".join(module._news_item_lines(4, translated)),
         )
 
@@ -743,7 +978,7 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         self.assertIn("阴", payload["morning_brief_text"])
         self.assertEqual(payload["brief_blocks"][1]["title"], "今日天气")
         self.assertIn("23.1°", payload["brief_blocks"][1]["body"])
-        self.assertTrue(payload["highlight"].startswith("今日氛围"))
+        self.assertTrue(payload["highlight"].startswith("今天重点关注"))
 
     def test_missing_weather_degrades_gracefully(self):
         result = subprocess.run(
@@ -768,7 +1003,7 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         payload = json.loads(result.stdout)
         self.assertFalse(payload["weather_available"])
         self.assertIn("今日天气稍后补充", payload["morning_brief_text"])
-        self.assertIsNone(payload["highlight"])
+        self.assertTrue(payload["highlight"].startswith("今天重点关注"))
 
     def test_render_image_produces_poster_file(self):
         if not _render_is_supported():
@@ -868,15 +1103,19 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             card.ai_news_items[0].startswith("1."),
             "card news entries must not carry a leading list index",
         )
-        self.assertIn("英文：", card.ai_news_items[0])
-        self.assertIn("中文：", card.ai_news_items[0])
+        self.assertIn("GPT-5.6 发布", card.ai_news_items[0])
+        self.assertIn("原题：", card.ai_news_items[0])
+        self.assertIn("看点：", card.ai_news_items[0])
         self.assertIn("社区共读招募", card.ai_news_items[1])
         # The HTML renderer must number each item once, never "1. 1. 英文".
         renderer = self._load_renderer_module()
         html = renderer._render_html(card, 720)
         self.assertNotIn("1. 1. 英文", html)
-        self.assertIn('<span class="num">1</span>', html)
-        self.assertIn('<span class="num">2</span>', html)
+        self.assertNotIn("由小满自动整理", html)
+        self.assertIn('<span class="num">01</span>', html)
+        self.assertIn('<span class="num">02</span>', html)
+        self.assertNotIn('class="mark"', html)
+        self.assertIn("ERHUA DAILY", html)
 
     def test_pillow_fallback_renders_full_height_without_truncation(self):
         if not _PIL_AVAILABLE:
@@ -914,18 +1153,9 @@ class ErhuaMorningBriefTests(unittest.TestCase):
             self.assertTrue(image_path.exists())
             with _PILImage.open(image_path) as img:
                 width, height = img.size
+                bottom_pixel = img.convert("RGB").getpixel((width // 2, height - 10))
             self.assertGreater(height, 4000, "Pillow canvas must grow past the old 4000px cap")
-            # The footer band (last 80px) is the dark ink rectangle. If the poster
-            # had been truncated, that band would be missing and the bottom would
-            # read as paper-colored instead of ink.
-            with _PILImage.open(image_path) as img:
-                bottom = img.crop((0, height - 80, width, height)).convert("RGB")
-                # The footer band sits ~40-80px from the bottom (a short paper
-                # margin is below it). Its text only covers the top ~22px, so a
-                # paper-colored pixel near the band's lower half means the poster
-                # was truncated and the footer never reached the canvas bottom.
-                footer_pixel = bottom.getpixel((width // 2, 20))
-            self.assertEqual(footer_pixel, (26, 26, 26), "truncated poster missing dark footer band")
+            self.assertNotEqual(bottom_pixel, (0, 0, 0), "poster must not contain out-of-bounds black padding")
 
     def _load_renderer_module(self):
         sys.path.insert(0, str(WORKFLOW_DIR))
@@ -1067,8 +1297,6 @@ class ErhuaMorningBriefTests(unittest.TestCase):
         run=failed regression that started 2026-08-15). The explicit arg must
         win regardless of the profile env.
         """
-        from unittest import mock
-
         module = load_module()
         captured: dict = {}
 

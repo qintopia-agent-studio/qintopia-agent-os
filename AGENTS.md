@@ -148,9 +148,33 @@
 - Erhua morning brief reviewed production schedule is `08:10 Asia/Shanghai`, pinned by
   the Hermes cron registry expr `10 8 * * *` in
   `runtime/hermes/cron/reviewed-cron-jobs.json`.
-- Erhua morning brief AI news defaults to five items. English items must carry explicit
+- Erhua morning brief AI news defaults to eight items. English items must carry explicit
   Chinese title and summary translations before they can appear in the brief; do not
   send English-only RSS fallback items as-is.
+- Erhua morning brief should top up QunMind public AI news with reviewed RSS fallback
+  items when QunMind returns fewer than eight usable items. The QunMind parser must not
+  treat body labels such as summaries, source links, or translation notes as additional
+  news items just to fill the limit.
+- Erhua morning brief RSS dedup history is a publish-success record for selected RSS
+  titles. When QunMind is topped up by RSS, record only the RSS additions; do not record
+  QunMind's own public report titles in the RSS history file.
+- Erhua morning brief Rust RSS parsing reads public XML; keep `quick-xml >= 0.41.0` and
+  preserve explicit handling for text, CDATA, and `GeneralRef` entity events. Do not
+  downgrade or simplify this path without rerunning RustSec advisories and RSS parser
+  regressions.
+- Erhua morning brief RSS fallback should prefer fewer high-signal items over filling
+  the card with weakly related items. Keep the built-in fallback list to clearly AI
+  focused public sources; do not add generic tech/news feeds as defaults unless there is
+  a reviewed quality gate proving they cannot dominate the brief with low-signal items.
+- Erhua morning brief news presentation should keep safe public article links as
+  `来源：...` lines and end the section with a resident-facing discussion prompt. Keep
+  only `https` links without embedded credentials; local paths, credentials, internal
+  ids, and other internal markers stay blocked.
+- Erhua morning brief poster rendering should stay in an editorial brief style: clean
+  paper background, strong title, two-digit numbered news rows, thin dividers, source
+  lines, and a one-sentence summary. Do not reintroduce cartoon-like heavy borders,
+  decorative badges, placeholder logo marks, internal producer labels, or brand marks
+  copied from reference images.
 - Erhua morning brief chat-facing text must read like a resident-facing group message,
   not an operations ticket. Block internal planning wording such as `需要前置`,
   `可宣发`, `宣发判断`, `计划类活动`, `活动状态`, `宣发状态`, and Feishu status labels
@@ -159,6 +183,9 @@
   sanitized evidence, not in the group-facing brief.
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
+- Full Rust sidecar tests and `cargo llvm-cov` use loopback fake servers; run them
+  outside Codex's restricted sandbox with `RUST_MIN_STACK=33554432` when the sandbox
+  reports `bind fake server: Operation not permitted`.
 - Erhua member recognition local release-current readiness check:
   `node tools/deploy/check-erhua-member-recognition-local.mjs`. This proves the
   release-current runbook, deploy bundle files, focused Rust tests, fixture checkers,
@@ -331,7 +358,10 @@
 - If the local pnpm version shim cannot verify a registry signature, do not set
   `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
   repository-local Node entrypoint, run that entrypoint directly and record the failed
-  pnpm validation attempt.
+  pnpm validation attempt. In Codex's restricted sandbox, pnpm 10/11 package-manager
+  switching can also fail because Node fetch to npm and writes to the user-level
+  `PNPM_HOME/.tools` cache are blocked; verify once with the reviewed non-sandbox
+  boundary before treating the error as lockfile tampering.
 - Xiaoman activity signal timer observation smoke:
   `QINTOPIA_XIAOMAN_ACTIVITY_SIGNAL_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/xiaoman-activity-signal-timer-observation-smoke.sh`
 - Xiaoman activity promotion starter timer observation smoke:
@@ -869,6 +899,10 @@
   `cd runtime/sidecar && cargo deny check advisories bans sources`. A full
   `cargo deny check` currently fails license checks because the repository has no
   `deny.toml` license policy; do not treat that as unresolved RustSec advisories.
+  `cargo audit` scans all lockfile entries and may report `rsa` through `sqlx-mysql`
+  even when `cargo tree --target all -i rsa` shows it is unreachable from the current
+  Postgres-only feature set; record that as a lockfile/audit-tooling follow-up, not as a
+  runtime exposure, unless the dependency tree proves it is reachable.
 
 Use `rg` and `rg --files` for search.
 

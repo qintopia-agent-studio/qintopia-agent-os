@@ -29,9 +29,12 @@ redesign to the Erhua observation smoke.
 - Erhua `jobs.json` (`/home/ubuntu/.hermes/profiles/erhua/cron/jobs.json`) currently has
   envelope `{"jobs": [], "updated_at": ...}` with no retirement metadata - different
   from Xiaoman's. The apply script must accept this envelope and preserve `updated_at`.
-- AI-news rule: five items, English items need explicit Chinese title and summary
-  translations (AGENTS.md); irrelevant to scheduling but the runbook must not suggest
-  prompt-style jobs that could bypass the deterministic worker.
+- AI-news rule: eight items, English items need explicit Chinese title and summary
+  translations (AGENTS.md). This intentionally expands the group-visible AI news count
+  from the previous five-item boundary to eight reviewed items, still gated by QunMind
+  parsing, RSS top-up quality filters, HTTPS-only public links, and the "fewer
+  high-signal items beats low-signal filler" rule; irrelevant to scheduling but the
+  runbook must not suggest prompt-style jobs that could bypass the deterministic worker.
 
 ## Deliverables
 

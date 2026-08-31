@@ -13,16 +13,18 @@
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Days, Duration, NaiveDate, Utc};
+use regex::Regex;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::LazyLock;
 use std::time::Duration as StdDuration;
 use url::Url;
 
 use crate::bounded_http::HttpClient;
 use crate::config::Cli;
 
-pub const DEFAULT_NEWS_LIMIT: usize = 5;
+pub const DEFAULT_NEWS_LIMIT: usize = 8;
 pub const DEFAULT_NEWS_FEED_TIMEOUT_SECONDS: u64 = 12;
 pub const DEFAULT_NEWS_DEDUP_DAYS: i64 = 7;
 
@@ -40,9 +42,6 @@ const DEFAULT_NEWS_FEED_URLS: &[&str] = &[
     "https://deepmind.google/blog/rss.xml",
     "https://huggingface.co/blog/feed.xml",
     "https://arxiv.org/rss/cs.AI",
-    // Domestic, reachable fallback so the brief still has news when the
-    // Google/OpenAI/HuggingFace hosts are blocked on the production network.
-    "https://sspai.com/feed",
 ];
 const NEWS_FEED_ALLOWED_HOSTS: &[&str] = &[
     "openai.com",
@@ -53,14 +52,21 @@ const NEWS_FEED_ALLOWED_HOSTS: &[&str] = &[
     // arxiv.org 302-redirects here; keep it allowlisted so the redirect is
     // followed instead of treated as a dead feed.
     "export.arxiv.org",
-    "sspai.com",
 ];
 const NEWS_USER_AGENT: &str = "qintopia-erhua-morning-brief/1.0";
+static AI_KEYWORD_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)(?:\b(?:ai|agent|agents|llm|gpt|openai|anthropic|claude|copilot|gemini|deepmind|deepseek)\b|hugging\s+face|人工智能|大模型|智能体|模型|豆包|扣子|英伟达|算力|机器人)",
+    )
+    .expect("AI news keyword regex must compile")
+});
 
 #[derive(Debug, Serialize, Clone)]
 pub struct NewsItem {
     pub title: String,
     pub summary: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
     /// RFC 3339 publish time when the feed provided one, else null.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub published: Option<String>,
@@ -69,6 +75,7 @@ pub struct NewsItem {
 struct RawItem {
     title: String,
     summary: String,
+    url: Option<String>,
     published: Option<String>,
 }
 
@@ -271,6 +278,7 @@ pub fn select_news_items(
             collected.push(NewsItem {
                 title: raw.title,
                 summary: raw.summary,
+                url: raw.url,
                 published: raw.published,
             });
             // Bound raw memory per feed.
@@ -337,6 +345,9 @@ pub fn news_record_core(
 }
 
 fn is_allowed_news_host(url: &Url) -> bool {
+    if url.scheme() != "https" {
+        return false;
+    }
     match url.host_str() {
         Some(host) => NEWS_FEED_ALLOWED_HOSTS.contains(&host),
         None => false,
@@ -348,13 +359,14 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
     use quick_xml::Reader;
 
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
+    reader.config_mut().trim_text(false);
     let mut buf = Vec::new();
     let mut items: Vec<RawItem> = Vec::new();
 
     let mut in_item = false;
     let mut title = String::new();
     let mut summary = String::new();
+    let mut link = String::new();
     let mut pub_date = String::new();
     let mut text = String::new();
 
@@ -366,7 +378,22 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
                     in_item = true;
                     title.clear();
                     summary.clear();
+                    link.clear();
                     pub_date.clear();
+                }
+                if in_item && tag == "link" && link.is_empty() {
+                    if let Some(href) = link_href(&e) {
+                        link = href;
+                    }
+                }
+                text.clear();
+            }
+            Ok(Event::Empty(e)) => {
+                let tag = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                if in_item && tag == "link" && link.is_empty() {
+                    if let Some(href) = link_href(&e) {
+                        link = href;
+                    }
                 }
                 text.clear();
             }
@@ -380,10 +407,12 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
                             (None, Some(_)) => true,
                             (Some(dt), Some(c)) => dt >= c,
                         };
-                        if keep {
+                        if keep && is_quality_news_item(&title) && is_ai_relevant(&title, &summary)
+                        {
                             items.push(RawItem {
                                 title: title.trim().to_string(),
                                 summary: summary.trim().to_string(),
+                                url: public_feed_url(&link),
                                 published: parsed.map(|d| d.to_rfc3339()),
                             });
                         }
@@ -393,6 +422,11 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
                     match tag.as_str() {
                         "title" => title = text.trim().to_string(),
                         "description" | "summary" => summary = text.trim().to_string(),
+                        "link" => {
+                            if link.is_empty() {
+                                link = text.trim().to_string();
+                            }
+                        }
                         "pubdate" | "updated" | "published" => pub_date = text.trim().to_string(),
                         _ => {}
                     }
@@ -401,8 +435,11 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
             }
             Ok(Event::Text(e)) => {
                 if in_item {
-                    if let Ok(decoded) = e.unescape() {
-                        text.push_str(&decoded);
+                    if let Ok(decoded) = e.decode() {
+                        match quick_xml::escape::unescape(&decoded) {
+                            Ok(unescaped) => text.push_str(&unescaped),
+                            Err(_) => text.push_str(&decoded),
+                        }
                     }
                 }
             }
@@ -412,7 +449,26 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
                     // needed); several feeds (e.g. OpenAI) wrap titles and
                     // descriptions in CDATA, so without this branch those
                     // fields parse as empty.
-                    text.push_str(&String::from_utf8_lossy(e.as_ref()));
+                    if let Ok(decoded) = e.decode() {
+                        text.push_str(&decoded);
+                    }
+                }
+            }
+            Ok(Event::GeneralRef(e)) => {
+                if in_item {
+                    match e.resolve_char_ref() {
+                        Ok(Some(ch)) => text.push(ch),
+                        Ok(None) => {
+                            if let Ok(name) = e.decode() {
+                                if let Some(resolved) =
+                                    quick_xml::escape::resolve_predefined_entity(&name)
+                                {
+                                    text.push_str(resolved);
+                                }
+                            }
+                        }
+                        Err(_) => {}
+                    }
                 }
             }
             Ok(Event::Eof) => break,
@@ -422,6 +478,65 @@ fn parse_feed_items(xml: &str, cutoff: Option<DateTime<Utc>>) -> Vec<RawItem> {
         buf.clear();
     }
     items
+}
+
+fn link_href(e: &quick_xml::events::BytesStart<'_>) -> Option<String> {
+    for attr in e.attributes().flatten() {
+        if attr.key.as_ref().eq_ignore_ascii_case(b"href") {
+            return Some(
+                String::from_utf8_lossy(attr.value.as_ref())
+                    .trim()
+                    .to_string(),
+            );
+        }
+    }
+    None
+}
+
+fn public_feed_url(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        return None;
+    }
+    let url = Url::parse(value).ok()?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return None;
+    }
+    Some(value.chars().take(500).collect())
+}
+
+fn is_quality_news_item(title: &str) -> bool {
+    let title = title.trim();
+    if title.is_empty() {
+        return false;
+    }
+    let lower = title.to_lowercase();
+    let label_lines = [
+        "summary",
+        "source",
+        "source link",
+        "read more",
+        "translation",
+        "中文摘要",
+        "摘要",
+        "来源",
+        "原文入口",
+    ];
+    let prompt_lines = ["你最关注", "欢迎在群里", "欢迎私聊", "一起交流"];
+    !label_lines.iter().any(|label| {
+        lower == *label
+            || lower.starts_with(&format!("{label}:"))
+            || lower.starts_with(&format!("{label}："))
+    }) && !prompt_lines.iter().any(|prefix| lower.starts_with(prefix))
+}
+
+fn is_ai_relevant(title: &str, summary: &str) -> bool {
+    let haystack = format!("{title}\n{summary}").to_lowercase();
+    AI_KEYWORD_RE.is_match(&haystack)
 }
 
 fn parse_pub_date(value: &str) -> Option<DateTime<Utc>> {
@@ -503,13 +618,13 @@ mod tests {
     fn rss_with(pub_dates: &[Option<&str>]) -> String {
         let mut items = String::new();
         for (i, pd) in pub_dates.iter().enumerate() {
-            let title = format!("条目{i}");
+            let title = format!("AI 条目{i}");
             match pd {
                 Some(d) => items.push_str(&format!(
-                    "<item><title>{title}</title><description>d{i}</description><pubDate>{d}</pubDate></item>"
+                    "<item><title>{title}</title><link>https://example.com/ai-{i}</link><description>d{i}</description><pubDate>{d}</pubDate></item>"
                 )),
                 None => items.push_str(&format!(
-                    "<item><title>{title}</title><description>d{i}</description></item>"
+                    "<item><title>{title}</title><link>https://example.com/ai-{i}</link><description>d{i}</description></item>"
                 )),
             }
         }
@@ -529,7 +644,8 @@ mod tests {
         let cutoff = Some(now - Duration::days(14));
         let items = parse_feed_items(&xml, cutoff);
         assert_eq!(items.len(), 1);
-        assert_eq!(items[0].title, "条目1");
+        assert_eq!(items[0].title, "AI 条目1");
+        assert_eq!(items[0].url.as_deref(), Some("https://example.com/ai-1"));
     }
 
     #[test]
@@ -538,6 +654,20 @@ mod tests {
         let cutoff = Some(Utc::now() - Duration::days(14));
         let items = parse_feed_items(&xml, cutoff);
         assert_eq!(items.len(), 1);
+    }
+
+    #[test]
+    fn allowed_feed_hosts_still_require_https() {
+        let err = news_fetch_core(
+            vec!["http://openai.com/news/rss.xml".to_string()],
+            1,
+            8,
+            0,
+            0,
+            String::new(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("not allowlisted"));
     }
 
     #[test]
@@ -560,6 +690,71 @@ mod tests {
     }
 
     #[test]
+    fn escaped_text_is_decoded() {
+        let xml = r#"<rss><channel>
+<item><title>AI &amp; agents update</title><description>OpenAI &amp; partners shared notes.</description></item>
+</channel></rss>"#;
+        let items = parse_feed_items(xml, None);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "AI & agents update");
+        assert_eq!(items[0].summary, "OpenAI & partners shared notes.");
+    }
+
+    #[test]
+    fn atom_href_link_is_parsed() {
+        let xml = r#"<feed>
+<entry>
+<title>AI agent runtime update</title>
+<link href="https://example.com/agent-runtime"/>
+<summary>Agent tooling update.</summary>
+</entry>
+</feed>"#;
+        let items = parse_feed_items(xml, None);
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].url.as_deref(),
+            Some("https://example.com/agent-runtime")
+        );
+    }
+
+    #[test]
+    fn item_source_url_requires_https_without_credentials() {
+        assert_eq!(
+            public_feed_url("https://example.com/agent-runtime").as_deref(),
+            Some("https://example.com/agent-runtime")
+        );
+        assert!(public_feed_url("http://example.com/agent-runtime").is_none());
+        assert!(public_feed_url("https://user:pass@example.com/agent-runtime").is_none());
+        assert!(public_feed_url("https://example.com/agent runtime").is_none());
+    }
+
+    #[test]
+    fn label_like_titles_are_not_news_items() {
+        let xml = r#"<rss><channel>
+<item><title>摘要</title><description>AI source index</description></item>
+<item><title>来源：https://example.com/source-index</title><description>AI source link</description></item>
+<item><title>OpenAI 发布新的 Agent 编排实践</title><description>多工具协作进入更稳定的工作流。</description></item>
+</channel></rss>"#;
+        let items = parse_feed_items(xml, None);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "OpenAI 发布新的 Agent 编排实践");
+    }
+
+    #[test]
+    fn open_source_titles_are_kept_but_ai_inside_words_is_not_enough() {
+        let xml = r#"<rss><channel>
+<item><title>Open-source AI agents gain a new deployment guide</title><description>Teams can use it before connecting agents to production systems.</description></item>
+<item><title>Mainline database release ships today</title><description>General infrastructure update for teams.</description></item>
+</channel></rss>"#;
+        let items = parse_feed_items(xml, None);
+        assert_eq!(items.len(), 1);
+        assert_eq!(
+            items[0].title,
+            "Open-source AI agents gain a new deployment guide"
+        );
+    }
+
+    #[test]
     fn recency_prefilter_keeps_newer_items_when_old_come_first() {
         let now = Utc::now();
         let old = (now - Duration::days(2000))
@@ -573,16 +768,16 @@ mod tests {
             .to_string();
         let xml = format!(
             "<rss><channel>\
-<item><title>旧一</title><description>x</description><pubDate>{old}</pubDate></item>\
-<item><title>旧二</title><description>x</description><pubDate>{old}</pubDate></item>\
-<item><title>新A</title><description>x</description><pubDate>{new_a}</pubDate></item>\
-<item><title>新B</title><description>x</description><pubDate>{new_b}</pubDate></item>\
+<item><title>AI 旧一</title><description>x</description><pubDate>{old}</pubDate></item>\
+<item><title>AI 旧二</title><description>x</description><pubDate>{old}</pubDate></item>\
+<item><title>AI 新A</title><description>x</description><pubDate>{new_a}</pubDate></item>\
+<item><title>AI 新B</title><description>x</description><pubDate>{new_b}</pubDate></item>\
 </channel></rss>"
         );
         let cutoff = Some(now - Duration::days(14));
         let items = parse_feed_items(&xml, cutoff);
         let titles: Vec<&str> = items.iter().map(|i| i.title.as_str()).collect();
-        assert_eq!(titles, vec!["新A", "新B"]);
+        assert_eq!(titles, vec!["AI 新A", "AI 新B"]);
     }
 
     #[test]
@@ -663,7 +858,7 @@ mod tests {
         let mut first = String::new();
         let mut recent: HashSet<String> = HashSet::new();
         for i in 0..20 {
-            let t = format!("已发{i}");
+            let t = format!("AI 已发{i}");
             recent.insert(t.to_lowercase());
             first.push_str(&format!(
                 "<item><title>{t}</title><description>d</description><pubDate>{pd}</pubDate></item>"
@@ -672,7 +867,7 @@ mod tests {
         // Second feed: fresh items that must refill the brief.
         let mut second = String::new();
         for i in 0..3 {
-            let t = format!("新条目{i}");
+            let t = format!("AI 新条目{i}");
             second.push_str(&format!(
                 "<item><title>{t}</title><description>d</description><pubDate>{pd}</pubDate></item>"
             ));
@@ -693,9 +888,9 @@ mod tests {
         assert_eq!(
             titles,
             vec![
-                "新条目0".to_string(),
-                "新条目1".to_string(),
-                "新条目2".to_string()
+                "AI 新条目0".to_string(),
+                "AI 新条目1".to_string(),
+                "AI 新条目2".to_string()
             ]
         );
     }
@@ -710,14 +905,14 @@ mod tests {
         let mut first = String::new();
         for i in 0..20 {
             first.push_str(&format!(
-                "<item><title>鲜{i}</title><description>d</description><pubDate>{pd}</pubDate></item>"
+                "<item><title>AI 鲜{i}</title><description>d</description><pubDate>{pd}</pubDate></item>"
             ));
         }
         // Second feed: must NOT be read because the first already gave enough fresh.
         let mut second = String::new();
         for i in 0..5 {
             second.push_str(&format!(
-                "<item><title>不应出现{i}</title><description>d</description><pubDate>{pd}</pubDate></item>"
+                "<item><title>AI 不应出现{i}</title><description>d</description><pubDate>{pd}</pubDate></item>"
             ));
         }
         let feeds = vec![
@@ -732,7 +927,7 @@ mod tests {
         ];
         let items = select_news_items(&feeds, Some(now - Duration::days(14)), None, 5, 20);
         assert!(items.len() <= 5);
-        assert!(items.iter().all(|i| i.title.starts_with("鲜")));
+        assert!(items.iter().all(|i| i.title.starts_with("AI 鲜")));
     }
 
     fn uuid_now() -> u64 {
