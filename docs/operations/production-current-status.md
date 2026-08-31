@@ -1,6 +1,6 @@
 # Production Current Status
 
-Updated: 2026-08-28
+Updated: 2026-08-31
 
 This page is a sanitized operator-facing status index. It is not production evidence and
 must not contain live `jobs.json` content, group ids, prompts, env values, database
@@ -23,6 +23,10 @@ URLs, tokens, raw logs, or raw script output.
   reviewed runtime one-shot path after the 09:00 scheduled run had already been missed.
   The scheduled-run freshness observation still reports `scheduled_run_missing` for
   2026-08-28 because it checks the normal 09:00 Hermes sentinel, not backfill success.
+- As of 2026-08-31, the latest `Observe Production Runtime` workflow run remains the
+  successful 2026-08-28 observation. No retained observation after the 2026-08-29,
+  2026-08-30, or 2026-08-31 09:00 Asia/Shanghai scheduled windows is recorded in GitHub
+  Actions, so the Xiaoman daily case-report Rust cleanup boundary is still open.
 - Repository-local Xiaoman production evidence chain check passed on 2026-08-11 with
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`. This proves
   local contracts, fixtures, and the character-universe daily-report PR body only; it is
@@ -73,9 +77,9 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Next Production Actions
 
-1. Observe the next normal Xiaoman daily case-report Hermes scheduled run after
-   `2026-08-29 09:00 Asia/Shanghai` with the `xiaoman-daily-case-report-worker-run`
-   target.
+1. Observe the next normal Xiaoman daily case-report Hermes scheduled run with the
+   `xiaoman-daily-case-report-worker-run` target, then retain the successful observation
+   result before treating the Rust migration as complete.
 2. For Xiaoman daily case-report completion, retain the production observation deploy
    result that includes `xiaoman-daily-case-report-worker-run` and pass it as
    `--daily-case-report-observation` to the final production completion evidence
