@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Make sibling workflow modules importable both when run as a script and when
@@ -34,7 +35,7 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DEFAULT_OPERATOR_NAME = "刘珊"
 DEFAULT_AUDIENCE = "社区群成员"
 DEFAULT_QUNMIND_TIMEOUT_SECONDS = 180
-DEFAULT_NEWS_LIMIT = 5
+DEFAULT_NEWS_LIMIT = 8
 DEFAULT_NEWS_FEED_TIMEOUT_SECONDS = 12
 DEFAULT_NEWS_DEDUP_DAYS = 7
 WORKFLOW_ID = "workflows/erhua-morning-brief"
@@ -49,6 +50,7 @@ class AiNewsItem:
     summary: str
     title_zh: str = ""
     summary_zh: str = ""
+    url: str = ""
     published: Optional[datetime] = None
 
 
@@ -80,7 +82,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--news-feed-url",
         action="append",
-        default=[],
+        default=_env_list("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS"),
         help="Public RSS or Atom feed URL used when QunMind is unavailable.",
     )
     parser.add_argument(
@@ -117,7 +119,11 @@ def _parse_args() -> argparse.Namespace:
         ),
         help="Optional model name for the news translation endpoint.",
     )
-    parser.add_argument("--news-limit", type=int, default=DEFAULT_NEWS_LIMIT)
+    parser.add_argument(
+        "--news-limit",
+        type=int,
+        default=int(os.environ.get("QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LIMIT", DEFAULT_NEWS_LIMIT)),
+    )
     parser.add_argument(
         "--news-recency-days",
         type=int,
@@ -221,6 +227,10 @@ def _date_for(args: argparse.Namespace) -> str:
 def _weekday_label(date: str) -> str:
     weekdays = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     return weekdays[datetime.strptime(date, "%Y-%m-%d").date().weekday()]
+
+
+def _env_list(key: str) -> list[str]:
+    return [item.strip() for item in os.environ.get(key, "").split(",") if item.strip()]
 
 
 def _load_xiaoman_variant():
@@ -371,6 +381,7 @@ def _translate_news_item_with_llm(
             summary=item.summary,
             title_zh=title_zh,
             summary_zh=summary_zh,
+            url=item.url,
         )
     except Exception:
         return None
@@ -403,6 +414,8 @@ def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
         "--news-history-path",
         history_path,
     ]
+    for feed_url in getattr(args, "news_feed_url", []) or []:
+        command.extend(["--news-feed-url", feed_url])
     try:
         completed = subprocess.run(command, check=False, capture_output=True, text=True)
     except OSError as exc:
@@ -426,7 +439,11 @@ def _fetch_feed_news_items(args: argparse.Namespace) -> list[AiNewsItem]:
     for raw in raw_items:
         if not isinstance(raw, dict):
             continue
-        item = AiNewsItem(title=str(raw.get("title", "")), summary=str(raw.get("summary", "")))
+        item = AiNewsItem(
+            title=str(raw.get("title", "")),
+            summary=str(raw.get("summary", "")),
+            url=_sanitize_public_url(str(raw.get("url", "") or "")),
+        )
         if _needs_chinese_translation(item):
             translated_item = _translate_news_item_with_llm(item, args)
             if translated_item is None:
@@ -509,6 +526,26 @@ def _sanitize_public_line(value: str, max_len: int = 180) -> str:
     return clean
 
 
+def _sanitize_public_url(value: str) -> str:
+    value = (value or "").strip().strip("<>()[]，,。")
+    if not value or re.search(r"\s", value) or _is_internal_marker(value):
+        return ""
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
+        return ""
+    return value[:500]
+
+
+def _extract_first_public_url(value: str) -> str:
+    markdown = re.search(r"\[[^\]]+\]\((https?://[^)\s]+)\)", value)
+    if markdown:
+        return _sanitize_public_url(markdown.group(1))
+    plain = re.search(r"https?://[^\s)）>]+", value)
+    if plain:
+        return _sanitize_public_url(plain.group(0))
+    return ""
+
+
 def _sanitize_public_text(value: str) -> str:
     lines = []
     for raw_line in value.splitlines():
@@ -550,6 +587,7 @@ def _news_item_or_none(
     summary: str,
     title_zh: str = "",
     summary_zh: str = "",
+    url: str = "",
     strict_translation: bool,
 ) -> AiNewsItem | None:
     item = AiNewsItem(
@@ -557,6 +595,7 @@ def _news_item_or_none(
         summary=summary,
         title_zh=title_zh,
         summary_zh=summary_zh,
+        url=_sanitize_public_url(url),
     )
     if not _needs_chinese_translation(item):
         return item
@@ -614,6 +653,37 @@ def _translation_from_block(block: str) -> tuple[str, str]:
     return title_zh, summary_zh
 
 
+def _looks_like_news_label(value: str) -> bool:
+    lower = value.strip().lower()
+    if not lower:
+        return True
+    label_lines = (
+        "summary",
+        "source",
+        "source link",
+        "read more",
+        "translation",
+        "中文标题",
+        "标题翻译",
+        "中文摘要",
+        "摘要",
+        "来源",
+        "原文入口",
+    )
+    prompt_lines = ("你最关注", "欢迎在群里", "欢迎私聊", "一起交流")
+    return any(
+        lower == label or lower.startswith(f"{label}:") or lower.startswith(f"{label}：")
+        for label in label_lines
+    ) or any(lower.startswith(prefix) for prefix in prompt_lines)
+
+
+def _quality_news_title(value: str) -> str:
+    title = _sanitize_public_line(value, max_len=120)
+    if not title or len(title) < 6 or _looks_like_news_label(title):
+        return ""
+    return title
+
+
 def _extract_ai_section(markdown: str) -> str:
     lines = markdown.splitlines()
     start: int | None = None
@@ -627,7 +697,7 @@ def _extract_ai_section(markdown: str) -> str:
                 start = index + 1
                 break
     if start is None:
-        return ""
+        return markdown.strip()
 
     end = len(lines)
     for index in range(start, len(lines)):
@@ -662,6 +732,36 @@ def _summary_from_block(block: str) -> str:
     return fallback
 
 
+def _newsletter_style_items(markdown: str, limit: int) -> list[AiNewsItem]:
+    items: list[AiNewsItem] = []
+    pending_title = ""
+    for raw_line in markdown.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("---"):
+            continue
+        if stripped.startswith(("欢迎", "你最关注", "一起交流", "💬", "📮")):
+            pending_title = ""
+            continue
+        url = _extract_first_public_url(stripped)
+        if url and pending_title:
+            item = _news_item_or_none(
+                title=pending_title,
+                summary=pending_title,
+                url=url,
+                strict_translation=True,
+            )
+            if item is not None:
+                items.append(item)
+            pending_title = ""
+            if len(items) >= limit:
+                break
+            continue
+        title = _quality_news_title(stripped)
+        if title and not url:
+            pending_title = title
+    return items
+
+
 def _extract_ai_news_items(markdown: str, limit: int) -> list[AiNewsItem]:
     if limit <= 0:
         raise RuntimeError("news limit must be positive")
@@ -672,26 +772,31 @@ def _extract_ai_news_items(markdown: str, limit: int) -> list[AiNewsItem]:
     items: list[AiNewsItem] = []
     heading_matches = list(re.finditer(r"^###\s+(.+)$", section, flags=re.MULTILINE))
     for index, match in enumerate(heading_matches):
-        title = _sanitize_public_line(match.group(1), max_len=90)
+        title = _quality_news_title(match.group(1))[:90]
         if "｜" in title:
             title = title.split("｜", 1)[1].strip()
+        title = _quality_news_title(title)[:90]
         block_start = match.end()
         block_end = heading_matches[index + 1].start() if index + 1 < len(heading_matches) else len(section)
         block = section[block_start:block_end]
         summary = _summary_from_block(block)
         title_zh, summary_zh = _translation_from_block(block)
+        url = _extract_first_public_url(block)
         if title and summary:
             item = _news_item_or_none(
                 title=title,
                 summary=summary,
                 title_zh=title_zh,
                 summary_zh=summary_zh,
+                url=url,
                 strict_translation=True,
             )
             if item is not None:
                 items.append(item)
         if len(items) >= limit:
             return items
+    if heading_matches:
+        return items
 
     for raw_line in section.splitlines():
         stripped = raw_line.strip()
@@ -706,19 +811,36 @@ def _extract_ai_news_items(markdown: str, limit: int) -> list[AiNewsItem]:
             title, summary = line.split(":", 1)
         else:
             title, summary = line, line
-        title = title.strip(" -0123456789.")
+        title = _quality_news_title(title.strip(" -0123456789."))
         summary = summary.strip()
         if title and summary:
             item = _news_item_or_none(
                 title=title[:90],
                 summary=summary,
+                url=_extract_first_public_url(stripped),
                 strict_translation=True,
             )
             if item is not None:
                 items.append(item)
         if len(items) >= limit:
             break
-    return items
+    if items:
+        return items
+    return _newsletter_style_items(section, limit)
+
+
+def _extend_news_items(news_items: list[AiNewsItem], extra_items: list[AiNewsItem], limit: int) -> list[AiNewsItem]:
+    seen = {item.title.strip().lower() for item in news_items if item.title.strip()}
+    combined = list(news_items)
+    for item in extra_items:
+        key = item.title.strip().lower()
+        if not key or key in seen:
+            continue
+        combined.append(item)
+        seen.add(key)
+        if len(combined) >= limit:
+            break
+    return combined
 
 
 def _is_sunday(date: str) -> bool:
@@ -764,12 +886,21 @@ def _news_item_display(item: AiNewsItem) -> str:
     renderer owns the item numbering so the card never double-numbers a block
     that the text brief already prefixed with a list index.
     """
-    if not _needs_chinese_translation(item):
-        return f"{item.title}：{item.summary}"
-    return (
-        f"英文：{item.title}：{item.summary}\n"
-        f"中文：{_chinese_title_for(item)}：{_chinese_summary_for(item)}"
-    )
+    lines: list[str] = []
+    if _needs_chinese_translation(item):
+        lines.append(_chinese_title_for(item))
+        if item.title and item.title != _chinese_title_for(item):
+            lines.append(f"原题：{item.title}")
+        summary = _chinese_summary_for(item)
+        if summary:
+            lines.append(f"看点：{summary}")
+    else:
+        lines.append(item.title)
+        if item.summary and item.summary != item.title:
+            lines.append(f"看点：{item.summary}")
+    if item.url:
+        lines.append(f"来源：{item.url}")
+    return "\n".join(line for line in lines if line)
 
 
 def _news_item_lines(index: int, item: AiNewsItem) -> list[str]:
@@ -804,6 +935,25 @@ def _activity_block(activity_text: str, activity_count: int) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def _brief_highlight(weather: Optional[WeatherInfo], news_items: list[AiNewsItem]) -> Optional[str]:
+    titles = [_chinese_title_for(item) or item.title for item in news_items if (_chinese_title_for(item) or item.title)]
+    if titles:
+        if len(titles) == 1:
+            return f"今天重点关注：{titles[0]}。"
+        return f"今天重点关注：{titles[0]}；同时留意 {titles[1]}。"
+    if weather and weather.current_temp is not None:
+        if any(word in weather.condition for word in ("雨", "雷")):
+            tip = "出门记得带伞。"
+        elif "雪" in weather.condition:
+            tip = "注意保暖。"
+        elif weather.condition in ("晴", "晴间多云"):
+            tip = "适合出门走走。"
+        else:
+            tip = "出门记得看天。"
+        return f"今日氛围：{weather.condition}，约 {int(round(weather.current_temp))}°，{tip}"
+    return None
+
+
 def _compose_brief(
     *,
     date: str,
@@ -823,6 +973,8 @@ def _compose_brief(
     else:
         for index, item in enumerate(news_items, start=1):
             news_lines.extend(_news_item_lines(index, item))
+        if news_items:
+            news_lines.extend(["", "你最关注哪条 AI 新闻？欢迎在群里一起讨论。"])
     news_body = "\n".join(news_lines)
 
     # Text serialization keeps the existing human-review / send-fallback shape.
@@ -836,7 +988,7 @@ def _compose_brief(
         "今天活动：",
         activity_full,
         "",
-        "AI 新闻：",
+        "二花 AI 早报｜今日资讯：",
     ]
     lines.extend(news_lines)
 
@@ -846,20 +998,10 @@ def _compose_brief(
         {"title": "问候", "body": f"早上好，二花早报来啦。今天是 {date} {weekday_label}。"},
         {"title": "今日天气", "body": weather_body},
         {"title": "今天活动", "body": activity_full},
-        {"title": "AI 新闻", "body": news_body},
+        {"title": "二花 AI 早报｜今日资讯", "body": news_body},
     ]
 
-    highlight = None
-    if weather and weather.current_temp is not None:
-        if any(word in weather.condition for word in ("雨", "雷")):
-            tip = "出门记得带伞。"
-        elif "雪" in weather.condition:
-            tip = "注意保暖。"
-        elif weather.condition in ("晴", "晴间多云"):
-            tip = "适合出门走走。"
-        else:
-            tip = "出门记得看天。"
-        highlight = f"今日氛围：{weather.condition}，约 {int(round(weather.current_temp))}°，{tip}"
+    highlight = _brief_highlight(weather, news_items)
 
     return message_text, brief_blocks, highlight
 
@@ -1183,7 +1325,7 @@ def _build_card(
         fallback = (brief_blocks[3]["body"] or "").strip() or "今天暂时没有读到 AI 新闻。"
         ai_items = [fallback]
     return morning_brief_renderer.MorningBriefCard(
-        greeting="早上好，二花早报来啦",
+        greeting="今日活动、AI 新闻和社区线索",
         date_label=f"{date} {weekday_label}",
         weather=weather,
         activity_title=brief_blocks[2]["title"],
@@ -1203,14 +1345,26 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
 
     news_unavailable = False
     news_items: list[AiNewsItem] = []
+    rss_history_titles: list[str] = []
     ai_news_source = "qunmind_public_only"
     try:
         markdown = _run_qunmind_report(args)
         news_items = _extract_ai_news_items(markdown, args.news_limit)
         if not news_items:
             raise RuntimeError("QunMind report did not contain AI news items")
+        if len(news_items) < args.news_limit:
+            try:
+                original_count = len(news_items)
+                topped_up = _extend_news_items(news_items, _fetch_feed_news_items(args), args.news_limit)
+            except Exception:
+                topped_up = news_items
+            if len(topped_up) > len(news_items):
+                rss_history_titles = [item.title for item in topped_up[original_count:]]
+                news_items = topped_up
+                ai_news_source = "qunmind_public_only_with_public_rss_top_up"
     except Exception:
         news_items = _fetch_feed_news_items(args)
+        rss_history_titles = [item.title for item in news_items]
         ai_news_source = "public_rss_fallback"
         if not news_items:
             if not args.allow_news_unavailable:
@@ -1310,11 +1464,13 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
     # successful return path. Any failure above (compose validation, render,
     # artifact create, send-request prepare) raises and skips this, so undelivered
     # news is never marked sent and a retry can still surface it. We only record
-    # when an artifact was actually committed, matching the production worker.
+    # when an artifact was actually committed, matching the production worker. When
+    # QunMind is merely topped up, record only the RSS additions; QunMind remains
+    # the owner of its own public report freshness.
     # The record itself is a Rust sidecar call (OperationsErhuaMorningBriefNewsRecord)
     # so the dedup merge/prune logic stays in one place (the sidecar).
     if (
-        ai_news_source == "public_rss_fallback"
+        rss_history_titles
         and getattr(args, "apply_artifact_create", False)
     ):
         _news_history_path = (getattr(args, "news_history_path", "") or "").strip()
@@ -1322,16 +1478,14 @@ def build_morning_brief(args: argparse.Namespace) -> dict[str, Any]:
         if _news_history_path and _news_dedup_days > 0:
             try:
                 command = [
-                    args.sidecar_bin,
-                    "operations-erhua-morning-brief-news-record",
-                    "--date",
-                    date,
-                    "--titles-json",
-                    json.dumps(
-                        [item.title for item in news_items], ensure_ascii=False
-                    ),
-                    "--news-history-path",
-                    _news_history_path,
+                        args.sidecar_bin,
+                        "operations-erhua-morning-brief-news-record",
+                        "--date",
+                        date,
+                        "--titles-json",
+                        json.dumps(rss_history_titles, ensure_ascii=False),
+                        "--news-history-path",
+                        _news_history_path,
                     "--news-dedup-days",
                     str(_news_dedup_days),
                 ]

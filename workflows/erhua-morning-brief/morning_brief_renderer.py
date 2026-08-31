@@ -32,13 +32,13 @@ MAX_HEIGHT = 8192
 class CardTooTallError(RuntimeError):
     """Raised when the measured card height exceeds MAX_HEIGHT pixels."""
 
-_INK = "#1a1a1a"
-_YELLOW = "#ffd92e"
-_ORANGE = "#f25a18"
-_BLUE = "#88d7ff"
-_CREAM = "#fff8df"
-_PALE = "#fff0a6"
-_PAPER = "#f4efe2"
+_INK = "#151b22"
+_MUTED = "#76828f"
+_RULE = "#d6dde2"
+_ACCENT = "#2f6fed"
+_PAPER = "#f7f4ee"
+_SOFT = "#ebe5d8"
+FOOTER_TEXT = "资料来源：公开新闻源；内容仅供参考，欢迎在群里补充判断。"
 
 
 @dataclass(frozen=True)
@@ -63,24 +63,36 @@ def _weather_line(weather: Optional[WeatherInfo]) -> str:
     return weather.summary
 
 
+def _news_item_html(index: int, item: str) -> str:
+    lines = [line.strip() for line in item.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    title = lines[0]
+    detail_parts = []
+    for line in lines[1:]:
+        cls = "source" if line.startswith("来源：") else "detail"
+        detail_parts.append(f'<div class="{cls}">{_esc(line)}</div>')
+    details = "".join(detail_parts)
+    return f"""<li>
+  <div class="news-head"><span class="num">{index:02d}</span><strong>{_esc(title)}</strong></div>
+  {details}
+</li>"""
+
+
 def _render_html(card: MorningBriefCard, width: int) -> str:
     weather_text = _weather_line(card.weather)
+    footer_text = f"{FOOTER_TEXT} 核验时间：{_esc(card.date_label)} 08:10 上海时间。"
     activity_html = "".join(
         f"<p>{_esc(line)}</p>" for line in (card.activity_body or "今天暂时没有安排好的活动。").splitlines() if line.strip()
     )
     news_html_parts = []
     for idx, item in enumerate(card.ai_news_items, start=1):
-        inner = "".join(
-            f'<div class="zh">{_esc(line)}</div>'
-            if line.strip().startswith("中文：")
-            else f"<div>{_esc(line)}</div>"
-            for line in item.splitlines()
-            if line.strip()
-        )
-        news_html_parts.append(f'<li><span class="num">{idx}</span>{inner}</li>')
+        rendered = _news_item_html(idx, item)
+        if rendered:
+            news_html_parts.append(rendered)
     news_html = "".join(news_html_parts) or '<li class="empty">今天暂时没有读到 AI 新闻。</li>'
     highlight_html = (
-        f'<section class="highlight"><span class="kicker">今日亮点</span>'
+        f'<section class="section highlight"><h2>一句话总结</h2>'
         f'<p>{_esc(card.highlight)}</p></section>'
         if card.highlight
         else ""
@@ -91,50 +103,59 @@ def _render_html(card: MorningBriefCard, width: int) -> str:
 <meta charset="utf-8">
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: {_PAPER}; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }}
-  .card {{ width: {width}px; margin: 20px auto; background: {_CREAM}; border: 8px solid {_INK}; border-radius: 22px; overflow: hidden; }}
-  .header {{ background: {_INK}; color: {_YELLOW}; padding: 22px 26px 18px; }}
-  .header h1 {{ font-size: 34px; font-weight: 900; letter-spacing: 1px; }}
-  .header .date {{ margin-top: 6px; font-size: 14px; color: {_PALE}; font-weight: 600; }}
-  .weather {{ display: flex; align-items: center; gap: 14px; margin: 18px 22px 0; padding: 14px 18px; background: {_BLUE}; border: 3px solid {_INK}; border-radius: 16px; }}
-  .weather .cond {{ font-size: 22px; font-weight: 900; color: {_INK}; }}
-  .weather .temp {{ margin-left: auto; font-size: 16px; font-weight: 700; color: {_INK}; text-align: right; }}
-  .section {{ margin: 18px 22px 0; padding: 16px 18px; background: #fff; border: 3px solid {_INK}; border-radius: 16px; }}
-  .section .kicker {{ display: inline-block; font-size: 12px; font-weight: 900; letter-spacing: 1px; color: #fff; background: {_ORANGE}; padding: 3px 10px; border-radius: 8px; margin-bottom: 10px; }}
-  .section.activity .kicker {{ background: {_ORANGE}; }}
-  .section.news .kicker {{ background: #1f6f54; }}
-  .section p {{ font-size: 15px; line-height: 1.7; color: #222; }}
+  body {{ background: {_SOFT}; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; color: {_INK}; }}
+  .card {{ width: {width}px; margin: 20px auto; background: {_PAPER}; padding: 34px 34px 28px; }}
+  .topbar {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }}
+  .brand {{ display: flex; flex-direction: column; gap: 6px; }}
+  .brand-kicker {{ font-size: 12px; color: {_ACCENT}; font-weight: 900; letter-spacing: 0; }}
+  .brand-title {{ font-size: 24px; font-weight: 900; line-height: 1.1; }}
+  .date {{ margin-top: 4px; font-size: 15px; color: {_INK}; font-weight: 800; }}
+  .tag {{ color: {_MUTED}; font-size: 12px; font-weight: 800; padding-top: 5px; white-space: nowrap; }}
+  .headline {{ margin-top: 28px; font-size: 30px; font-weight: 900; line-height: 1.26; }}
+  .weather {{ margin-top: 26px; padding: 14px 0 0; border-top: 2px solid {_RULE}; }}
+  .weather .cond {{ font-size: 17px; line-height: 1.55; font-weight: 800; color: {_INK}; }}
+  .section {{ margin-top: 24px; padding-top: 22px; border-top: 2px solid {_RULE}; }}
+  .section h2 {{ font-size: 22px; font-weight: 900; line-height: 1.25; margin-bottom: 12px; }}
+  .section p {{ font-size: 16px; line-height: 1.7; color: {_INK}; font-weight: 650; }}
   .section.news ul {{ list-style: none; }}
-  .section.news li {{ display: flex; gap: 10px; align-items: flex-start; font-size: 14px; line-height: 1.6; color: #222; padding: 8px 0; border-bottom: 1px dashed #d8c7a2; }}
-  .section.news li:last-child {{ border-bottom: 0; }}
-  .section.news li.empty {{ color: #777; }}
-  .section.news li .zh {{ color: #555; font-size: 13px; margin-top: 3px; line-height: 1.5; }}
-  .section.news .num {{ flex: 0 0 22px; height: 22px; display: grid; place-items: center; background: {_PALE}; border: 2px solid {_INK}; border-radius: 50%; font-size: 12px; font-weight: 900; }}
-  .highlight {{ margin: 18px 22px 0; padding: 16px 18px; background: {_ORANGE}; border: 3px solid {_INK}; border-radius: 16px; }}
-  .highlight .kicker {{ font-size: 12px; font-weight: 900; letter-spacing: 1px; color: {_YELLOW}; }}
-  .highlight p {{ margin-top: 6px; font-size: 16px; font-weight: 700; line-height: 1.6; color: {_CREAM}; }}
-  .footer {{ margin-top: 18px; padding: 12px 26px; background: {_INK}; color: {_PALE}; font-size: 11px; text-align: center; }}
+  .section.news li {{ padding: 18px 0 20px; border-bottom: 2px solid {_RULE}; }}
+  .section.news li:last-child {{ border-bottom: 0; padding-bottom: 0; }}
+  .section.news li.empty {{ color: {_MUTED}; font-weight: 700; }}
+  .news-head {{ display: grid; grid-template-columns: 48px 1fr; gap: 14px; align-items: start; }}
+  .section.news .num {{ color: {_ACCENT}; font-size: 22px; font-weight: 900; line-height: 1.22; }}
+  .section.news strong {{ font-size: 22px; font-weight: 900; line-height: 1.3; }}
+  .section.news .detail {{ margin: 10px 0 0 62px; font-size: 16px; line-height: 1.65; font-weight: 650; color: {_INK}; }}
+  .section.news .source {{ margin: 8px 0 0 62px; font-size: 13px; line-height: 1.45; color: {_MUTED}; word-break: break-all; }}
+  .highlight p {{ font-size: 18px; font-weight: 850; line-height: 1.6; }}
+  .footer {{ margin-top: 26px; padding-top: 16px; border-top: 2px solid {_RULE}; color: {_MUTED}; font-size: 13px; line-height: 1.5; }}
 </style>
 </head>
 <body>
 <main class="card">
-  <header class="header">
-    <h1>{_esc(card.greeting)}</h1>
-    <div class="date">{_esc(card.date_label)}</div>
+  <header class="topbar">
+    <div class="brand">
+      <div>
+        <div class="brand-kicker">ERHUA DAILY</div>
+        <div class="brand-title">二花早报</div>
+        <div class="date">{_esc(card.date_label)}</div>
+      </div>
+    </div>
+    <div class="tag">每日社区线索</div>
   </header>
+  <h1 class="headline">{_esc(card.greeting)}</h1>
   <div class="weather">
     <span class="cond">{_esc(weather_text)}</span>
   </div>
   <section class="section activity">
-    <span class="kicker">{_esc(card.activity_title)}</span>
+    <h2>{_esc(card.activity_title)}</h2>
     {activity_html}
   </section>
   <section class="section news">
-    <span class="kicker">{_esc(card.ai_news_title)}</span>
+    <h2>{_esc(card.ai_news_title)}</h2>
     <ul>{news_html}</ul>
   </section>
   {highlight_html}
-  <div class="footer">二花早报 · 由小满自动整理，仅供社区群内参考</div>
+  <div class="footer">{footer_text}</div>
 </main>
 </body>
 </html>"""
@@ -245,65 +266,64 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
 
     scale = 2
     W = width * scale
-    pad = 28 * scale
-    cw = W - pad * 2
-    inner_w = cw - 32 * scale
+    pad = 34 * scale
+    inner_w = W - pad * 2
 
-    title = _pil_font(34 * scale, bold=True)
-    sub = _pil_font(14 * scale)
-    kicker = _pil_font(13 * scale, bold=True)
+    title = _pil_font(30 * scale, bold=True)
+    brand = _pil_font(24 * scale, bold=True)
+    sub = _pil_font(15 * scale, bold=True)
+    kicker = _pil_font(22 * scale, bold=True)
     body = _pil_font(16 * scale)
-    body_sm = _pil_font(14 * scale)
-    hi = _pil_font(17 * scale, bold=True)
+    body_sm = _pil_font(15 * scale)
+    num_font = _pil_font(22 * scale, bold=True)
+    foot = _pil_font(13 * scale)
 
-    body_lh = int(body.size * 1.4) + 2 * scale
-    news_lh = body_sm.size * 2 + 10 * scale
-    hi_lh = int(hi.size * 1.5)
+    title_lh = int(title.size * 1.32)
+    body_lh = int(body.size * 1.6)
+    news_lh = int(body_sm.size * 1.55)
+    heading_lh = int(kicker.size * 1.35)
 
     # Measure pass: wrap every section up front so the canvas can grow to the
     # real content height instead of a fixed cap. A long activity plus several
     # bilingual news items can exceed the old 4000px floor and were previously
     # silently cropped by `min(y, img.height)`.
     measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    headline_lines = _wrap(measure, card.greeting, title, inner_w)
     weather_lines = _wrap(measure, _weather_line(card.weather), body, inner_w)
     activity_src = [ln for ln in (card.activity_body or "今天暂时没有安排好的活动。").splitlines() if ln.strip()]
     activity_lines = [ln for src in activity_src for ln in _wrap(measure, src, body, inner_w)]
     news_src = card.ai_news_items or ["今天暂时没有读到 AI 新闻。"]
-    # Number each *item* once; a bilingual item wraps to multiple physical lines
-    # and its continuation lines indent under the number gutter. Never prepend a
-    # number to every wrapped line, or the card double-numbers the block that the
-    # text brief already prefixed with a list index.
-    num_gutter = 30 * scale
-    news_blocks: list[tuple[str, str]] = []
+    num_gutter = 62 * scale
+    news_blocks: list[list[str]] = []
     for idx, item in enumerate(news_src, start=1):
-        first = True
+        block: list[str] = [f"{idx:02d}"]
         for src in item.splitlines():
             if not src.strip():
                 continue
-            for ln in _wrap(measure, src, body_sm, inner_w - num_gutter):
-                news_blocks.append((f"{idx}." if first else "", ln))
-                first = False
-    news_lines = [ln for _, ln in news_blocks]
-    highlight_lines = _wrap(measure, card.highlight, hi, inner_w) if card.highlight else []
+            block.extend(_wrap(measure, src, body_sm, inner_w - num_gutter))
+        news_blocks.append(block)
+    highlight_lines = _wrap(measure, card.highlight, body, inner_w) if card.highlight else []
+    footer_text = f"{FOOTER_TEXT} 核验时间：{card.date_label} 08:10 上海时间。"
+    footer_lines = _wrap(measure, footer_text, foot, inner_w)
 
-    def section_height(top_pad: int, lines: list[str], line_h: int, *, min_h: int = 0) -> int:
-        h = top_pad + len(lines) * line_h
-        return max(h, min_h) if min_h else h
-
-    wh = section_height(18 * scale, weather_lines, body_lh, min_h=54 * scale)
-    ah = section_height(44 * scale, activity_lines, body_lh, min_h=54 * scale)
-    nh = section_height(44 * scale, news_lines, news_lh, min_h=54 * scale)
-    hh = section_height(38 * scale, highlight_lines, hi_lh, min_h=50 * scale) if highlight_lines else 0
-
-    gap_after = 18 * scale
+    news_height = sum(max(len(block) - 1, 1) * news_lh + 20 * scale for block in news_blocks)
     H = (
-        20 * scale
-        + 86 * scale + 18 * scale
-        + wh + gap_after
-        + ah + gap_after
-        + nh + gap_after
-        + (hh + gap_after if highlight_lines else 0)
-        + 40 * scale + 20 * scale
+        34 * scale
+        + 48 * scale
+        + 22 * scale
+        + len(headline_lines) * title_lh
+        + 26 * scale
+        + len(weather_lines) * body_lh
+        + 24 * scale
+        + heading_lh
+        + len(activity_lines) * body_lh
+        + 24 * scale
+        + heading_lh
+        + news_height
+        + (22 * scale + heading_lh + len(highlight_lines) * body_lh if highlight_lines else 0)
+        + 18 * scale
+        + len(footer_lines) * int(foot.size * 1.5)
+        + 28 * scale
     )
     H = max(int(H), 1)
     if H > MAX_HEIGHT:
@@ -312,56 +332,81 @@ def _render_with_pillow(card: MorningBriefCard, output_path: Path, width: int, i
             "refusing to render an image that upload validation would reject"
         )
 
-    img = Image.new("RGB", (W, H), _PAPER)
+    canvas_h = min(MAX_HEIGHT, H + 1024 * scale)
+    img = Image.new("RGB", (W, canvas_h), _PAPER)
     d = ImageDraw.Draw(img)
 
-    def rect(x: int, y: int, w: int, h: int, fill: str, outline: str = _INK, ow: int = 3 * scale, r: int = 16 * scale) -> None:
-        d.rounded_rectangle((x, y, x + w, y + h), radius=r, fill=fill, outline=outline, width=ow)
+    def rule(y_pos: int) -> None:
+        d.line((pad, y_pos, W - pad, y_pos), fill=_RULE, width=2 * scale)
 
-    y = 20 * scale
-    rect(0, 0, W, 0, _INK)  # noop guard
-    d.rectangle((0, y, W, y + 86 * scale), fill=_INK)
-    d.text((pad, y + 18 * scale), card.greeting, font=title, fill=_YELLOW)
-    d.text((pad, y + 60 * scale), card.date_label, font=sub, fill=_PALE)
-    y += 86 * scale + 18 * scale
+    y = 34 * scale
+    d.text((pad, y), "ERHUA DAILY", font=foot, fill=_ACCENT)
+    d.text((pad, y + 17 * scale), "二花早报", font=brand, fill=_INK)
+    d.text((pad, y + 48 * scale), card.date_label, font=sub, fill=_INK)
+    right = "每日社区线索"
+    right_w = d.textlength(right, font=foot)
+    d.text((W - pad - right_w, y + 6 * scale), right, font=foot, fill=_MUTED)
+    y += 48 * scale + 22 * scale
 
-    # weather chip
-    rect(pad, y, cw, wh, _BLUE)
-    _draw_lines(d, (pad + 16 * scale, y + 18 * scale), weather_lines, body, _INK, body_lh)
-    y += wh + gap_after
+    y = _draw_lines(d, (pad, y), headline_lines, title, _INK, title_lh)
+    y += 26 * scale
 
-    # activity
-    rect(pad, y, cw, ah, "#ffffff")
-    d.text((pad + 16 * scale, y + 14 * scale), card.activity_title, font=kicker, fill=_ORANGE)
-    _draw_lines(d, (pad + 16 * scale, y + 44 * scale), activity_lines, body, "#222222", body_lh)
-    y += ah + gap_after
+    rule(y)
+    y += 14 * scale
+    y = _draw_lines(d, (pad, y), weather_lines, body, _INK, body_lh)
+    y += 24 * scale
 
-    # ai news
-    rect(pad, y, cw, nh, "#ffffff")
-    d.text((pad + 16 * scale, y + 14 * scale), card.ai_news_title, font=kicker, fill="#1f6f54")
-    ny = y + 44 * scale
-    for num, ln in news_blocks:
-        if num:
-            d.text((pad + 16 * scale, ny), num, font=kicker, fill="#1f6f54")
-        d.text((pad + 16 * scale + num_gutter, ny), ln, font=body_sm, fill="#222222")
-        ny += news_lh
-    y += nh + gap_after
+    rule(y)
+    y += 18 * scale
+    d.text((pad, y), card.activity_title, font=kicker, fill=_INK)
+    y += heading_lh
+    y = _draw_lines(d, (pad, y), activity_lines, body, _INK, body_lh)
+    y += 24 * scale
 
-    # highlight
+    rule(y)
+    y += 18 * scale
+    d.text((pad, y), card.ai_news_title, font=kicker, fill=_INK)
+    y += heading_lh
+    for block in news_blocks:
+        if not block:
+            continue
+        d.text((pad, y), block[0], font=num_font, fill=_ACCENT)
+        line_y = y
+        for line_index, line in enumerate(block[1:] or [""]):
+            fill = _MUTED if line.startswith("来源：") else _INK
+            font = body_sm if line_index > 0 else _pil_font(18 * scale, bold=True)
+            line_h = news_lh if line_index > 0 else int(font.size * 1.35)
+            d.text((pad + num_gutter, line_y), line, font=font, fill=fill)
+            line_y += line_h
+        y = max(line_y, y + news_lh) + 20 * scale
+        rule(y - 8 * scale)
+
     if highlight_lines:
-        rect(pad, y, cw, hh, _ORANGE)
-        d.text((pad + 16 * scale, y + 12 * scale), "今日亮点", font=kicker, fill=_YELLOW)
-        _draw_lines(d, (pad + 16 * scale, y + 38 * scale), highlight_lines, hi, _CREAM, hi_lh)
-        y += hh + gap_after
+        y += 14 * scale
+        d.text((pad, y), "一句话总结", font=kicker, fill=_INK)
+        y += heading_lh
+        y = _draw_lines(d, (pad, y), highlight_lines, body, _INK, body_lh)
 
-    d.rectangle((0, y, W, y + 40 * scale), fill=_INK)
-    d.text((pad, y + 12 * scale), "二花早报 · 由小满自动整理，仅供社区群内参考", font=_pil_font(11 * scale), fill=_PALE)
-    y += 40 * scale + 20 * scale
+    y += 18 * scale
+    rule(y)
+    y += 14 * scale
+    y = _draw_lines(d, (pad, y), footer_lines, foot, _MUTED, int(foot.size * 1.5))
+    y += 28 * scale
 
-    # H is derived from the measured wrapped-line heights, so the drawn content
-    # fits exactly (final y == img.height). Crop to the real drawn height rather
-    # than clamping to the canvas, so a measurement drift can never silently drop
-    # content the way the old fixed-4000px path did.
+    if y > MAX_HEIGHT:
+        raise CardTooTallError(
+            f"card height {y}px exceeds {MAX_HEIGHT}px storage cap; "
+            "refusing to render an image that upload validation would reject"
+        )
+    if y > canvas_h:
+        raise CardTooTallError(
+            "card height measurement drift exceeded the reserved canvas; "
+            "refusing to render a partial image"
+        )
+
+    # Crop to the real drawn height instead of the reserved canvas so the image
+    # keeps a tight editorial shape while avoiding black out-of-bounds padding
+    # when font metrics differ slightly from the measure pass.
     cropped = img.crop((0, 0, W, y))
     save_kwargs: dict[str, Any] = {}
     if image_format == "jpeg":
