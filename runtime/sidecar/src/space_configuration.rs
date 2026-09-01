@@ -693,6 +693,7 @@ pub(crate) async fn confirm(
         SELECT
             item.id AS work_item_id,
             item.status AS work_item_status,
+            item.metadata AS work_item_metadata,
             artifact.review_status,
             artifact.content_text,
             artifact.content_hash,
@@ -716,6 +717,13 @@ pub(crate) async fn confirm(
     .context("Space change proposal was not found in the current Space")?;
     let work_item_id: Uuid = row.try_get("work_item_id")?;
     let work_item_status: String = row.try_get("work_item_status")?;
+    let work_item_metadata: Value = row.try_get("work_item_metadata")?;
+    let programming_extension_request_id = work_item_metadata
+        .get("programming_extension_request_id")
+        .and_then(Value::as_str)
+        .map(Uuid::parse_str)
+        .transpose()
+        .context("Space change programming extension lineage is invalid")?;
     if work_item_status == "completed" {
         tx.rollback()
             .await
@@ -758,6 +766,28 @@ pub(crate) async fn confirm(
     let authorization = authorize_actor(&mut tx, context.space_id, context.actor_person_id)
         .await?
         .context("current actor is not authorized to confirm Space changes")?;
+    if let Some(request_id) = programming_extension_request_id {
+        let request_exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM qintopia_agent_os.work_items
+                WHERE id = $1
+                  AND space_id = $2
+                  AND work_item_type = $3
+            )
+            "#,
+        )
+        .bind(request_id)
+        .bind(context.space_id)
+        .bind(PROGRAMMING_EXTENSION_WORK_ITEM_TYPE)
+        .fetch_one(&mut *tx)
+        .await
+        .context("validate Space programming extension lineage")?;
+        if !request_exists {
+            bail!("Space programming extension lineage is not in the current Space");
+        }
+    }
     if intent.protects_provider_mapping()
         && !is_global_admin(&mut tx, context.actor_person_id).await?
     {
@@ -824,6 +854,7 @@ pub(crate) async fn confirm(
         context.space_id,
         context.actor_person_id,
         work_item_id,
+        programming_extension_request_id,
         &intent,
     )
     .await?;
@@ -4491,6 +4522,7 @@ async fn apply_intent(
     space_id: Uuid,
     actor_person_id: Uuid,
     work_item_id: Uuid,
+    programming_extension_request_id: Option<Uuid>,
     intent: &SpaceChangeIntent,
 ) -> Result<Vec<AppliedDefinition>> {
     let exact_activation = has_activation_operation(intent);
@@ -4550,7 +4582,7 @@ async fn apply_intent(
             let (id, version) = apply_event_mapping(
                 tx,
                 actor_person_id,
-                work_item_id,
+                programming_extension_request_id,
                 provider,
                 definition_key,
                 status,
@@ -4864,7 +4896,7 @@ async fn apply_space_policy(
 async fn apply_event_mapping(
     tx: &mut Transaction<'_, Postgres>,
     actor_person_id: Uuid,
-    work_item_id: Uuid,
+    programming_extension_request_id: Option<Uuid>,
     provider: &str,
     definition_key: &str,
     status: &str,
@@ -4876,6 +4908,26 @@ async fn apply_event_mapping(
 ) -> Result<(Uuid, i32)> {
     lock_definition_stream(tx, &format!("event-mapping:{provider}:{definition_key}")).await?;
     let version = next_provider_version(tx, provider, definition_key).await?;
+    let lineage_work_item_id = if programming_extension_request_id.is_some() {
+        programming_extension_request_id
+    } else {
+        sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT created_from_work_item_id
+            FROM qintopia_agent_os.channel_event_mapping_versions
+            WHERE provider = $1
+              AND definition_key = $2
+              AND created_from_work_item_id IS NOT NULL
+            ORDER BY version DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(provider)
+        .bind(definition_key)
+        .fetch_optional(&mut **tx)
+        .await
+        .context("load provider event mapping lineage")?
+    };
     if supersedes_active(status) {
         sqlx::query(
             r#"
@@ -4913,7 +4965,7 @@ async fn apply_event_mapping(
     .bind(status)
     .bind(digest)
     .bind(actor_person_id)
-    .bind(work_item_id)
+    .bind(lineage_work_item_id)
     .execute(&mut **tx)
     .await
     .context("insert provider event mapping version")?;
