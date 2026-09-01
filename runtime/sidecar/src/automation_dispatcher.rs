@@ -96,7 +96,7 @@ async fn dispatch_once(
         sqlx::query(
             r#"
             SELECT automation.id, automation.space_id, automation.definition_key,
-                   automation.version, automation.business_definition_id,
+                   automation.version::bigint AS version, automation.business_definition_id,
                    automation.definition_digest AS automation_digest,
                    business.definition_digest AS business_digest,
                    policy.id AS policy_id, policy.definition_digest AS policy_digest,
@@ -160,7 +160,7 @@ async fn dispatch_once(
         sqlx::query(
             r#"
             SELECT automation.id, automation.space_id, automation.definition_key,
-                   automation.version, automation.business_definition_id,
+                   automation.version::bigint AS version, automation.business_definition_id,
                    automation.definition_digest AS automation_digest,
                    business.definition_digest AS business_digest,
                    policy.id AS policy_id, policy.definition_digest AS policy_digest,
