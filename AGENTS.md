@@ -650,9 +650,9 @@
   containing the runner support is deployed. Erhua one-shots still require the
   corresponding release-managed timer to be enabled; Xiaoman daily case-report backfill
   is the reviewed Hermes-cutover exception and must not require the retired systemd
-  timer to be enabled. Control targets enforce their fixed target-specific preconditions.
-  It creates a signed `production-runtime-one-shot` deploy-runner request and accepts
-  exactly one fixed target per request: `erhua-morning-brief` with
+  timer to be enabled. Control targets enforce their fixed target-specific
+  preconditions. It creates a signed `production-runtime-one-shot` deploy-runner request
+  and accepts exactly one fixed target per request: `erhua-morning-brief` with
   `approved-production-erhua-morning-brief-one-shot`, or
   `xiaoman-daily-case-report-auto-publish-backfill` with
   `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`

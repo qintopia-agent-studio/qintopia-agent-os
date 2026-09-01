@@ -752,6 +752,17 @@ rm -f "\${release_root}/previous"
   fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
   fs.mkdirSync(releaseRoot, { recursive: true });
   fs.rmSync(promotionEventLog, { force: true });
+  fs.mkdirSync(path.join(releaseRoot, previousSha), { recursive: true });
+  fs.mkdirSync(path.join(releaseRoot, originalPreviousSha), { recursive: true });
+  fs.symlinkSync(
+    path.join(releaseRoot, previousSha),
+    path.join(releaseRoot, "current")
+  );
+  fs.symlinkSync(
+    path.join(releaseRoot, originalPreviousSha),
+    path.join(releaseRoot, "previous")
+  );
+  fs.writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, "utf8");
 
   writeExecutable(
     "deploy/runner/promote-release.sh",
