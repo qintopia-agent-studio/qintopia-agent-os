@@ -2284,6 +2284,10 @@ mod tests {
                  definition_digest, created_by_person_id, activated_at)
             VALUES
                 ($1, $2, 1, $3, 'active', $4, $5, now())
+            ON CONFLICT (space_id, definition_key, version) DO UPDATE
+            SET policy_config = EXCLUDED.policy_config,
+                definition_digest = EXCLUDED.definition_digest,
+                updated_at = now()
             RETURNING id
             "#,
         )
