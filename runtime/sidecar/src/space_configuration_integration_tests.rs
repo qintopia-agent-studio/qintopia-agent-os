@@ -815,6 +815,16 @@ async fn postgres_space_control_plane_is_versioned_authorized_and_isolated() {
     .fetch_one(&pool)
     .await
     .expect("load exact integration schedule business");
+    prepare_and_confirm(
+        &pool,
+        session(
+            &chat_b,
+            &owner_user,
+            &format!("second-space-bootstrap-{suffix}"),
+        ),
+        policy_intent("active", "second-space-bootstrap"),
+    )
+    .await;
     let space_b_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM qintopia_messages.conversations WHERE tenant_id = 'qintopia' AND platform = 'qiwe' AND chat_id = $1",
     )
