@@ -2215,7 +2215,9 @@ async fn postgres_unsupported_approval_policies_cannot_create_active_automations
     )
     .await
     .expect_err("rollback must reject an unsupported active business policy");
-    assert!(rollback.to_string().contains("unsupported per-run"));
+    assert!(rollback
+        .to_string()
+        .contains("requires space_admin_confirmation"));
     let rollback_active_count: i64 = sqlx::query_scalar(
         r#"
         SELECT count(*)
