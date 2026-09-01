@@ -1825,7 +1825,12 @@ async fn postgres_event_automation_requires_same_space_shadow_before_activation(
         INSERT INTO qintopia_agent_os.channel_event_mapping_versions
             (provider, definition_key, version, selector, extractor, official_sources,
              validation_evidence, status, definition_digest, created_by_person_id)
-        SELECT provider, $1, 1, selector,
+        SELECT provider, $1, 1,
+               jsonb_set(
+                   selector,
+                   '{rules,0,rules,0,value}',
+                   to_jsonb('CROSS_SPACE_GROUP_MEMBER_ADD'::text)
+               ),
                jsonb_set(extractor, '{space_chat_id,pointer}', to_jsonb('/targetRoomId'::text)),
                official_sources, validation_evidence, 'shadow', repeat('a', 64), $2
         FROM qintopia_agent_os.channel_event_mapping_versions
@@ -1847,7 +1852,7 @@ async fn postgres_event_automation_requires_same_space_shadow_before_activation(
         payload: json!({
             "data": [{
                 "cmd": 15500,
-                "newMsgType": "GROUP_MEMBER_ADD",
+                "newMsgType": "CROSS_SPACE_GROUP_MEMBER_ADD",
                 "msgUniqueIdentifier": format!("integration-cross-space-provider-event-{suffix}"),
                 "fromRoomId": chat_id,
                 "targetRoomId": chat_b,
