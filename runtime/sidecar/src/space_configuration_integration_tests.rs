@@ -71,51 +71,6 @@ fn policy_intent(status: &str, marker: &str) -> Value {
     })
 }
 
-fn schedule_intent() -> Value {
-    json!({
-        "summary": "Run a current-Space business every minute.",
-        "changes": [
-            {
-                "resource": "space_policy",
-                "definition_key": "default",
-                "status": "active",
-                "policy_config": {
-                    "capability_grants": ["erhua.space_agent_turn"]
-                }
-            },
-            {
-                "resource": "business_definition",
-                "definition_key": "integration_schedule",
-                "status": "active",
-                "execution_mode": "agent_turn",
-                "definition": {
-                    "goal": "Produce one bounded integration-test result.",
-                    "output_contract": {
-                        "type": "object",
-                        "additionalProperties": false,
-                        "required": ["summary"],
-                        "properties": {
-                            "summary": {"type": "string", "minLength": 1, "maxLength": 200}
-                        }
-                    }
-                },
-                "allowed_capabilities": ["erhua.space_agent_turn"],
-                "approval_policy": "space_admin_confirmation"
-            },
-            {
-                "resource": "automation_definition",
-                "definition_key": "integration_schedule",
-                "status": "active",
-                "business_definition_key": "integration_schedule",
-                "trigger_kind": "schedule",
-                "trigger_config": {"cron": "* * * * *"},
-                "timezone": "UTC",
-                "misfire_policy": "run_once"
-            }
-        ]
-    })
-}
-
 fn deterministic_schedule_intent(
     status: &str,
     definition_key: &str,
@@ -185,19 +140,12 @@ fn schedule_business_only_intent(status: &str, goal: &str) -> Value {
             "resource": "business_definition",
             "definition_key": "integration_schedule",
             "status": status,
-            "execution_mode": "agent_turn",
+            "execution_mode": "deterministic",
             "definition": {
-                "goal": goal,
-                "output_contract": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["summary"],
-                    "properties": {
-                        "summary": {"type": "string", "minLength": 1, "maxLength": 200}
-                    }
-                }
+                "capability_key": "erhua.qiwe_text_template",
+                "input": {"text_template": goal}
             },
-            "allowed_capabilities": ["erhua.space_agent_turn"],
+            "allowed_capabilities": ["erhua.qiwe_text_template"],
             "approval_policy": "space_admin_confirmation"
         }]
     })
@@ -2207,7 +2155,7 @@ async fn postgres_unsupported_approval_policies_cannot_create_active_automations
             &owner_user,
             &format!("rollback-baseline-{suffix}"),
         ),
-        schedule_intent(),
+        deterministic_schedule_intent("active", "integration_schedule", "space_admin_confirmation"),
     )
     .await;
     prepare_and_confirm(
