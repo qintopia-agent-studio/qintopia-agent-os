@@ -136,20 +136,24 @@ pub struct DbCheck {
 pub async fn persist_raw_event(pool: &PgPool, subject: &str, event: &RawQiweEvent) -> Result<Uuid> {
     let event = event.sanitized_for_storage();
     let mut tx = pool.begin().await.context("begin raw event transaction")?;
-    let space_id = match event.unique_group_chat_id() {
-        Some(chat_id) => Some(
-            upsert_conversation(
-                &mut tx,
-                &event.source,
-                &chat_id,
-                "group",
-                None,
-                event.received_at,
-            )
-            .await
-            .context("upsert raw event conversation")?,
-        ),
-        None => None,
+    let space_id = if event.ingress_auth_verified {
+        match event.unique_group_chat_id() {
+            Some(chat_id) => Some(
+                upsert_conversation(
+                    &mut tx,
+                    &event.source,
+                    &chat_id,
+                    "group",
+                    None,
+                    event.received_at,
+                )
+                .await
+                .context("upsert raw event conversation")?,
+            ),
+            None => None,
+        }
+    } else {
+        None
     };
     let id: (Uuid,) = sqlx::query_as(
         r#"

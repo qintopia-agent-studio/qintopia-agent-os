@@ -1078,6 +1078,14 @@ mod tests {
         let row_id = crate::db::persist_raw_event(&pool, "qintopia.qiwe.raw", &initial)
             .await
             .expect("persist initial unauthenticated event");
+        let unauthenticated_conversation_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM qintopia_messages.conversations WHERE chat_id = $1",
+        )
+        .bind(&initial_room)
+        .fetch_one(&pool)
+        .await
+        .expect("count unauthenticated event conversations");
+        assert_eq!(unauthenticated_conversation_count, 0);
 
         let authenticated = RawQiweEvent {
             event_id: event_id.clone(),

@@ -294,7 +294,14 @@ async fn claim(pool: &PgPool) -> Result<Value> {
         .context("serialize Space programming extension claim");
     }
 
-    bail!("too many invalid Space programming extension candidates")
+    tx.commit()
+        .await
+        .context("commit terminalized invalid Space programming extension candidates")?;
+    Ok(json!({
+        "schema_version": PROTOCOL_VERSION,
+        "claimed": false,
+        "invalid_candidates_terminalized": MAX_INVALID_CANDIDATES_PER_CLAIM
+    }))
 }
 
 async fn finish(

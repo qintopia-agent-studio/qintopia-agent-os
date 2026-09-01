@@ -745,8 +745,7 @@ pub(crate) async fn confirm(
     let intent_value: Value =
         serde_json::from_str(&content_text).context("parse stored Space change proposal")?;
     let intent = parse_and_validate_stored_intent(intent_value)?;
-    let recomputed_digest =
-        sha256_hex(&serde_json::to_vec(&intent).context("encode stored Space change proposal")?);
+    let recomputed_digest = sha256_hex(content_text.as_bytes());
     if recomputed_digest != content_hash {
         bail!("Space change proposal digest does not match stored content");
     }
