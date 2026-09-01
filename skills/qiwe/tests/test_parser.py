@@ -1,6 +1,7 @@
 import copy
 import asyncio
 import json
+import stat
 import os
 import sys
 import tempfile
@@ -3243,11 +3244,24 @@ class QiWeParserTests(unittest.TestCase):
             adapter = QiWeAdapter(type("Config", (), {"extra": {"state_dir": tmp, "audit_enabled": True}})())
             adapter._auditor.record(parsed, decision="dispatch")
             audit_line = (Path(tmp) / "audit" / "qiwe.jsonl").read_text(encoding="utf-8")
+            audit_dir_mode = stat.S_IMODE((Path(tmp) / "audit").stat().st_mode)
+            audit_file_mode = stat.S_IMODE((Path(tmp) / "audit" / "qiwe.jsonl").stat().st_mode)
 
         audit = json.loads(audit_line)
         self.assertEqual(audit["sender_id_hash"][:7], "sha256:")
+        self.assertEqual(
+            audit["conversation_id_hash"], adapter_module._hash_id(parsed.chat_id)
+        )
+        self.assertNotIn("conversation_id", audit)
+        self.assertNotIn("sender_display_name", audit)
         self.assertNotIn("7881303308049798", audit_line)
         self.assertNotIn("QIWE_TOKEN", audit_line)
+        self.assertEqual(
+           audit_dir_mode, 0o700
+       )
+        self.assertEqual(
+           audit_file_mode, 0o600
+       )
 
     def test_webhook_schedules_dispatch_without_waiting_for_agent(self) -> None:
         class FakeWeb:

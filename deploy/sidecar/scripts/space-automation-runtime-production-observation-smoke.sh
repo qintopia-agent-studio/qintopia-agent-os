@@ -16,6 +16,10 @@ RELEASE_CURRENT_DIR="${QINTOPIA_RELEASE_CURRENT_DIR:-$DEFAULT_RELEASE_CURRENT_DI
 UNIT_DIR="${QINTOPIA_SYSTEMD_UNIT_DIR:-$DEFAULT_UNIT_DIR}"
 SYSTEMCTL="${SYSTEMCTL:-$DEFAULT_SYSTEMCTL}"
 EXPECTED_STATE="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE:-auto}"
+EXPECTED_RELEASE_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA:-}"
+EXPECTED_COMMIT_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA:-}"
+EXPECTED_RUNTIME_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA:-}"
+EXPECTED_DEPLOY_BUNDLE_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA:-}"
 TEST_MODE="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_TEST_MODE:-0}"
 TEST_ROOT="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_TEST_ROOT:-}"
 PROC_ROOT="$DEFAULT_PROC_ROOT"
@@ -23,6 +27,17 @@ DISPATCHER_TIMER="qintopia-agentos-automation-dispatcher.timer"
 DISPATCHER_SERVICE="qintopia-agentos-automation-dispatcher.service"
 EXECUTION_WORKER="qintopia-agentos-space-automation-execution-worker.service"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+for expected_sha in \
+  "$EXPECTED_RELEASE_SHA" \
+  "$EXPECTED_COMMIT_SHA" \
+  "$EXPECTED_RUNTIME_SHA" \
+  "$EXPECTED_DEPLOY_BUNDLE_SHA"; do
+  if [[ ! "$expected_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Space automation runtime production observation requires complete release identity" >&2
+    exit 1
+  fi
+done
 
 if [[ "$TEST_MODE" != "1" ]]; then
   if [[ "$ENV_FILE" != "$DEFAULT_ENV_FILE" || "$RELEASE_CURRENT_DIR" != "$DEFAULT_RELEASE_CURRENT_DIR" || "$UNIT_DIR" != "$DEFAULT_UNIT_DIR" || "$SYSTEMCTL" != "$DEFAULT_SYSTEMCTL" ]]; then
@@ -50,6 +65,27 @@ if [[ ! -x "$SYSTEMCTL" ]]; then
   echo "systemctl is required for Space automation runtime production observation" >&2
   exit 1
 fi
+if ! python3 - "$ENV_FILE" <<'PY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    file_stat = os.lstat(path)
+except OSError:
+    raise SystemExit(1)
+if (
+    not stat.S_ISREG(file_stat.st_mode)
+    or stat.S_IMODE(file_stat.st_mode) != 0o600
+    or file_stat.st_uid != os.geteuid()
+):
+    raise SystemExit(1)
+PY
+then
+  echo "Space automation runtime production observation requires an owner-only regular env file" >&2
+  exit 1
+fi
 
 systemd_property_equals() {
   local unit="$1"
@@ -62,20 +98,38 @@ systemd_property_equals() {
   [[ "$observed" == "$expected" ]]
 }
 
-if ! RELEASE_FACTS="$(python3 - "$RELEASE_CURRENT_DIR" <<'PY'
+if ! RELEASE_FACTS="$(python3 - "$RELEASE_CURRENT_DIR" "$EXPECTED_RELEASE_SHA" "$EXPECTED_COMMIT_SHA" "$EXPECTED_RUNTIME_SHA" "$EXPECTED_DEPLOY_BUNDLE_SHA" <<'PY'
 import json
 import os
 import re
 import stat
 import sys
 
-current_path = sys.argv[1]
+current_path, expected_release, expected_commit, expected_runtime, expected_bundle = sys.argv[1:]
 if not os.path.isabs(current_path) or not os.path.exists(current_path):
     raise SystemExit(1)
 current_real = os.path.realpath(current_path)
 release_sha = os.path.basename(current_real)
-if not re.fullmatch(r"[0-9a-f]{40}", release_sha):
+if release_sha != expected_release or not re.fullmatch(r"[0-9a-f]{40}", release_sha):
     raise SystemExit(1)
+
+release_manifest_path = os.path.join(current_real, "manifest.json")
+if os.path.islink(release_manifest_path) or not os.path.isfile(release_manifest_path):
+    raise SystemExit(1)
+if os.stat(release_manifest_path).st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    raise SystemExit(1)
+with open(release_manifest_path, encoding="utf-8") as fh:
+    release_manifest = json.load(fh)
+for key, expected in (
+    ("release_sha", expected_release),
+    ("commit_sha", expected_commit),
+    ("runtime_sha", expected_runtime),
+    ("deploy_bundle_sha", expected_bundle),
+):
+    if release_manifest.get(key) != expected or not re.fullmatch(
+        r"[0-9a-f]{40}", release_manifest.get(key, "")
+    ):
+        raise SystemExit(1)
 
 primary_bin = os.path.join(current_real, "sidecar", "qintopia-message-sidecar")
 companion_dir = os.path.join(current_real, "sidecar-profiles", "qiwe-production")
@@ -101,7 +155,7 @@ for candidate in (
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
 validation = manifest.get("validation", {})
-if manifest.get("commit_sha") != release_sha:
+if manifest.get("commit_sha") != release_manifest["commit_sha"]:
     raise SystemExit(1)
 if validation.get("artifact_profile") != "qiwe-production":
     raise SystemExit(1)
@@ -111,7 +165,13 @@ if validation.get("cargo_features") != [
 ]:
     raise SystemExit(1)
 
-print(json.dumps({"release_dir": current_real, "release_sha": release_sha}))
+print(json.dumps({
+    "release_dir": current_real,
+    "release_sha": release_sha,
+    "commit_sha": release_manifest["commit_sha"],
+    "runtime_sha": release_manifest["runtime_sha"],
+    "deploy_bundle_sha": release_manifest["deploy_bundle_sha"],
+}))
 PY
 )"; then
   echo "Space automation runtime production observation requires the reviewed immutable runtime artifacts" >&2

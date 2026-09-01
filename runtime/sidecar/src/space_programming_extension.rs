@@ -347,6 +347,33 @@ async fn finish(
         bail!("Space programming extension claim token does not match");
     }
 
+    let capability = sqlx::query(
+        r#"
+        SELECT enabled, allowed_callers, allowed_work_item_types
+        FROM qintopia_agent_os.capabilities
+        WHERE capability_key = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(CAPABILITY_KEY)
+    .fetch_optional(&mut *tx)
+    .await
+    .context("lock Space programming extension capability")?
+    .context("Space programming extension capability is missing")?;
+    let enabled: bool = capability.try_get("enabled")?;
+    let allowed_callers: Vec<String> = capability.try_get("allowed_callers")?;
+    let allowed_work_item_types: Vec<String> = capability.try_get("allowed_work_item_types")?;
+    if !enabled
+        || !allowed_callers
+            .iter()
+            .any(|caller| caller == REQUESTER_AGENT)
+        || !allowed_work_item_types
+            .iter()
+            .any(|work_item_type| work_item_type == WORK_ITEM_TYPE)
+    {
+        bail!("Space programming extension capability authorization is no longer active");
+    }
+
     let space_id: Uuid = row
         .try_get::<Option<Uuid>, _>("space_id")?
         .context("Space programming extension lost its Space binding")?;
@@ -1444,6 +1471,31 @@ mod tests {
         assert_eq!(stale_state.1.as_deref(), Some("claim_expired_unknown"));
         assert_eq!(stale_state.2, 1);
         let claim_token = claimed["claim_token"].as_str().unwrap();
+        sqlx::query(
+            "UPDATE qintopia_agent_os.capabilities SET enabled = false, updated_at = now() WHERE capability_key = $1",
+        )
+        .bind(CAPABILITY_KEY)
+        .execute(&pool)
+        .await
+        .expect("revoke programming extension capability before finish");
+        assert!(finish(
+            &pool,
+            work_item_id,
+            claim_token,
+            RunnerResult::Failed {
+                failure_code: "agent_failed".to_string(),
+                validation_status: "failed".to_string(),
+            },
+        )
+        .await
+        .is_err());
+        sqlx::query(
+            "UPDATE qintopia_agent_os.capabilities SET enabled = true, updated_at = now() WHERE capability_key = $1",
+        )
+        .bind(CAPABILITY_KEY)
+        .execute(&pool)
+        .await
+        .expect("restore programming extension capability before finish");
         assert!(finish(
             &pool,
             work_item_id,

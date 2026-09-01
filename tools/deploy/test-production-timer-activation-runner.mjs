@@ -16,6 +16,9 @@ const signingKey = "test-signing-key";
 const keyId = "production";
 const requestId = "deploy-20260809T000000Z-abcdef123456";
 const sha = "113ce49141b06fc44edcee42026aee0a614ac027";
+const commitSha = "1".repeat(40);
+const runtimeSha = "2".repeat(40);
+const deployBundleSha = "3".repeat(40);
 const createdAt = new Date().toISOString();
 const expiresAt = new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString();
 
@@ -71,10 +74,10 @@ const buildRequest = (overrides = {}) => {
     requested_by: "codex",
     created_at: createdAt,
     expires_at: expiresAt,
-    commit_sha: sha,
-    runtime_sha: sha,
+    commit_sha: commitSha,
+    runtime_sha: runtimeSha,
     runtime_artifact_profile: "huabaosi-production",
-    deploy_bundle_sha: sha,
+    deploy_bundle_sha: deployBundleSha,
     release_sha: sha,
     release_scope: ["production-activation"],
     restart_targets: ["qintopia-system-services"],
@@ -120,9 +123,9 @@ try {
     `${JSON.stringify(
       {
         release_sha: sha,
-        runtime_sha: sha,
-        deploy_bundle_sha: sha,
-        commit_sha: sha,
+        runtime_sha: runtimeSha,
+        deploy_bundle_sha: deployBundleSha,
+        commit_sha: commitSha,
       },
       null,
       2
@@ -191,6 +194,17 @@ printf '%s\\n' ${JSON.stringify(scriptName)} >> ${JSON.stringify(activationLog)}
 set -euo pipefail
 if [[ "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_ACTIVATION:-}" != "approved-production-space-automation-runtime" ]]; then
   exit 98
+fi
+if [[ "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA:-}" != ${JSON.stringify(
+      commitSha
+    )} || "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA:-}" != ${JSON.stringify(
+      runtimeSha
+    )} || "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA:-}" != ${JSON.stringify(
+      deployBundleSha
+    )} || "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA:-}" != ${JSON.stringify(
+      sha
+    )} ]]; then
+  exit 97
 fi
 printf '%s\n' "activate-space-automation-runtime-production.sh" >> ${JSON.stringify(
       activationLog
@@ -275,7 +289,10 @@ exit 99
     `${JSON.stringify(
       buildRequest({
         request_id: spaceRuntimeRequestId,
-        activation: { targets: ["space-automation-runtime"] },
+        activation: {
+          targets: ["space-automation-runtime"],
+          approval: "approved-production-space-automation-runtime",
+        },
       }),
       null,
       2
@@ -335,7 +352,10 @@ exit 42
     `${JSON.stringify(
       buildRequest({
         request_id: failedActivationRequestId,
-        activation: { targets: ["space-automation-runtime"] },
+        activation: {
+          targets: ["space-automation-runtime"],
+          approval: "approved-production-space-automation-runtime",
+        },
       }),
       null,
       2
@@ -398,6 +418,7 @@ exit 42
         request_id: "deploy-20260809T000004Z-abcdef123456",
         activation: {
           targets: ["space-automation-runtime", "xiaoman-weekly-preview"],
+          approval: "approved-production-space-automation-runtime",
         },
       }),
       null,

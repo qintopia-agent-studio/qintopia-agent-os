@@ -266,6 +266,12 @@ if "production-activation" in release_scope:
         fail("activation.targets contains unsupported or duplicate entries")
     if "space-automation-runtime" in targets and targets != ["space-automation-runtime"]:
         fail("space-automation-runtime must be the sole activation target when selected")
+    approval = activation.get("approval")
+    if "space-automation-runtime" in targets:
+        if approval != "approved-production-space-automation-runtime":
+            fail("Space automation runtime activation requires request-bound owner approval")
+    elif approval is not None:
+        fail("activation.approval is only allowed for Space automation runtime")
     if data.get("profile_dry_run_request_id") is not None:
         fail("production-activation must not set profile_dry_run_request_id")
 elif data.get("activation") is not None:
@@ -501,6 +507,7 @@ rollback_expected_current_sha="$(json_get release_rollback.expected_current_sha)
 rollback_expected_previous_sha="$(json_get release_rollback.expected_previous_sha)"
 profile_dry_run_request_id="$(json_get profile_dry_run_request_id)"
 activation_targets="$(json_get activation.targets)"
+activation_approval="$(json_get activation.approval)"
 observation_targets="$(json_get observation.targets)"
 legacy_cron_retirement_targets="$(json_get legacy_cron_retirement.targets)"
 hermes_cron_apply_targets="$(json_get hermes_cron_apply.targets)"
@@ -1619,12 +1626,21 @@ run_activation_target() {
   case "$target" in
     space-automation-runtime)
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
-        QINTOPIA_SPACE_AUTOMATION_RUNTIME_ACTIVATION=approved-production-space-automation-runtime \
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_ACTIVATION="$activation_approval" \
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA="$commit_sha" \
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA="$runtime_sha" \
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA="$deploy_bundle_sha" \
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA="$release_sha" \
         "${script_dir}/activate-space-automation-runtime-production.sh" >/dev/null || return $?
       ;;
     erhua-morning-brief)
       observe_erhua_legacy_cron || return $?
-      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief \
+      env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+        QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief \
+        QINTOPIA_ERHUA_MORNING_BRIEF_COMMIT_SHA="$commit_sha" \
+        QINTOPIA_ERHUA_MORNING_BRIEF_RUNTIME_SHA="$runtime_sha" \
+        QINTOPIA_ERHUA_MORNING_BRIEF_DEPLOY_BUNDLE_SHA="$deploy_bundle_sha" \
+        QINTOPIA_ERHUA_MORNING_BRIEF_RELEASE_SHA="$release_sha" \
         "${script_dir}/activate-erhua-morning-brief-production.sh" >/dev/null || return $?
       env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 \
         QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_EXPECTED_STATE=enabled \
@@ -1784,6 +1800,10 @@ run_space_automation_runtime_observation() {
   env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_ENABLE=1 \
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE=auto \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA="$commit_sha" \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA="$runtime_sha" \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA="$deploy_bundle_sha" \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA="$release_sha" \
     "${script_dir}/space-automation-runtime-production-observation-smoke.sh"
 }
 
@@ -1877,9 +1897,19 @@ run_production_activation() {
   local target
   for target in "${activation_target_list[@]}"; do
     deploy_stage="activate-${target}"
-    local target_log="${activation_log_dir}/${target}.log"
-    if run_activation_target "$target" >"$target_log" 2>&1; then
-      write_activation_evidence "$target" passed
+   local target_log="${activation_log_dir}/${target}.log"
+    if ! validate_current_activation_release; then
+      write_activation_evidence "$target" failed "release/current changed before activation side effects"
+      rm -rf "$activation_log_dir"
+      return 1
+    fi
+   if run_activation_target "$target" >"$target_log" 2>&1; then
+      if ! validate_current_activation_release; then
+        write_activation_evidence "$target" failed "release/current changed during activation"
+        rm -rf "$activation_log_dir"
+        return 1
+      fi
+     write_activation_evidence "$target" passed
     else
       local status=$?
       write_activation_evidence "$target" failed "$(activation_failure_detail "$status" "$target_log")"

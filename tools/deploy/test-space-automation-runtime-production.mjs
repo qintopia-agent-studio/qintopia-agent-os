@@ -43,6 +43,9 @@ const executionApproval = "approved-production-space-automation-execution";
 const databaseUrl = "postgres://fixture-user:fixture-password@127.0.0.1:55432/qintopia";
 const databaseHash = crypto.createHash("sha256").update(databaseUrl).digest("hex");
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
+const commitSha = "1".repeat(40);
+const runtimeSha = "2".repeat(40);
+const deployBundleSha = "3".repeat(40);
 
 const natsAclProtocolResult = spawnSync("python3", [natsAclProtocolTest], {
   cwd: repoRoot,
@@ -72,6 +75,7 @@ try {
   const primaryBin = path.join(releaseDir, "sidecar", "qintopia-message-sidecar");
   const companionDir = path.join(releaseDir, "sidecar-profiles", "qiwe-production");
   const companionBin = path.join(companionDir, "qintopia-message-sidecar");
+  const releaseManifestPath = path.join(releaseDir, "manifest.json");
   const manifestPath = path.join(companionDir, "artifact-manifest.json");
   const envFile = path.join(tmpRoot, "message-sidecar.env");
   const unitDir = path.join(tmpRoot, "systemd");
@@ -162,7 +166,7 @@ try {
       manifestPath,
       `${JSON.stringify(
         {
-          commit_sha: releaseSha,
+          commit_sha: commitSha,
           validation: {
             artifact_profile: profile,
             cargo_features: [
@@ -176,6 +180,20 @@ try {
       )}\n`,
       "utf8"
     );
+  fs.writeFileSync(
+    releaseManifestPath,
+    `${JSON.stringify(
+      {
+        release_sha: releaseSha,
+        commit_sha: commitSha,
+        runtime_sha: runtimeSha,
+        deploy_bundle_sha: deployBundleSha,
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
   writeManifest();
 
   const writeEnv = (enabled, overrides = {}) => {
@@ -210,6 +228,7 @@ try {
         .join("\n")}\n`,
       "utf8"
     );
+    fs.chmodSync(envFile, 0o600);
   };
 
   const writeUnits = () => {
@@ -389,6 +408,10 @@ printf '%s  -\n' "${databaseHash}"
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_TEST_ROOT: tmpRoot,
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_TEST_PROC_ROOT: procRoot,
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE: "auto",
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA: commitSha,
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA: runtimeSha,
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA: deployBundleSha,
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA: releaseSha,
     QINTOPIA_SIDECAR_ENV_FILE: envFile,
     QINTOPIA_RELEASE_CURRENT_DIR: releaseCurrent,
     QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
@@ -409,6 +432,10 @@ printf '%s  -\n' "${databaseHash}"
     env: {
       ...process.env,
       QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_ENABLE: "1",
+      QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA: commitSha,
+      QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA: runtimeSha,
+      QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA: deployBundleSha,
+      QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA: releaseSha,
       QINTOPIA_SIDECAR_ENV_FILE: envFile,
     },
     encoding: "utf8",
@@ -439,6 +466,16 @@ printf '%s  -\n' "${databaseHash}"
     throw new Error(
       `enabled observation failed\n${enabledObservation.stdout}\n${enabledObservation.stderr}`
     );
+  }
+
+  fs.chmodSync(envFile, 0o644);
+  const insecureEnvObservation = runObservation();
+  fs.chmodSync(envFile, 0o600);
+  if (
+    insecureEnvObservation.status === 0 ||
+    !insecureEnvObservation.stderr.includes("owner-only regular env file")
+  ) {
+    throw new Error("observation accepted an insecure persistent env file");
   }
 
   writeEnv("1", { QINTOPIA_SPACE_AGENT_TURN_RUNTIME_READY: "1" });
@@ -592,6 +629,10 @@ fi
       env: {
         ...process.env,
         QINTOPIA_UNRELATED_RUNTIME_SECRET: "must-not-reach-observation",
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA: commitSha,
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA: runtimeSha,
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA: deployBundleSha,
+        QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA: releaseSha,
         ...extra,
       },
       encoding: "utf8",

@@ -12,6 +12,27 @@ ALTER TABLE qintopia_agent_os.work_items
     ADD COLUMN IF NOT EXISTS space_id uuid
         REFERENCES qintopia_messages.conversations(id) ON DELETE SET NULL;
 
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'work_items_id_space_unique'
+          AND conrelid = 'qintopia_agent_os.work_items'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.work_items
+            ADD CONSTRAINT work_items_id_space_unique UNIQUE (id, space_id);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'work_items_id_type_unique'
+          AND conrelid = 'qintopia_agent_os.work_items'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.work_items
+            ADD CONSTRAINT work_items_id_type_unique UNIQUE (id, work_item_type);
+    END IF;
+END
+$migration$;
+
 CREATE INDEX IF NOT EXISTS raw_events_space_received_idx
     ON qintopia_messages.raw_events (space_id, received_at DESC)
     WHERE space_id IS NOT NULL;
@@ -51,6 +72,35 @@ CREATE TABLE IF NOT EXISTS qintopia_agent_os.space_policy_versions (
     ),
     UNIQUE (space_id, definition_key, version)
 );
+
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'space_policy_versions_id_space_unique'
+          AND conrelid = 'qintopia_agent_os.space_policy_versions'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.space_policy_versions
+            ADD CONSTRAINT space_policy_versions_id_space_unique UNIQUE (id, space_id);
+    END IF;
+END
+$migration$;
+
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'space_policy_versions_lineage_space_fk'
+          AND conrelid = 'qintopia_agent_os.space_policy_versions'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.space_policy_versions
+            ADD CONSTRAINT space_policy_versions_lineage_space_fk
+            FOREIGN KEY (created_from_work_item_id, space_id)
+            REFERENCES qintopia_agent_os.work_items(id, space_id)
+            ON DELETE SET NULL (created_from_work_item_id);
+    END IF;
+END
+$migration$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS space_policy_versions_one_active_idx
     ON qintopia_agent_os.space_policy_versions (space_id, definition_key)
@@ -123,6 +173,22 @@ BEGIN
 END
 $migration$;
 
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'business_definition_versions_lineage_space_fk'
+          AND conrelid = 'qintopia_agent_os.business_definition_versions'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.business_definition_versions
+            ADD CONSTRAINT business_definition_versions_lineage_space_fk
+            FOREIGN KEY (created_from_work_item_id, space_id)
+            REFERENCES qintopia_agent_os.work_items(id, space_id)
+            ON DELETE SET NULL (created_from_work_item_id);
+    END IF;
+END
+$migration$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS business_definition_versions_one_active_idx
     ON qintopia_agent_os.business_definition_versions (space_id, definition_key)
     WHERE status = 'active';
@@ -146,6 +212,7 @@ CREATE TABLE IF NOT EXISTS qintopia_agent_os.channel_event_mapping_versions (
         REFERENCES qintopia_identity.persons(id) ON DELETE RESTRICT,
     created_from_work_item_id uuid
         REFERENCES qintopia_agent_os.work_items(id) ON DELETE SET NULL,
+    created_from_work_item_type text NOT NULL DEFAULT 'space_programming_extension_request',
     activated_at timestamptz,
     retired_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
@@ -174,8 +241,40 @@ CREATE TABLE IF NOT EXISTS qintopia_agent_os.channel_event_mapping_versions (
     CONSTRAINT channel_event_mapping_versions_digest_check CHECK (
         definition_digest ~ '^[0-9a-f]{64}$'
     ),
+    CONSTRAINT channel_event_mapping_versions_lineage_type_check CHECK (
+        created_from_work_item_type = 'space_programming_extension_request'
+    ),
     UNIQUE (provider, definition_key, version)
 );
+
+ALTER TABLE qintopia_agent_os.channel_event_mapping_versions
+    ADD COLUMN IF NOT EXISTS created_from_work_item_type text
+        NOT NULL DEFAULT 'space_programming_extension_request';
+
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'channel_event_mapping_versions_lineage_type_check'
+          AND conrelid = 'qintopia_agent_os.channel_event_mapping_versions'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.channel_event_mapping_versions
+            ADD CONSTRAINT channel_event_mapping_versions_lineage_type_check
+            CHECK (created_from_work_item_type = 'space_programming_extension_request');
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'channel_event_mapping_versions_lineage_fk'
+          AND conrelid = 'qintopia_agent_os.channel_event_mapping_versions'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.channel_event_mapping_versions
+            ADD CONSTRAINT channel_event_mapping_versions_lineage_fk
+            FOREIGN KEY (created_from_work_item_id, created_from_work_item_type)
+            REFERENCES qintopia_agent_os.work_items(id, work_item_type)
+            ON DELETE SET NULL (created_from_work_item_id);
+    END IF;
+END
+$migration$;
 
 CREATE UNIQUE INDEX IF NOT EXISTS channel_event_mapping_versions_one_active_idx
     ON qintopia_agent_os.channel_event_mapping_versions (provider, definition_key)
@@ -242,6 +341,22 @@ CREATE TABLE IF NOT EXISTS qintopia_agent_os.automation_definition_versions (
         ON DELETE RESTRICT,
     UNIQUE (space_id, definition_key, version)
 );
+
+DO $migration$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'automation_definition_versions_lineage_space_fk'
+          AND conrelid = 'qintopia_agent_os.automation_definition_versions'::regclass
+    ) THEN
+        ALTER TABLE qintopia_agent_os.automation_definition_versions
+            ADD CONSTRAINT automation_definition_versions_lineage_space_fk
+            FOREIGN KEY (created_from_work_item_id, space_id)
+            REFERENCES qintopia_agent_os.work_items(id, space_id)
+            ON DELETE SET NULL (created_from_work_item_id);
+    END IF;
+END
+$migration$;
 
 DO $migration$
 BEGIN

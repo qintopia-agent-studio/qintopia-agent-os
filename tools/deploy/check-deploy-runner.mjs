@@ -414,6 +414,7 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     rollback_on_smoke_failure: false,
     activation: {
       targets: ["space-automation-runtime"],
+      approval: "approved-production-space-automation-runtime",
     },
   };
   if (!validateRequest(productionActivationRequest)) {
@@ -435,6 +436,13 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     },
     { ...productionActivationRequest, dry_run: true },
     { ...productionActivationRequest, rollback_on_smoke_failure: true },
+    {
+      ...productionActivationRequest,
+      activation: {
+        targets: ["space-automation-runtime"],
+        approval: "wrong-owner-approval",
+      },
+    },
     {
       ...productionActivationRequest,
       activation: { targets: ["space-automation-runtime", "space-automation-runtime"] },

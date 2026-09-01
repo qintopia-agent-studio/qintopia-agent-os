@@ -197,6 +197,10 @@ const profileDryRunRequestId = argValue(
 const activationTargets = splitList(
   argValue("--activation-targets", process.env.DEPLOY_ACTIVATION_TARGETS || "")
 );
+const spaceAutomationRuntimeApproval = argValue(
+  "--space-automation-runtime-approval",
+  process.env.DEPLOY_SPACE_AUTOMATION_RUNTIME_APPROVAL || ""
+);
 const observationTargets = splitList(
   argValue("--observation-targets", process.env.DEPLOY_OBSERVATION_TARGETS || "")
 );
@@ -294,6 +298,9 @@ if (profileDryRunRequestId) {
 }
 if (activationTargets.length > 0) {
   request.activation = { targets: activationTargets };
+  if (activationTargets.includes("space-automation-runtime")) {
+    request.activation.approval = spaceAutomationRuntimeApproval;
+  }
 }
 if (observationTargets.length > 0) {
   request.observation = { targets: observationTargets };

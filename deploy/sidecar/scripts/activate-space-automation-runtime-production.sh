@@ -11,6 +11,10 @@ OBSERVATION_SCRIPT="${SCRIPT_DIR}/space-automation-runtime-production-observatio
 NATS_ACL_PREFLIGHT="${SCRIPT_DIR}/space-automation-nats-acl-preflight.py"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
+EXPECTED_RELEASE_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA:-}"
+EXPECTED_COMMIT_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA:-}"
+EXPECTED_RUNTIME_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA:-}"
+EXPECTED_DEPLOY_BUNDLE_SHA="${QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA:-}"
 PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 SYSTEMCTL="/usr/bin/systemctl"
 SHA256SUM="/usr/bin/sha256sum"
@@ -30,6 +34,27 @@ if [[ ! -f "$ENV_FILE" ]]; then
   echo "Space automation runtime production activation requires the persistent sidecar env file" >&2
   exit 1
 fi
+if ! python3 - "$ENV_FILE" <<'PY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    file_stat = os.lstat(path)
+except OSError:
+    raise SystemExit(1)
+if (
+    not stat.S_ISREG(file_stat.st_mode)
+    or stat.S_IMODE(file_stat.st_mode) != 0o600
+    or file_stat.st_uid != os.geteuid()
+):
+    raise SystemExit(1)
+PY
+then
+  echo "Space automation runtime production activation requires an owner-only regular env file" >&2
+  exit 1
+fi
 if [[ ! -x "$SYSTEMCTL" ]]; then
   echo "systemctl is required for Space automation runtime production activation" >&2
   exit 1
@@ -38,6 +63,16 @@ if [[ ! -x "$SHA256SUM" ]]; then
   echo "sha256sum is required for Space automation runtime production activation" >&2
   exit 1
 fi
+for expected_sha in \
+  "$EXPECTED_RELEASE_SHA" \
+  "$EXPECTED_COMMIT_SHA" \
+  "$EXPECTED_RUNTIME_SHA" \
+  "$EXPECTED_DEPLOY_BUNDLE_SHA"; do
+  if [[ ! "$expected_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Space automation runtime production activation requires complete release identity" >&2
+    exit 1
+  fi
+done
 
 require_env_line() {
   local key="$1"
@@ -131,20 +166,56 @@ require_database_hash_match() {
   fi
 }
 
-require_qiwe_production_artifact() {
-  if ! python3 - "$RELEASE_CURRENT_DIR" <<'PY'
+require_release_manifest() {
+  if ! python3 - "$RELEASE_CURRENT_DIR" "$EXPECTED_RELEASE_SHA" "$EXPECTED_COMMIT_SHA" "$EXPECTED_RUNTIME_SHA" "$EXPECTED_DEPLOY_BUNDLE_SHA" <<'PY'
 import json
 import os
 import re
 import stat
 import sys
 
-current_path = sys.argv[1]
+current_path, expected_release, expected_commit, expected_runtime, expected_bundle = sys.argv[1:]
+current_real = os.path.realpath(current_path)
+if not os.path.isabs(current_path) or not os.path.isdir(current_real):
+    raise SystemExit(1)
+if os.path.basename(current_real) != expected_release:
+    raise SystemExit(1)
+manifest_path = os.path.join(current_real, "manifest.json")
+if os.path.islink(manifest_path) or not os.path.isfile(manifest_path):
+    raise SystemExit(1)
+if os.stat(manifest_path).st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    raise SystemExit(1)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+for key, expected in (
+    ("release_sha", expected_release),
+    ("commit_sha", expected_commit),
+    ("runtime_sha", expected_runtime),
+    ("deploy_bundle_sha", expected_bundle),
+):
+    if manifest.get(key) != expected or not re.fullmatch(r"[0-9a-f]{40}", manifest.get(key, "")):
+        raise SystemExit(1)
+PY
+  then
+    echo "Space automation runtime production activation requires the reviewed release manifest" >&2
+    exit 1
+  fi
+}
+
+require_qiwe_production_artifact() {
+  if ! python3 - "$RELEASE_CURRENT_DIR" "$EXPECTED_RELEASE_SHA" "$EXPECTED_COMMIT_SHA" <<'PY'
+import json
+import os
+import re
+import stat
+import sys
+
+current_path, expected_release_sha, expected_commit_sha = sys.argv[1:4]
 if not os.path.isabs(current_path) or not os.path.exists(current_path):
     raise SystemExit(1)
 current_real = os.path.realpath(current_path)
 release_sha = os.path.basename(current_real)
-if not re.fullmatch(r"[0-9a-f]{40}", release_sha):
+if release_sha != expected_release_sha or not re.fullmatch(r"[0-9a-f]{40}", release_sha):
     raise SystemExit(1)
 
 primary_bin = os.path.join(current_real, "sidecar", "qintopia-message-sidecar")
@@ -170,7 +241,7 @@ for candidate in (
 
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
-if manifest.get("commit_sha") != release_sha:
+if manifest.get("commit_sha") != expected_commit_sha:
     raise SystemExit(1)
 validation = manifest.get("validation", {})
 if validation.get("artifact_profile") != "qiwe-production":
@@ -249,6 +320,8 @@ cleanup_runtime() {
 }
 
 activate_runtime() {
+  require_release_manifest
+  require_qiwe_production_artifact
   "$SYSTEMCTL" enable "$DISPATCHER_TIMER" || return $?
   "$SYSTEMCTL" restart "$DISPATCHER_TIMER" || return $?
   "$SYSTEMCTL" enable "$EXECUTION_WORKER" || return $?
@@ -266,7 +339,13 @@ activate_runtime() {
   env -i PATH="$PATH" \
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_ENABLE=1 \
     QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE=enabled \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_COMMIT_SHA="$EXPECTED_COMMIT_SHA" \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_RUNTIME_SHA="$EXPECTED_RUNTIME_SHA" \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_DEPLOY_BUNDLE_SHA="$EXPECTED_DEPLOY_BUNDLE_SHA" \
+    QINTOPIA_SPACE_AUTOMATION_RUNTIME_RELEASE_SHA="$EXPECTED_RELEASE_SHA" \
     "$OBSERVATION_SCRIPT" >/dev/null || return $?
+  require_release_manifest
+  require_qiwe_production_artifact
 }
 
 require_env_line "QINTOPIA_SPACE_AUTOMATION_EXECUTION_ENABLED" "1"
@@ -289,6 +368,7 @@ require_env_line "QINTOPIA_SIDECAR_NATS_STREAM" "QINTOPIA_QIWE_MESSAGES"
 require_env_line "QINTOPIA_SIDECAR_CONSUMER" "qintopia-message-sidecar"
 require_sha256_env_line "QINTOPIA_SPACE_AUTOMATION_EXECUTION_DATABASE_URL_SHA256"
 require_database_hash_match
+require_release_manifest
 require_qiwe_production_artifact
 if ! env -i PATH="$PATH" "$NATS_ACL_PREFLIGHT" >/dev/null; then
   echo "Space automation runtime production activation requires the trusted NATS subject ACL" >&2

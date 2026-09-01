@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shlex
+import stat
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -1946,22 +1947,55 @@ class QiWeAuditor:
             "adapter": "qiwe",
             "profile": "erhua",
             "inbound_event_id": parsed.message_id,
-            "conversation_id": parsed.chat_id,
+            "conversation_id_hash": _hash_id(parsed.chat_id),
             "conversation_type": parsed.conversation_type,
             "sender_id_hash": _hash_id(parsed.sender_id),
-            "sender_display_name": identity.display_name if identity else "",
+            "sender_display_name_present": bool(identity and identity.display_name),
             "identity_source": identity.source if identity else "",
             "trigger": parsed.reason,
             "policy_decision": decision,
-            "outbound": outbound or {},
+            "outbound": _sanitize_audit_outbound(outbound),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
+            self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            parent_stat = self.path.parent.stat()
+            if not stat.S_ISDIR(parent_stat.st_mode):
+                raise OSError("QiWe audit parent is not a directory")
+            os.chmod(self.path.parent, 0o700)
+            fd = os.open(
+                self.path,
+                os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW,
+                0o600,
+            )
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except Exception as exc:
             logger.warning("[qiwe] audit write failed: %s", exc)
+
+
+def _sanitize_audit_outbound(outbound: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(outbound, dict):
+        return {}
+    safe: Dict[str, Any] = {}
+    for key in (
+        "external_send_executed",
+        "external_send_outcome",
+        "outcome",
+        "status",
+        "retryable",
+    ):
+        value = outbound.get(key)
+        if isinstance(value, bool):
+            safe[key] = value
+        elif isinstance(value, str) and len(value) <= 64:
+            safe[key] = value
+    for key in ("message_id", "conversation_id", "target_id"):
+        value = _text(outbound.get(key))
+        if value:
+            safe[f"{key}_hash"] = _hash_id(value)
+    return safe
 
 
 def _hash_id(value: str) -> str:

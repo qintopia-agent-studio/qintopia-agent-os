@@ -137,6 +137,7 @@ struct MappingVersion {
     provider: String,
     definition_key: String,
     version: i32,
+    definition_digest: String,
     selector: Predicate,
     extractor: ExtractorSpec,
     status: String,
@@ -1146,7 +1147,8 @@ async fn load_authenticated_raw_event_space(
 async fn load_mappings(pool: &PgPool, provider: &str) -> Result<Vec<MappingVersion>> {
     let rows = sqlx::query(
         r#"
-        SELECT id, provider, definition_key, version, selector, extractor, status
+        SELECT id, provider, definition_key, version, definition_digest,
+               selector, extractor, status
         FROM qintopia_agent_os.channel_event_mapping_versions
         WHERE provider = $1 AND status IN ('shadow', 'active')
         ORDER BY definition_key, version DESC
@@ -1163,6 +1165,7 @@ async fn load_mappings(pool: &PgPool, provider: &str) -> Result<Vec<MappingVersi
         let provider: String = row.try_get("provider")?;
         let definition_key: String = row.try_get("definition_key")?;
         let version: i32 = row.try_get("version")?;
+        let definition_digest: String = row.try_get("definition_digest")?;
         let status: String = row.try_get("status")?;
         let selector_value: Value = row.try_get("selector")?;
         let extractor_value: Value = row.try_get("extractor")?;
@@ -1187,6 +1190,7 @@ async fn load_mappings(pool: &PgPool, provider: &str) -> Result<Vec<MappingVersi
             provider,
             definition_key,
             version,
+            definition_digest,
             selector,
             extractor,
             status,
@@ -1224,7 +1228,23 @@ async fn dispatch_event_automations(
     let rows = sqlx::query(
         r#"
         SELECT automation.id, automation.definition_key, automation.version,
-               automation.business_definition_id, automation.status
+               automation.definition_digest AS automation_digest,
+               automation.business_definition_id, automation.status,
+               (SELECT business.definition_digest
+                FROM qintopia_agent_os.business_definition_versions business
+                WHERE business.id = automation.business_definition_id
+                  AND business.space_id = automation.space_id
+                  AND business.status = 'active') AS business_digest,
+               (SELECT policy.id
+                FROM qintopia_agent_os.space_policy_versions policy
+                WHERE policy.space_id = automation.space_id
+                  AND policy.definition_key = 'default'
+                  AND policy.status = 'active') AS policy_id,
+               (SELECT policy.definition_digest
+                FROM qintopia_agent_os.space_policy_versions policy
+                WHERE policy.space_id = automation.space_id
+                  AND policy.definition_key = 'default'
+                  AND policy.status = 'active') AS policy_digest
         FROM qintopia_agent_os.automation_definition_versions automation
         JOIN qintopia_messages.raw_events raw_event
           ON raw_event.id = $3
@@ -1310,6 +1330,7 @@ async fn dispatch_event_automations(
         let automation_key: String = row.try_get("definition_key")?;
         let automation_version: i32 = row.try_get("version")?;
         let business_definition_id: Uuid = row.try_get("business_definition_id")?;
+        let automation_digest: String = row.try_get("automation_digest")?;
         let status: String = row.try_get("status")?;
         if status == "shadow" {
             create_shadow_observation(
@@ -1326,6 +1347,15 @@ async fn dispatch_event_automations(
         }
 
         let provider_event_ref = format!("{}:{}", mapping.provider, event.event_id);
+        let business_digest: String = row
+            .try_get::<Option<String>, _>("business_digest")?
+            .context("active event automation business digest is missing")?;
+        let policy_id: Uuid = row
+            .try_get::<Option<Uuid>, _>("policy_id")?
+            .context("active event automation policy id is missing")?;
+        let policy_digest: String = row
+            .try_get::<Option<String>, _>("policy_digest")?
+            .context("active event automation policy digest is missing")?;
         let idempotency_key =
             event_automation_idempotency_key(space_id, &automation_key, &provider_event_ref);
         sqlx::query(
@@ -1355,9 +1385,15 @@ async fn dispatch_event_automations(
         .bind(idempotency_key)
         .bind(json!({
             "automation_definition_id": automation_id,
+            "automation_definition_digest": automation_digest,
             "automation_key": automation_key,
             "automation_version": automation_version,
             "business_definition_id": business_definition_id,
+            "business_definition_digest": business_digest,
+            "space_policy_version_id": policy_id,
+            "space_policy_digest": policy_digest,
+            "channel_event_mapping_id": mapping.id,
+            "channel_event_mapping_digest": mapping.definition_digest,
             "trigger": {
                 "kind": "event",
                 "event_type": event.event_type,

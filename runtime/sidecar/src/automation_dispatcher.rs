@@ -39,6 +39,10 @@ struct DueAutomation {
     definition_key: String,
     version: i64,
     business_definition_id: Uuid,
+    automation_digest: String,
+    business_digest: String,
+    policy_id: Uuid,
+    policy_digest: String,
     trigger_config: Value,
     timezone: String,
     misfire_policy: String,
@@ -93,6 +97,9 @@ async fn dispatch_once(
             r#"
             SELECT automation.id, automation.space_id, automation.definition_key,
                    automation.version, automation.business_definition_id,
+                   automation.definition_digest AS automation_digest,
+                   business.definition_digest AS business_digest,
+                   policy.id AS policy_id, policy.definition_digest AS policy_digest,
                    automation.trigger_config, automation.timezone,
                    automation.misfire_policy, automation.next_run_at
             FROM qintopia_agent_os.automation_definition_versions automation
@@ -154,6 +161,9 @@ async fn dispatch_once(
             r#"
             SELECT automation.id, automation.space_id, automation.definition_key,
                    automation.version, automation.business_definition_id,
+                   automation.definition_digest AS automation_digest,
+                   business.definition_digest AS business_digest,
+                   policy.id AS policy_id, policy.definition_digest AS policy_digest,
                    automation.trigger_config, automation.timezone,
                    automation.misfire_policy, automation.next_run_at
             FROM qintopia_agent_os.automation_definition_versions automation
@@ -224,6 +234,10 @@ async fn dispatch_once(
             definition_key: row.try_get("definition_key")?,
             version: row.try_get("version")?,
             business_definition_id: row.try_get("business_definition_id")?,
+            automation_digest: row.try_get("automation_digest")?,
+            business_digest: row.try_get("business_digest")?,
+            policy_id: row.try_get("policy_id")?,
+            policy_digest: row.try_get("policy_digest")?,
             trigger_config: row.try_get("trigger_config")?,
             timezone: row.try_get::<String, _>("timezone")?,
             misfire_policy: row.try_get("misfire_policy")?,
@@ -283,9 +297,13 @@ async fn dispatch_once(
             .bind(&idempotency_key)
             .bind(json!({
                 "automation_definition_id": automation.id,
+                "automation_definition_digest": automation.automation_digest,
                 "automation_key": automation.definition_key,
                 "automation_version": automation.version,
                 "business_definition_id": automation.business_definition_id,
+                "business_definition_digest": automation.business_digest,
+                "space_policy_version_id": automation.policy_id,
+                "space_policy_digest": automation.policy_digest,
                 "trigger": {
                     "kind": "schedule",
                     "scheduled_for_utc": scheduled_for.to_rfc3339()

@@ -170,7 +170,8 @@
               "xiaoman-daily-case-report-auto-publish"
             ]
           }
-        }
+        },
+        "approval": { "type": "string" }
       },
       "allOf": [
         {
@@ -184,8 +185,12 @@
             "required": ["targets"]
           },
           "then": {
+            "required": ["approval"],
             "properties": {
-              "targets": { "const": ["space-automation-runtime"] }
+              "targets": { "const": ["space-automation-runtime"] },
+              "approval": {
+                "const": "approved-production-space-automation-runtime"
+              }
             }
           }
         }

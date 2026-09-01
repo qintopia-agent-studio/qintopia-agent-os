@@ -1002,6 +1002,18 @@ fn validate_claim_binding(claim: &ExecutionClaim) -> Result<()> {
     if claim.business_id.to_string() != required_text(&claim.payload, "business_definition_id")? {
         bail!("work item business definition binding is stale");
     }
+    if claim.automation_digest != required_text(&claim.payload, "automation_definition_digest")? {
+        bail!("work item automation definition digest binding is stale");
+    }
+    if claim.business_digest != required_text(&claim.payload, "business_definition_digest")? {
+        bail!("work item business definition digest binding is stale");
+    }
+    if claim.policy_id.to_string() != required_text(&claim.payload, "space_policy_version_id")? {
+        bail!("work item Space policy version binding is stale");
+    }
+    if claim.policy_digest != required_text(&claim.payload, "space_policy_digest")? {
+        bail!("work item Space policy digest binding is stale");
+    }
     if claim.automation_key != required_text(&claim.payload, "automation_key")? {
         bail!("work item automation key binding is stale");
     }
@@ -1029,6 +1041,21 @@ fn validate_claim_binding(claim: &ExecutionClaim) -> Result<()> {
                 .is_none_or(|digest| !valid_definition_digest(digest)))
     {
         bail!("event automation is missing an exact event-mapping binding");
+    }
+    if claim.trigger_kind == "event" {
+        let payload_mapping_id = required_text(&claim.payload, "channel_event_mapping_id")?;
+        if claim
+            .channel_event_mapping_id
+            .map(|id| id.to_string())
+            .as_deref()
+            != Some(payload_mapping_id.as_str())
+        {
+            bail!("work item event-mapping id binding is stale");
+        }
+        let payload_mapping_digest = required_text(&claim.payload, "channel_event_mapping_digest")?;
+        if claim.channel_event_mapping_digest.as_deref() != Some(payload_mapping_digest.as_str()) {
+            bail!("work item event-mapping digest binding is stale");
+        }
     }
     if claim.trigger_kind == "schedule"
         && (claim.channel_event_mapping_id.is_some()
@@ -1480,9 +1507,16 @@ fn eligible_claim_query(lock: bool) -> String {
           )
           AND work_item.payload->>'automation_key' = automation.definition_key
           AND work_item.payload->>'automation_version' = automation.version::text
+          AND work_item.payload->>'automation_definition_digest' = automation.definition_digest
+          AND work_item.payload->>'business_definition_digest' = business.definition_digest
+          AND work_item.payload->>'space_policy_version_id' = policy.id::text
+          AND work_item.payload->>'space_policy_digest' = policy.definition_digest
           AND work_item.payload#>>'{{trigger,kind}}' = automation.trigger_kind
           AND (
-              (automation.trigger_kind = 'schedule' AND automation.channel_event_mapping_id IS NULL) OR
+              (automation.trigger_kind = 'schedule'
+               AND automation.channel_event_mapping_id IS NULL
+               AND NOT (work_item.payload ? 'channel_event_mapping_id')
+               AND NOT (work_item.payload ? 'channel_event_mapping_digest')) OR
               (automation.trigger_kind = 'event'
                AND automation.channel_event_mapping_id IS NOT NULL
                AND mapping.id IS NOT NULL
@@ -1490,7 +1524,9 @@ fn eligible_claim_query(lock: bool) -> String {
                    (automation.status = 'active' AND mapping.status = 'active') OR
                    (automation.status = 'shadow' AND mapping.status IN ('active', 'shadow'))
                )
-               AND work_item.source_refs->>'mapping_version_id' = mapping.id::text)
+               AND work_item.source_refs->>'mapping_version_id' = mapping.id::text
+               AND work_item.payload->>'channel_event_mapping_id' = mapping.id::text
+               AND work_item.payload->>'channel_event_mapping_digest' = mapping.definition_digest)
           )
           AND 'system' = ANY(execution_capability.allowed_callers)
           AND '{WORK_ITEM_TYPE}' = ANY(execution_capability.allowed_work_item_types)
@@ -2772,9 +2808,15 @@ mod tests {
             space_id: Uuid::new_v4(),
             payload: json!({
                 "automation_definition_id": automation_id,
+                "automation_definition_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "automation_key": "resident_message",
                 "automation_version": 3,
                 "business_definition_id": business_id,
+                "business_definition_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "space_policy_version_id": "00000000-0000-0000-0000-000000000000",
+                "space_policy_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "channel_event_mapping_id": "00000000-0000-0000-0000-000000000001",
+                "channel_event_mapping_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 "trigger": {
                     "kind": "event",
                     "event_type": "group_member_added",
@@ -2790,7 +2832,9 @@ mod tests {
             automation_status: "active".to_string(),
             automation_digest: "a".repeat(64),
             trigger_kind: "event".to_string(),
-            channel_event_mapping_id: Some(Uuid::new_v4()),
+            channel_event_mapping_id: Some(
+                Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+            ),
             channel_event_mapping_digest: Some("d".repeat(64)),
             business_id,
             business_status: "active".to_string(),
@@ -2802,7 +2846,7 @@ mod tests {
             }),
             business_allowed_capabilities: vec![QIWE_TEXT_TEMPLATE_CAPABILITY_KEY.to_string()],
             approval_policy: "space_admin_confirmation".to_string(),
-            policy_id: Uuid::new_v4(),
+            policy_id: Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap(),
             policy_digest: "c".repeat(64),
             policy_config: json!({
                 "capability_grants": [QIWE_TEXT_TEMPLATE_CAPABILITY_KEY]
@@ -2835,6 +2879,23 @@ mod tests {
         claim.business_status = "retired".to_string();
         let error = validate_claim_and_build_plan(&claim).expect_err("stale binding fails closed");
         assert!(error.to_string().contains("stale business definition"));
+    }
+
+    #[test]
+    fn claim_rejects_drifted_version_digest_bindings() {
+        for field in [
+            "automation_definition_digest",
+            "business_definition_digest",
+            "space_policy_digest",
+            "channel_event_mapping_digest",
+        ] {
+            let mut claim = fixture_claim();
+            claim.payload[field] = json!("e".repeat(64));
+            assert!(
+                validate_claim_binding(&claim).is_err(),
+                "drifted {field} must fail closed"
+            );
+        }
     }
 
     #[test]
@@ -3226,6 +3287,16 @@ mod tests {
             "kind": "schedule",
             "scheduled_for_utc": "2026-08-14T00:00:00Z"
         });
+        schedule_claim
+            .payload
+            .as_object_mut()
+            .unwrap()
+            .remove("channel_event_mapping_id");
+        schedule_claim
+            .payload
+            .as_object_mut()
+            .unwrap()
+            .remove("channel_event_mapping_digest");
         schedule_claim.channel_event_mapping_id = None;
         schedule_claim.channel_event_mapping_digest = None;
         validate_claim_binding(&schedule_claim)
