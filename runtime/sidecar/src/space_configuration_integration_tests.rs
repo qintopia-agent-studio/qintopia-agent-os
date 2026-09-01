@@ -734,7 +734,12 @@ async fn postgres_space_control_plane_is_versioned_authorized_and_isolated() {
     assert!(versions.len() >= 3);
 
     let schedule_session = session(&chat_a, &owner_user, &format!("schedule-{suffix}"));
-    prepare_and_confirm(&pool, schedule_session, schedule_intent()).await;
+    prepare_and_confirm(
+        &pool,
+        schedule_session,
+        deterministic_schedule_intent("active", "integration_schedule", "space_admin_confirmation"),
+    )
+    .await;
     let automation_id: Uuid = sqlx::query_scalar(
         r#"
         SELECT id FROM qintopia_agent_os.automation_definition_versions
@@ -747,7 +752,7 @@ async fn postgres_space_control_plane_is_versioned_authorized_and_isolated() {
     .await
     .expect("load active integration-test schedule");
     sqlx::query(
-        "UPDATE qintopia_agent_os.capabilities SET enabled = true WHERE capability_key IN ('erhua.execute_space_business', 'erhua.space_agent_turn')",
+        "UPDATE qintopia_agent_os.capabilities SET enabled = true WHERE capability_key IN ('erhua.execute_space_business', 'erhua.qiwe_text_template')",
     )
     .execute(&pool)
     .await
@@ -956,20 +961,20 @@ async fn postgres_space_control_plane_is_versioned_authorized_and_isolated() {
 
     for (disable_sql, restore_sql) in [
         (
-            "UPDATE qintopia_agent_os.capabilities SET enabled = false WHERE capability_key = 'erhua.space_agent_turn'",
-            "UPDATE qintopia_agent_os.capabilities SET enabled = true WHERE capability_key = 'erhua.space_agent_turn'",
+            "UPDATE qintopia_agent_os.capabilities SET enabled = false WHERE capability_key = 'erhua.qiwe_text_template'",
+            "UPDATE qintopia_agent_os.capabilities SET enabled = true WHERE capability_key = 'erhua.qiwe_text_template'",
         ),
         (
-            "UPDATE qintopia_agent_os.capabilities SET allowed_callers = ARRAY[]::text[] WHERE capability_key = 'erhua.space_agent_turn'",
-            "UPDATE qintopia_agent_os.capabilities SET allowed_callers = ARRAY['system']::text[] WHERE capability_key = 'erhua.space_agent_turn'",
+            "UPDATE qintopia_agent_os.capabilities SET allowed_callers = ARRAY[]::text[] WHERE capability_key = 'erhua.qiwe_text_template'",
+            "UPDATE qintopia_agent_os.capabilities SET allowed_callers = ARRAY['system']::text[] WHERE capability_key = 'erhua.qiwe_text_template'",
         ),
         (
-            "UPDATE qintopia_agent_os.capabilities SET allowed_work_item_types = ARRAY[]::text[] WHERE capability_key = 'erhua.space_agent_turn'",
-            "UPDATE qintopia_agent_os.capabilities SET allowed_work_item_types = ARRAY['space_agent_turn']::text[] WHERE capability_key = 'erhua.space_agent_turn'",
+            "UPDATE qintopia_agent_os.capabilities SET allowed_work_item_types = ARRAY[]::text[] WHERE capability_key = 'erhua.qiwe_text_template'",
+            "UPDATE qintopia_agent_os.capabilities SET allowed_work_item_types = ARRAY['space_automation_run']::text[] WHERE capability_key = 'erhua.qiwe_text_template'",
         ),
         (
-            "UPDATE qintopia_agent_os.capabilities SET metadata = jsonb_set(metadata, '{space_invocable}', 'false'::jsonb) WHERE capability_key = 'erhua.space_agent_turn'",
-            "UPDATE qintopia_agent_os.capabilities SET metadata = jsonb_set(metadata, '{space_invocable}', 'true'::jsonb) WHERE capability_key = 'erhua.space_agent_turn'",
+            "UPDATE qintopia_agent_os.capabilities SET metadata = jsonb_set(metadata, '{space_invocable}', 'false'::jsonb) WHERE capability_key = 'erhua.qiwe_text_template'",
+            "UPDATE qintopia_agent_os.capabilities SET metadata = jsonb_set(metadata, '{space_invocable}', 'true'::jsonb) WHERE capability_key = 'erhua.qiwe_text_template'",
         ),
     ] {
         sqlx::query(disable_sql)
