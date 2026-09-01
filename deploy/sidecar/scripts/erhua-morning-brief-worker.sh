@@ -21,7 +21,7 @@ fail() {
   exit 1
 }
 
-if [[ -v QINTOPIA_XIAOMAN_WRAPPER_PATH ]]; then
+if [[ "${QINTOPIA_XIAOMAN_WRAPPER_PATH+x}" == "x" ]]; then
   fail "refuses Xiaoman wrapper path override"
 fi
 
