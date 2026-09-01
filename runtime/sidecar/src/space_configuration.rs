@@ -4767,7 +4767,7 @@ async fn next_space_version(
     definition_key: &str,
 ) -> Result<i32> {
     let query = format!(
-        "SELECT COALESCE(MAX(version), 0) + 1 AS next_version FROM qintopia_agent_os.{table} WHERE space_id = $1 AND definition_key = $2"
+        "SELECT (COALESCE(MAX(version), 0) + 1)::bigint AS next_version FROM qintopia_agent_os.{table} WHERE space_id = $1 AND definition_key = $2"
     );
     let next: i64 = sqlx::query_scalar(&query)
         .bind(space_id)
@@ -4785,7 +4785,7 @@ async fn next_provider_version(
 ) -> Result<i32> {
     let next: i64 = sqlx::query_scalar(
         r#"
-        SELECT COALESCE(MAX(version), 0) + 1
+        SELECT (COALESCE(MAX(version), 0) + 1)::bigint
         FROM qintopia_agent_os.channel_event_mapping_versions
         WHERE provider = $1 AND definition_key = $2
         "#,
