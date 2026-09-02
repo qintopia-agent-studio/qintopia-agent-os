@@ -34,6 +34,82 @@ https://qintopia.cn/qiwe/webhook
 This skill can touch external QiWe sends, Hermes profile runtime behavior, and server
 secrets. Production adoption requires review, smoke checks, and rollback notes.
 
+## Space Configuration And Group Isolation
+
+The three configuration tools, `qintopia_space_change_prepare`,
+`qintopia_space_change_confirm`, and `qintopia_space_change_status`, remain
+independently available through their trusted-session and administrator-confirmation
+boundary. They do not replace or unregister the existing QiWe tools or Erhua
+`qintopia-tools` capabilities.
+
+For an ordinary QiWe group turn, setting `QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED=1`
+makes the adapter load identity, knowledge scope, and effective capabilities from the
+active policy for the exact current group, then authorize every governed capability
+again immediately before invocation. Both operations resolve the current Space and
+speaker from the authenticated persisted message receipt; neither accepts model-supplied
+room, actor, or destination ids. A missing policy, timeout, malformed response, or
+unauthorized capability fails closed. `QIWE_SPACE_TURN_POLICY_TIMEOUT_SECONDS` defaults
+to `0.4` seconds.
+
+The switch governs ordinary group turns only. An explicitly authenticated QiWe direct
+session keeps the existing direct-tool behavior without projecting a group policy, but
+the gateway platform, conversation type, chat, speaker, and message fields must all be
+present. Direct tools remain bound to the current direct conversation and speaker; a
+direct turn cannot select a group target or another user.
+
+The enforcement switch defaults to `0` for the one-time reviewed rollout. Ordinary
+capabilities remain registered, but a governed call is effective only when the current
+Space policy grants it, no active revocation subtracts that grant, and the matching
+global capability registry row is enabled. The three configuration tools retain their
+separate review boundary so an authorized Space administrator can prepare, inspect, and
+confirm policy changes even when ordinary business capabilities are empty. Quota
+declarations remain validated but explicitly non-enforced in v1.
+
+## Official Event Research Boundary
+
+`QINTOPIA_SPACE_EVENT_RESEARCH_ENABLED` accepts only the exact value `1` and defaults to
+disabled. When enabled, the default researcher starts the release-owned
+`official_qiwe_research_worker.py` with an isolated Python mode, a fixed minimal
+environment, closed inherited file descriptors, no stdin, discarded stderr, a bounded
+stdout protocol, and a hard deadline. It passes only bounded depth/page counts. The
+worker accepts no URL, query, headers, credentials, proxy settings, or executable path
+from the group turn or process environment.
+
+The worker starts only from the two repository-registered Qiwe documentation pages,
+follows only normalized `https://doc.qiweapi.com/doc-<number>` links without redirects,
+and caps request count, page bytes, visible text, link fanout, crawl depth, page count,
+runtime, and result bytes. Both worker and parent independently validate the output.
+Retrieved text is always framed as untrusted reference data for the planner; it can
+provide event facts but cannot provide instructions, destinations, credentials, tools,
+or code.
+
+Clearing the child environment materially reduces credential carriage, but a subprocess
+under the same Unix UID is not a credential-isolation boundary: it may still be able to
+read files available to that UID. Production research must remain disabled until the
+worker runs as a dedicated OS identity or equivalent container with no access to Hermes,
+Qiwe, NATS, database, deployment, or operator credential files. Enabling this switch on
+the existing same-UID gateway is not production approval.
+
+## Space Agent Completion Boundary
+
+The default-disabled Space agent completion socket reuses the Hermes-owned `ctx.llm`
+handle inside the QiWe adapter. It does not load provider configuration or credentials,
+execute a capability, select a destination, or send a message. It starts and stops with
+the adapter and accepts only a dedicated non-root runner whose Unix peer UID/GID and
+bearer SHA-256 both match the reviewed configuration.
+
+The newline-delimited, bounded JSON protocol accepts only
+`operation=space_agent_turn_complete`, schema version 1, one work-item UUID, the bounded
+goal/trigger/output contract, the broker-issued capability catalog, and at most 16
+completed capability calls. Its response always has only `schema_version`, `accepted`,
+and `decision`. An accepted decision is either a final output object or one capability
+call containing a new UUID, an exact catalog key, and an input object. Authorization,
+capability execution, receipts, and final output validation remain sidecar-owned.
+
+Enablement requires `QIWE_SPACE_AGENT_COMPLETION_ENABLED=1`, the exact reviewed approval
+phrase, an absolute socket path, the runner UID/GID, and only the runner bearer's
+SHA-256. The plaintext bearer belongs solely in the isolated runner environment.
+
 ## Current Behavior Summary
 
 - Uses inner QiWe raw event `data.fromRoomId` as the stable group id.
@@ -48,6 +124,32 @@ secrets. Production adoption requires review, smoke checks, and rollback notes.
   sidecar independently enforces the same boundary before Postgres writes. Existing
   callback ids are preserved only when the suffix is a validated 64-hex SHA-256 digest;
   a `qiwe-callback:` prefix by itself is not trusted.
+- Publishes ingress-authenticated durable system events only to the separate
+  `qintopia.qiwe.raw.authenticated` subject. The producer uses a bounded auth file;
+  credentials in the NATS URL are rejected. The sidecar ignores the envelope's
+  `ingress_auth_verified` value and derives that fact only from the ACL-protected
+  subject. Compatibility-mode or ordinary raw capture therefore cannot self-assert
+  trust, drive Space event mappings, or count as real shadow evidence.
+- Keeps ordinary message capture best-effort even when NATS is unavailable. The separate
+  `QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED=1` gate applies only to authenticated
+  system events: the whole `data[]` envelope has a fixed 1.5-second budget to receive a
+  valid authenticated-raw-subject JetStream PubAck for every system event. Any timeout,
+  NATS rejection, malformed acknowledgement, or partial batch returns a fixed HTTP 503
+  without provider details so QiWe can retry. The gate is default-disabled and requires
+  webhook authentication, a producer auth file, and NATS capture at adapter startup;
+  `Nats-Msg-Id` and Postgres event ids retain replay idempotency. Production activation
+  additionally requires anonymous publish denial and distinct producer/consumer subject
+  ACL evidence; loopback binding alone is not an authentication boundary.
+- Plans explicit requests such as "启用 welcome_new_members" as the bounded
+  `definition_operation=activate` form. The public tool supplies only the stable
+  automation key; the sidecar resolves and digest-binds the current group's latest
+  shadow automation and exact dependencies, requires exact same-Space real-event
+  evidence for event triggers, and rejects confirmation after any stream-head drift.
+  Stored cron, timezone, event binding, and business input are never reconstructed by
+  the model. `agent_turn` activation uses the dedicated authenticated broker contract;
+  execution remains default-disabled until its isolated OS identity, socket group,
+  bearer secret, model adapter, capability gates, and owner runtime approval are
+  provisioned.
 - Provides a disabled-by-default memory bridge that recognizes `cmd=20000` before
   ordinary Agent dispatch and streams the bounded callback only to
   `process-qiwe-image-send-callback --apply` over child stdin. It requires explicit

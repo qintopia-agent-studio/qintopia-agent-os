@@ -154,6 +154,37 @@ const rollbackOnSmokeFailure =
     "--rollback-on-smoke-failure",
     process.env.DEPLOY_ROLLBACK_ON_SMOKE_FAILURE || "true"
   ) === "true";
+const rollbackExpectedCurrentInput = argValue(
+  "--rollback-expected-current-sha",
+  process.env.DEPLOY_ROLLBACK_EXPECTED_CURRENT_SHA || ""
+);
+const rollbackExpectedPreviousInput = argValue(
+  "--rollback-expected-previous-sha",
+  process.env.DEPLOY_ROLLBACK_EXPECTED_PREVIOUS_SHA || ""
+);
+if (Boolean(rollbackExpectedCurrentInput) !== Boolean(rollbackExpectedPreviousInput)) {
+  console.error(
+    "rollback expected current and previous SHAs must be supplied together"
+  );
+  process.exit(2);
+}
+const rollbackExpectedCurrentSha = rollbackExpectedCurrentInput
+  ? requireSha("--rollback-expected-current-sha", rollbackExpectedCurrentInput)
+  : "";
+const rollbackExpectedPreviousSha = rollbackExpectedPreviousInput
+  ? requireSha("--rollback-expected-previous-sha", rollbackExpectedPreviousInput)
+  : "";
+if (rollbackExpectedPreviousSha && rollbackExpectedPreviousSha !== releaseSha) {
+  console.error("rollback expected previous SHA must equal the requested release SHA");
+  process.exit(2);
+}
+if (
+  rollbackExpectedCurrentSha &&
+  rollbackExpectedCurrentSha === rollbackExpectedPreviousSha
+) {
+  console.error("rollback expected current and previous SHAs must differ");
+  process.exit(2);
+}
 const requestedBy = requireValue(
   "requested_by",
   argValue("--requested-by", process.env.GITHUB_ACTOR || os.userInfo().username)
@@ -165,6 +196,10 @@ const profileDryRunRequestId = argValue(
 );
 const activationTargets = splitList(
   argValue("--activation-targets", process.env.DEPLOY_ACTIVATION_TARGETS || "")
+);
+const spaceAutomationRuntimeApproval = argValue(
+  "--space-automation-runtime-approval",
+  process.env.DEPLOY_SPACE_AUTOMATION_RUNTIME_APPROVAL || ""
 );
 const observationTargets = splitList(
   argValue("--observation-targets", process.env.DEPLOY_OBSERVATION_TARGETS || "")
@@ -252,11 +287,20 @@ const request = {
   },
   notes,
 };
+if (rollbackExpectedCurrentSha) {
+  request.release_rollback = {
+    expected_current_sha: rollbackExpectedCurrentSha,
+    expected_previous_sha: rollbackExpectedPreviousSha,
+  };
+}
 if (profileDryRunRequestId) {
   request.profile_dry_run_request_id = profileDryRunRequestId;
 }
 if (activationTargets.length > 0) {
   request.activation = { targets: activationTargets };
+  if (activationTargets.includes("space-automation-runtime")) {
+    request.activation.approval = spaceAutomationRuntimeApproval;
+  }
 }
 if (observationTargets.length > 0) {
   request.observation = { targets: observationTargets };

@@ -20,6 +20,9 @@ pub struct Cli {
     )]
     pub nats_url: String,
 
+    #[arg(long, env = "QINTOPIA_SIDECAR_NATS_AUTH_FILE")]
+    pub nats_auth_file: Option<String>,
+
     #[arg(
         long,
         env = "QINTOPIA_SIDECAR_NATS_STREAM",
@@ -33,6 +36,20 @@ pub struct Cli {
         default_value = "qintopia.qiwe.raw"
     )]
     pub raw_subject: String,
+
+    #[arg(
+        long,
+        env = "QINTOPIA_SIDECAR_AUTHENTICATED_RAW_SUBJECT",
+        default_value = "qintopia.qiwe.raw.authenticated"
+    )]
+    pub authenticated_raw_subject: String,
+
+    #[arg(
+        long,
+        env = "QINTOPIA_SIDECAR_TRUST_AUTHENTICATED_RAW_SUBJECT",
+        default_value_t = false
+    )]
+    pub trust_authenticated_raw_subject: bool,
 
     #[arg(
         long,
@@ -533,6 +550,72 @@ pub enum Command {
         /// Restrict the worker to one configured QiWe group/chat id.
         #[arg(long, env = "QINTOPIA_RAW_ARCHIVE_WORKER_CHAT_ID")]
         chat_id: Option<String>,
+    },
+    /// Dispatch due Space-owned schedules into durable AgentOS work items.
+    RunAutomationDispatcher {
+        /// Process one batch and exit. Release timers always use this mode.
+        #[arg(long)]
+        once: bool,
+
+        /// Persist due work items and advance scheduler cursors.
+        #[arg(long)]
+        apply: bool,
+
+        /// Preview due work without mutating Postgres.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Maximum due automation definitions to process per batch.
+        #[arg(
+            long,
+            env = "QINTOPIA_AUTOMATION_DISPATCHER_BATCH_SIZE",
+            default_value_t = 50
+        )]
+        batch_size: i64,
+
+        /// Delay between batches when not running once.
+        #[arg(
+            long,
+            env = "QINTOPIA_AUTOMATION_DISPATCHER_POLL_SECONDS",
+            default_value_t = 60
+        )]
+        poll_seconds: u64,
+    },
+    /// Execute version-bound Space automation work through registered capabilities.
+    RunSpaceAutomationExecutionWorker {
+        /// Process one work item and exit.
+        #[arg(long)]
+        once: bool,
+
+        /// Persist the claim and execute through owner-approved runtime gates.
+        #[arg(long)]
+        apply: bool,
+
+        /// Preview one eligible work item without claiming or external access.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Restrict a one-shot run to one work item.
+        #[arg(long)]
+        work_item_id: Option<uuid::Uuid>,
+
+        /// Delay between batches when not running once.
+        #[arg(
+            long,
+            env = "QINTOPIA_SPACE_AUTOMATION_EXECUTION_POLL_SECONDS",
+            default_value_t = 10
+        )]
+        poll_seconds: u64,
+    },
+    /// Serve the authenticated bounded Space agent-turn runner protocol.
+    RunSpaceAgentTurnBroker {
+        /// Dedicated local Unix socket shared only with the isolated runner identity.
+        #[arg(
+            long,
+            env = "QINTOPIA_SPACE_AGENT_TURN_RUNNER_SOCKET",
+            default_value = "/run/qintopia-agentos-agent-turn/space-agent-turn.sock"
+        )]
+        socket_path: std::path::PathBuf,
     },
     /// Publish a test event and verify that the running sidecar persists it.
     Smoke {

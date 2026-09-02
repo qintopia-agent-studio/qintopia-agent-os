@@ -262,7 +262,10 @@ fi
 
 if [[ "$runner_status" -ne 0 && ! -f "$result_file" ]]; then
   python3 - "$result_file" "$request_file" "$request_id" "$fallback_error" <<'PY'
+import hashlib
+import hmac
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -315,6 +318,35 @@ result = {
     "checks": [{"name": "deploy-request-validation", "status": "failed"}],
     "rollback": {"attempted": False, "status": "not_needed"},
     "error": error,
+}
+signing_key = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY", "")
+signing_key_id = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID", "")
+if not signing_key or not signing_key_id:
+    raise SystemExit("deploy result signing key and key id are required")
+signature_metadata = {
+    "algorithm": "hmac-sha256",
+    "issuer": "qintopia-deploy-runner",
+    "key_id": signing_key_id,
+    "signed_at": now,
+}
+
+def canonical_json(value):
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            json.dumps(key, separators=(",", ":")) + ":" + canonical_json(value[key])
+            for key in sorted(value)
+        ) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+result["signature"] = {
+    **signature_metadata,
+    "value": hmac.new(
+        signing_key.encode("utf-8"),
+        canonical_json({"result": result, "signature": signature_metadata}).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest(),
 }
 with open(path, "w", encoding="utf-8") as fh:
     json.dump(result, fh, ensure_ascii=False, indent=2)

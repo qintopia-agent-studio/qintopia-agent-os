@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import YAML from "yaml";
@@ -14,13 +16,220 @@ const readText = (relativePath) =>
   fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const localPrChecks = readText("tools/ci/run-local-pr-checks.mjs");
+
+function runFixtureCommand(command, args, cwd, env = process.env) {
+  const result = spawnSync(command, args, {
+    cwd,
+    env,
+    encoding: "utf8",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${args.join(" ")} failed: ${result.stderr || result.stdout || "unknown error"}`
+    );
+  }
+  return result;
+}
+
+function verifyUntrackedRiskPath(relativePath) {
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-local-pr-risk-"));
+  try {
+    const fakeBin = path.join(fixtureRoot, "fake-bin");
+    const localCheckPath = path.join(fixtureRoot, "tools/ci/run-local-pr-checks.mjs");
+    const applySmokePath = path.join(
+      fixtureRoot,
+      "deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh"
+    );
+    const invocationLog = path.join(fixtureRoot, "command-invocations.log");
+    const recorder = `#!/bin/sh
+printf '%s %s\\n' "$0" "$*" >> "$QINTOPIA_TEST_INVOCATION_LOG"
+exit 0
+`;
+
+    fs.mkdirSync(fakeBin, { recursive: true });
+    fs.mkdirSync(path.dirname(localCheckPath), { recursive: true });
+    fs.mkdirSync(path.dirname(applySmokePath), { recursive: true });
+    fs.writeFileSync(localCheckPath, localPrChecks);
+    for (const command of ["pnpm", "cargo", "pg_isready"]) {
+      const commandPath = path.join(fakeBin, command);
+      fs.writeFileSync(commandPath, recorder);
+      fs.chmodSync(commandPath, 0o755);
+    }
+    fs.writeFileSync(applySmokePath, recorder);
+    fs.chmodSync(applySmokePath, 0o755);
+
+    runFixtureCommand("git", ["init", "--initial-branch=master"], fixtureRoot);
+    runFixtureCommand(
+      "git",
+      ["config", "user.email", "fixture@example.invalid"],
+      fixtureRoot
+    );
+    runFixtureCommand(
+      "git",
+      ["config", "user.name", "CI Contract Fixture"],
+      fixtureRoot
+    );
+    runFixtureCommand("git", ["add", "."], fixtureRoot);
+    runFixtureCommand(
+      "git",
+      ["commit", "-m", "test: seed local PR fixture"],
+      fixtureRoot
+    );
+
+    const untrackedPath = path.join(fixtureRoot, relativePath);
+    fs.mkdirSync(path.dirname(untrackedPath), { recursive: true });
+    fs.writeFileSync(untrackedPath, "untracked risk fixture\n");
+
+    const result = runFixtureCommand(
+      process.execPath,
+      ["tools/ci/run-local-pr-checks.mjs", "auto"],
+      fixtureRoot,
+      {
+        ...process.env,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_TEST_INVOCATION_LOG: invocationLog,
+      }
+    );
+    const invocations = fs.readFileSync(invocationLog, "utf8");
+    for (const expected of [
+      `Detected 1 changed path(s) for local PR auto checks.`,
+      `- ${relativePath}`,
+      "Local PR auto checks passed with quick, heavy Rust, and PostgreSQL tiers.",
+    ]) {
+      if (!result.stdout.includes(expected)) {
+        throw new Error(`auto output did not include ${JSON.stringify(expected)}`);
+      }
+    }
+    for (const expected of [
+      "pnpm check:light",
+      "pnpm check:runtime",
+      "--features postgres-integration-tests",
+      "operations-control-plane-apply-smoke.sh",
+    ]) {
+      if (!invocations.includes(expected)) {
+        throw new Error(`auto command log did not include ${JSON.stringify(expected)}`);
+      }
+    }
+  } finally {
+    fs.rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+}
+
+for (const untrackedRiskPath of [
+  "runtime/sidecar/src/untracked-risk-fixture.rs",
+  "runtime/postgres/migrations/209901010001_untracked_risk_fixture.sql",
+]) {
+  try {
+    verifyUntrackedRiskPath(untrackedRiskPath);
+  } catch (error) {
+    errors.push(
+      `tools/ci/run-local-pr-checks.mjs: untracked ${untrackedRiskPath} must trigger heavy and PostgreSQL tiers: ${error.message}`
+    );
+  }
+}
+
 for (const requiredTest of [
   "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
   "conversation_ingress::tests::postgres_signed_ingress_dedupes_and_enables_one_v3_direct_workflow",
+  "space_configuration_integration_tests::postgres_space_control_plane_is_versioned_authorized_and_isolated",
+  "space_configuration_integration_tests::postgres_event_automation_requires_same_space_shadow_before_activation",
+  "space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_mapping_promotion",
+  "space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_automation",
+  "space_configuration_integration_tests::postgres_unsupported_approval_policies_cannot_create_active_automations",
+  "space_agent_turn_broker::tests::postgres_claim_expiry_and_reconciliation_contract",
 ]) {
   if (!localPrChecks.includes(requiredTest)) {
     errors.push(
       `tools/ci/run-local-pr-checks.mjs: PostgreSQL tier must include ${requiredTest}`
+    );
+  }
+}
+
+const localHeavyRustChecksStart = localPrChecks.indexOf(
+  "function runHeavyRustChecks()"
+);
+const localPostgresChecksStart = localPrChecks.indexOf("function runPostgresChecks()");
+const localHeavyRustChecks = localPrChecks.slice(
+  localHeavyRustChecksStart,
+  localPostgresChecksStart
+);
+for (const { label, feature, forbiddenFeature, testName } of [
+  {
+    label: "staging-only rejection",
+    feature: "qiwe-staging-adapter",
+    forbiddenFeature: "qiwe-production-adapter",
+    testName:
+      "space_automation_execution::tests::apply_compile_boundary_rejects_non_production_only_qiwe_builds",
+  },
+  {
+    label: "production-only acceptance",
+    feature: "qiwe-production-adapter",
+    forbiddenFeature: "qiwe-staging-adapter",
+    testName:
+      "space_automation_execution::tests::apply_compile_boundary_accepts_only_the_production_qiwe_adapter",
+  },
+]) {
+  const testIndex = localHeavyRustChecks.indexOf(`"${testName}"`);
+  const commandStart = localHeavyRustChecks.lastIndexOf("run(", testIndex);
+  const commandEnd = localHeavyRustChecks.indexOf(");", testIndex);
+  const command =
+    testIndex >= 0 && commandStart >= 0 && commandEnd >= 0
+      ? localHeavyRustChecks.slice(commandStart, commandEnd)
+      : "";
+  for (const requiredFragment of [
+    '"cargo"',
+    '"test"',
+    '"--manifest-path"',
+    '"runtime/sidecar/Cargo.toml"',
+    '"--no-default-features"',
+    '"--features"',
+    `"${feature}"`,
+    `"${testName}"`,
+    '"--"',
+    '"--exact"',
+    "sidecarTestEnv",
+  ]) {
+    if (!command.includes(requiredFragment)) {
+      errors.push(
+        `tools/ci/run-local-pr-checks.mjs: ${label} command must include ${requiredFragment}`
+      );
+    }
+  }
+  if (command.includes(forbiddenFeature)) {
+    errors.push(
+      `tools/ci/run-local-pr-checks.mjs: ${label} command must exclude ${forbiddenFeature}`
+    );
+  }
+}
+
+const localPostgresChecksEnd = localPrChecks.indexOf('if (mode === "quick")');
+const localPostgresChecks = localPrChecks.slice(
+  localPostgresChecksStart,
+  localPostgresChecksEnd
+);
+const brokerExpiryTestName =
+  "space_agent_turn_broker::tests::postgres_claim_expiry_and_reconciliation_contract";
+const brokerExpiryTestIndex = localPostgresChecks.indexOf(`"${brokerExpiryTestName}"`);
+const brokerExpiryCaseStart = localPostgresChecks.lastIndexOf(
+  "[",
+  brokerExpiryTestIndex
+);
+const brokerExpiryCaseEnd = localPostgresChecks.indexOf("],", brokerExpiryTestIndex);
+const brokerExpiryCase =
+  brokerExpiryTestIndex >= 0 && brokerExpiryCaseStart >= 0 && brokerExpiryCaseEnd >= 0
+    ? localPostgresChecks.slice(brokerExpiryCaseStart, brokerExpiryCaseEnd)
+    : "";
+for (const requiredFragment of [
+  '"--features"',
+  '"postgres-integration-tests"',
+  `"${brokerExpiryTestName}"`,
+  '"--"',
+  '"--ignored"',
+  '"--exact"',
+]) {
+  if (!brokerExpiryCase.includes(requiredFragment)) {
+    errors.push(
+      `tools/ci/run-local-pr-checks.mjs: Space agent-turn expiry PostgreSQL command must include ${requiredFragment}`
     );
   }
 }
@@ -39,6 +248,15 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
     "check:pr:quick",
     "check:pr:heavy",
     "check:pr:auto",
+    "Low-Risk Classification",
+    "Low-Risk Auto Release",
+    "three exact-head stages",
+    "eligibility evidence",
+    "previous_published_tag..candidate_master_sha",
+    "manual owner decision",
+    "fixtures/qiwe/event-mappings/**/*.mapping.json",
+    "fixtures/qiwe/event-mappings/_primitives/**/*.primitive.json",
+    "fixtures/qiwe/system/**/*.fixture.json",
   ]) {
     if (!readme.includes(fragment)) {
       errors.push(`${readmePath}: must mention ${fragment}`);
@@ -62,6 +280,9 @@ for (const scriptName of [
   "pr:bootstrap",
   "pr:create",
   "pr:tools:check",
+  "ci:low-risk:classify",
+  "ci:low-risk:test",
+  "ci:low-risk:eligibility:test",
 ]) {
   if (!packageJson.scripts?.[scriptName]) {
     errors.push(`${packagePath}: missing ${scriptName}`);
@@ -77,6 +298,10 @@ for (const requiredPath of [
   "tools/ci/check-release-please-pr.mjs",
   "tools/ci/xiaoman-production-claim-boundary.mjs",
   "tools/ci/test-xiaoman-production-claim-boundary.mjs",
+  "tools/ci/classify-low-risk-change.mjs",
+  "tools/ci/test-classify-low-risk-change.mjs",
+  "tools/ci/test-low-risk-release-eligibility-workflow.mjs",
+  ".github/workflows/low-risk-release-eligibility.yml",
   "tools/agents/pr-body.mjs",
   "tools/agents/pr-doctor.mjs",
   "tools/agents/pr-bootstrap.mjs",
@@ -87,6 +312,138 @@ for (const requiredPath of [
   if (!fs.existsSync(path.join(repoRoot, requiredPath))) {
     errors.push(`${requiredPath}: required CI or PR gate file is missing`);
   }
+}
+
+if (!packageJson.scripts?.["tools:ci:check"]?.includes("pnpm ci:low-risk:test")) {
+  errors.push("package.json: tools:ci:check must include pnpm ci:low-risk:test");
+}
+if (
+  !packageJson.scripts?.["tools:ci:check"]?.includes(
+    "pnpm ci:low-risk:eligibility:test"
+  )
+) {
+  errors.push(
+    "package.json: tools:ci:check must include pnpm ci:low-risk:eligibility:test"
+  );
+}
+const lowRiskClassifier = fs.existsSync(
+  path.join(repoRoot, "tools/ci/classify-low-risk-change.mjs")
+)
+  ? readText("tools/ci/classify-low-risk-change.mjs")
+  : "";
+for (const requiredFragment of [
+  "qintopia-low-risk-change-v3",
+  "--no-renames",
+  'blob.mode !== "100644"',
+  "base_not_ancestor_of_head",
+  "path_not_allowlisted",
+  "status_${entry.status}_not_append_only",
+  "must_be_non_executable_regular_file",
+  "fixtures\\/qiwe\\/event-mappings",
+  "\\.mapping\\.json",
+  "fixtures\\/qiwe\\/system",
+  "\\.fixture\\.json",
+  "\\.expected\\.json",
+  "commit_count_must_be_one",
+  "mapping_file_count_must_be_one",
+  "fixture_file_count_must_be_one",
+  "expectation_file_count_must_be_one",
+  "requires_selector_non_match_record",
+  "mapping_ref_not_added_in_change",
+  "requires_exactly_one_corresponding_expectation",
+  "unsafe integer must be encoded as a string",
+  "forbidden executable or privileged field",
+  "only HTTPS Qiwe official documentation URLs are allowed",
+  "restricted_primitive_file_limit_exceeded",
+  "primitive_not_referenced_by_added_mapping",
+  "fixed parser kernel",
+]) {
+  if (lowRiskClassifier && !lowRiskClassifier.includes(requiredFragment)) {
+    errors.push(
+      `tools/ci/classify-low-risk-change.mjs: must retain ${requiredFragment}`
+    );
+  }
+}
+if (
+  lowRiskClassifier &&
+  /(?:\bfrom\s+["']yaml["']|\bimport\s+["']yaml["']|\brequire\s*\(\s*["']yaml["']\s*\))/.test(
+    lowRiskClassifier
+  )
+) {
+  errors.push(
+    "tools/ci/classify-low-risk-change.mjs: low-risk classification must not depend on yaml"
+  );
+}
+
+const lowRiskClassifierTest = fs.existsSync(
+  path.join(repoRoot, "tools/ci/test-classify-low-risk-change.mjs")
+)
+  ? readText("tools/ci/test-classify-low-risk-change.mjs")
+  : "";
+for (const requiredFragment of [
+  "runtime/sidecar/src/event_mapping.rs",
+  "deploy/sidecar/scripts/apply-event-mapping.sh",
+  "runtime/postgres/migrations/202608140001_event_mapping.sql",
+  ".github/workflows/low-risk-auto-merge.yml",
+  "pnpm-lock.yaml",
+  "status_M_not_append_only",
+  "status_D_not_append_only",
+  "must_be_non_executable_regular_file",
+  "requires_exactly_one_corresponding_expectation",
+  "unsafe integer",
+  "fs.symlinkSync",
+  "PRIMITIVE_PATH",
+  "restricted_primitive",
+  "commit_count_must_be_one:2",
+  "requires_selector_non_match_record",
+  "skills/qiwe/docs/event-mappings/unsafe.md",
+]) {
+  if (lowRiskClassifierTest && !lowRiskClassifierTest.includes(requiredFragment)) {
+    errors.push(
+      `tools/ci/test-classify-low-risk-change.mjs: must cover ${requiredFragment}`
+    );
+  }
+}
+
+const lowRiskEligibilityWorkflowPath =
+  ".github/workflows/low-risk-release-eligibility.yml";
+const lowRiskEligibilityWorkflow = fs.existsSync(
+  path.join(repoRoot, lowRiskEligibilityWorkflowPath)
+)
+  ? readText(lowRiskEligibilityWorkflowPath)
+  : "";
+for (const requiredFragment of [
+  'readonly AUTO_PR_TITLE="feat(qiwe): add bounded provider event mapping"',
+  'CANDIDATE_MERGED_BY="$(jq -r \'.merged_by.login // ""\'',
+  'RELEASE_MERGED_BY="$(jq -r \'.merged_by.login // ""\'',
+  "candidate squash base is not the latest published commit",
+  "candidate squash is not the only unpublished commit",
+  "Release Please base is not the sole candidate squash",
+  "publication range must contain candidate and metadata squashes only",
+  "check_release_validation()",
+  '.creator.login // ""',
+  '.path == ".github/workflows/ci.yml"',
+  "[.[] | .jobs[]] as $jobs",
+  "release-pr-validation-pre-merge.json",
+  "publish-release-validation-pre-publish.json",
+  "draft Release identity is outside the fixed contract",
+  "draft Release body is not the exact changelog release section",
+  "Release canonical summary changed during the audit",
+  "draft-release-contract-final.json",
+  "published-release-contract.json",
+  "published Release tag moved after publication",
+]) {
+  if (
+    lowRiskEligibilityWorkflow &&
+    !lowRiskEligibilityWorkflow.includes(requiredFragment)
+  ) {
+    errors.push(`${lowRiskEligibilityWorkflowPath}: must retain ${requiredFragment}`);
+  }
+}
+if (/^\s*uses:/m.test(lowRiskEligibilityWorkflow)) {
+  errors.push(
+    `${lowRiskEligibilityWorkflowPath}: privileged lane must not execute external Actions`
+  );
 }
 
 const prBodyCheck = fs.existsSync(path.join(repoRoot, "tools/ci/check-pr-body.mjs"))
@@ -544,6 +901,8 @@ if (ciWorkflow) {
       for (const requiredStep of [
         "Rust coverage baseline",
         "All-feature staging adapter tests",
+        "Space automation staging-only compile boundary",
+        "Space automation production-only compile boundary",
         "Clippy baseline",
         "Upload Rust quality baseline",
       ]) {
@@ -595,6 +954,46 @@ if (ciWorkflow) {
         errors.push(
           ".github/workflows/ci.yml: all-feature staging adapter tests must run after the default coverage suite"
         );
+      }
+      for (const { stepName, feature, forbiddenFeature, testName } of [
+        {
+          stepName: "Space automation staging-only compile boundary",
+          feature: "qiwe-staging-adapter",
+          forbiddenFeature: "qiwe-production-adapter",
+          testName:
+            "space_automation_execution::tests::apply_compile_boundary_rejects_non_production_only_qiwe_builds",
+        },
+        {
+          stepName: "Space automation production-only compile boundary",
+          feature: "qiwe-production-adapter",
+          forbiddenFeature: "qiwe-staging-adapter",
+          testName:
+            "space_automation_execution::tests::apply_compile_boundary_accepts_only_the_production_qiwe_adapter",
+        },
+      ]) {
+        const step = qualitySteps.find((candidate) => candidate?.name === stepName);
+        const command = String(step?.run ?? "");
+        if (step?.["continue-on-error"] === true) {
+          errors.push(`.github/workflows/ci.yml: ${stepName} must block on failures`);
+        }
+        for (const requiredFragment of [
+          "cargo test --manifest-path runtime/sidecar/Cargo.toml",
+          "--no-default-features",
+          `--features ${feature}`,
+          testName,
+          "-- --exact",
+        ]) {
+          if (!command.includes(requiredFragment)) {
+            errors.push(
+              `.github/workflows/ci.yml: ${stepName} must include ${requiredFragment}`
+            );
+          }
+        }
+        if (command.includes(forbiddenFeature)) {
+          errors.push(
+            `.github/workflows/ci.yml: ${stepName} must exclude ${forbiddenFeature}`
+          );
+        }
       }
       const clippyStep = qualitySteps.find((step) => step?.name === "Clippy baseline");
       if (clippyStep?.["continue-on-error"] === true) {
@@ -693,6 +1092,30 @@ if (ciWorkflow) {
         [
           "Xiaoman conversation policy PostgreSQL integration",
           "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
+        ],
+        [
+          "Erhua Space control-plane PostgreSQL integration",
+          "space_configuration_integration_tests::postgres_space_control_plane_is_versioned_authorized_and_isolated",
+        ],
+        [
+          "Erhua Space event automation PostgreSQL integration",
+          "space_configuration_integration_tests::postgres_event_automation_requires_same_space_shadow_before_activation",
+        ],
+        [
+          "Erhua Space direct mapping freshness PostgreSQL integration",
+          "space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_mapping_promotion",
+        ],
+        [
+          "Erhua Space direct automation freshness PostgreSQL integration",
+          "space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_automation",
+        ],
+        [
+          "Erhua Space approval-policy PostgreSQL integration",
+          "space_configuration_integration_tests::postgres_unsupported_approval_policies_cannot_create_active_automations",
+        ],
+        [
+          "Erhua Space agent-turn expiry PostgreSQL integration",
+          "space_agent_turn_broker::tests::postgres_claim_expiry_and_reconciliation_contract",
         ],
         [
           "Xiaoman authenticated message ingress PostgreSQL integration",

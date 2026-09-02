@@ -58,6 +58,9 @@ vector search, recent messages, or pronouns to guess the person.
 
 Mentioned-member resolution must be deterministic and safe:
 
+- a QiWe `atList` user id must be resolved against the exact current chat before any
+  nickname or alias lookup, and an unresolved id must not fall back to a same-name
+  member;
 - display names, Chinese aliases, and channel mention text may be used as lookup inputs;
 - exact or alias matches may resolve a single member;
 - ambiguous matches must be returned as ambiguous context so Erhua can clarify;

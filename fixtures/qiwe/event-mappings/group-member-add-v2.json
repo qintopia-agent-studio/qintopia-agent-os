@@ -1,0 +1,43 @@
+{
+  "provider": "qiwe",
+  "definition_key": "group_member_add_v2",
+  "selector": {
+    "op": "all",
+    "rules": [
+      {
+        "op": "equals",
+        "pointer": "/newMsgType",
+        "value": "GROUP_MEMBER_ADD"
+      },
+      { "op": "in", "pointer": "/cmd", "values": [15000, 15500] }
+    ]
+  },
+  "extractor": {
+    "event_type": "qiwe.group_member_added",
+    "event_id": {
+      "pointer": "/msgUniqueIdentifier",
+      "transforms": [{ "op": "opaque_id" }]
+    },
+    "space_chat_id": {
+      "pointer": "/fromRoomId",
+      "transforms": [{ "op": "opaque_id" }]
+    },
+    "subject_user_ids": {
+      "pointer": "/msgData/changedMemberList",
+      "transforms": [
+        { "op": "base64_utf8" },
+        { "op": "split", "delimiter": ";", "max_parts": 64 },
+        { "op": "opaque_id" },
+        { "op": "dedupe" }
+      ]
+    },
+    "occurred_at": {
+      "pointer": "/timestamp",
+      "transforms": [{ "op": "unix_timestamp" }]
+    }
+  },
+  "official_sources": [
+    "https://doc.qiweapi.com/doc-7331304",
+    "https://doc.qiweapi.com/doc-9079960"
+  ]
+}

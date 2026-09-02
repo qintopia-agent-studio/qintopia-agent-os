@@ -92,6 +92,9 @@ try {
   const activePath = path.join(tmpRoot, "timer-active");
   const sidecarEnv = path.join(tmpRoot, "message-sidecar.env");
   const releaseSha = "0123456789abcdef0123456789abcdef01234567";
+  const commitSha = "1".repeat(40);
+  const runtimeSha = "2".repeat(40);
+  const deployBundleSha = "3".repeat(40);
   const releaseRoot = path.join(tmpRoot, "releases");
   const releaseDir = path.join(releaseRoot, releaseSha);
   const releaseCurrent = path.join(releaseRoot, "current");
@@ -122,6 +125,20 @@ try {
     "utf8"
   );
   fs.mkdirSync(releaseRoot, { recursive: true });
+  fs.writeFileSync(
+    path.join(releaseDir, "manifest.json"),
+    `${JSON.stringify(
+      {
+        release_sha: releaseSha,
+        commit_sha: commitSha,
+        runtime_sha: runtimeSha,
+        deploy_bundle_sha: deployBundleSha,
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
   fs.symlinkSync(releaseDir, releaseCurrent);
   fs.mkdirSync(erhuaProfile, { recursive: true });
   fs.mkdirSync(xiaomanProfile, { recursive: true });
@@ -312,6 +329,10 @@ printf '%s\\n' "no sensitive Erhua morning brief journal entries"
       env: {
         ...process.env,
         QINTOPIA_UNRELATED_RUNTIME_SECRET: "must-not-reach-observation",
+        QINTOPIA_ERHUA_MORNING_BRIEF_COMMIT_SHA: commitSha,
+        QINTOPIA_ERHUA_MORNING_BRIEF_RUNTIME_SHA: runtimeSha,
+        QINTOPIA_ERHUA_MORNING_BRIEF_DEPLOY_BUNDLE_SHA: deployBundleSha,
+        QINTOPIA_ERHUA_MORNING_BRIEF_RELEASE_SHA: releaseSha,
         ...extraEnv,
       },
       encoding: "utf8",

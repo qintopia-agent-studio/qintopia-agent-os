@@ -79,6 +79,31 @@ XIAOMAN_ACTIVITY_HANDOFF_TARGETS = ["huabaosi"]
 _QINTOPIA_WEATHER_PLUGIN = None
 _KNOWLEDGE_RETRIEVAL_PLUGIN = None
 _ERHUA_CSV_PLUGIN = None
+_SPACE_TURN_POLICY_PLUGIN = None
+
+SPACE_TURN_TOOL_CAPABILITIES = {
+    "qintopia_kb_search": "erhua.knowledge.public",
+    "qintopia_gis_location_lookup": "erhua.knowledge.public",
+    "qintopia_weather_lookup": "erhua.knowledge.public",
+    "qintopia_wenyuange_lookup": "erhua.knowledge.community",
+    "qintopia_complaint_intake_create": "erhua.workflow.complaint",
+    "qintopia_complaint_intake_update": "erhua.workflow.complaint",
+    "qintopia_complaint_followup_send": "erhua.workflow.complaint",
+    "qintopia_external_product_kb_search": "erhua.knowledge.public",
+    "qintopia_public_case_search": "erhua.knowledge.public",
+    "qintopia_customer_context_lookup": "erhua.workflow.sales",
+    "qintopia_lead_capture": "erhua.workflow.sales",
+    "qintopia_proposal_outline_generate": "erhua.workflow.sales",
+    "qintopia_demo_script_generate": "erhua.workflow.sales",
+    "qintopia_external_disclosure_filter": "erhua.workflow.sales",
+    "qintopia_conversation_summary": "erhua.workflow.sales",
+}
+SPACE_TURN_UNSCOPED_TASK_REFERENCE_TOOLS = frozenset(
+    {
+        "qintopia_complaint_intake_update",
+        "qintopia_complaint_followup_send",
+    }
+)
 
 
 class _SkillPluginUnavailable(RuntimeError):
@@ -129,6 +154,37 @@ def _load_skill_plugin(skill_name: str, module_name: str):
         return module
 
     raise _SkillPluginUnavailable(f"{skill_name} skill package unavailable")
+
+
+def _space_turn_policy_plugin():
+    global _SPACE_TURN_POLICY_PLUGIN
+    if _SPACE_TURN_POLICY_PLUGIN is not None:
+        return _SPACE_TURN_POLICY_PLUGIN
+    checked_paths = [
+        candidate.with_name("space_change_tools.py")
+        for candidate in _skill_plugin_candidates("qiwe")
+    ]
+    for plugin_path in checked_paths:
+        if not plugin_path.exists():
+            continue
+        module_name = "qintopia_space_turn_policy_tools"
+        spec = importlib.util.spec_from_file_location(module_name, plugin_path)
+        if not spec or not spec.loader:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        previous = sys.modules.get(module_name)
+        sys.modules[module_name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            if previous is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = previous
+            raise
+        _SPACE_TURN_POLICY_PLUGIN = module
+        return module
+    raise _SkillPluginUnavailable("QiWe Space turn policy package unavailable")
 
 
 _OPERATIONS_INTAKE_PLUGIN = None
@@ -672,6 +728,111 @@ def _qintopia_profile_id() -> str:
         or _session_env("HERMES_PROFILE")
         or _session_env("HERMES_PROFILE_ID")
     ).strip()
+
+
+def _space_turn_policy_enforcement_applies() -> bool:
+    value = str(
+        os.getenv("QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED") or ""
+    ).strip()
+    return value not in {"", "0"}
+
+
+def _space_turn_authorized_handler(
+    capability_key: str,
+    handler: Any,
+    *,
+    authorized_args_transform: Any = None,
+    requires_space_owned_resource: bool = False,
+):
+    def guarded(args: dict[str, Any], **kwargs: Any) -> str:
+        if not _space_turn_policy_enforcement_applies():
+            return handler(args, **kwargs)
+        try:
+            policy = _space_turn_policy_plugin()
+            authorization = policy.authorize_space_turn_capability(capability_key)
+        except Exception:
+            return _json(
+                {
+                    "success": False,
+                    "authorized": False,
+                    "error": "Space capability authorization is unavailable",
+                }
+            )
+        if authorization.get("authorized") is not True:
+            return _json(
+                {
+                    "success": False,
+                    "authorized": False,
+                    "error": "Space capability is not authorized for the current group",
+                }
+            )
+        if requires_space_owned_resource:
+            return _json(
+                {
+                    "success": False,
+                    "authorized": True,
+                    "reason_code": "space_resource_ownership_unverified",
+                    "error": (
+                        "This legacy task reference has no server-verifiable current-Space "
+                        "ownership"
+                    ),
+                    "needs_human_review": True,
+                }
+            )
+        try:
+            authorized_args = (
+                authorized_args_transform(args)
+                if authorized_args_transform is not None
+                else args
+            )
+        except Exception:
+            return _json(
+                {
+                    "success": False,
+                    "authorized": False,
+                    "error": "Trusted Space argument binding is unavailable",
+                }
+            )
+        return handler(authorized_args, **kwargs)
+
+    return guarded
+
+
+def _space_turn_handler(tool_name: str, handler: Any):
+    capability_key = SPACE_TURN_TOOL_CAPABILITIES.get(tool_name)
+    if capability_key is None:
+        return handler
+    transform = None
+    if tool_name == "qintopia_kb_search":
+        transform = _public_only_space_knowledge_args
+    elif tool_name == "qintopia_complaint_intake_create":
+        transform = _trusted_space_complaint_create_args
+    return _space_turn_authorized_handler(
+        capability_key,
+        handler,
+        authorized_args_transform=transform,
+        requires_space_owned_resource=(
+            tool_name in SPACE_TURN_UNSCOPED_TASK_REFERENCE_TOOLS
+        ),
+    )
+
+
+def _public_only_space_knowledge_args(args: dict[str, Any]) -> dict[str, Any]:
+    bounded = dict(args)
+    bounded["information_classes"] = ["Public"]
+    bounded["allow_member_scoped"] = False
+    return bounded
+
+
+def _trusted_space_complaint_create_args(args: dict[str, Any]) -> dict[str, Any]:
+    session = _space_turn_policy_plugin().trusted_space_turn_session()
+    bounded = dict(args)
+    bounded["source_channel"] = "qiwe_group_internal"
+    bounded["source_conversation_id"] = session["conversation_id"]
+    bounded["source_message_id"] = session["source_message_id"]
+    bounded["requester_channel_user_id"] = session["requester_user_id"]
+    bounded.pop("idempotency_key", None)
+    return bounded
 
 
 def _dify_raw_tools_enabled() -> bool:
@@ -2857,7 +3018,7 @@ def register(ctx) -> None:
         name="qintopia_kb_search",
         toolset="qintopia",
         schema=QINTOPIA_KB_SEARCH_SCHEMA,
-        handler=handle_qintopia_kb_search,
+        handler=_space_turn_handler("qintopia_kb_search", handle_qintopia_kb_search),
         check_fn=check_requirements,
         description=QINTOPIA_KB_SEARCH_SCHEMA["description"],
         emoji="📚",
@@ -2866,7 +3027,9 @@ def register(ctx) -> None:
         name="qintopia_gis_location_lookup",
         toolset="qintopia",
         schema=QINTOPIA_GIS_LOCATION_LOOKUP_SCHEMA,
-        handler=handle_qintopia_gis_location_lookup,
+        handler=_space_turn_handler(
+            "qintopia_gis_location_lookup", handle_qintopia_gis_location_lookup
+        ),
         check_fn=check_requirements,
         description=QINTOPIA_GIS_LOCATION_LOOKUP_SCHEMA["description"],
         emoji="📍",
@@ -2875,7 +3038,7 @@ def register(ctx) -> None:
         name=QINTOPIA_WEATHER_TOOL,
         toolset="qintopia",
         schema=QINTOPIA_WEATHER_LOOKUP_SCHEMA,
-        handler=handle_qintopia_weather_lookup,
+        handler=_space_turn_handler(QINTOPIA_WEATHER_TOOL, handle_qintopia_weather_lookup),
         check_fn=check_weather_lookup_requirements,
         description=QINTOPIA_WEATHER_LOOKUP_SCHEMA["description"],
         emoji="⛅",
@@ -2920,7 +3083,9 @@ def register(ctx) -> None:
         name="qintopia_wenyuange_lookup",
         toolset="qintopia",
         schema=QINTOPIA_WENYUANGE_LOOKUP_SCHEMA,
-        handler=handle_qintopia_wenyuange_lookup,
+        handler=_space_turn_handler(
+            "qintopia_wenyuange_lookup", handle_qintopia_wenyuange_lookup
+        ),
         check_fn=check_dify_read_requirements,
         description=QINTOPIA_WENYUANGE_LOOKUP_SCHEMA["description"],
         emoji="🏛️",
@@ -3012,7 +3177,10 @@ def register(ctx) -> None:
         name="qintopia_complaint_intake_create",
         toolset="qintopia",
         schema=QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA,
-        handler=handle_qintopia_complaint_intake_create,
+        handler=_space_turn_handler(
+            "qintopia_complaint_intake_create",
+            handle_qintopia_complaint_intake_create,
+        ),
         check_fn=check_complaint_requirements,
         description=QINTOPIA_COMPLAINT_INTAKE_CREATE_SCHEMA["description"],
         emoji="📝",
@@ -3021,7 +3189,10 @@ def register(ctx) -> None:
         name="qintopia_complaint_intake_update",
         toolset="qintopia",
         schema=QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA,
-        handler=handle_qintopia_complaint_intake_update,
+        handler=_space_turn_handler(
+            "qintopia_complaint_intake_update",
+            handle_qintopia_complaint_intake_update,
+        ),
         check_fn=check_complaint_requirements,
         description=QINTOPIA_COMPLAINT_INTAKE_UPDATE_SCHEMA["description"],
         emoji="➕",
@@ -3030,7 +3201,10 @@ def register(ctx) -> None:
         name="qintopia_complaint_followup_send",
         toolset="qintopia",
         schema=QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA,
-        handler=handle_qintopia_complaint_followup_send,
+        handler=_space_turn_handler(
+            "qintopia_complaint_followup_send",
+            handle_qintopia_complaint_followup_send,
+        ),
         check_fn=check_complaint_requirements,
         description=QINTOPIA_COMPLAINT_FOLLOWUP_SEND_SCHEMA["description"],
         emoji="💬",
@@ -3039,7 +3213,10 @@ def register(ctx) -> None:
         name="qintopia_external_product_kb_search",
         toolset="qintopia",
         schema=QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA,
-        handler=handle_qintopia_external_product_kb_search,
+        handler=_space_turn_handler(
+            "qintopia_external_product_kb_search",
+            handle_qintopia_external_product_kb_search,
+        ),
         check_fn=check_requirements,
         description=QINTOPIA_EXTERNAL_PRODUCT_KB_SEARCH_SCHEMA["description"],
         emoji="📣",
@@ -3048,7 +3225,9 @@ def register(ctx) -> None:
         name="qintopia_public_case_search",
         toolset="qintopia",
         schema=QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA,
-        handler=handle_qintopia_public_case_search,
+        handler=_space_turn_handler(
+            "qintopia_public_case_search", handle_qintopia_public_case_search
+        ),
         check_fn=check_requirements,
         description=QINTOPIA_PUBLIC_CASE_SEARCH_SCHEMA["description"],
         emoji="🧾",
@@ -3057,7 +3236,10 @@ def register(ctx) -> None:
         name="qintopia_customer_context_lookup",
         toolset="qintopia",
         schema=QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA,
-        handler=handle_qintopia_customer_context_lookup,
+        handler=_space_turn_handler(
+            "qintopia_customer_context_lookup",
+            handle_qintopia_customer_context_lookup,
+        ),
         check_fn=check_sales_requirements,
         description=QINTOPIA_CUSTOMER_CONTEXT_LOOKUP_SCHEMA["description"],
         emoji="👤",
@@ -3066,7 +3248,9 @@ def register(ctx) -> None:
         name="qintopia_lead_capture",
         toolset="qintopia",
         schema=QINTOPIA_LEAD_CAPTURE_SCHEMA,
-        handler=handle_qintopia_lead_capture,
+        handler=_space_turn_handler(
+            "qintopia_lead_capture", handle_qintopia_lead_capture
+        ),
         check_fn=check_sales_requirements,
         description=QINTOPIA_LEAD_CAPTURE_SCHEMA["description"],
         emoji="📌",
@@ -3075,7 +3259,10 @@ def register(ctx) -> None:
         name="qintopia_proposal_outline_generate",
         toolset="qintopia",
         schema=QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA,
-        handler=handle_qintopia_proposal_outline_generate,
+        handler=_space_turn_handler(
+            "qintopia_proposal_outline_generate",
+            handle_qintopia_proposal_outline_generate,
+        ),
         check_fn=check_sales_requirements,
         description=QINTOPIA_PROPOSAL_OUTLINE_GENERATE_SCHEMA["description"],
         emoji="🧩",
@@ -3084,7 +3271,9 @@ def register(ctx) -> None:
         name="qintopia_demo_script_generate",
         toolset="qintopia",
         schema=QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA,
-        handler=handle_qintopia_demo_script_generate,
+        handler=_space_turn_handler(
+            "qintopia_demo_script_generate", handle_qintopia_demo_script_generate
+        ),
         check_fn=check_sales_requirements,
         description=QINTOPIA_DEMO_SCRIPT_GENERATE_SCHEMA["description"],
         emoji="🎬",
@@ -3093,7 +3282,10 @@ def register(ctx) -> None:
         name="qintopia_external_disclosure_filter",
         toolset="qintopia",
         schema=QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA,
-        handler=handle_qintopia_external_disclosure_filter,
+        handler=_space_turn_handler(
+            "qintopia_external_disclosure_filter",
+            handle_qintopia_external_disclosure_filter,
+        ),
         check_fn=check_sales_requirements,
         description=QINTOPIA_EXTERNAL_DISCLOSURE_FILTER_SCHEMA["description"],
         emoji="🛡️",
@@ -3102,7 +3294,9 @@ def register(ctx) -> None:
         name="qintopia_conversation_summary",
         toolset="qintopia",
         schema=QINTOPIA_CONVERSATION_SUMMARY_SCHEMA,
-        handler=handle_qintopia_conversation_summary,
+        handler=_space_turn_handler(
+            "qintopia_conversation_summary", handle_qintopia_conversation_summary
+        ),
         check_fn=check_sales_requirements,
         description=QINTOPIA_CONVERSATION_SUMMARY_SCHEMA["description"],
         emoji="🧭",
