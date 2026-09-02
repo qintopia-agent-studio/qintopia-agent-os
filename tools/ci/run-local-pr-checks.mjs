@@ -94,6 +94,7 @@ function collectChangedPaths() {
   const changed = new Set([
     ...readGitLines(["diff", "--name-only"]),
     ...readGitLines(["diff", "--name-only", "--cached"]),
+    ...readGitLines(["ls-files", "--others", "--exclude-standard"]),
   ]);
   const mergeBase = resolveMergeBase();
   if (mergeBase) {
@@ -123,6 +124,36 @@ function runQuickChecks() {
 
 function runHeavyRustChecks() {
   run("pnpm", ["check:runtime"]);
+  run(
+    "cargo",
+    [
+      "test",
+      "--manifest-path",
+      "runtime/sidecar/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "qiwe-staging-adapter",
+      "space_automation_execution::tests::apply_compile_boundary_rejects_non_production_only_qiwe_builds",
+      "--",
+      "--exact",
+    ],
+    { env: sidecarTestEnv }
+  );
+  run(
+    "cargo",
+    [
+      "test",
+      "--manifest-path",
+      "runtime/sidecar/Cargo.toml",
+      "--no-default-features",
+      "--features",
+      "qiwe-production-adapter",
+      "space_automation_execution::tests::apply_compile_boundary_accepts_only_the_production_qiwe_adapter",
+      "--",
+      "--exact",
+    ],
+    { env: sidecarTestEnv }
+  );
   run("cargo", [
     "clippy",
     "--manifest-path",
@@ -188,6 +219,54 @@ function runPostgresChecks() {
       "--features",
       "postgres-integration-tests",
       "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "space_configuration_integration_tests::postgres_space_control_plane_is_versioned_authorized_and_isolated",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "space_configuration_integration_tests::postgres_event_automation_requires_same_space_shadow_before_activation",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_mapping_promotion",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_automation",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "space_configuration_integration_tests::postgres_unsupported_approval_policies_cannot_create_active_automations",
+      "--",
+      "--ignored",
+      "--exact",
+    ],
+    [
+      "--features",
+      "postgres-integration-tests",
+      "space_agent_turn_broker::tests::postgres_claim_expiry_and_reconciliation_contract",
       "--",
       "--ignored",
       "--exact",

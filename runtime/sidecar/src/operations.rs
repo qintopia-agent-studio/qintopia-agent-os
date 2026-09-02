@@ -66,6 +66,11 @@ const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
 const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
     "huabaosi.create_visual_asset",
     "huabaosi.generate_image_asset",
+    "erhua.manage_space_configuration",
+    "erhua.execute_space_business",
+    "erhua.qiwe_text_template",
+    "erhua.space_agent_turn",
+    "erhua.space_subject_identity_lookup",
     "erhua.send_group_message",
     "wenyuange.retrieve_evidence",
     "xiaoman.create_activity_request",
@@ -10176,6 +10181,68 @@ fn builtin_capability(capability_key: &str) -> Option<Capability> {
             review_policy: "human_final_confirmation".to_string(),
             enabled: true,
         }),
+        "erhua.manage_space_configuration" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "erhua".to_string(),
+            display_name: "二花 Space 配置提案".to_string(),
+            description: "通过可信会话边界准备和确认版本化 Space 配置".to_string(),
+            allowed_callers: vec!["erhua".to_string()],
+            allowed_work_item_types: vec![
+                "space_change_request".to_string(),
+                "space_programming_extension_request".to_string(),
+            ],
+            risk_level: "high".to_string(),
+            review_policy: "space_admin_confirmation".to_string(),
+            enabled: false,
+        }),
+        "erhua.execute_space_business" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "erhua".to_string(),
+            display_name: "二花 Space 业务执行".to_string(),
+            description: "从可信事件或定时工作项执行版本绑定的 Space 业务定义".to_string(),
+            allowed_callers: vec!["erhua".to_string(), "system".to_string()],
+            allowed_work_item_types: vec![
+                "space_automation_run".to_string(),
+                "space_event_shadow_observation".to_string(),
+            ],
+            risk_level: "high".to_string(),
+            review_policy: "definition_policy".to_string(),
+            enabled: false,
+        }),
+        "erhua.qiwe_text_template" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "erhua".to_string(),
+            display_name: "二花 Space QiWe 文本模板".to_string(),
+            description: "核验当前群成员后，向 Space 派生的 QiWe 群发送一次确认模板".to_string(),
+            allowed_callers: vec!["system".to_string()],
+            allowed_work_item_types: vec!["space_automation_run".to_string()],
+            risk_level: "high".to_string(),
+            review_policy: "space_admin_confirmation".to_string(),
+            enabled: false,
+        }),
+        "erhua.space_agent_turn" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "erhua".to_string(),
+            display_name: "二花受限 Space Agent Turn".to_string(),
+            description: "创建版本绑定、能力受限且固定输出契约的内部 Agent 工作项".to_string(),
+            allowed_callers: vec!["system".to_string()],
+            allowed_work_item_types: vec!["space_agent_turn".to_string()],
+            risk_level: "medium".to_string(),
+            review_policy: "definition_policy".to_string(),
+            enabled: false,
+        }),
+        "erhua.space_subject_identity_lookup" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "erhua".to_string(),
+            display_name: "二花当前触发成员身份查询".to_string(),
+            description: "只按当前 Space 和本次触发成员 ID 查询最近同步的 QiWe 群成员身份"
+                .to_string(),
+            allowed_callers: vec!["erhua".to_string()],
+            allowed_work_item_types: vec!["space_agent_turn".to_string()],
+            risk_level: "low".to_string(),
+            review_policy: "definition_policy".to_string(),
+            enabled: false,
+        }),
         "wenyuange.retrieve_evidence" => Some(Capability {
             capability_key: capability_key.to_string(),
             provider_agent: "wenyuange".to_string(),
@@ -11224,7 +11291,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 8);
+        assert_eq!(report.capability_count, 13);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"
@@ -11234,6 +11301,46 @@ mod tests {
             item.capability_key == "erhua.send_group_message"
                 && item.risk_level == "high"
                 && item.review_policy == "human_final_confirmation"
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "erhua.manage_space_configuration"
+                && !item.enabled
+                && item
+                    .allowed_work_item_types
+                    .contains(&"space_change_request".to_string())
+                && item
+                    .allowed_work_item_types
+                    .contains(&"space_programming_extension_request".to_string())
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "erhua.execute_space_business"
+                && item.provider_agent == "erhua"
+                && !item.enabled
+                && item
+                    .allowed_work_item_types
+                    .contains(&"space_automation_run".to_string())
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "erhua.qiwe_text_template"
+                && item.risk_level == "high"
+                && !item.enabled
+                && item.allowed_callers == vec!["system".to_string()]
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "erhua.space_agent_turn"
+                && !item.enabled
+                && item
+                    .allowed_work_item_types
+                    .contains(&"space_agent_turn".to_string())
+        }));
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "erhua.space_subject_identity_lookup"
+                && item.risk_level == "low"
+                && !item.enabled
+                && item.allowed_callers == vec!["erhua".to_string()]
+                && item
+                    .allowed_work_item_types
+                    .contains(&"space_agent_turn".to_string())
         }));
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.generate_image_asset"

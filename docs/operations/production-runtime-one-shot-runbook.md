@@ -4,9 +4,11 @@ Use the `Run Production Runtime One-Shot` GitHub workflow only after the reviewe
 Release has been deployed. Erhua immediate runs still require the corresponding
 production timer to be enabled. Xiaoman daily case-report backfill is different after
 the Hermes cutover: it runs the fixed release-local worker directly for one reviewed
-date and must not require the retired systemd timer to be enabled. This path is for an
-explicit, owner-approved immediate run of a fixed production worker/backfill when
-waiting for the next timer tick would delay recovery or launch evidence.
+date and must not require the retired systemd timer to be enabled. The QiWe ingress
+targets instead require the fixed disabled nginx include, server-local secrets, and
+authenticated loopback adapter preflight described in the dedicated ingress runbook.
+This path is for an explicit, owner-approved immediate recovery or control execution of
+a fixed production target.
 
 ## Scope
 
@@ -21,6 +23,9 @@ runner accepts exactly one target per request:
 - `xiaoman-creative-profile-candidates-apply`
 - `erhua-morning-brief`
 - `hermes-cron-snapshot-install`
+- `qiwe-webhook-ingress-apply`
+- `qiwe-webhook-ingress-rollback`
+- `space-automation-runtime-rollback`
 
 The request must target the current production release SHA, must use
 `restart_targets=["qintopia-system-services"]`, and must set both `dry_run=false` and
@@ -30,7 +35,9 @@ The runner observes the corresponding release-managed timer only for targets tha
 depend on that timer boundary, such as Erhua morning brief. Xiaoman daily case-report
 backfill runs only the fixed release-local backfill script, which sources the fixed
 production env file, temporarily exports the worker enablement/date override, and
-discards worker stdout/stderr in a private temp directory. The result must not include
+discards worker stdout/stderr in a private temp directory. Control targets instead
+enforce their fixed target-specific preconditions. Every target runs only its fixed
+release-local script and records sanitized result evidence. The result must not include
 worker raw output, raw message content, group ids, person ids, database URLs, tokens,
 Feishu payloads, QiWe payloads, reviewed profile payload content, or journal logs.
 
@@ -245,13 +252,43 @@ snapshot repo. It must not print live cron JSON, group ids, prompts, env values,
 script output, or raw logs. Verify with `Observe Production Runtime` using
 `observation_targets=hermes-cron-snapshot,hermes-cron-live-parity`.
 
+### Qiwe Authenticated Webhook Ingress
+
+Use `qiwe-webhook-ingress-apply` to atomically replace the fixed disabled nginx include
+with the release template rendered from `/etc/qintopia/qiwe-webhook-ingress.env`. Use
+`qiwe-webhook-ingress-rollback` to restore the fixed retained include. Approvals are:
+
+```text
+approved-production-qiwe-webhook-ingress-apply
+approved-production-qiwe-webhook-ingress-rollback
+```
+
+Neither request accepts a path, token, host, nginx file, callback URL, provider command,
+or arbitrary action. Follow
+`docs/operations/qiwe-webhook-ingress-production-runbook.md`; ingress apply does not
+configure Qiwe's provider-side callback or enable an event mapping.
+
+### Space Automation Runtime Rollback
+
+Use `space-automation-runtime-rollback` to stop and disable the generic dispatcher timer
+and Space execution worker. It requires:
+
+```text
+approved-production-space-automation-runtime-rollback
+```
+
+The fixed rollback script attempts every shutdown action even when one fails, verifies
+the final disabled/inactive state, and then requires the persistent execution flag to be
+exactly `0`. It accepts no unit, command, path, Space, group, or environment input.
+
 ## Non-Goals
 
 This workflow must not:
 
-- write persistent production config, except the single fixed Xiaoman daily case-report
-  production approval/read-through/chat-id keys through the dedicated repair targets;
-- enable, disable, or roll back business worker timers;
+- write persistent production config except the fixed Xiaoman daily case-report repair
+  keys and the fixed QiWe nginx include and its fixed root-only rollback copy;
+- enable, disable, or roll back business worker timers, except for the fixed generic
+  Space runtime rollback target described above;
 - retire legacy Hermes cron files;
 - accept arbitrary commands, service names, payload paths, payload JSON, dates for
   Erhua, or multiple targets;

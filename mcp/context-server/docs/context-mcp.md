@@ -101,6 +101,7 @@ Optional inputs:
 - `sender_id`
 - `referenced_sender_id`
 - `message_text`
+- `mentioned_member_refs`
 - `mentioned_member_names`
 
 `sender_id` identifies the current speaker. `referenced_sender_id` identifies the sender
@@ -108,6 +109,12 @@ of a replied-to or referenced message and is required for pronoun identity quest
 such as "他是谁" or "她是谁" when no explicit member name is present. Without that
 referenced sender id, Erhua must clarify which member is being asked about and must not
 use vector search, recent-message proximity, or pronouns to guess identity.
+
+`mentioned_member_refs` carries bounded `channel_user_id` plus optional `mention_text`
+objects extracted from the QiWe `atList`. The service resolves each id only in the
+current chat and never falls back from a supplied id to a same-name member. Name-only
+resolution remains available for natural-language mentions that have no channel id and
+must return ambiguous when more than one member matches.
 
 ### `qintopia_gis_location_lookup`
 

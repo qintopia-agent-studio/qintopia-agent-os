@@ -15,6 +15,8 @@ CI helpers must:
 ## Validation
 
 ```bash
+pnpm ci:low-risk:test
+pnpm ci:low-risk:eligibility:test
 pnpm check:pr:auto
 pnpm check:pr:quick
 pnpm check:pr:heavy
@@ -25,6 +27,79 @@ pnpm pr:check-body
 pnpm release-please:check
 pnpm pr:tools:check
 ```
+
+## Low-Risk Classification
+
+`pnpm ci:low-risk:classify -- --base-ref <base> --head-ref <head>` reads the two
+explicit Git commits and emits deterministic JSON eligibility evidence. The base must be
+an ancestor of the head. This command only classifies a committed diff: it does not
+merge a pull request, publish a Release, deploy, send a message, or inspect uncommitted
+working-tree files.
+
+Version 3 allows only these dedicated file roles:
+
+- mappings: `fixtures/qiwe/event-mappings/**/*.mapping.json`;
+- sanitized synthetic inputs: `fixtures/qiwe/system/**/*.fixture.json`;
+- corresponding canonical outputs: `fixtures/qiwe/event-mappings/**/*.expected.json`;
+- optionally, one restricted parser recipe:
+  `fixtures/qiwe/event-mappings/_primitives/**/*.primitive.json`;
+- optionally, one fixed-format mapping summary:
+  `fixtures/qiwe/event-mappings/**/*.mapping.md`.
+
+One candidate is exactly one commit with three required JSON files, optionally one
+primitive and optionally one mapping summary, for a maximum of five files. The files are
+append-only and must form one cross-referenced bundle. Each fixture declares
+`sanitized=true` and `synthetic=true`, and must contain more input records than the
+expectation emits so at least one adjacent selector non-match is exercised. Each
+expectation binds the exact fixture and mapping and contains only canonical event output
+fields. Strict JSON parsing rejects duplicate keys, including escaped duplicate
+spellings.
+
+Mappings use the bounded selector/extractor DSL and may cite only HTTPS pages on
+`doc.qiweapi.com`. An optional primitive must be referenced by that same mapping and may
+compose only the fixed `base64_utf8`, `json_parse`, `json_pointer`, `split`,
+`string_trim`, and `array_flatten` kernel. Recipes cannot call other recipes or add
+runtime code. The only accepted Markdown is the fixed mapping summary, which may name
+only the same mapping, fixture, expectation, definition key, and declarative scope in
+that bundle. Every other file type is outside this class. Exact details are in
+`docs/engineering/qiwe-restricted-parser-primitives.md`.
+
+The classifier fails closed for every path outside that list, deletes, renames,
+mutations of mapping or replay JSON, executable files, symlinks, invalid or duplicate
+JSON, unsafe integer identifiers, privileged fields, unbounded transforms, and
+non-official URLs. Python, Rust, shell, SQL migrations, workflows, authentication,
+dependencies, deployment, and send-path code therefore cannot receive low-risk
+eligibility.
+
+### Low-Risk Auto Release
+
+`Low-Risk Auto Release` is the sole default-off exception to manual merge and Release
+publication. It is disabled unless `QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED` is exactly
+`1`, `QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT` is exactly
+`approved-low-risk-auto-release-v1`, a fixed automation actor is configured, and the
+dedicated repository-scoped token belongs to that actor.
+
+The workflow advances three exact-head stages. First it verifies the fixed actor,
+same-repository branch, label provenance, single candidate commit, required checks, and
+classifier result before squash-merging the mapping PR. The candidate squash must be the
+only commit after the latest published SHA. Second it authenticates the exact Release
+Please PR, requires CI and PR-Agent checks, validates the bot-created
+`Release Please validation` status against its exact run, workflow path, repository,
+branch, head SHA, and unique successful required jobs, then merges exactly one metadata
+squash. Third it requires the publication range to contain only those two squashes and
+rechecks the draft tag, current `master`, latest published Release, and the complete
+`previous_published_tag..candidate_master_sha` range before publishing that draft.
+
+The draft contract binds its bot author, release id, exact tag and name, target, exact
+changelog section, and zero assets into a canonical digest. The workflow rechecks that
+digest immediately before publication and again after publication, then refetches the
+tag SHA. Any mismatch fails closed.
+
+Every stage reruns the append-only classifier before mutation. The workflow cannot
+create a deploy request, activate ingress, capabilities, mappings, automations,
+services, timers, credentials, or sends. Any file outside the
+mapping/fixture/expectation/optional primitive/optional mapping-summary contract stops
+the lane and returns the change to an explicit manual owner decision.
 
 ## Local Pre-PR Tiers
 

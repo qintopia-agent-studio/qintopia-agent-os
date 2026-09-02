@@ -75,7 +75,9 @@ All changes go through git:
    `pnpm pr:create -- --body-file <completed-pr-body.md>`.
 9. Let Release Please maintain the release PR and root changelog from merged
    Conventional Commits.
-10. Deploy only by manually publishing a reviewed draft GitHub Release.
+10. Deploy by publishing a reviewed draft GitHub Release. Manual owner publication is
+    the default; the only automated exception is the default-disabled, bounded QiWe
+    event-mapping lane described below.
 
 The server is a deployment target, not an editing workspace. Do not edit docs, code,
 scripts, wrappers, workers, runbooks, or runtime templates directly on the server or
@@ -149,9 +151,18 @@ feature and fix PRs merge into `master`, Release Please keeps a release PR curre
 `CHANGELOG.md` and release manifest updates. When the owner merges that release PR,
 Release Please creates a draft GitHub Release.
 
-Production deployment starts only when the owner manually publishes the draft GitHub
-Release. The existing `release.published` workflow then builds artifacts, uploads them
-to COS, and creates the signed production deploy request.
+Production deployment normally starts only when the owner manually publishes the draft
+GitHub Release. The existing `release.published` workflow then builds artifacts, uploads
+them to COS, and creates the signed production deploy request.
+
+One pre-authorized exception exists for append-only QiWe event-mapping bundles created
+by the conversational programming-extension runner. The default-disabled low-risk lane
+may merge the exact fixed-label candidate, validate and merge the exact Release Please
+PR, and publish its already-audited draft only after required checks and a final audit
+of the complete unpublished range. It cannot activate QiWe ingress, capabilities,
+automations, credentials, systemd units, or production configuration. The initial
+schema, callback-authentication, and release-policy change remains a manual owner
+release.
 
 ## Migration Archive
 

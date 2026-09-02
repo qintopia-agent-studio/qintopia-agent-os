@@ -5,7 +5,8 @@ owner: PatrickLiveCool
 status: draft
 risk_level: high
 description:
-  Future webhook and API ingress route template boundary for Agent OS-owned routes.
+  Default-disabled webhook and API ingress templates, including the owner-gated Qiwe
+  authenticated callback scaffold and fixed rollback boundary.
 source:
   path: docs/operations/runtime-baseline.md
   reference: current-monorepo
@@ -25,5 +26,8 @@ tags:
   - nginx
   - ingress
 next_actions:
-  - Add route templates only when a specific Agent OS ingress change is approved.
-  - Add dry-run config validation and endpoint smoke before production use.
+  - Complete the one-time reviewed disabled include and server-local secret bootstrap.
+  - Use the fixed owner-gated apply target only after adapter authentication is live.
+  - Capture one sanitized real Qiwe callback in shadow before enabling event mappings.
+  - Configure the real Qiwe callback with reviewed official endpoint semantics; the
+    repository intentionally does not invent provider API parameters.

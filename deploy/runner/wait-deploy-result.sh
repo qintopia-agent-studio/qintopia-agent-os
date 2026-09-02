@@ -13,6 +13,8 @@ Required environment:
   TENCENT_COS_REGION
   TENCENT_COS_SECRET_ID
   TENCENT_COS_SECRET_KEY
+  DEPLOY_REQUEST_SIGNING_KEY
+  DEPLOY_REQUEST_SIGNING_KEY_ID
 
 Optional environment:
   TENCENT_COS_BUCKET_ALIAS
@@ -96,6 +98,8 @@ require_env TENCENT_COS_BUCKET
 require_env TENCENT_COS_REGION
 require_env TENCENT_COS_SECRET_ID
 require_env TENCENT_COS_SECRET_KEY
+require_env DEPLOY_REQUEST_SIGNING_KEY
+require_env DEPLOY_REQUEST_SIGNING_KEY_ID
 
 timeout_seconds="$(positive_int_env DEPLOY_RESULT_TIMEOUT_SECONDS 900)"
 poll_seconds="$(positive_int_env DEPLOY_RESULT_POLL_SECONDS 15)"
@@ -192,7 +196,10 @@ while (( SECONDS < deadline )); do
 
   if [[ "$status" -eq 0 ]]; then
     result_status="$(python3 - "$result_file" "$request_file" "$request_id" <<'PY'
+import hashlib
+import hmac
 import json
+import os
 import re
 import sys
 
@@ -249,6 +256,44 @@ with open(sys.argv[1], encoding="utf-8") as fh:
     result = json.load(fh)
 with open(sys.argv[2], encoding="utf-8") as fh:
     request = json.load(fh)
+
+signature = result.get("signature")
+if not isinstance(signature, dict):
+    raise SystemExit("deploy result signature is missing")
+if signature.get("algorithm") != "hmac-sha256":
+    raise SystemExit("deploy result signature algorithm mismatch")
+if signature.get("issuer") != "qintopia-deploy-runner":
+    raise SystemExit("deploy result signature issuer mismatch")
+expected_key_id = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID", "")
+if signature.get("key_id") != expected_key_id:
+    raise SystemExit("deploy result signature key id mismatch")
+if signature.get("signed_at") != result.get("finished_at"):
+    raise SystemExit("deploy result signature timestamp mismatch")
+signature_value = signature.get("value")
+if not isinstance(signature_value, str) or not re.fullmatch(r"[0-9a-f]{64}", signature_value):
+    raise SystemExit("deploy result signature value is invalid")
+
+def canonical_json(value):
+    if isinstance(value, list):
+        return "[" + ",".join(canonical_json(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(
+            json.dumps(key, separators=(",", ":")) + ":" + canonical_json(value[key])
+            for key in sorted(value)
+        ) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+unsigned_result = dict(result)
+signature_metadata = dict(unsigned_result.pop("signature"))
+signature_metadata.pop("value", None)
+signing_key = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY", "")
+expected_signature = hmac.new(
+    signing_key.encode("utf-8"),
+    canonical_json({"result": unsigned_result, "signature": signature_metadata}).encode("utf-8"),
+    hashlib.sha256,
+).hexdigest()
+if not hmac.compare_digest(signature_value, expected_signature):
+    raise SystemExit("deploy result signature verification failed")
 
 if result.get("schema_version") != 1:
     raise SystemExit("deploy result schema_version is invalid")

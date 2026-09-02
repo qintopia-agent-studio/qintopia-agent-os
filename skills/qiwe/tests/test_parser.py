@@ -1,10 +1,14 @@
 import copy
 import asyncio
 import json
+import stat
 import os
+import sys
 import tempfile
 import time
+from types import ModuleType
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
@@ -27,6 +31,7 @@ from adapter import (
     _handle_qiwe_send_location_card,
     _handle_qiwe_send_rich_message,
     _handle_qiwe_voice_to_text,
+    _trusted_current_voice_reference,
     QiWeAdapter,
     ParsedQiWeMessage,
     SendResult,
@@ -34,6 +39,7 @@ from adapter import (
     _answer_context_mcp_request,
     _member_context_channel_prompt,
     _mentioned_member_names_from_at_list,
+    _mentioned_member_refs_from_at_list,
     _training_note_mcp_request,
     parse_qiwe_payload,
     register,
@@ -140,6 +146,46 @@ def load_fixture(name: str) -> dict:
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
+def trusted_voice_message_context() -> tuple[dict, dict]:
+    payload = copy.deepcopy(load_fixture("group_mention.json"))
+    raw_event = json.loads(payload["data"])
+    raw_event["msgType"] = 16
+    raw_event["newMsgType"] = "VOICE"
+    raw_event["msgServerId"] = 1003001
+    raw_event["msgUniqueIdentifier"] = "voice-msg-001"
+    raw_event["guid"] = "trusted-guid-1"
+    raw_event["msgData"] = {
+        "fileId": "voice-file-1",
+        "fileMd5": "voice-md5",
+        "fileSize": 2400,
+        "voiceTime": 3,
+    }
+    payload["commonMsgType"] = "VOICE"
+    payload["content"] = ""
+    payload["data"] = json.dumps(raw_event, ensure_ascii=False)
+    parsed = parse_qiwe_payload(
+        payload,
+        bot_names=["二花"],
+        bot_user_id="1688857683805864",
+        active_attachment_preprocess_enabled=True,
+    )
+    return (
+        {
+            "payload": parsed.payload,
+            "raw_event": parsed.raw_event,
+            "message_kind": parsed.message_kind,
+            "attachments": parsed.attachments,
+        },
+        {
+            "platform": "qiwe",
+            "conversation_type": "group",
+            "conversation_id": parsed.chat_id,
+            "requester_user_id": parsed.sender_id,
+            "source_message_id": parsed.message_id,
+        },
+    )
+
+
 class QiWeParserTests(unittest.TestCase):
     def test_group_mention_triggers_and_uses_inner_room_id(self) -> None:
         parsed = parse_qiwe_payload(
@@ -176,6 +222,31 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(parsed.is_mentioned, True)
         self.assertEqual(parsed.reason, "mentioned")
         self.assertEqual(parsed.text, "我们回不来了…")
+
+    def test_space_confirmation_command_triggers_and_persists_normalized_text(self) -> None:
+        payload = copy.deepcopy(load_fixture("group_mention.json"))
+        raw_event = json.loads(payload["data"])
+        raw_event["msgData"]["content"] = "@二花 确认 A1B2C3D4"
+        raw_event["msgUniqueIdentifier"] = "space-confirmation-msg-001"
+        payload["content"] = raw_event["msgData"]["content"]
+        payload["data"] = json.dumps(raw_event, ensure_ascii=False)
+
+        parsed = parse_qiwe_payload(
+            payload,
+            bot_names=["二花"],
+            bot_user_id="1688857683805864",
+        )
+        _, message_event, _ = build_capture_events(
+            parsed,
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            ingress_auth_verified=True,
+        )
+
+        self.assertIs(parsed.should_trigger, True)
+        self.assertEqual(parsed.reason, "mentioned")
+        self.assertEqual(parsed.text, "确认 A1B2C3D4")
+        self.assertIs(message_event["should_trigger"], True)
+        self.assertEqual(message_event["text"], "确认 A1B2C3D4")
 
     def test_group_normal_is_accepted_but_does_not_trigger(self) -> None:
         parsed = parse_qiwe_payload(
@@ -348,6 +419,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(message_id, "7044924045046088437")
         self.assertEqual(raw_event["event_id"], "7044924045046088437")
         self.assertEqual(raw_event["source"], "qiwe")
+        self.assertIs(raw_event["ingress_auth_verified"], False)
         self.assertEqual(message_event["message_id"], "7044924045046088437")
         self.assertEqual(message_event["platform"], "qiwe")
         self.assertEqual(message_event["chat_id"], "10733506388826175")
@@ -357,6 +429,173 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(message_event["should_trigger"], True)
         self.assertEqual(message_event["trigger_reason"], "mentioned")
         self.assertGreaterEqual(len(message_event["mentions"]), 1)
+
+        authenticated_raw_event, _, _ = build_capture_events(
+            parsed,
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            ingress_auth_verified=True,
+        )
+        self.assertIs(authenticated_raw_event["ingress_auth_verified"], False)
+
+    def test_nats_capture_event_carries_only_valid_room_detail_display_name(self) -> None:
+        payload = load_fixture("group_mention.json")
+        parsed = parse_qiwe_payload(
+            payload, bot_names=["二花"], bot_user_id="1688857683805864"
+        )
+
+        _, message_event, _ = build_capture_events(
+            parsed,
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            conversation_display_name="一栋住户群",
+        )
+        _, invalid_message_event, _ = build_capture_events(
+            parsed,
+            json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            conversation_display_name="坏\n群名",
+        )
+
+        self.assertEqual(
+            message_event["conversation_display_name"], "一栋住户群"
+        )
+        self.assertEqual(
+            message_event["conversation_display_name_source"], "qiwe_room_detail"
+        )
+        self.assertNotIn("conversation_display_name", invalid_message_event)
+        self.assertNotIn("conversation_display_name_source", invalid_message_event)
+
+    def test_background_capture_refreshes_exact_room_name_and_caches_it(self) -> None:
+        class RecordingPublisher:
+            def __init__(self) -> None:
+                self.messages = []
+
+            async def publish_capture(
+                self, _raw_event, message_event, *, message_id
+            ):
+                self.messages.append((message_id, message_event))
+
+        class RoomDetailAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(
+                    type(
+                        "Config",
+                        (),
+                        {
+                            "extra": {
+                                "token": "synthetic-api-token",
+                                "guid": "configured-guid",
+                                "send_enabled": False,
+                                "nats_capture_timeout_seconds": 1,
+                            }
+                        },
+                    )()
+                )
+                self.calls = []
+
+            async def _call_qiwe_api(
+                self, method, params, *, require_send_enabled=True
+            ):
+                self.calls.append((method, params, require_send_enabled))
+                return SendResult(
+                    success=True,
+                    raw_response={
+                        "code": 0,
+                        "data": {
+                            "roomList": [
+                                {"roomId": "other-room", "roomName": "其他群"},
+                                {
+                                    "roomId": "10733506388826175",
+                                    "roomName": "一栋住户群",
+                                },
+                            ]
+                        },
+                    },
+                )
+
+        async def run_case():
+            payload = load_fixture("group_mention.json")
+            parsed = parse_qiwe_payload(
+                payload, bot_names=["二花"], bot_user_id="1688857683805864"
+            )
+            adapter = RoomDetailAdapter()
+            publisher = RecordingPublisher()
+            adapter._nats_capture = publisher
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            await adapter._capture_message_safe(
+                parsed, body, ingress_auth_verified=False
+            )
+            await adapter._capture_message_safe(
+                parsed, body, ingress_auth_verified=False
+            )
+            return adapter, publisher
+
+        adapter, publisher = asyncio.run(run_case())
+        self.assertEqual(
+            adapter.calls,
+            [
+                (
+                    "/room/batchGetRoomDetail",
+                    {
+                        "guid": "configured-guid",
+                        "roomIdList": ["10733506388826175"],
+                    },
+                    False,
+                )
+            ],
+        )
+        self.assertEqual(len(publisher.messages), 2)
+        self.assertTrue(
+            all(
+                message["conversation_display_name"] == "一栋住户群"
+                for _, message in publisher.messages
+            )
+        )
+
+    def test_room_name_lookup_failure_does_not_drop_background_capture(self) -> None:
+        class RecordingPublisher:
+            def __init__(self) -> None:
+                self.message = None
+
+            async def publish_capture(
+                self, _raw_event, message_event, *, message_id
+            ):
+                self.message = (message_id, message_event)
+
+        class FailingRoomDetailAdapter(QiWeAdapter):
+            async def _call_qiwe_api(
+                self, method, params, *, require_send_enabled=True
+            ):
+                raise RuntimeError("synthetic room-detail failure")
+
+        async def run_case():
+            payload = load_fixture("group_normal.json")
+            parsed = parse_qiwe_payload(
+                payload, bot_names=["二花"], bot_user_id="1688857683805864"
+            )
+            adapter = FailingRoomDetailAdapter(
+                type(
+                    "Config",
+                    (),
+                    {
+                        "extra": {
+                            "token": "synthetic-api-token",
+                            "send_enabled": False,
+                            "nats_capture_timeout_seconds": 1,
+                        }
+                    },
+                )()
+            )
+            publisher = RecordingPublisher()
+            adapter._nats_capture = publisher
+            await adapter._capture_message_safe(
+                parsed,
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                ingress_auth_verified=False,
+            )
+            return publisher.message
+
+        published = asyncio.run(run_case())
+        self.assertIsNotNone(published)
+        self.assertNotIn("conversation_display_name", published[1])
 
     def test_nats_capture_redacts_async_callback_before_publish(self) -> None:
         callback = {
@@ -1198,6 +1437,54 @@ class QiWeParserTests(unittest.TestCase):
         self.assertNotIn("file_aes_key", parsed.attachments[0])
         self.assertNotIn("must-not-leak", encoded)
 
+    def test_trusted_voice_reference_is_bound_to_current_gateway_message(self) -> None:
+        raw_message, trusted_session = trusted_voice_message_context()
+        gateway = ModuleType("gateway")
+        gateway.__path__ = []
+        session_context = ModuleType("gateway.session_context")
+        session_context.get_session_env = lambda name, default="": (
+            json.dumps(raw_message, ensure_ascii=False)
+            if name == "HERMES_SESSION_RAW_MESSAGE"
+            else default
+        )
+        gateway.session_context = session_context
+
+        with patch.dict(
+            sys.modules,
+            {"gateway": gateway, "gateway.session_context": session_context},
+        ), patch.object(
+            adapter_module,
+            "trusted_qiwe_turn_session",
+            return_value=trusted_session,
+        ):
+            reference = _trusted_current_voice_reference()
+
+        self.assertEqual(reference, ("1003001", "voice-msg-001", "trusted-guid-1"))
+
+    def test_trusted_voice_reference_rejects_non_voice_current_message(self) -> None:
+        raw_message, trusted_session = trusted_voice_message_context()
+        raw_message["message_kind"] = "text"
+        gateway = ModuleType("gateway")
+        gateway.__path__ = []
+        session_context = ModuleType("gateway.session_context")
+        session_context.get_session_env = lambda name, default="": (
+            json.dumps(raw_message, ensure_ascii=False)
+            if name == "HERMES_SESSION_RAW_MESSAGE"
+            else default
+        )
+        gateway.session_context = session_context
+
+        with patch.dict(
+            sys.modules,
+            {"gateway": gateway, "gateway.session_context": session_context},
+        ), patch.object(
+            adapter_module,
+            "trusted_qiwe_turn_session",
+            return_value=trusted_session,
+        ):
+            with self.assertRaisesRegex(ValueError, "current voice message"):
+                _trusted_current_voice_reference()
+
     def test_solitaire_message_uses_msg_data_title_and_does_not_trigger_when_not_mentioned(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
@@ -1849,6 +2136,355 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIn('"channel_user_id": "7881303308049798"', adapter.events[0].channel_prompt)
         self.assertNotIn("mobile", adapter.events[0].raw_message)
 
+    def test_group_prompts_keep_space_identity_and_knowledge_scopes_isolated(self) -> None:
+        parsed_a = parse_qiwe_payload(
+            load_fixture("group_mention.json"),
+            bot_names=["二花"],
+            bot_user_id="1688857683805864",
+        )
+        parsed_b = copy.deepcopy(parsed_a)
+        parsed_b.group_id = "room-b"
+        context_a = {
+            "available": True,
+            "policy_found": True,
+            "identity": "只负责一栋住户服务",
+            "knowledge_scope": ["community.building_a"],
+            "effective_capabilities": ["erhua.knowledge.community"],
+        }
+        context_b = {
+            "available": True,
+            "policy_found": True,
+            "identity": "只负责二栋活动服务",
+            "knowledge_scope": ["community.building_b"],
+            "effective_capabilities": ["erhua.knowledge.public"],
+        }
+
+        prompt_a = _member_context_channel_prompt(
+            parsed_a, answer_context={}, space_policy_context=context_a
+        )
+        prompt_b = _member_context_channel_prompt(
+            parsed_b, answer_context={}, space_policy_context=context_b
+        )
+
+        self.assertIn("只负责一栋住户服务", prompt_a)
+        self.assertIn("community.building_a", prompt_a)
+        self.assertNotIn("只负责二栋活动服务", prompt_a)
+        self.assertNotIn("community.building_b", prompt_a)
+        self.assertIn("只负责二栋活动服务", prompt_b)
+        self.assertNotIn("community.building_a", prompt_b)
+
+    def test_dispatch_injects_only_current_space_policy_projection(self) -> None:
+        class RecordingAdapter(QiWeAdapter):
+            def __init__(self) -> None:
+                super().__init__(
+                    type(
+                        "Config",
+                        (),
+                        {
+                            "extra": {
+                                "token": "test-token",
+                                "send_enabled": False,
+                                "answer_context_prepare_enabled": False,
+                                "space_turn_policy_enforcement_enabled": True,
+                            }
+                        },
+                    )()
+                )
+                self.events = []
+
+            async def handle_message(self, event):
+                self.events.append(event)
+
+        parsed = parse_qiwe_payload(
+            load_fixture("group_mention.json"),
+            bot_names=["二花"],
+            bot_user_id="1688857683805864",
+        )
+        projection = {
+            "success": True,
+            "policy_found": True,
+            "identity": "本群住户助手",
+            "knowledge_scope": ["community.current_room"],
+            "effective_capabilities": ["erhua.knowledge.community"],
+            "external_send_executed": False,
+        }
+        with patch.object(
+            adapter_module,
+            "load_space_turn_policy_context",
+            return_value=projection,
+        ) as load_context:
+            adapter = RecordingAdapter()
+            asyncio.run(adapter._dispatch_message(parsed))
+
+        self.assertEqual(
+            load_context.call_args.args[0]["conversation_id"], parsed.chat_id
+        )
+        prompt = adapter.events[0].channel_prompt
+        self.assertIn("本群住户助手", prompt)
+        self.assertIn("community.current_room", prompt)
+        self.assertNotIn("conversation_id", prompt)
+
+    def test_space_tool_denies_missing_current_group_capability_before_send(self) -> None:
+        trusted = {
+            "platform": "qiwe",
+            "conversation_type": "group",
+            "conversation_id": "current-room",
+            "requester_user_id": "current-speaker",
+            "source_message_id": "message-1",
+        }
+        with patch.dict(
+            os.environ,
+            {"QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1"},
+            clear=False,
+        ), patch.object(
+            adapter_module, "trusted_qiwe_turn_session", return_value=trusted
+        ), patch.object(
+            adapter_module,
+            "authorize_space_turn_capability",
+            return_value={
+                "success": True,
+                "authorized": False,
+                "capability_key": "erhua.qiwe_send_location_card",
+                "external_send_executed": False,
+            },
+        ) as authorize:
+            payload = json.loads(
+                asyncio.run(
+                    _handle_qiwe_send_location_card(
+                        {
+                            "chat_id": "current-room",
+                            "conversation_type": "group",
+                            "title": "一栋",
+                            "latitude": 34.0,
+                            "longitude": 108.0,
+                        }
+                    )
+                )
+            )
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        authorize.assert_called_once()
+
+    def test_space_tool_rejects_cross_space_target_before_authorization(self) -> None:
+        trusted = {
+            "platform": "qiwe",
+            "conversation_type": "group",
+            "conversation_id": "current-room",
+            "requester_user_id": "current-speaker",
+            "source_message_id": "message-1",
+        }
+        with patch.dict(
+            os.environ,
+            {"QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1"},
+            clear=False,
+        ), patch.object(
+            adapter_module, "trusted_qiwe_turn_session", return_value=trusted
+        ), patch.object(
+            adapter_module, "authorize_space_turn_capability"
+        ) as authorize:
+            payload = json.loads(
+                asyncio.run(
+                    _handle_qiwe_send_rich_message(
+                        {
+                            "chat_id": "other-room",
+                            "conversation_type": "group",
+                            "message_type": "link",
+                            "payload": {
+                                "title": "测试",
+                                "url": "https://example.test",
+                            },
+                            "idempotency_key": "cross-space-test",
+                            "purpose": "test",
+                        }
+                    )
+                )
+            )
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertIn("current group", payload["error"])
+        authorize.assert_not_called()
+
+    def test_space_policy_switch_preserves_trusted_direct_tool_flow(self) -> None:
+        trusted = {
+            "platform": "qiwe",
+            "conversation_type": "direct",
+            "conversation_id": "current-speaker",
+            "requester_user_id": "current-speaker",
+            "source_message_id": "direct-message-1",
+        }
+        _DIRECT_TOOL_SEEN.clear()
+        try:
+            with patch.dict(
+                os.environ,
+                {
+                    "QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1",
+                    "QIWE_SEND_ENABLED": "false",
+                    "QIWE_TOKEN": "test-token",
+                },
+                clear=False,
+            ), patch.object(
+                adapter_module, "trusted_qiwe_turn_session", return_value=trusted
+            ), patch.object(
+                adapter_module, "authorize_space_turn_capability"
+            ) as authorize:
+                payload = json.loads(
+                    asyncio.run(
+                        _handle_qiwe_send_direct_message(
+                            {
+                                "recipient_user_id": "current-speaker",
+                                "message": "当前私聊继续使用原有工具链。",
+                                "idempotency_key": "trusted-direct-policy-bypass",
+                                "purpose": "direct_reply",
+                            }
+                        )
+                    )
+                )
+        finally:
+            _DIRECT_TOOL_SEEN.clear()
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["conversation_type"], "direct")
+        authorize.assert_not_called()
+
+    def test_space_policy_switch_rejects_direct_turn_group_target(self) -> None:
+        trusted = {
+            "platform": "qiwe",
+            "conversation_type": "direct",
+            "conversation_id": "current-speaker",
+            "requester_user_id": "current-speaker",
+            "source_message_id": "direct-message-1",
+        }
+        with patch.dict(
+            os.environ,
+            {"QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1"},
+            clear=False,
+        ), patch.object(
+            adapter_module, "trusted_qiwe_turn_session", return_value=trusted
+        ), patch.object(
+            adapter_module, "authorize_space_turn_capability"
+        ) as authorize, patch.object(adapter_module, "QiWeAdapter") as adapter:
+            payload = json.loads(
+                asyncio.run(
+                    _handle_qiwe_send_rich_message(
+                        {
+                            "chat_id": "forged-group",
+                            "conversation_type": "group",
+                            "message_type": "link",
+                            "payload": {
+                                "title": "测试",
+                                "link_url": "https://example.test",
+                            },
+                            "idempotency_key": "direct-forged-group",
+                            "purpose": "test",
+                        }
+                    )
+                )
+            )
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertIn("cannot target a group", payload["error"])
+        authorize.assert_not_called()
+        adapter.assert_not_called()
+
+    def test_space_policy_switch_fails_closed_without_trusted_direct_scope(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1"},
+            clear=False,
+        ), patch.object(
+            adapter_module,
+            "trusted_qiwe_turn_session",
+            side_effect=ValueError("trusted session is incomplete"),
+        ), patch.object(adapter_module, "QiWeAdapter") as adapter:
+            payload = json.loads(
+                asyncio.run(
+                    _handle_qiwe_send_direct_message(
+                        {
+                            "recipient_user_id": "current-speaker",
+                            "message": "不应发送",
+                            "idempotency_key": "missing-direct-session",
+                            "purpose": "test",
+                        }
+                    )
+                )
+            )
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertIn("authorization is unavailable", payload["error"])
+        adapter.assert_not_called()
+
+    def test_space_voice_tool_rejects_a_different_message_reference(self) -> None:
+        trusted = {
+            "platform": "qiwe",
+            "conversation_type": "group",
+            "conversation_id": "current-room",
+            "requester_user_id": "current-speaker",
+            "source_message_id": "current-message",
+        }
+        with patch.dict(
+            os.environ,
+            {"QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1"},
+            clear=False,
+        ), patch.object(
+            adapter_module, "trusted_qiwe_turn_session", return_value=trusted
+        ), patch.object(
+            adapter_module,
+            "authorize_space_turn_capability",
+            return_value={
+                "success": True,
+                "authorized": True,
+                "capability_key": "erhua.qiwe_voice_to_text",
+                "external_send_executed": False,
+            },
+        ), patch.object(
+            adapter_module,
+            "_trusted_current_voice_reference",
+            return_value=("1003001", "current-message", "trusted-guid"),
+        ), patch.object(adapter_module, "QiWeAdapter") as adapter:
+            payload = json.loads(
+                asyncio.run(
+                    _handle_qiwe_voice_to_text(
+                        {
+                            "msg_server_id": 1003999,
+                            "purpose": "transcribe_user_voice",
+                            "idempotency_key": "forged-message-reference",
+                        }
+                    )
+                )
+            )
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertIn("current voice message", payload["error"])
+        adapter.assert_not_called()
+
+    def test_voice_tool_rejects_model_guid_override_before_provider_call(self) -> None:
+        with patch.object(
+            adapter_module,
+            "_trusted_current_voice_reference",
+            return_value=("1003001", "current-message", "trusted-guid"),
+        ), patch.object(adapter_module, "QiWeAdapter") as adapter:
+            payload = json.loads(
+                asyncio.run(
+                    _handle_qiwe_voice_to_text(
+                        {
+                            "guid": "forged-guid",
+                            "purpose": "transcribe_user_voice",
+                            "idempotency_key": "forged-guid-override",
+                        }
+                    )
+                )
+            )
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertIn("guid override", payload["error"])
+        adapter.assert_not_called()
+
     def test_dispatch_includes_quoted_link_context_from_recent_message(self) -> None:
         class RecordingAdapter(QiWeAdapter):
             def __init__(self) -> None:
@@ -2479,17 +3115,25 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(context["mentioned_members"][0]["display_name"], "Cici（27-29止语）")
         self.assertIn("短期沟通状态", context["mentioned_members"][0]["safe_reply_hints"]["topics"])
 
-    def test_answer_context_request_passes_non_bot_at_list_names(self) -> None:
+    def test_answer_context_request_passes_non_bot_at_list_ids_and_names(self) -> None:
+        at_list = [
+            {"nickname": "二花", "userId": "bot-user"},
+            {"nickname": "小乔", "userId": "member-user"},
+            {"nickname": "小乔", "userId": "member-user"},
+            {"nickname": "无标识成员"},
+        ]
         request = _answer_context_mcp_request(
             chat_id="room_example",
             sender_id="user_example",
             message_text="@二花 @小乔 小乔是谁",
             mentioned_member_names=_mentioned_member_names_from_at_list(
-                [
-                    {"nickname": "二花", "userId": "bot-user"},
-                    {"nickname": "小乔", "userId": "member-user"},
-                    {"nickname": "小乔", "userId": "member-user"},
-                ],
+                at_list,
+                bot_user_id="bot-user",
+                bot_names=["二花"],
+                unidentified_only=True,
+            ),
+            mentioned_member_refs=_mentioned_member_refs_from_at_list(
+                at_list,
                 bot_user_id="bot-user",
                 bot_names=["二花"],
             ),
@@ -2498,7 +3142,29 @@ class QiWeParserTests(unittest.TestCase):
         call = next(item for item in lines if item.get("id") == 2)
         args = call["params"]["arguments"]
 
-        self.assertEqual(args["mentioned_member_names"], ["小乔"])
+        self.assertEqual(args["mentioned_member_names"], ["无标识成员"])
+        self.assertEqual(
+            args["mentioned_member_refs"],
+            [{"channel_user_id": "member-user", "mention_text": "小乔"}],
+        )
+
+    def test_at_list_id_is_authoritative_even_when_display_names_collide(self) -> None:
+        refs = _mentioned_member_refs_from_at_list(
+            [
+                {"nickname": "同名成员", "userId": "member-a"},
+                {"nickname": "同名成员", "userId": "member-b"},
+            ],
+            bot_user_id="bot-user",
+            bot_names=["二花"],
+        )
+
+        self.assertEqual(
+            refs,
+            [
+                {"channel_user_id": "member-a", "mention_text": "同名成员"},
+                {"channel_user_id": "member-b", "mention_text": "同名成员"},
+            ],
+        )
 
     def test_answer_context_request_passes_referenced_sender_id(self) -> None:
         request = _answer_context_mcp_request(
@@ -2578,11 +3244,24 @@ class QiWeParserTests(unittest.TestCase):
             adapter = QiWeAdapter(type("Config", (), {"extra": {"state_dir": tmp, "audit_enabled": True}})())
             adapter._auditor.record(parsed, decision="dispatch")
             audit_line = (Path(tmp) / "audit" / "qiwe.jsonl").read_text(encoding="utf-8")
+            audit_dir_mode = stat.S_IMODE((Path(tmp) / "audit").stat().st_mode)
+            audit_file_mode = stat.S_IMODE((Path(tmp) / "audit" / "qiwe.jsonl").stat().st_mode)
 
         audit = json.loads(audit_line)
         self.assertEqual(audit["sender_id_hash"][:7], "sha256:")
+        self.assertEqual(
+            audit["conversation_id_hash"], adapter_module._hash_id(parsed.chat_id)
+        )
+        self.assertNotIn("conversation_id", audit)
+        self.assertNotIn("sender_display_name", audit)
         self.assertNotIn("7881303308049798", audit_line)
         self.assertNotIn("QIWE_TOKEN", audit_line)
+        self.assertEqual(
+           audit_dir_mode, 0o700
+       )
+        self.assertEqual(
+           audit_file_mode, 0o600
+       )
 
     def test_webhook_schedules_dispatch_without_waiting_for_agent(self) -> None:
         class FakeWeb:
@@ -2736,6 +3415,8 @@ class QiWeParserTests(unittest.TestCase):
             adapter.handle_message = dispatch
             try:
                 response = await adapter._handle_webhook(FakeRequest())
+                if adapter._dispatch_tasks:
+                    await asyncio.gather(*tuple(adapter._dispatch_tasks))
                 adapter._image_callback_bridge = QiWeImageCallbackBridge(
                     enabled=True, configuration_valid=False
                 )
@@ -2744,7 +3425,7 @@ class QiWeParserTests(unittest.TestCase):
                 adapter_module.web = old_web
                 adapter_module.parse_qiwe_payload = old_parser
             self.assertEqual(response.status, 200)
-            self.assertIn("qiwe_image_callback_processed", response.text)
+            self.assertIn("qiwe_image_callback_processing_scheduled", response.text)
             self.assertFalse(dispatched)
             self.assertEqual(len(bridge.bodies), 1)
             for secret in (
@@ -3629,11 +4310,14 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(calls[0]["params"], {"guid": "guid-1", "chatId": "10859791146538059", "msgServerId": 1121922})
 
     def test_voice_to_text_tool_requires_enabled_helper_and_returns_text(self) -> None:
+        calls = []
+
         class RecordingAdapter(QiWeAdapter):
             def __init__(self, config) -> None:
                 super().__init__(type("Config", (), {"extra": {"token": "test-token", "send_enabled": False, "voice_to_text_enabled": True}})())
 
             async def _voice_to_text(self, msg_server_id, *, guid=""):
+                calls.append((msg_server_id, guid))
                 return SendResult(success=True, raw_response={"voiceId": "voice-id-1", "text": "语音内容", "raw_response": {"redacted": True}})
 
         original = adapter_module.QiWeAdapter
@@ -3644,17 +4328,21 @@ class QiWeParserTests(unittest.TestCase):
             _VOICE_TO_TEXT_TOOL_SEEN.clear()
             adapter_module.QiWeAdapter = RecordingAdapter
 
-            payload = json.loads(
-                asyncio.run(
-                    _handle_qiwe_voice_to_text(
-                        {
-                            "msg_server_id": 1003001,
-                            "purpose": "transcribe_user_voice",
-                            "idempotency_key": "voice-to-text-1",
-                        }
+            with patch.object(
+                adapter_module,
+                "_trusted_current_voice_reference",
+                return_value=("1003001", "voice-msg-001", "trusted-guid-1"),
+            ):
+                payload = json.loads(
+                    asyncio.run(
+                        _handle_qiwe_voice_to_text(
+                            {
+                                "purpose": "transcribe_user_voice",
+                                "idempotency_key": "voice-to-text-1",
+                            }
+                        )
                     )
                 )
-            )
         finally:
             adapter_module.QiWeAdapter = original
             os.environ.clear()
@@ -3665,6 +4353,20 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(payload["voice_id"], "voice-id-1")
         self.assertEqual(payload["text"], "语音内容")
         self.assertEqual(payload["msg_server_id"], 1003001)
+        self.assertEqual(payload["idempotency_key"], "voice-to-text-1")
+        self.assertEqual(calls, [("1003001", "trusted-guid-1")])
+
+    def test_voice_tool_schema_does_not_accept_message_or_guid_selection(self) -> None:
+        properties = adapter_module.QIWE_VOICE_TO_TEXT_SCHEMA["parameters"][
+            "properties"
+        ]
+
+        self.assertNotIn("msg_server_id", properties)
+        self.assertNotIn("guid", properties)
+        self.assertEqual(
+            adapter_module.QIWE_VOICE_TO_TEXT_SCHEMA["parameters"]["required"],
+            ["idempotency_key", "purpose"],
+        )
 
     def test_location_tool_defaults_to_current_gateway_context(self) -> None:
         old_env = dict(os.environ)
@@ -3739,9 +4441,21 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(payload["success"], False)
         self.assertEqual(payload["error"], "latitude is required")
 
-    def test_register_exposes_platform_and_location_tool(self) -> None:
+    def test_register_exposes_platform_space_change_and_channel_tools(self) -> None:
+        llm = object()
+
+        async def prepare_handler(args, **kwargs):
+            return "{}"
+
+        async def confirm_handler(args, **kwargs):
+            return "{}"
+
+        async def status_handler(args, **kwargs):
+            return "{}"
+
         class FakeContext:
             def __init__(self) -> None:
+                self.llm = llm
                 self.platforms = []
                 self.tools = []
 
@@ -3752,17 +4466,39 @@ class QiWeParserTests(unittest.TestCase):
                 self.tools.append(kwargs)
 
         ctx = FakeContext()
-        register(ctx)
+        handlers = (prepare_handler, confirm_handler, status_handler)
+        with patch.object(
+            adapter_module,
+            "build_space_change_handlers",
+            return_value=handlers,
+        ) as build_handlers:
+            register(ctx)
 
+        build_handlers.assert_called_once_with(llm)
         self.assertEqual(ctx.platforms[0]["name"], "qiwe")
-        self.assertEqual(ctx.tools[0]["name"], "qiwe_send_location_card")
-        self.assertIn("qiwe_send_direct_message", [tool["name"] for tool in ctx.tools])
-        self.assertIn("qiwe_send_rich_message", [tool["name"] for tool in ctx.tools])
-        self.assertIn("qiwe_revoke_message", [tool["name"] for tool in ctx.tools])
-        self.assertIn("qiwe_voice_to_text", [tool["name"] for tool in ctx.tools])
-        self.assertIn("qiwe_request_direct_contact", [tool["name"] for tool in ctx.tools])
-        self.assertEqual(ctx.tools[0]["toolset"], "qiwe")
-        self.assertIs(ctx.tools[0]["is_async"], True)
+        platform_adapter = ctx.platforms[0]["adapter_factory"](
+            type("Config", (), {"extra": {}})()
+        )
+        self.assertIs(platform_adapter._space_agent_completion._llm, llm)
+        tool_names = [tool["name"] for tool in ctx.tools]
+        self.assertEqual(
+            tool_names[:3],
+            [
+                "qintopia_space_change_prepare",
+                "qintopia_space_change_confirm",
+                "qintopia_space_change_status",
+            ],
+        )
+        self.assertIn("qiwe_send_location_card", tool_names)
+        self.assertIn("qiwe_send_direct_message", tool_names)
+        self.assertIn("qiwe_send_rich_message", tool_names)
+        self.assertIn("qiwe_revoke_message", tool_names)
+        self.assertIn("qiwe_voice_to_text", tool_names)
+        self.assertIn("qiwe_request_direct_contact", tool_names)
+        for index, handler in enumerate(handlers):
+            self.assertEqual(ctx.tools[index]["toolset"], "qiwe")
+            self.assertIs(ctx.tools[index]["handler"], handler)
+            self.assertIs(ctx.tools[index]["is_async"], True)
 
     def test_passive_pipeline_disabled_does_not_process_solitaire(self) -> None:
         parsed = parse_qiwe_payload(

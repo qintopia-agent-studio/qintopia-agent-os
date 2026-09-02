@@ -1,0 +1,12 @@
+{
+  "data": [
+    {
+      "cmd": 15500,
+      "newMsgType": "GROUP_MEMBER_REMOVE",
+      "msgUniqueIdentifier": "fixture-event-remove",
+      "fromRoomId": "fixture-room-a",
+      "timestamp": 1786669200,
+      "msgData": { "changedMemberList": "bWVtYmVyLWE=" }
+    }
+  ]
+}

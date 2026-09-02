@@ -357,10 +357,14 @@ try {
     invalidUploadedResultJson.status !== "failed" ||
     invalidUploadedResultJson.runtime_artifact_profile !== "qiwe-production" ||
     invalidUploadedResultJson.deploy_bundle_sha !==
-      "89abcdef0123456789abcdef0123456789abcdef"
+      "89abcdef0123456789abcdef0123456789abcdef" ||
+    invalidUploadedResultJson.signature?.algorithm !== "hmac-sha256" ||
+    invalidUploadedResultJson.signature?.issuer !== "qintopia-deploy-runner" ||
+    invalidUploadedResultJson.signature?.key_id !== "production" ||
+    !/^[0-9a-f]{64}$/.test(invalidUploadedResultJson.signature?.value ?? "")
   ) {
     throw new Error(
-      "invalid-request: fallback deploy result did not retain request identity"
+      "invalid-request: fallback deploy result did not retain identity and signature"
     );
   }
 } finally {

@@ -1,0 +1,1312 @@
+name: Low-Risk Auto Release
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - ready_for_review
+  workflow_run:
+    workflows:
+      - CI
+      - PR Agent
+      - Release Please
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: low-risk-auto-release
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  checks: read
+  contents: write
+  issues: read
+  pull-requests: write
+  statuses: read
+
+jobs:
+  advance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout trusted master without external actions
+        shell: bash
+        env:
+          CHECKOUT_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          readonly EXPECTED_REPOSITORY="qintopia-agent-studio/qintopia-agent-os"
+          [[ "$GITHUB_REPOSITORY" == "$EXPECTED_REPOSITORY" ]]
+          checkout_home="${RUNNER_TEMP}/low-risk-checkout-home"
+          mkdir -m 700 "$checkout_home"
+          export HOME="$checkout_home"
+          export GH_TOKEN="$CHECKOUT_TOKEN"
+          gh auth setup-git
+          git init
+          git remote add origin "https://github.com/${EXPECTED_REPOSITORY}.git"
+          git fetch --no-tags origin refs/heads/master
+          fetched_sha="$(git rev-parse FETCH_HEAD)"
+          [[ "$fetched_sha" =~ ^[0-9a-f]{40}$ ]]
+          git checkout --detach "$fetched_sha"
+          git remote set-url origin "https://github.com/${EXPECTED_REPOSITORY}.git"
+          [[ "$(git rev-parse HEAD)" == "$fetched_sha" ]]
+          [[ "$(git remote get-url origin)" == \
+            "https://github.com/${EXPECTED_REPOSITORY}.git" ]]
+
+      - name: Advance the pre-authorized low-risk lane
+        id: advance
+        shell: bash
+        env:
+          AUTOMATION_ACTOR: ${{ vars.QINTOPIA_LOW_RISK_AUTO_RELEASE_ACTOR || '' }}
+          AUTOMATION_ENABLED: ${{ vars.QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED || '0' }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
+          EVENT_WORKFLOW_NAME: ${{ github.event.workflow_run.name || '' }}
+          GH_TOKEN: ${{ secrets.QINTOPIA_LOW_RISK_RELEASE_TOKEN }}
+          OWNER_ACKNOWLEDGEMENT:
+            ${{ vars.QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT || '' }}
+        run: |
+          set -euo pipefail
+
+          readonly EXPECTED_REPOSITORY="qintopia-agent-studio/qintopia-agent-os"
+          readonly AUTO_LABEL="qintopia-low-risk-auto"
+          readonly AUTO_PR_TITLE="feat(qiwe): add bounded provider event mapping"
+          readonly RELEASE_BRANCH="release-please--branches--master--components--qintopia-agent-os"
+          readonly OWNER_ACK="approved-low-risk-auto-release-v1"
+          readonly EVIDENCE_DIR="dist/low-risk-auto-release"
+
+          mkdir -p "$EVIDENCE_DIR"
+
+          fail() {
+            printf 'Low-risk auto release stopped: %s\n' "$1" >&2
+            exit 2
+          }
+
+          record_decision() {
+            local stage="$1"
+            local decision="$2"
+            local detail="$3"
+            jq -n \
+              --arg stage "$stage" \
+              --arg decision "$decision" \
+              --arg detail "$detail" \
+              '{
+                schema_version: 1,
+                stage: $stage,
+                decision: $decision,
+                detail: $detail
+              }' >"${EVIDENCE_DIR}/summary.json"
+            {
+              echo "## Low-Risk Auto Release"
+              echo
+              echo "- Stage: ${stage}"
+              echo "- Decision: ${decision}"
+              echo "- Detail: ${detail}"
+            } >>"$GITHUB_STEP_SUMMARY"
+          }
+
+          if [[ "$GITHUB_REPOSITORY" != "$EXPECTED_REPOSITORY" ]]; then
+            fail "repository identity does not match the fixed production repository"
+          fi
+          if [[ "$AUTOMATION_ENABLED" != "1" ]]; then
+            record_decision "disabled" "no_action" "owner-controlled automation flag is off"
+            exit 0
+          fi
+          if [[ "$OWNER_ACKNOWLEDGEMENT" != "$OWNER_ACK" ]]; then
+            fail "owner acknowledgement is missing or invalid"
+          fi
+          if [[ ! "$AUTOMATION_ACTOR" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ || \
+            "$AUTOMATION_ACTOR" == *- ]]; then
+            fail "the fixed automation actor is missing or invalid"
+          fi
+          if [[ -z "$GH_TOKEN" ]]; then
+            fail "the dedicated low-risk release token is missing"
+          fi
+          token_actor="$(gh api user --jq '.login // ""')"
+          if [[ "$token_actor" != "$AUTOMATION_ACTOR" ]]; then
+            fail "the dedicated token does not belong to the fixed automation actor"
+          fi
+          if [[ "$EVENT_NAME" == "workflow_run" && \
+            "$EVENT_WORKFLOW_CONCLUSION" != "success" ]]; then
+            record_decision \
+              "upstream_checks" \
+              "no_action" \
+              "the triggering trusted workflow did not succeed"
+            exit 0
+          fi
+
+          fetch_master() {
+            git fetch --no-tags origin master
+            MASTER_SHA="$(git rev-parse origin/master)"
+            [[ "$MASTER_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "origin/master is invalid"
+          }
+
+          load_latest_published() {
+            local releases
+            releases="$(gh api --paginate --slurp \
+              "repos/${EXPECTED_REPOSITORY}/releases?per_page=100")"
+            LATEST_PUBLISHED_TAG="$(jq -er \
+              '[.[][] | select(.draft == false and .prerelease == false and .published_at != null)]
+               | sort_by(.published_at) | last | .tag_name // empty' \
+              <<<"$releases")"
+            LATEST_PUBLISHED_ID="$(jq -er \
+              --arg tag "$LATEST_PUBLISHED_TAG" \
+              '[.[][] | select(.tag_name == $tag and .draft == false and
+                .prerelease == false and .published_at != null)]
+               | if length == 1 then .[0].id else empty end' \
+              <<<"$releases")"
+            [[ "$LATEST_PUBLISHED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+              fail "latest published Release tag is missing or invalid"
+            [[ "$LATEST_PUBLISHED_ID" =~ ^[1-9][0-9]*$ ]] || \
+              fail "latest published Release identity is invalid"
+            git fetch --no-tags --force origin \
+              "+refs/tags/${LATEST_PUBLISHED_TAG}:refs/tags/${LATEST_PUBLISHED_TAG}"
+            LATEST_PUBLISHED_SHA="$(git rev-list -n 1 "${LATEST_PUBLISHED_TAG}^{commit}")"
+            [[ "$LATEST_PUBLISHED_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+              fail "latest published Release commit is invalid"
+          }
+
+          assert_latest_published_unchanged() {
+            local expected_tag="$1"
+            local expected_sha="$2"
+            local expected_id="$3"
+            load_latest_published
+            if [[ "$LATEST_PUBLISHED_TAG" != "$expected_tag" || \
+              "$LATEST_PUBLISHED_SHA" != "$expected_sha" || \
+              "$LATEST_PUBLISHED_ID" != "$expected_id" ]]; then
+              fail "published Release state changed during the audit"
+            fi
+          }
+
+          classify_range() {
+            local base_sha="$1"
+            local head_sha="$2"
+            local output_file="$3"
+            if ! node tools/ci/classify-low-risk-change.mjs \
+              --base-ref "$base_sha" \
+              --head-ref "$head_sha" >"$output_file"; then
+              fail "the bounded low-risk classifier rejected the audited range"
+            fi
+            jq -e \
+              --arg base "$base_sha" \
+              --arg head "$head_sha" \
+              '.eligible == true and .base_sha == $base and .head_sha == $head' \
+              "$output_file" >/dev/null || fail "classifier evidence is not exact-head bound"
+          }
+
+          check_required_checks() {
+            local pr_number="$1"
+            local expected_head="$2"
+            local output_file="$3"
+            local command_status=0
+            gh pr checks "$pr_number" \
+              --repo "$EXPECTED_REPOSITORY" \
+              --required \
+              --json name,state,bucket,workflow,link >"$output_file" || command_status=$?
+            jq -e 'type == "array"' "$output_file" >/dev/null || \
+              fail "required-check evidence is malformed"
+            local observed_head
+            observed_head="$(gh api \
+              "repos/${EXPECTED_REPOSITORY}/pulls/${pr_number}" \
+              --jq '.head.sha // ""')"
+            [[ "$observed_head" == "$expected_head" ]] || \
+              fail "PR head changed while required checks were read"
+            if [[ "$(jq 'length' "$output_file")" == "0" ]]; then
+              return 3
+            fi
+            local required_name
+            for required_name in "check" "PR-Agent review assistant"; do
+              if ! jq -e --arg name "$required_name" \
+                'any(.[]; .name == $name)' "$output_file" >/dev/null; then
+                return 3
+              fi
+            done
+            if jq -e 'any(.bucket == "fail" or .bucket == "cancel")' \
+              "$output_file" >/dev/null; then
+              return 1
+            fi
+            if [[ "$command_status" == "0" ]] && \
+              jq -e 'all(.bucket == "pass")' "$output_file" >/dev/null; then
+              return 0
+            fi
+            return 8
+          }
+
+          check_release_validation() {
+            local expected_head="$1"
+            local output_file="$2"
+            local statuses latest_status target_url run_id run_json jobs
+            statuses="$(gh api --paginate --slurp \
+              "repos/${EXPECTED_REPOSITORY}/commits/${expected_head}/statuses?per_page=100")"
+            latest_status="$(jq -c \
+              '[.[][] | select(.context == "Release Please validation")]
+               | sort_by(.created_at) | last // empty' <<<"$statuses")"
+            if [[ -z "$latest_status" ]]; then
+              return 3
+            fi
+            if [[ "$(jq -r '.state // ""' <<<"$latest_status")" == "pending" ]]; then
+              return 8
+            fi
+            [[ "$(jq -r '.state // ""' <<<"$latest_status")" == "success" && \
+              "$(jq -r '.creator.login // ""' <<<"$latest_status")" == \
+                "github-actions[bot]" ]] || return 1
+            target_url="$(jq -r '.target_url // ""' <<<"$latest_status")"
+            if [[ ! "$target_url" =~ ^https://github\.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/([1-9][0-9]*)$ ]]; then
+              return 1
+            fi
+            run_id="${BASH_REMATCH[1]}"
+            run_json="$(gh api \
+              "repos/${EXPECTED_REPOSITORY}/actions/runs/${run_id}")"
+            if [[ "$(jq -r '.status // ""' <<<"$run_json")" != "completed" ]]; then
+              return 8
+            fi
+            jq -e \
+              --arg sha "$expected_head" \
+              --arg branch "$RELEASE_BRANCH" \
+              --arg repo "$EXPECTED_REPOSITORY" \
+              '.name == "CI" and .event == "workflow_dispatch" and
+               .path == ".github/workflows/ci.yml" and
+               .repository.full_name == $repo and
+               .status == "completed" and .conclusion == "success" and
+               .head_sha == $sha and .head_branch == $branch' \
+              <<<"$run_json" >/dev/null || return 1
+            jobs="$(gh api --paginate --slurp \
+              "repos/${EXPECTED_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")"
+            jq -e --argjson required \
+              '["changes", "check", "Rust quality baseline",
+                "Xiaoman PostgreSQL integration", "Release Please validation"]' \
+              '[.[] | .jobs[]] as $jobs |
+               [$required[] as $name |
+                 ([$jobs[] | select(.name == $name)]) as $matching |
+                 (($matching | length) == 1 and
+                  $matching[0].status == "completed" and
+                  $matching[0].conclusion == "success")] | all' \
+              <<<"$jobs" >/dev/null || return 1
+            jq -n \
+              --arg head_sha "$expected_head" \
+              --arg run_id "$run_id" \
+              --arg status_id "$(jq -r '.id | tostring' <<<"$latest_status")" \
+              '{schema_version: 1, head_sha: $head_sha, run_id: $run_id,
+                status_id: $status_id, validation: "passed"}' >"$output_file"
+          }
+
+          assert_label_provenance() {
+            local pr_number="$1"
+            local events
+            events="$(gh api --paginate --slurp \
+              "repos/${EXPECTED_REPOSITORY}/issues/${pr_number}/events?per_page=100")"
+            local label_actor
+            label_actor="$(jq -er \
+              --arg label "$AUTO_LABEL" \
+              '[.[][] | select(.event == "labeled" and .label.name == $label)]
+               | last | .actor.login // empty' \
+              <<<"$events")"
+            [[ "$label_actor" == "$AUTOMATION_ACTOR" ]] || \
+              fail "the low-risk label was not applied by the fixed automation actor"
+          }
+
+          load_candidate_pr() {
+            local pr_number="$1"
+            CANDIDATE_JSON="$(gh api \
+              "repos/${EXPECTED_REPOSITORY}/pulls/${pr_number}")"
+            CANDIDATE_NUMBER="$(jq -r '.number | tostring' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_STATE="$(jq -r '.state // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_MERGED="$(jq -r \
+              'if .merged == true then "true" else "false" end' \
+              <<<"$CANDIDATE_JSON")"
+            CANDIDATE_BASE_REF="$(jq -r '.base.ref // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_BASE_SHA="$(jq -r '.base.sha // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_HEAD_REF="$(jq -r '.head.ref // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_HEAD_SHA="$(jq -r '.head.sha // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_HEAD_REPO="$(jq -r \
+              '.head.repo.full_name // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_AUTHOR="$(jq -r '.user.login // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_TITLE="$(jq -r '.title // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_BODY="$(jq -r '.body // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_MERGE_SHA="$(jq -r \
+              '.merge_commit_sha // ""' <<<"$CANDIDATE_JSON")"
+            CANDIDATE_MERGED_BY="$(jq -r '.merged_by.login // ""' \
+              <<<"$CANDIDATE_JSON")"
+            [[ "$CANDIDATE_NUMBER" == "$pr_number" ]] || \
+              fail "candidate PR identity changed"
+            [[ "$CANDIDATE_BASE_REF" == "master" && \
+              "$CANDIDATE_HEAD_REPO" == "$EXPECTED_REPOSITORY" ]] || \
+              fail "candidate PR is not same-repository and master-bound"
+            [[ "$CANDIDATE_AUTHOR" == "$AUTOMATION_ACTOR" ]] || \
+              fail "candidate PR author is not the fixed automation actor"
+            [[ "$CANDIDATE_TITLE" == "$AUTO_PR_TITLE" ]] || \
+              fail "candidate PR title is outside the fixed contract"
+            [[ "$CANDIDATE_HEAD_REF" =~ ^qintopia-programming-agent/[0-9a-f]{32}$ ]] || \
+              fail "candidate PR branch is outside the fixed contract"
+            [[ "$CANDIDATE_BODY" == *"Branch: ${CANDIDATE_HEAD_REF}"* && \
+              "$CANDIDATE_BODY" == *"This PR adds declarative replay data only."* ]] || \
+              fail "candidate PR body is outside the fixed contract"
+            jq -e \
+              --arg label "$AUTO_LABEL" \
+              'any(.labels[]?; .name == $label)' <<<"$CANDIDATE_JSON" >/dev/null || \
+              fail "candidate PR is missing the fixed low-risk label"
+            [[ "$CANDIDATE_HEAD_SHA" =~ ^[0-9a-f]{40}$ && \
+              "$CANDIDATE_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+              fail "candidate PR SHAs are invalid"
+            assert_label_provenance "$pr_number"
+            git fetch --no-tags origin \
+              "+refs/pull/${pr_number}/head:refs/remotes/origin/low-risk-candidate"
+            local fetched_head
+            fetched_head="$(git rev-parse refs/remotes/origin/low-risk-candidate)"
+            [[ "$fetched_head" == "$CANDIDATE_HEAD_SHA" ]] || \
+              fail "fetched candidate head differs from the API head"
+            [[ "$(git rev-parse "${CANDIDATE_HEAD_SHA}^")" == \
+              "$CANDIDATE_BASE_SHA" ]] || \
+              fail "candidate must contain exactly one commit on its API base"
+            [[ "$(git rev-list --count \
+              "${CANDIDATE_BASE_SHA}..${CANDIDATE_HEAD_SHA}")" == "1" ]] || \
+              fail "candidate must contain exactly one commit"
+            [[ "$(git log -1 --format=%s "$CANDIDATE_HEAD_SHA")" == \
+              "$AUTO_PR_TITLE" ]] || fail "candidate commit title is outside the contract"
+          }
+
+          assert_merged_auto_candidate_at() {
+            local candidate_master_sha="$1"
+            local evidence_prefix="$2"
+            local published_sha="$3"
+            local closed_pulls
+            closed_pulls="$(gh api --paginate --slurp \
+              "repos/${EXPECTED_REPOSITORY}/pulls?state=closed&base=master&sort=updated&direction=desc&per_page=100")"
+            local matches
+            matches="$(jq \
+              --arg sha "$candidate_master_sha" \
+              '[.[][] | select(.merged_at != null and .merge_commit_sha == $sha)]' \
+              <<<"$closed_pulls")"
+            [[ "$(jq 'length' <<<"$matches")" == "1" ]] || \
+              fail "candidate master is not bound to exactly one merged PR"
+            local pr_number
+            pr_number="$(jq -r '.[0].number | tostring' <<<"$matches")"
+            load_candidate_pr "$pr_number"
+            [[ "$CANDIDATE_STATE" == "closed" && "$CANDIDATE_MERGED" == "true" && \
+              "$CANDIDATE_MERGE_SHA" == "$candidate_master_sha" && \
+              "$CANDIDATE_MERGED_BY" == "$AUTOMATION_ACTOR" ]] || \
+              fail "merged candidate PR state is invalid"
+            [[ "$CANDIDATE_BASE_SHA" == "$published_sha" ]] || \
+              fail "candidate squash base is not the latest published commit"
+            [[ "$(git rev-list --count \
+              "${published_sha}..${candidate_master_sha}")" == "1" ]] || \
+              fail "candidate squash is not the only unpublished commit"
+            [[ "$(git rev-parse "${candidate_master_sha}^")" == \
+              "$CANDIDATE_BASE_SHA" ]] || \
+              fail "candidate master must be the direct squash of the candidate PR"
+            [[ "$(git rev-parse "${candidate_master_sha}^{tree}")" == \
+              "$(git rev-parse "${CANDIDATE_HEAD_SHA}^{tree}")" ]] || \
+              fail "candidate master tree differs from the reviewed PR head"
+            classify_range \
+              "$CANDIDATE_BASE_SHA" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/${evidence_prefix}-candidate-pr.json"
+          }
+
+          validate_release_metadata() {
+            local base_sha="$1"
+            local head_sha="$2"
+            local published_tag="$3"
+            local output_file="$4"
+            node - "$base_sha" "$head_sha" "$published_tag" >"$output_file" <<'NODE'
+          const { spawnSync } = require("node:child_process");
+
+          const [baseSha, headSha, publishedTag] = process.argv.slice(2);
+          const expectedPaths = [".release-please-manifest.json", "CHANGELOG.md"];
+          const runGit = (args, encoding = "utf8") => {
+            const result = spawnSync("git", args, {
+              encoding,
+              maxBuffer: 8 * 1024 * 1024,
+            });
+            if (result.status !== 0) {
+              throw new Error(`git ${args[0]} failed`);
+            }
+            return result.stdout;
+          };
+          const readBlob = (sha, file, maxBytes) => {
+            const value = runGit(["show", `${sha}:${file}`]);
+            if (Buffer.byteLength(value, "utf8") > maxBytes) {
+              throw new Error(`${file} exceeds its metadata size bound`);
+            }
+            return value;
+          };
+
+          const rawStatus = runGit([
+            "diff",
+            "--name-status",
+            "-z",
+            "--no-renames",
+            baseSha,
+            headSha,
+            "--",
+          ]);
+          const records = rawStatus.split("\0").filter(Boolean);
+          if (records.length !== 4) {
+            throw new Error("Release Please diff must contain exactly two files");
+          }
+          const changed = [];
+          for (let index = 0; index < records.length; index += 2) {
+            changed.push({ status: records[index], path: records[index + 1] });
+          }
+          changed.sort((left, right) => left.path.localeCompare(right.path));
+          if (
+            changed.some((entry, index) =>
+              entry.status !== "M" || entry.path !== expectedPaths[index]
+            )
+          ) {
+            throw new Error("Release Please diff is not the exact metadata allowlist");
+          }
+          for (const sha of [baseSha, headSha]) {
+            for (const file of expectedPaths) {
+              const tree = runGit(["ls-tree", sha, "--", file]).trim();
+              if (!/^100644 blob [0-9a-f]{40,64}\t/.test(tree)) {
+                throw new Error(`${file} must remain a non-executable regular file`);
+              }
+            }
+          }
+
+          const baseManifestText = readBlob(
+            baseSha,
+            ".release-please-manifest.json",
+            4096
+          );
+          const headManifestText = readBlob(
+            headSha,
+            ".release-please-manifest.json",
+            4096
+          );
+          const parseManifest = (name, text) => {
+            if (
+              !/^\{\s*"\."\s*:\s*"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"\s*\}\s*$/.test(
+                text
+              )
+            ) {
+              throw new Error(
+                `${name} must use the fixed one-entry root-package JSON shape`
+              );
+            }
+            const value = JSON.parse(text);
+            if (JSON.stringify(Object.keys(value)) !== '["."]') {
+              throw new Error(
+                "Release Please manifest may contain only the root package"
+              );
+            }
+            return value;
+          };
+          const baseManifest = parseManifest("base manifest", baseManifestText);
+          const headManifest = parseManifest("head manifest", headManifestText);
+          const semver = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+          const baseMatch = String(baseManifest["."] ?? "").match(semver);
+          const headMatch = String(headManifest["."] ?? "").match(semver);
+          if (!baseMatch || !headMatch || `v${baseManifest["."]}` !== publishedTag) {
+            throw new Error("Release Please manifest base is not the published tag");
+          }
+          const baseVersion = baseMatch.slice(1).map(Number);
+          const headVersion = headMatch.slice(1).map(Number);
+          if (
+            headVersion[0] !== baseVersion[0] ||
+            headVersion[1] !== baseVersion[1] ||
+            headVersion[2] !== baseVersion[2] + 1
+          ) {
+            throw new Error("low-risk Release Please metadata must be one patch bump");
+          }
+
+          const baseChangelog = readBlob(baseSha, "CHANGELOG.md", 4 * 1024 * 1024);
+          const headChangelog = readBlob(headSha, "CHANGELOG.md", 4 * 1024 * 1024);
+          const baseLines = baseChangelog.split("\n");
+          const headLines = headChangelog.split("\n");
+          if (headLines.length - baseLines.length > 512) {
+            throw new Error("Release Please changelog addition exceeds 512 lines");
+          }
+          let cursor = 0;
+          for (const line of headLines) {
+            if (line === baseLines[cursor]) cursor += 1;
+          }
+          if (cursor !== baseLines.length) {
+            throw new Error("Release Please changelog may only add generated lines");
+          }
+          const nextVersion = headManifest["."];
+          const headingPrefix =
+            `## [${nextVersion}](https://github.com/${process.env.GITHUB_REPOSITORY}` +
+            `/compare/${publishedTag}...v${nextVersion}) (`;
+          if (headLines.filter((line) => line.startsWith(headingPrefix)).length !== 1) {
+            throw new Error("Release Please changelog is missing the exact patch heading");
+          }
+
+          process.stdout.write(
+            `${JSON.stringify({
+              schema_version: 1,
+              eligible: true,
+              base_sha: baseSha,
+              head_sha: headSha,
+              previous_tag: publishedTag,
+              next_tag: `v${nextVersion}`,
+              changed_paths: expectedPaths,
+            }, null, 2)}\n`
+          );
+          NODE
+          }
+
+          validate_release_contract() {
+            local release_file="$1"
+            local master_sha="$2"
+            local expected_tag="$3"
+            local expected_state="$4"
+            local expected_digest="$5"
+            local output_file="$6"
+            node - \
+              "$release_file" \
+              "$master_sha" \
+              "$expected_tag" \
+              "$expected_state" \
+              "$expected_digest" >"$output_file" <<'NODE'
+          const { createHash } = require("node:crypto");
+          const { spawnSync } = require("node:child_process");
+          const fs = require("node:fs");
+
+          const [
+            releaseFile,
+            masterSha,
+            expectedTag,
+            expectedState,
+            expectedDigest,
+          ] = process.argv.slice(2);
+          const fail = (message) => {
+            throw new Error(message);
+          };
+          if (
+            !/^[0-9a-f]{40}$/.test(masterSha) ||
+            !/^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$/.test(
+              expectedTag
+            ) ||
+            !new Set(["draft", "published"]).has(expectedState) ||
+            (expectedDigest !== "" && !/^[0-9a-f]{64}$/.test(expectedDigest))
+          ) {
+            fail("invalid fixed Release contract arguments");
+          }
+
+          const raw = fs.readFileSync(releaseFile, "utf8");
+          if (Buffer.byteLength(raw, "utf8") > 2 * 1024 * 1024) {
+            fail("Release API document exceeds the fixed size bound");
+          }
+          const release = JSON.parse(raw);
+          const releaseId = release.id;
+          if (!Number.isSafeInteger(releaseId) || releaseId < 1) {
+            fail("draft Release id is invalid");
+          }
+          if (
+            release.tag_name !== expectedTag ||
+            release.name !== expectedTag ||
+            !new Set(["master", masterSha]).has(release.target_commitish) ||
+            release.prerelease !== false ||
+            release.author?.login !== "github-actions[bot]" ||
+            !Array.isArray(release.assets) ||
+            release.assets.length !== 0
+          ) {
+            fail("draft Release identity is outside the fixed contract");
+          }
+          if (
+            (expectedState === "draft" &&
+              (release.draft !== true || release.published_at !== null)) ||
+            (expectedState === "published" &&
+              (release.draft !== false ||
+                typeof release.published_at !== "string" ||
+                !Number.isFinite(Date.parse(release.published_at))))
+          ) {
+            fail("Release publication state is outside the fixed contract");
+          }
+          if (
+            typeof release.body !== "string" ||
+            Buffer.byteLength(release.body, "utf8") > 1024 * 1024 ||
+            release.body.includes("\0")
+          ) {
+            fail("draft Release body is invalid");
+          }
+
+          const changelogResult = spawnSync(
+            "git",
+            ["show", `${masterSha}:CHANGELOG.md`],
+            { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 }
+          );
+          if (changelogResult.status !== 0) {
+            fail("current changelog could not be read");
+          }
+          const changelog = changelogResult.stdout;
+          const version = expectedTag.slice(1);
+          const lines = changelog.split("\n");
+          const headingPrefix =
+            `## [${version}](https://github.com/` +
+            `${process.env.GITHUB_REPOSITORY}/compare/`;
+          const starts = lines
+            .map((line, index) => (line.startsWith(headingPrefix) ? index : -1))
+            .filter((index) => index >= 0);
+          if (starts.length !== 1) {
+            fail("current changelog has no unique release section");
+          }
+          const start = starts[0];
+          let end = lines.length;
+          for (let index = start + 1; index < lines.length; index += 1) {
+            if (lines[index].startsWith("## [")) {
+              end = index;
+              break;
+            }
+          }
+          const normalizeBody = (value) =>
+            value.replace(/\r\n/g, "\n").replace(/\n+$/g, "");
+          if (/\r(?!\n)/.test(release.body)) {
+            fail("draft Release body contains a non-canonical line ending");
+          }
+          const expectedBody = normalizeBody(lines.slice(start, end).join("\n"));
+          const actualBody = normalizeBody(release.body);
+          if (actualBody !== expectedBody) {
+            fail("draft Release body is not the exact changelog release section");
+          }
+
+          const canonicalSummary = {
+            release_id: String(releaseId),
+            tag_name: release.tag_name,
+            name: release.name,
+            target_commitish: release.target_commitish,
+            body_sha256: createHash("sha256").update(actualBody).digest("hex"),
+            author_login: release.author.login,
+            asset_count: release.assets.length,
+          };
+          const identityDigest = createHash("sha256")
+            .update(JSON.stringify(canonicalSummary))
+            .digest("hex");
+          if (expectedDigest !== "" && identityDigest !== expectedDigest) {
+            fail("Release canonical summary changed during the audit");
+          }
+          process.stdout.write(
+            `${JSON.stringify(
+              {
+                schema_version: 1,
+                eligible: true,
+                state: expectedState,
+                master_sha: masterSha,
+                identity_digest: identityDigest,
+                canonical_summary: canonicalSummary,
+              },
+              null,
+              2
+            )}\n`
+          );
+          NODE
+          }
+
+          load_release_pr() {
+            local pr_number="$1"
+            RELEASE_JSON="$(gh api \
+              "repos/${EXPECTED_REPOSITORY}/pulls/${pr_number}")"
+            RELEASE_PR_NUMBER="$(jq -r '.number | tostring' <<<"$RELEASE_JSON")"
+            RELEASE_STATE="$(jq -r '.state // ""' <<<"$RELEASE_JSON")"
+            RELEASE_MERGED="$(jq -r \
+              'if .merged == true then "true" else "false" end' <<<"$RELEASE_JSON")"
+            RELEASE_BASE_SHA="$(jq -r '.base.sha // ""' <<<"$RELEASE_JSON")"
+            RELEASE_HEAD_SHA="$(jq -r '.head.sha // ""' <<<"$RELEASE_JSON")"
+            RELEASE_HEAD_REF="$(jq -r '.head.ref // ""' <<<"$RELEASE_JSON")"
+            RELEASE_HEAD_REPO="$(jq -r \
+              '.head.repo.full_name // ""' <<<"$RELEASE_JSON")"
+            RELEASE_AUTHOR="$(jq -r '.user.login // ""' <<<"$RELEASE_JSON")"
+            RELEASE_BODY="$(jq -r '.body // ""' <<<"$RELEASE_JSON")"
+            RELEASE_MERGE_SHA="$(jq -r \
+              '.merge_commit_sha // ""' <<<"$RELEASE_JSON")"
+            RELEASE_MERGED_BY="$(jq -r '.merged_by.login // ""' \
+              <<<"$RELEASE_JSON")"
+            [[ "$RELEASE_PR_NUMBER" == "$pr_number" ]] || \
+              fail "Release Please PR identity changed"
+            [[ "$(jq -r '.base.ref // ""' <<<"$RELEASE_JSON")" == "master" && \
+              "$RELEASE_HEAD_REF" == "$RELEASE_BRANCH" && \
+              "$RELEASE_HEAD_REPO" == "$EXPECTED_REPOSITORY" ]] || \
+              fail "Release Please PR repository or branch is invalid"
+            [[ "$RELEASE_AUTHOR" == "github-actions[bot]" ]] || \
+              fail "Release Please PR author is invalid"
+            [[ "$RELEASE_BODY" == *"This PR was generated with [Release Please]"* ]] || \
+              fail "Release Please generated-body marker is missing"
+            [[ "$RELEASE_BASE_SHA" =~ ^[0-9a-f]{40}$ && \
+              "$RELEASE_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || \
+              fail "Release Please PR SHAs are invalid"
+            git fetch --no-tags origin \
+              "+refs/pull/${pr_number}/head:refs/remotes/origin/low-risk-release-please"
+            local fetched_head
+            fetched_head="$(git rev-parse refs/remotes/origin/low-risk-release-please)"
+            [[ "$fetched_head" == "$RELEASE_HEAD_SHA" ]] || \
+              fail "fetched Release Please head differs from the API head"
+            [[ "$(git rev-parse "${RELEASE_HEAD_SHA}^")" == \
+              "$RELEASE_BASE_SHA" ]] || \
+              fail "Release Please PR must contain exactly one metadata commit"
+            [[ "$(git rev-list --count \
+              "${RELEASE_BASE_SHA}..${RELEASE_HEAD_SHA}")" == "1" ]] || \
+              fail "Release Please PR must contain exactly one metadata commit"
+          }
+
+          wait_or_fail_checks() {
+            local pr_number="$1"
+            local head_sha="$2"
+            local output_file="$3"
+            local result=0
+            check_required_checks "$pr_number" "$head_sha" "$output_file" || result=$?
+            case "$result" in
+              0)
+                return 0
+                ;;
+              3)
+                return 3
+                ;;
+              8)
+                return 8
+                ;;
+              *)
+                fail "required checks failed for PR #${pr_number}"
+                ;;
+            esac
+          }
+
+          wait_or_fail_release_validation() {
+            local head_sha="$1"
+            local output_file="$2"
+            local result=0
+            check_release_validation "$head_sha" "$output_file" || result=$?
+            case "$result" in
+              0)
+                return 0
+                ;;
+              3 | 8)
+                return "$result"
+                ;;
+              *)
+                fail "Release Please validation failed for exact head ${head_sha}"
+                ;;
+            esac
+          }
+
+          fetch_master
+
+          candidate_list="$(gh pr list \
+            --repo "$EXPECTED_REPOSITORY" \
+            --state open \
+            --label "$AUTO_LABEL" \
+            --limit 100 \
+            --json number)"
+          candidate_count="$(jq 'length' <<<"$candidate_list")"
+          if (( candidate_count > 1 )); then
+            fail "more than one low-risk candidate is open"
+          fi
+          if (( candidate_count == 1 )); then
+            candidate_number="$(jq -r '.[0].number | tostring' <<<"$candidate_list")"
+            load_candidate_pr "$candidate_number"
+            [[ "$CANDIDATE_STATE" == "open" && "$CANDIDATE_MERGED" == "false" ]] || \
+              fail "candidate PR must be open and unmerged"
+            [[ "$(jq -r 'if .draft == true then "true" else "false" end' \
+              <<<"$CANDIDATE_JSON")" == "false" ]] || fail "candidate PR is draft"
+            [[ "$CANDIDATE_BASE_SHA" == "$MASTER_SHA" ]] || \
+              fail "candidate PR is not based on current master"
+
+            load_latest_published
+            published_tag="$LATEST_PUBLISHED_TAG"
+            published_sha="$LATEST_PUBLISHED_SHA"
+            published_id="$LATEST_PUBLISHED_ID"
+            [[ "$CANDIDATE_BASE_SHA" == "$published_sha" ]] || \
+              fail "candidate base is not the latest published commit"
+            [[ "$(git rev-list --count \
+              "${published_sha}..${CANDIDATE_HEAD_SHA}")" == "1" ]] || \
+              fail "candidate is not the sole unpublished commit"
+            git merge-base --is-ancestor "$published_sha" "$CANDIDATE_HEAD_SHA" || \
+              fail "published Release is not an ancestor of the candidate"
+            classify_range \
+              "$CANDIDATE_BASE_SHA" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/candidate-pr.json"
+            classify_range \
+              "$published_sha" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/candidate-complete-unpublished-range.json"
+
+            checks_result=0
+            wait_or_fail_checks \
+              "$candidate_number" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/candidate-required-checks.json" || checks_result=$?
+            if [[ "$checks_result" != "0" ]]; then
+              record_decision \
+                "candidate_pr" \
+                "waiting" \
+                "required checks are missing or pending on the exact candidate head"
+              exit 0
+            fi
+
+            candidate_head="$CANDIDATE_HEAD_SHA"
+            candidate_base="$CANDIDATE_BASE_SHA"
+            fetch_master
+            [[ "$MASTER_SHA" == "$candidate_base" ]] || \
+              fail "master changed before candidate merge"
+            load_candidate_pr "$candidate_number"
+            [[ "$CANDIDATE_STATE" == "open" && "$CANDIDATE_MERGED" == "false" && \
+              "$CANDIDATE_BASE_SHA" == "$MASTER_SHA" && \
+              "$CANDIDATE_HEAD_SHA" == "$candidate_head" ]] || \
+              fail "candidate PR changed before merge"
+            assert_latest_published_unchanged \
+              "$published_tag" "$published_sha" "$published_id"
+            classify_range \
+              "$CANDIDATE_BASE_SHA" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/candidate-pr-final.json"
+            classify_range \
+              "$published_sha" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/candidate-complete-unpublished-range-final.json"
+            final_checks=0
+            wait_or_fail_checks \
+              "$candidate_number" \
+              "$CANDIDATE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/candidate-required-checks-final.json" || final_checks=$?
+            [[ "$final_checks" == "0" ]] || \
+              fail "candidate required checks changed before merge"
+            fetch_master
+            [[ "$MASTER_SHA" == "$candidate_base" ]] || \
+              fail "master changed after the final candidate audit"
+            assert_latest_published_unchanged \
+              "$published_tag" "$published_sha" "$published_id"
+            [[ "$CANDIDATE_BASE_SHA" == "$published_sha" ]] || \
+              fail "candidate base changed from the latest published commit"
+            [[ "$(git rev-list --count \
+              "${published_sha}..${CANDIDATE_HEAD_SHA}")" == "1" ]] || \
+              fail "candidate topology changed before merge"
+
+            gh pr merge "$candidate_number" \
+              --repo "$EXPECTED_REPOSITORY" \
+              --squash \
+              --match-head-commit "$CANDIDATE_HEAD_SHA"
+            record_decision \
+              "candidate_pr" \
+              "merge_requested" \
+              "exact low-risk candidate head passed the complete unpublished-range audit"
+            exit 0
+          fi
+
+          open_release_pulls="$(gh api --paginate --slurp \
+            "repos/${EXPECTED_REPOSITORY}/pulls?state=open&base=master&per_page=100")"
+          release_candidates="$(jq \
+            --arg branch "$RELEASE_BRANCH" \
+            --arg repo "$EXPECTED_REPOSITORY" \
+            '[.[][] | select(
+              .head.ref == $branch and
+              .head.repo.full_name == $repo and
+              .user.login == "github-actions[bot]" and
+              ((.body // "") | contains("This PR was generated with [Release Please]"))
+            )]' <<<"$open_release_pulls")"
+          release_count="$(jq 'length' <<<"$release_candidates")"
+          if (( release_count > 1 )); then
+            fail "more than one authentic Release Please PR is open"
+          fi
+          if (( release_count == 1 )); then
+            release_number="$(jq -r '.[0].number | tostring' <<<"$release_candidates")"
+            load_release_pr "$release_number"
+            [[ "$RELEASE_STATE" == "open" && "$RELEASE_MERGED" == "false" ]] || \
+              fail "Release Please PR must be open and unmerged"
+            [[ "$(jq -r 'if .draft == true then "true" else "false" end' \
+              <<<"$RELEASE_JSON")" == "false" ]] || fail "Release Please PR is draft"
+            [[ "$RELEASE_BASE_SHA" == "$MASTER_SHA" ]] || \
+              fail "Release Please PR is stale"
+
+            load_latest_published
+            published_tag="$LATEST_PUBLISHED_TAG"
+            published_sha="$LATEST_PUBLISHED_SHA"
+            published_id="$LATEST_PUBLISHED_ID"
+            assert_merged_auto_candidate_at \
+              "$RELEASE_BASE_SHA" "release-pr" "$published_sha"
+            classify_range \
+              "$published_sha" \
+              "$RELEASE_BASE_SHA" \
+              "${EVIDENCE_DIR}/release-pr-complete-unpublished-range.json"
+            validate_release_metadata \
+              "$RELEASE_BASE_SHA" \
+              "$RELEASE_HEAD_SHA" \
+              "$published_tag" \
+              "${EVIDENCE_DIR}/release-pr-metadata.json"
+
+            checks_result=0
+            wait_or_fail_checks \
+              "$release_number" \
+              "$RELEASE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/release-pr-required-checks.json" || checks_result=$?
+            release_validation_result=0
+            wait_or_fail_release_validation \
+              "$RELEASE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/release-pr-validation.json" || \
+              release_validation_result=$?
+            if [[ "$checks_result" != "0" || \
+              "$release_validation_result" != "0" ]]; then
+              if [[ "$EVENT_NAME" == "workflow_run" && \
+                "$EVENT_WORKFLOW_NAME" == "Release Please" ]]; then
+                gh workflow run ci.yml \
+                  --repo "$EXPECTED_REPOSITORY" \
+                  --ref "$RELEASE_HEAD_REF" \
+                  -f "release_please_pr_number=${release_number}"
+                gh workflow run pr-agent.yml \
+                  --repo "$EXPECTED_REPOSITORY" \
+                  --ref "$RELEASE_HEAD_REF" \
+                  -f "release_please_pr_number=${release_number}"
+                record_decision \
+                  "release_please_pr" \
+                  "checks_dispatched" \
+                  "trusted CI and PR-Agent validation were dispatched for the exact metadata head"
+              else
+                record_decision \
+                  "release_please_pr" \
+                  "waiting" \
+                  "required checks are missing or pending on the exact metadata head"
+              fi
+              exit 0
+            fi
+
+            release_head="$RELEASE_HEAD_SHA"
+            release_base="$RELEASE_BASE_SHA"
+            fetch_master
+            [[ "$MASTER_SHA" == "$release_base" ]] || \
+              fail "master changed before Release Please merge"
+            load_release_pr "$release_number"
+            [[ "$RELEASE_STATE" == "open" && "$RELEASE_MERGED" == "false" && \
+              "$RELEASE_BASE_SHA" == "$MASTER_SHA" && \
+              "$RELEASE_HEAD_SHA" == "$release_head" ]] || \
+              fail "Release Please PR changed before merge"
+            assert_latest_published_unchanged \
+              "$published_tag" "$published_sha" "$published_id"
+            assert_merged_auto_candidate_at \
+              "$RELEASE_BASE_SHA" "release-pr-final" "$published_sha"
+            classify_range \
+              "$published_sha" \
+              "$RELEASE_BASE_SHA" \
+              "${EVIDENCE_DIR}/release-pr-complete-unpublished-range-final.json"
+            validate_release_metadata \
+              "$RELEASE_BASE_SHA" \
+              "$RELEASE_HEAD_SHA" \
+              "$published_tag" \
+              "${EVIDENCE_DIR}/release-pr-metadata-final.json"
+            final_checks=0
+            wait_or_fail_checks \
+              "$release_number" \
+              "$RELEASE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/release-pr-required-checks-final.json" || final_checks=$?
+            [[ "$final_checks" == "0" ]] || \
+              fail "Release Please required checks changed before merge"
+            final_release_validation=0
+            wait_or_fail_release_validation \
+              "$RELEASE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/release-pr-validation-final.json" || \
+              final_release_validation=$?
+            if [[ "$final_release_validation" != "0" ]]; then
+              record_decision \
+                "release_please_pr" \
+                "waiting" \
+                "Release Please validation is missing or pending on the exact metadata head"
+              exit 0
+            fi
+            fetch_master
+            [[ "$MASTER_SHA" == "$release_base" ]] || \
+              fail "master changed after the final Release Please audit"
+            assert_latest_published_unchanged \
+              "$published_tag" "$published_sha" "$published_id"
+            assert_merged_auto_candidate_at \
+              "$RELEASE_BASE_SHA" "release-pr-pre-merge" "$published_sha"
+            [[ "$(git rev-list --count \
+              "${published_sha}..${RELEASE_BASE_SHA}")" == "1" ]] || \
+              fail "Release Please base is not the sole candidate squash"
+            pre_merge_release_validation=0
+            wait_or_fail_release_validation \
+              "$RELEASE_HEAD_SHA" \
+              "${EVIDENCE_DIR}/release-pr-validation-pre-merge.json" || \
+              pre_merge_release_validation=$?
+            if [[ "$pre_merge_release_validation" != "0" ]]; then
+              record_decision \
+                "release_please_pr" \
+                "waiting" \
+                "Release Please validation changed immediately before merge"
+              exit 0
+            fi
+
+            gh pr merge "$release_number" \
+              --repo "$EXPECTED_REPOSITORY" \
+              --squash \
+              --match-head-commit "$RELEASE_HEAD_SHA"
+            record_decision \
+              "release_please_pr" \
+              "merge_requested" \
+              "exact patch-only Release Please metadata passed re-audit"
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" != "workflow_dispatch" && \
+            !( "$EVENT_NAME" == "workflow_run" && \
+              "$EVENT_WORKFLOW_NAME" == "Release Please" ) ]]; then
+            record_decision \
+              "idle" \
+              "no_action" \
+              "no candidate or Release Please PR is ready"
+            exit 0
+          fi
+
+          expected_version="$(git show \
+            "${MASTER_SHA}:.release-please-manifest.json" \
+            | jq -er \
+              'if keys == ["."] and
+                (. ["."] | type == "string") and
+                (. ["."] | test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+               then .["."] else empty end')"
+          expected_tag="v${expected_version}"
+          draft_json=""
+          if ! draft_json="$(gh api \
+            "repos/${EXPECTED_REPOSITORY}/releases/tags/${expected_tag}" 2>/dev/null)"; then
+            record_decision \
+              "draft_release" \
+              "waiting" \
+              "Release Please has not prepared the exact draft tag"
+            exit 0
+          fi
+          draft_id="$(jq -r '.id | tostring' <<<"$draft_json")"
+          [[ "$draft_id" =~ ^[1-9][0-9]*$ && \
+            "$(jq -r '.tag_name // ""' <<<"$draft_json")" == "$expected_tag" && \
+            "$(jq -r 'if .draft == true then "true" else "false" end' \
+              <<<"$draft_json")" == "true" && \
+            "$(jq -r 'if .prerelease == true then "true" else "false" end' \
+              <<<"$draft_json")" == "false" && \
+            "$(jq -r '.published_at // ""' <<<"$draft_json")" == "" ]] || \
+            fail "the expected Release is not an unpublished non-prerelease draft"
+          git fetch --no-tags --force origin \
+            "+refs/tags/${expected_tag}:refs/tags/${expected_tag}"
+          draft_tag_sha="$(git rev-list -n 1 "${expected_tag}^{commit}")"
+          [[ "$draft_tag_sha" == "$MASTER_SHA" ]] || \
+            fail "draft Release tag does not point to current master"
+          draft_json_file="${EVIDENCE_DIR}/draft-release-api.json"
+          printf '%s\n' "$draft_json" >"$draft_json_file"
+          validate_release_contract \
+            "$draft_json_file" \
+            "$MASTER_SHA" \
+            "$expected_tag" \
+            "draft" \
+            "" \
+            "${EVIDENCE_DIR}/draft-release-contract.json"
+          draft_identity_digest="$(jq -er '.identity_digest' \
+            "${EVIDENCE_DIR}/draft-release-contract.json")"
+          [[ "$draft_identity_digest" =~ ^[0-9a-f]{64}$ ]] || \
+            fail "draft Release canonical identity digest is invalid"
+
+          closed_release_pulls="$(gh api --paginate --slurp \
+            "repos/${EXPECTED_REPOSITORY}/pulls?state=closed&base=master&sort=updated&direction=desc&per_page=100")"
+          merged_release_candidates="$(jq \
+            --arg branch "$RELEASE_BRANCH" \
+            --arg repo "$EXPECTED_REPOSITORY" \
+            --arg sha "$MASTER_SHA" \
+            '[.[][] | select(
+              .merged_at != null and
+              .merge_commit_sha == $sha and
+              .head.ref == $branch and
+              .head.repo.full_name == $repo and
+              .user.login == "github-actions[bot]" and
+              ((.body // "") | contains("This PR was generated with [Release Please]"))
+            )]' <<<"$closed_release_pulls")"
+          [[ "$(jq 'length' <<<"$merged_release_candidates")" == "1" ]] || \
+            fail "current master is not bound to exactly one merged Release Please PR"
+          release_number="$(jq -r \
+            '.[0].number | tostring' <<<"$merged_release_candidates")"
+          load_release_pr "$release_number"
+          [[ "$RELEASE_STATE" == "closed" && "$RELEASE_MERGED" == "true" && \
+            "$RELEASE_MERGE_SHA" == "$MASTER_SHA" && \
+            "$RELEASE_MERGED_BY" == "$AUTOMATION_ACTOR" ]] || \
+            fail "merged Release Please PR state is invalid"
+          [[ "$(git rev-parse "${MASTER_SHA}^")" == "$RELEASE_BASE_SHA" && \
+            "$(git rev-parse "${MASTER_SHA}^{tree}")" == \
+              "$(git rev-parse "${RELEASE_HEAD_SHA}^{tree}")" ]] || \
+            fail "current master is not the exact Release Please metadata squash"
+
+          load_latest_published
+          published_tag="$LATEST_PUBLISHED_TAG"
+          published_sha="$LATEST_PUBLISHED_SHA"
+          published_id="$LATEST_PUBLISHED_ID"
+          [[ "$published_tag" != "$expected_tag" ]] || \
+            fail "the expected tag is already published"
+          assert_merged_auto_candidate_at \
+            "$RELEASE_BASE_SHA" "publish" "$published_sha"
+          [[ "$(git rev-list --count \
+            "${published_sha}..${RELEASE_BASE_SHA}")" == "1" ]] || \
+            fail "published range does not contain exactly one candidate squash"
+          [[ "$(git rev-list --count \
+            "${published_sha}..${MASTER_SHA}")" == "2" ]] || \
+            fail "publication range must contain candidate and metadata squashes only"
+          classify_range \
+            "$published_sha" \
+            "$RELEASE_BASE_SHA" \
+            "${EVIDENCE_DIR}/publish-complete-unpublished-range.json"
+          validate_release_metadata \
+            "$RELEASE_BASE_SHA" \
+            "$RELEASE_HEAD_SHA" \
+            "$published_tag" \
+            "${EVIDENCE_DIR}/publish-release-metadata.json"
+          publish_checks=0
+          wait_or_fail_checks \
+            "$release_number" \
+            "$RELEASE_HEAD_SHA" \
+            "${EVIDENCE_DIR}/publish-required-checks.json" || publish_checks=$?
+          [[ "$publish_checks" == "0" ]] || \
+            fail "Release Please required checks are no longer passing"
+          publish_validation=0
+          wait_or_fail_release_validation \
+            "$RELEASE_HEAD_SHA" \
+            "${EVIDENCE_DIR}/publish-release-validation.json" || \
+            publish_validation=$?
+          if [[ "$publish_validation" != "0" ]]; then
+            record_decision \
+              "draft_release" \
+              "waiting" \
+              "Release Please validation is missing or pending on the exact metadata head"
+            exit 0
+          fi
+
+          release_head="$RELEASE_HEAD_SHA"
+          release_base="$RELEASE_BASE_SHA"
+          fetch_master
+          [[ "$MASTER_SHA" == "$draft_tag_sha" ]] || \
+            fail "master changed before draft publication"
+          load_release_pr "$release_number"
+          [[ "$RELEASE_STATE" == "closed" && "$RELEASE_MERGED" == "true" && \
+            "$RELEASE_MERGE_SHA" == "$MASTER_SHA" && \
+            "$RELEASE_MERGED_BY" == "$AUTOMATION_ACTOR" && \
+            "$RELEASE_BASE_SHA" == "$release_base" && \
+            "$RELEASE_HEAD_SHA" == "$release_head" ]] || \
+            fail "Release Please PR changed before publication"
+          assert_latest_published_unchanged \
+            "$published_tag" "$published_sha" "$published_id"
+          git fetch --no-tags --force origin \
+            "+refs/tags/${expected_tag}:refs/tags/${expected_tag}"
+          [[ "$(git rev-list -n 1 "${expected_tag}^{commit}")" == "$MASTER_SHA" ]] || \
+            fail "draft tag moved before publication"
+          draft_after_json="$(gh api \
+            "repos/${EXPECTED_REPOSITORY}/releases/tags/${expected_tag}")"
+          [[ "$(jq -r '.id | tostring' <<<"$draft_after_json")" == "$draft_id" && \
+            "$(jq -r 'if .draft == true then "true" else "false" end' \
+              <<<"$draft_after_json")" == "true" && \
+            "$(jq -r 'if .prerelease == true then "true" else "false" end' \
+              <<<"$draft_after_json")" == "false" ]] || \
+            fail "draft Release changed before publication"
+          printf '%s\n' "$draft_after_json" >"$draft_json_file"
+          validate_release_contract \
+            "$draft_json_file" \
+            "$MASTER_SHA" \
+            "$expected_tag" \
+            "draft" \
+            "$draft_identity_digest" \
+            "${EVIDENCE_DIR}/draft-release-contract-refresh.json"
+          assert_merged_auto_candidate_at \
+            "$RELEASE_BASE_SHA" "publish-final" "$published_sha"
+          [[ "$(git rev-list --count \
+            "${published_sha}..${RELEASE_BASE_SHA}")" == "1" && \
+            "$(git rev-list --count \
+            "${published_sha}..${MASTER_SHA}")" == "2" ]] || \
+            fail "publication topology changed before the final audit"
+          classify_range \
+            "$published_sha" \
+            "$RELEASE_BASE_SHA" \
+            "${EVIDENCE_DIR}/publish-complete-unpublished-range-final.json"
+          validate_release_metadata \
+            "$RELEASE_BASE_SHA" \
+            "$RELEASE_HEAD_SHA" \
+            "$published_tag" \
+            "${EVIDENCE_DIR}/publish-release-metadata-final.json"
+          final_publish_checks=0
+          wait_or_fail_checks \
+            "$release_number" \
+            "$RELEASE_HEAD_SHA" \
+            "${EVIDENCE_DIR}/publish-required-checks-final.json" || \
+            final_publish_checks=$?
+          [[ "$final_publish_checks" == "0" ]] || \
+            fail "Release Please required checks changed before publication"
+          final_publish_validation=0
+          wait_or_fail_release_validation \
+            "$RELEASE_HEAD_SHA" \
+            "${EVIDENCE_DIR}/publish-release-validation-final.json" || \
+            final_publish_validation=$?
+          if [[ "$final_publish_validation" != "0" ]]; then
+            record_decision \
+              "draft_release" \
+              "waiting" \
+              "Release Please validation changed on the exact metadata head"
+            exit 0
+          fi
+          fetch_master
+          [[ "$MASTER_SHA" == "$draft_tag_sha" ]] || \
+            fail "master changed after the final publication audit"
+          assert_latest_published_unchanged \
+            "$published_tag" "$published_sha" "$published_id"
+          git fetch --no-tags --force origin \
+            "+refs/tags/${expected_tag}:refs/tags/${expected_tag}"
+          [[ "$(git rev-list -n 1 "${expected_tag}^{commit}")" == "$MASTER_SHA" ]] || \
+            fail "draft tag moved after the final publication audit"
+          draft_after_json="$(gh api \
+            "repos/${EXPECTED_REPOSITORY}/releases/tags/${expected_tag}")"
+          [[ "$(jq -r '.id | tostring' <<<"$draft_after_json")" == "$draft_id" && \
+            "$(jq -r 'if .draft == true then "true" else "false" end' \
+              <<<"$draft_after_json")" == "true" && \
+            "$(jq -r 'if .prerelease == true then "true" else "false" end' \
+              <<<"$draft_after_json")" == "false" ]] || \
+            fail "draft Release changed after the final publication audit"
+          printf '%s\n' "$draft_after_json" >"$draft_json_file"
+          validate_release_contract \
+            "$draft_json_file" \
+            "$MASTER_SHA" \
+            "$expected_tag" \
+            "draft" \
+            "$draft_identity_digest" \
+            "${EVIDENCE_DIR}/draft-release-contract-final.json"
+          assert_merged_auto_candidate_at \
+            "$RELEASE_BASE_SHA" "publish-pre-release" "$published_sha"
+          [[ "$(git rev-list --count \
+            "${published_sha}..${RELEASE_BASE_SHA}")" == "1" && \
+            "$(git rev-list --count \
+            "${published_sha}..${MASTER_SHA}")" == "2" ]] || \
+            fail "publication topology changed immediately before mutation"
+          pre_publish_validation=0
+          wait_or_fail_release_validation \
+            "$RELEASE_HEAD_SHA" \
+            "${EVIDENCE_DIR}/publish-release-validation-pre-publish.json" || \
+            pre_publish_validation=$?
+          if [[ "$pre_publish_validation" != "0" ]]; then
+            record_decision \
+              "draft_release" \
+              "waiting" \
+              "Release Please validation changed immediately before publication"
+            exit 0
+          fi
+
+          gh release edit "$expected_tag" \
+            --repo "$EXPECTED_REPOSITORY" \
+            --draft=false \
+            --verify-tag
+          published_json="$(gh api \
+            "repos/${EXPECTED_REPOSITORY}/releases/tags/${expected_tag}")"
+          [[ "$(jq -r '.id | tostring' <<<"$published_json")" == "$draft_id" && \
+            "$(jq -r 'if .draft == true then "true" else "false" end' \
+              <<<"$published_json")" == "false" && \
+            "$(jq -r '.published_at // ""' <<<"$published_json")" != "" ]] || \
+            fail "Release publication could not be verified"
+          printf '%s\n' "$published_json" >"$draft_json_file"
+          validate_release_contract \
+            "$draft_json_file" \
+            "$MASTER_SHA" \
+            "$expected_tag" \
+            "published" \
+            "$draft_identity_digest" \
+            "${EVIDENCE_DIR}/published-release-contract.json"
+          git fetch --no-tags --force origin \
+            "+refs/tags/${expected_tag}:refs/tags/${expected_tag}"
+          [[ "$(git rev-list -n 1 "${expected_tag}^{commit}")" == "$MASTER_SHA" ]] || \
+            fail "published Release tag moved after publication"
+          record_decision \
+            "draft_release" \
+            "published" \
+            "exact patch Release was published; deployment remains release.published-only"

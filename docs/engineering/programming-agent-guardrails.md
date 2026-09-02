@@ -133,6 +133,73 @@ In the Codex desktop environment, do not run extra GitHub authentication checks 
 creating a PR. Use `pnpm pr:create` directly after PR readiness checks; only handle
 authentication when the actual push or PR creation command fails.
 
+### Conversational QiWe extension runner
+
+The default-disabled Space programming-extension runner is narrower than an ordinary
+interactive programming session:
+
+- it claims only `space_programming_extension_request` work assigned to
+  `programming_agent` through the local operations-intake socket;
+- its claim and Codex child environment contain no Space, room, member, actor or message
+  identifiers and no production, database, channel, deployment, COS, or GitHub
+  credentials;
+- it works from exact `origin/master` in a disposable worktree and accepts only the
+  append-only QiWe event-mapping paths enforced by the repository low-risk classifier;
+- when the existing mapping DSL is insufficient, it may add one declarative
+  `*.primitive.json` recipe that composes only the fixed parser kernel, alongside the
+  mapping, synthetic fixture, and canonical expectation; it may never add executable
+  parser source or a new kernel operation;
+- it may add one fixed-format `*.mapping.md` summary that references only the same
+  mapping, fixture, expectation, definition key, and declarative scope;
+- the complete append-only bundle is capped at five files;
+- it runs the repository-owned fixed validation set and uses `pnpm pr:create` for a
+  PR-only handoff;
+- its parent startup environment must not contain a GitHub token; only after Codex has
+  exited and the allowed paths, complete committed diff, fixed validation, low-risk
+  classification, and clean worktree state pass may it invoke the fixed short-lived
+  token helper, authenticate the first remote fetch, and continue only if fetched
+  `origin/master` still equals the audited local base;
+- it uses the `qintopia-programming-agent/` branch prefix and a `feat(qiwe):` commit and
+  PR title, then stops after creating the ordinary PR.
+
+A successful PR handoff leaves the originating work item in `awaiting_publish` with
+phase `pr_created`; PR creation is not extension completion. The broker binds the
+original work-item Space and request digest to the generated mapping key, exact mapping
+source digest, candidate commit, and PR number. Current-Space status exposes only the PR
+number and short candidate/mapping fingerprints, never the PR URL, branch, complete
+commit SHA, or external response.
+
+After a Release is active, the trusted status path advances the request only when the
+current sidecar's embedded registry contains that exact mapping source digest and the
+service has a valid deploy-injected `QINTOPIA_DEPLOYED_COMMIT_SHA`. It then reports
+`release_phase=released` and `phase=ready_to_replan`. The trusted public status wrapper
+uses an internal same-Space operation to retrieve the retained intent, reruns the
+bounded planner, and idempotently creates the ordinary shadow proposal. The original
+intent is not included in the model-facing status response, the original request id
+cannot continue from another Space, and administrator confirmation remains mandatory.
+
+The runner must not merge any PR, publish a Release, deploy, send, retry an expired
+claim or accept caller-supplied commands, paths, URLs, labels, branches or validation
+steps. Separate child-process environments alone do not isolate credentials from code
+running under the same Unix UID. Production dispatch must remain disabled until Codex
+runs under a dedicated OS identity or equivalent container with no read access to
+production env, Hermes, COS, database, server, or GitHub credentials; the PR
+orchestration boundary must hold the GitHub token outside that sandbox.
+
+Manual owner review remains the default after this handoff. The only exception is the
+separate, default-disabled `Low-Risk Auto Release` workflow, which may consume the fixed
+label after independently revalidating the exact PR, required checks, append-only
+classifier, CI-run-backed Release Please validation, strict candidate-plus-metadata
+commit topology, draft identity digest, and complete unpublished range. That workflow
+does not broaden the programming runner and cannot activate production behavior. Any new
+permission, dependency, migration, authentication, encryption, send path, deployment
+change, or file outside the mapping/fixture/expectation/optional primitive/optional
+mapping-summary allowlist stops for owner review.
+
+The restricted recipe contract is documented in `qiwe-restricted-parser-primitives.md`.
+A provider encoding outside that fixed kernel is an owner-reviewed runtime extension,
+not an automatic exception.
+
 ## Hermes Profile Rule
 
 Hermes profile live state is not source code.

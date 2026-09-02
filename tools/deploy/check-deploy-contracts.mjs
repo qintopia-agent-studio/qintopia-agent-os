@@ -375,6 +375,9 @@ if (!exists(deployBundleBuilderPath)) {
     "skills/erhua-csv/manifest.yaml",
     "skills/erhua-csv/__init__.py",
     "skills/erhua-csv/tests",
+    "skills/qiwe/space_change_tools.py",
+    "fixtures/qiwe/event-mappings",
+    "fixtures/qiwe/system",
     "workflows/erhua-morning-brief",
     "workflows/xiaoman-weekly-loop",
     "runtime/hermes/validate_hermes_python.py",
@@ -3159,6 +3162,334 @@ if (!exists(qiweImageSendProductionRollbackPath)) {
   }
 }
 
+const spaceAutomationRuntimeActivationPath =
+  "deploy/sidecar/scripts/activate-space-automation-runtime-production.sh";
+const spaceAutomationNatsAclPreflightPath =
+  "deploy/sidecar/scripts/space-automation-nats-acl-preflight.py";
+const spaceAutomationRuntimeRollbackPath =
+  "deploy/sidecar/scripts/rollback-space-automation-runtime-production.sh";
+const spaceAutomationRuntimeObservationPath =
+  "deploy/sidecar/scripts/space-automation-runtime-production-observation-smoke.sh";
+const spaceAutomationRuntimeTestPath =
+  "tools/deploy/test-space-automation-runtime-production.mjs";
+const spaceAutomationNatsAclTestPath =
+  "tools/deploy/test_space_automation_nats_acl_preflight.py";
+const officialQiweResearchWorkerPath = "skills/qiwe/official_qiwe_research_worker.py";
+
+for (const scriptPath of [
+  spaceAutomationRuntimeActivationPath,
+  spaceAutomationNatsAclPreflightPath,
+  spaceAutomationRuntimeRollbackPath,
+  spaceAutomationRuntimeObservationPath,
+]) {
+  requireExecutable(scriptPath);
+}
+
+if (exists(spaceAutomationRuntimeActivationPath)) {
+  const activation = readText(spaceAutomationRuntimeActivationPath);
+  for (const fragment of [
+    "approved-production-space-automation-runtime",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'PATH="/usr/bin:/bin:/usr/sbin:/sbin"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    'SHA256SUM="/usr/bin/sha256sum"',
+    "QINTOPIA_SPACE_AUTOMATION_EXECUTION_ENABLED",
+    "QINTOPIA_SPACE_AUTOMATION_EXECUTION_APPROVAL",
+    "QINTOPIA_SPACE_AUTOMATION_EXECUTION_DATABASE_URL_SHA256",
+    "QINTOPIA_SPACE_AUTOMATION_QIWE_ALLOWED_HOSTS",
+    "QINTOPIA_SPACE_AGENT_TURN_RUNTIME_READY",
+    "QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED",
+    "QIWE_NATS_CAPTURE_ENABLED",
+    "QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED",
+    "QIWE_NATS_URL",
+    "QIWE_NATS_AUTH_FILE",
+    "QIWE_NATS_AUTHENTICATED_RAW_SUBJECT",
+    "QINTOPIA_SIDECAR_NATS_URL",
+    "QINTOPIA_SIDECAR_NATS_AUTH_FILE",
+    "QINTOPIA_SIDECAR_RAW_SUBJECT",
+    "QINTOPIA_SIDECAR_AUTHENTICATED_RAW_SUBJECT",
+    "QINTOPIA_SIDECAR_MESSAGE_SUBJECT",
+    "QINTOPIA_SIDECAR_TRUST_AUTHENTICATED_RAW_SUBJECT",
+    "QINTOPIA_SIDECAR_NATS_STREAM",
+    "QINTOPIA_SIDECAR_CONSUMER",
+    "approved-production-space-automation-execution",
+    "manager.qiweapi.com",
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "qintopia-agentos-automation-dispatcher.timer",
+    "qintopia-agentos-automation-dispatcher.service",
+    "qintopia-agentos-space-automation-execution-worker.service",
+    '"$SYSTEMCTL" enable "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" enable "$EXECUTION_WORKER"',
+    '"$SYSTEMCTL" disable --now "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" disable --now "$EXECUTION_WORKER"',
+    '"$SYSTEMCTL" is-enabled --quiet "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" is-active --quiet "$EXECUTION_WORKER"',
+    "--property=LoadState",
+    "--property=UnitFileState",
+    "--property=ActiveState",
+    "shutdown could not be proven",
+    "QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE=enabled",
+    'NATS_ACL_PREFLIGHT="${SCRIPT_DIR}/space-automation-nats-acl-preflight.py"',
+    'env -i PATH="$PATH" "$NATS_ACL_PREFLIGHT" >/dev/null',
+    "trusted NATS subject ACL",
+  ]) {
+    requireFragment(spaceAutomationRuntimeActivationPath, activation, fragment);
+  }
+  const aclPreflightCall = activation.indexOf(
+    'env -i PATH="$PATH" "$NATS_ACL_PREFLIGHT" >/dev/null'
+  );
+  const runtimeActivationCall = activation.indexOf(
+    "activation_status=0\nactivate_runtime"
+  );
+  if (
+    aclPreflightCall < 0 ||
+    runtimeActivationCall < 0 ||
+    aclPreflightCall > runtimeActivationCall
+  ) {
+    addError(
+      `${spaceAutomationRuntimeActivationPath}: NATS ACL proof must run before runtime activation`
+    );
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "curl ",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-',
+    "while [[ $#",
+  ]) {
+    forbidFragment(spaceAutomationRuntimeActivationPath, activation, fragment);
+  }
+}
+
+if (exists(spaceAutomationNatsAclPreflightPath)) {
+  const preflight = readText(spaceAutomationNatsAclPreflightPath);
+  for (const fragment of [
+    'NATS_HOST = "127.0.0.1"',
+    "NATS_PORT = 4222",
+    'TRUSTED_SUBJECT = "qintopia.qiwe.raw.authenticated"',
+    'EXPECTED_STREAM = "QINTOPIA_QIWE_MESSAGES"',
+    'EXPECTED_CONSUMER = "qintopia-message-sidecar"',
+    'STREAM_INFO_SUBJECT = f"$JS.API.STREAM.INFO.{EXPECTED_STREAM}"',
+    'f"$JS.API.CONSUMER.INFO.{EXPECTED_STREAM}.{EXPECTED_CONSUMER}"',
+    'f"$JS.API.CONSUMER.CREATE.{EXPECTED_STREAM}.{EXPECTED_CONSUMER}"',
+    'f"$JS.API.CONSUMER.MSG.NEXT.{EXPECTED_STREAM}.{EXPECTED_CONSUMER}"',
+    'f"$JS.ACK.{EXPECTED_STREAM}.{EXPECTED_CONSUMER}.0.0.0.0.0"',
+    'PRODUCER_AUTH_FILE = "/etc/qintopia/nats/qiwe-adapter.json"',
+    'CONSUMER_AUTH_FILE = "/etc/qintopia/nats/message-sidecar.json"',
+    'TEST_MODE_KEY = "QINTOPIA_SPACE_AUTOMATION_NATS_ACL_PREFLIGHT_TEST_MODE"',
+    "MAX_AUTH_FILE_BYTES = 4_096",
+    "TOTAL_TIMEOUT_SECONDS = 8.0",
+    'set(value) != {\n        "version",\n        "username",\n        "password",',
+    "metadata.st_mode & 0o027",
+    "metadata.st_uid != 0",
+    "producer.username == consumer.username",
+    '"probe_type": "nats_acl_v1"',
+    '"space_scoped": False',
+    "_assert_publish_denied(",
+    "_prove_consumer_jetstream_access(subscriber)",
+    "_require_api_validation_error(create_probe)",
+    "_require_api_validation_error(next_probe)",
+    "allow_connection_denial=False",
+    "allow_connection_denial=True",
+    "_publish_with_ack(",
+    "_receive_probe(subscriber, body)",
+    'acknowledgement.get("stream") != EXPECTED_STREAM',
+    "if len(sys.argv) != 1:",
+    'print("Space automation NATS ACL preflight failed", file=sys.stderr)',
+    'print("space_automation_nats_acl_preflight=passed")',
+  ]) {
+    requireFragment(spaceAutomationNatsAclPreflightPath, preflight, fragment);
+  }
+  for (const fragment of [
+    "argparse",
+    "subprocess",
+    "urllib",
+    "requests",
+    "aiohttp",
+    "os.system",
+    "shell=True",
+    "NATS_URL",
+    "TEST_HOST",
+    "TEST_SUBJECT",
+  ]) {
+    forbidFragment(spaceAutomationNatsAclPreflightPath, preflight, fragment);
+  }
+}
+
+if (exists(spaceAutomationRuntimeRollbackPath)) {
+  const rollback = readText(spaceAutomationRuntimeRollbackPath);
+  for (const fragment of [
+    "approved-production-space-automation-runtime-rollback",
+    "QINTOPIA_SPACE_AUTOMATION_EXECUTION_ENABLED=0",
+    'ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    '"$SYSTEMCTL" disable --now "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" disable --now "$EXECUTION_WORKER"',
+    '"$SYSTEMCTL" stop "$DISPATCHER_SERVICE"',
+    '"$SYSTEMCTL" is-enabled --quiet "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" is-active --quiet "$EXECUTION_WORKER"',
+    "--property=LoadState",
+    "--property=UnitFileState",
+    "--property=ActiveState",
+    "could not prove all runtime units stopped",
+    "QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE=disabled",
+  ]) {
+    requireFragment(spaceAutomationRuntimeRollbackPath, rollback, fragment);
+  }
+  for (const fragment of [
+    "source ",
+    "eval ",
+    "QIWE_TOKEN",
+    "QINTOPIA_SIDECAR_ENV_FILE",
+    'SYSTEMCTL="${SYSTEMCTL:-',
+    "while [[ $#",
+  ]) {
+    forbidFragment(spaceAutomationRuntimeRollbackPath, rollback, fragment);
+  }
+}
+
+if (exists(spaceAutomationRuntimeObservationPath)) {
+  const observation = readText(spaceAutomationRuntimeObservationPath);
+  for (const fragment of [
+    'DEFAULT_ENV_FILE="/etc/qintopia/message-sidecar.env"',
+    'DEFAULT_RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"',
+    'DEFAULT_UNIT_DIR="/etc/systemd/system"',
+    'DEFAULT_SYSTEMCTL="/usr/bin/systemctl"',
+    'DEFAULT_PROC_ROOT="/proc"',
+    "QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE",
+    "QINTOPIA_SPACE_AGENT_TURN_RUNTIME_READY",
+    "agent-turn readiness to remain disabled",
+    "enabled, disabled, or auto",
+    "qiwe-production-adapter",
+    "huabaosi-feishu-mirror-adapter",
+    "run-automation-dispatcher --once --apply",
+    "run-space-automation-execution-worker --apply",
+    "OnUnitActiveSec=1min",
+    '"$SYSTEMCTL" is-enabled --quiet "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" is-active --quiet "$EXECUTION_WORKER"',
+    "NextElapseUSecMonotonic",
+    "ExecMainStartTimestampMonotonic",
+    "--property=MainPID",
+    "systemd_property_equals",
+    '"UnitFileState" "disabled"',
+    '"ActiveState" "inactive"',
+    "space_automation_runtime_worker_release_identity_verified=true",
+    "space_automation_runtime_observation_state=",
+  ]) {
+    requireFragment(spaceAutomationRuntimeObservationPath, observation, fragment);
+  }
+  for (const fragment of ["source ", "eval ", "QIWE_TOKEN", "curl "]) {
+    forbidFragment(spaceAutomationRuntimeObservationPath, observation, fragment);
+  }
+}
+
+if (!exists(spaceAutomationRuntimeTestPath)) {
+  addError(
+    `${spaceAutomationRuntimeTestPath}: missing production control contract test`
+  );
+} else {
+  const test = readText(spaceAutomationRuntimeTestPath);
+  for (const fragment of [
+    "activation must fail before systemctl without owner approval",
+    "activation must reject agent-turn readiness before broker and runner provisioning",
+    "activation must reject an unreviewed Qiwe host before systemctl",
+    "activation must require Space turn policy enforcement before systemctl",
+    "activation must fail before systemctl when NATS ACL proof fails",
+    "activation must prove NATS ACL before systemctl mutation",
+    "activation must fail closed without leaking a mismatched database URL",
+    "activation failure cleanup is missing",
+    "activation accepted an unproven failure cleanup",
+    "rollback accepted an unproven shutdown",
+    "enabled observation accepted an unverified worker process",
+    "rollback must stop runtime state before requiring persistent disablement",
+    "observation accepted altered systemd unit content",
+  ]) {
+    requireFragment(spaceAutomationRuntimeTestPath, test, fragment);
+  }
+}
+
+if (!exists(spaceAutomationNatsAclTestPath)) {
+  addError(`${spaceAutomationNatsAclTestPath}: missing fake NATS ACL protocol test`);
+} else {
+  const test = readText(spaceAutomationNatsAclTestPath);
+  for (const fragment of [
+    "class FakeNatsServer",
+    "test_proves_expected_acl_and_puback",
+    "test_rejects_consumer_publish_permission",
+    "test_rejects_anonymous_publish_permission",
+    "test_rejects_missing_consumer_subscription_permission",
+    "test_rejects_missing_jetstream_api_or_ack_permissions",
+    "test_rejects_stream_or_consumer_without_trusted_subject",
+    "test_rejects_missing_or_wrong_puback",
+    "test_rejects_shared_principal_and_unknown_auth_fields",
+    "test_rejects_test_overrides_without_explicit_test_mode",
+    "assert_sanitized_output",
+  ]) {
+    requireFragment(spaceAutomationNatsAclTestPath, test, fragment);
+  }
+}
+
+if (!exists(officialQiweResearchWorkerPath)) {
+  addError(`${officialQiweResearchWorkerPath}: missing official research worker`);
+} else {
+  const worker = readText(officialQiweResearchWorkerPath);
+  for (const fragment of [
+    'WORKER_CONTENT_TRUST = "untrusted_reference_data"',
+    '"https://doc.qiweapi.com/doc-7331304"',
+    '"https://doc.qiweapi.com/doc-9079960"',
+    "MAX_RESEARCH_PAGE_BYTES = 128 * 1024",
+    "MAX_RESEARCH_PAGES = 4",
+    "MAX_RESEARCH_DEPTH = 2",
+    'host != "doc.qiweapi.com"',
+    "parsed.username is not None",
+    "parsed.password is not None",
+    "parsed.query",
+    "allow_redirects=False",
+    "ProxyHandler({})",
+    "trust_env=False",
+    'parser.add_argument("--max-depth"',
+    'parser.add_argument("--max-pages"',
+  ]) {
+    requireFragment(officialQiweResearchWorkerPath, worker, fragment);
+  }
+  for (const fragment of [
+    'parser.add_argument("--url"',
+    "os.environ",
+    "requests",
+    "aiohttp",
+    "allow_redirects=True",
+    "trust_env=True",
+  ]) {
+    forbidFragment(officialQiweResearchWorkerPath, worker, fragment);
+  }
+}
+
+const deployBundleBuilderForSpaceAutomation = readText(
+  "tools/deploy/build-deploy-bundle.mjs"
+);
+for (const fragment of [
+  spaceAutomationRuntimeActivationPath,
+  spaceAutomationNatsAclPreflightPath,
+  spaceAutomationRuntimeRollbackPath,
+  spaceAutomationRuntimeObservationPath,
+  officialQiweResearchWorkerPath,
+]) {
+  requireFragment(
+    "tools/deploy/build-deploy-bundle.mjs",
+    deployBundleBuilderForSpaceAutomation,
+    fragment
+  );
+}
+requireFragment(
+  "package.json",
+  readText("package.json"),
+  "deploy:space-automation-runtime:test"
+);
+
 const xiaomanDailyCaseReportWorkerPath =
   "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh";
 const xiaomanDailyCaseReportConfigApplyPath =
@@ -4242,6 +4573,9 @@ const releaseSystemdInstallerPath = "deploy/runner/install-release-systemd-units
 if (exists(releaseSystemdInstallerPath)) {
   const installer = readText(releaseSystemdInstallerPath);
   for (const fragment of [
+    "qintopia-agentos-automation-dispatcher.service",
+    "qintopia-agentos-automation-dispatcher.timer",
+    "qintopia-agentos-space-automation-execution-worker.service",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
     "qintopia-agentos-xiaoman-weekly-recruitment.service",
@@ -4252,8 +4586,45 @@ if (exists(releaseSystemdInstallerPath)) {
     "qintopia-agentos-xiaoman-weekly-preview.timer",
     "qintopia-agentos-erhua-morning-brief.service",
     "qintopia-agentos-erhua-morning-brief.timer",
+    "quiesce_space_automation_runtime",
+    '"$systemctl_bin" disable --now "$dispatcher_timer"',
+    '"$systemctl_bin" disable --now "$execution_worker"',
+    '"$systemctl_bin" is-active --quiet "$execution_worker"',
+    "--property=LoadState",
+    "--property=UnitFileState",
+    "--property=ActiveState",
+    "could not prove the Space automation runtime is disabled",
   ]) {
     requireFragment(releaseSystemdInstallerPath, installer, fragment);
+  }
+  const firstSpaceQuiesce = installer.indexOf(
+    "if ! quiesce_space_automation_runtime; then"
+  );
+  const firstUnitInstall = installer.indexOf("install -m 0644");
+  const firstDaemonReload = installer.indexOf('"$systemctl_bin" daemon-reload');
+  if (
+    firstSpaceQuiesce < 0 ||
+    firstUnitInstall < 0 ||
+    firstDaemonReload < 0 ||
+    firstSpaceQuiesce > firstUnitInstall ||
+    firstSpaceQuiesce > firstDaemonReload
+  ) {
+    addError(
+      `${releaseSystemdInstallerPath}: Space runtime must quiesce before unit install and daemon-reload`
+    );
+  }
+  const releaseSystemdInstallerTestPath =
+    "tools/deploy/test-release-systemd-install.mjs";
+  if (exists(releaseSystemdInstallerTestPath)) {
+    const installerTest = readText(releaseSystemdInstallerTestPath);
+    for (const fragment of [
+      'FAKE_INSTALL_FAIL: "1"',
+      "failedInstallShutdownIndex < 0",
+      "failedInstallShutdownIndex > failedInstallMutationIndex",
+      'failedInstallLog.includes("daemon-reload")',
+    ]) {
+      requireFragment(releaseSystemdInstallerTestPath, installerTest, fragment);
+    }
   }
   const unitFilesBlock = installer.match(/unit_files=\([\s\S]*?\n\)/)?.[0] ?? "";
   const unitFiles = [
@@ -4270,6 +4641,11 @@ if (exists(releaseSystemdInstallerPath)) {
   }
   const internalTimersBlock =
     installer.match(/internal_timers=\([\s\S]*?\n\)/)?.[0] ?? "";
+  if (internalTimersBlock.includes("qintopia-agentos-automation-dispatcher.timer")) {
+    addError(
+      `${releaseSystemdInstallerPath}: automation dispatcher timer must not be default-enabled by release install`
+    );
+  }
   if (
     internalTimersBlock.includes(
       "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
@@ -4304,6 +4680,81 @@ if (exists(releaseSystemdInstallerPath)) {
     addError(
       `${releaseSystemdInstallerPath}: Xiaoman weekly plan confirmation timer must not be default-enabled by release install`
     );
+  }
+}
+
+const prePromotionSpaceQuiescePath =
+  "deploy/runner/quiesce-space-automation-runtime.sh";
+const deployRunnerPath = "deploy/runner/qintopia-agent-os-deploy-runner";
+if (exists(prePromotionSpaceQuiescePath)) {
+  requireExecutable(prePromotionSpaceQuiescePath);
+  const quiesce = readText(prePromotionSpaceQuiescePath);
+  for (const fragment of [
+    'SYSTEMCTL="/usr/bin/systemctl"',
+    'DISPATCHER_TIMER="qintopia-agentos-automation-dispatcher.timer"',
+    'DISPATCHER_SERVICE="qintopia-agentos-automation-dispatcher.service"',
+    'EXECUTION_WORKER="qintopia-agentos-space-automation-execution-worker.service"',
+    '"$SYSTEMCTL" disable --now "$DISPATCHER_TIMER"',
+    '"$SYSTEMCTL" disable --now "$EXECUTION_WORKER"',
+    '"$SYSTEMCTL" stop "$DISPATCHER_SERVICE"',
+    '"$SYSTEMCTL" stop "$EXECUTION_WORKER"',
+    "--property=LoadState",
+    "--property=UnitFileState",
+    "--property=ActiveState",
+  ]) {
+    requireFragment(prePromotionSpaceQuiescePath, quiesce, fragment);
+  }
+  for (const fragment of ["eval ", "source ", "SYSTEMCTL:-", "systemctl_bin"]) {
+    forbidFragment(prePromotionSpaceQuiescePath, quiesce, fragment);
+  }
+}
+if (exists(deployRunnerPath)) {
+  const runner = readText(deployRunnerPath);
+  const quiesceCall = '"${RUNNER_DIR}/quiesce-space-automation-runtime.sh"';
+  const quiesceIndex = runner.indexOf(quiesceCall);
+  const promoteIndex = runner.indexOf('"${RUNNER_DIR}/promote-release.sh"');
+  requireFragment(
+    deployRunnerPath,
+    runner,
+    'if [[ "$dry_run" != "true" ]]; then\n    deploy_stage="quiesce-space-automation-runtime"'
+  );
+  if (quiesceIndex < 0 || promoteIndex < 0 || quiesceIndex > promoteIndex) {
+    addError(
+      `${deployRunnerPath}: Space runtime quiesce must occur before promote-release.sh`
+    );
+  }
+}
+if (exists(deployBundleBuilderPath)) {
+  requireFragment(
+    deployBundleBuilderPath,
+    readText(deployBundleBuilderPath),
+    prePromotionSpaceQuiescePath
+  );
+}
+const deployRunnerPromotionTestPath = "tools/deploy/test-deploy-runner-promotion.mjs";
+if (exists(deployRunnerPromotionTestPath)) {
+  const promotionTest = readText(deployRunnerPromotionTestPath);
+  for (const fragment of [
+    'failedPromotionEvents !== "quiesce\\npromote"',
+    'quiesceFailureEvents !== "quiesce"',
+    'failure_stage !== "quiesce-space-automation-runtime"',
+    "quiesceFailureDetail.promoted_current !== false",
+  ]) {
+    requireFragment(deployRunnerPromotionTestPath, promotionTest, fragment);
+  }
+}
+const prePromotionSpaceQuiesceTestPath =
+  "tools/deploy/test-pre-promotion-space-runtime-quiesce.mjs";
+if (exists(prePromotionSpaceQuiesceTestPath)) {
+  const quiesceTest = readText(prePromotionSpaceQuiesceTestPath);
+  for (const fragment of [
+    'runScenario("zero-units")',
+    'runScenario("three-active-units")',
+    'runScenario("partial-units")',
+    '["disable-failure", "stop-failure"]',
+    "must fail closed",
+  ]) {
+    requireFragment(prePromotionSpaceQuiesceTestPath, quiesceTest, fragment);
   }
 }
 
@@ -4347,6 +4798,8 @@ if (!exists(renderSystemdUnitsPath)) {
   for (const fragment of [
     'local huabaosi_feishu_release_environment="QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${TARGET_SHA}"',
     'local huabaosi_image_release_environment="QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA=${TARGET_SHA}',
+    'local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}"',
+    "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}",
     "ExecStart=/usr/bin/env ${release_environment}",
     '"$huabaosi_image_release_environment"',
     '"$huabaosi_feishu_release_environment"',

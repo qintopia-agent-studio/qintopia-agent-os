@@ -3,11 +3,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
 import re
 import shlex
+import stat
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -82,26 +84,57 @@ except ImportError:  # pragma: no cover - local parser tests run outside Hermes
 try:
     from .image_callback_bridge import (
         QiWeImageCallbackBridge,
-        is_async_image_callback,
+        classify_async_image_callback,
     )
     from .passive_pipeline import PassiveEventPipeline, PassivePipelineConfig
     from .nats_capture import (
         QiWeNatsCaptureConfig,
         QiWeNatsPublisher,
+        StrictJsonError,
         build_capture_events,
+        parse_strict_bounded_json,
+        validate_bounded_json_value,
     )
     from .qiwe_events import normalized_event_from_parsed
+    from .space_change_tools import (
+        SPACE_CHANGE_CONFIRM_SCHEMA,
+        SPACE_CHANGE_PREPARE_SCHEMA,
+        SPACE_CHANGE_STATUS_SCHEMA,
+        authorize_space_turn_capability,
+        build_handlers as build_space_change_handlers,
+        load_space_turn_policy_context,
+        space_turn_session,
+        trusted_qiwe_turn_session,
+    )
+    from .space_agent_completion import SpaceAgentCompletionServer
     from .solitaire.llm_parser import parser_from_context
     from .solitaire.reminder import ReminderWorker, ReminderWorkerConfig
 except ImportError:  # pragma: no cover - local tests import adapter.py directly
-    from image_callback_bridge import QiWeImageCallbackBridge, is_async_image_callback
+    from image_callback_bridge import (
+        QiWeImageCallbackBridge,
+        classify_async_image_callback,
+    )
     from nats_capture import (
         QiWeNatsCaptureConfig,
         QiWeNatsPublisher,
+        StrictJsonError,
         build_capture_events,
+        parse_strict_bounded_json,
+        validate_bounded_json_value,
     )
     from passive_pipeline import PassiveEventPipeline, PassivePipelineConfig
     from qiwe_events import normalized_event_from_parsed
+    from space_change_tools import (
+        SPACE_CHANGE_CONFIRM_SCHEMA,
+        SPACE_CHANGE_PREPARE_SCHEMA,
+        SPACE_CHANGE_STATUS_SCHEMA,
+        authorize_space_turn_capability,
+        build_handlers as build_space_change_handlers,
+        load_space_turn_policy_context,
+        space_turn_session,
+        trusted_qiwe_turn_session,
+    )
+    from space_agent_completion import SpaceAgentCompletionServer
     from solitaire.llm_parser import parser_from_context
     from solitaire.reminder import ReminderWorker, ReminderWorkerConfig
 
@@ -111,7 +144,10 @@ DEFAULT_API_URL = "http://manager.qiweapi.com/qiwe/api/qw/doApi"
 DEFAULT_WEBHOOK_HOST = "127.0.0.1"
 DEFAULT_WEBHOOK_PORT = 18661
 DEFAULT_WEBHOOK_PATH = "/qiwe/webhook"
+QIWE_WEBHOOK_AUTH_HEADER = "X-Qintopia-Qiwe-Ingress-Auth"
 DEFAULT_MAX_BODY_BYTES = 1_048_576
+DEFAULT_MAX_ENVELOPE_EVENTS = 64
+SYSTEM_EVENT_DURABLE_CAPTURE_TIMEOUT_SECONDS = 1.5
 DEFAULT_MAX_REPLY_CHARS = 3500
 DEFAULT_DEDUPE_TTL_SECONDS = 600
 DEFAULT_LOCATION_TOOL_DEDUPE_TTL_SECONDS = 300
@@ -125,8 +161,10 @@ DEFAULT_CONTACT_GUARD_CACHE_TTL_SECONDS = 300
 DEFAULT_CONTACT_GUARD_PAGE_LIMIT = 100
 DEFAULT_CONTACT_GUARD_MAX_PAGES = 20
 DEFAULT_IDENTITY_CACHE_TTL_SECONDS = 86_400
+MAX_ROOM_DISPLAY_NAME_CHARS = 200
 DEFAULT_RECENT_MESSAGE_REF_TTL_SECONDS = 600
 DEFAULT_ANSWER_CONTEXT_MCP_COMMAND = "/home/ubuntu/qintopia-agent-os-releases/current/deploy/sidecar/scripts/hermes/qintopia-context-mcp"
+DEFAULT_SPACE_TURN_POLICY_TIMEOUT_SECONDS = 0.4
 QIWE_NORMAL_FRIEND_CONTACT_TYPE = 2057
 MENTION_SPACES = "\u00a0\u2005\u200b"
 MENTION_BOUNDARY_PUNCT = ":：,，、。.!！?？~～…"
@@ -140,6 +178,16 @@ _HUMAN_HANDOFF_TOOL_SEEN: Dict[str, float] = {}
 _CONTACT_REQUEST_TOOL_SEEN: Dict[str, float] = {}
 _RECENT_QIWE_MESSAGE_REFS: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
 _RECENT_QIWE_MESSAGE_CONTEXTS: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
+
+QIWE_SPACE_TURN_CAPABILITIES = {
+    "location": "erhua.qiwe_send_location_card",
+    "direct_message": "erhua.qiwe_send_direct_message",
+    "rich_message": "erhua.qiwe_send_rich_message",
+    "revoke_message": "erhua.qiwe_revoke_message",
+    "voice_to_text": "erhua.qiwe_voice_to_text",
+    "human_handoff": "erhua.qiwe_handoff_to_human",
+    "direct_contact": "erhua.qiwe_request_direct_contact",
+}
 
 
 _INTERNAL_PROCESS_PATTERNS = (
@@ -262,6 +310,8 @@ class QiWeConfig:
     webhook_host: str = DEFAULT_WEBHOOK_HOST
     webhook_port: int = DEFAULT_WEBHOOK_PORT
     webhook_path: str = DEFAULT_WEBHOOK_PATH
+    webhook_auth_required: bool = False
+    webhook_auth_token: str = ""
     max_body_bytes: int = DEFAULT_MAX_BODY_BYTES
     max_reply_chars: int = DEFAULT_MAX_REPLY_CHARS
     dedupe_ttl_seconds: int = DEFAULT_DEDUPE_TTL_SECONDS
@@ -306,12 +356,17 @@ class QiWeConfig:
     activity_reminder_allowed_groups: List[str] = field(default_factory=list)
     nats_capture_enabled: bool = False
     nats_url: str = "nats://127.0.0.1:4222"
+    nats_auth_file: str = ""
     nats_raw_subject: str = "qintopia.qiwe.raw"
+    nats_authenticated_raw_subject: str = "qintopia.qiwe.raw.authenticated"
     nats_message_subject: str = "qintopia.qiwe.message"
     nats_capture_timeout_seconds: float = 0.5
+    system_event_durable_capture_enabled: bool = False
     answer_context_prepare_enabled: bool = True
     answer_context_mcp_command: str = DEFAULT_ANSWER_CONTEXT_MCP_COMMAND
     answer_context_prepare_timeout_seconds: float = 1.2
+    space_turn_policy_enforcement_enabled: bool = False
+    space_turn_policy_timeout_seconds: float = DEFAULT_SPACE_TURN_POLICY_TIMEOUT_SECONDS
 
 
 @dataclass
@@ -356,6 +411,32 @@ def _bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _strict_bool(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true"}:
+        return True
+    if normalized in {"0", "false"}:
+        return False
+    raise ValueError("expected true/false boolean value")
+
+
+def _strict_zero_one(value: Any, default: bool = False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip()
+    if normalized == "1":
+        return True
+    if normalized == "0":
+        return False
+    raise ValueError("expected 0/1 enable flag")
 
 
 def _int(value: Any, default: int) -> int:
@@ -578,20 +659,20 @@ def _safe_qiwe_status(raw_response: Any) -> Dict[str, Any]:
 
 def _parse_body(raw_body: bytes | str | Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(raw_body, dict):
+        validate_bounded_json_value(raw_body)
         return raw_body
-    if isinstance(raw_body, bytes):
-        raw_body = raw_body.decode("utf-8")
-    parsed = json.loads(raw_body)
-    return _first_mapping(parsed)
+    if not isinstance(raw_body, (bytes, str)):
+        raise ValueError("QiWe webhook envelope must be a JSON object")
+    parsed = parse_strict_bounded_json(raw_body)
+    if not isinstance(parsed, dict):
+        raise ValueError("QiWe webhook envelope must be a JSON object")
+    return parsed
 
 
 def parse_nested_data(payload: Dict[str, Any]) -> Dict[str, Any]:
     raw = payload.get("data")
     if isinstance(raw, str):
-        try:
-            return _first_mapping(json.loads(raw))
-        except json.JSONDecodeError:
-            return {}
+        return _first_mapping(parse_strict_bounded_json(raw))
     return _first_mapping(raw)
 
 
@@ -1002,7 +1083,7 @@ def _is_ordinary_message(raw_event: Dict[str, Any]) -> bool:
     if raw_event.get("cmd") is None:
         return True
     try:
-        return int(raw_event.get("cmd")) == 15000
+        return int(raw_event.get("cmd")) in {15000, 15500}
     except (TypeError, ValueError):
         return False
 
@@ -1075,6 +1156,7 @@ def _member_context_channel_prompt(
     parsed: ParsedQiWeMessage,
     identity: Optional["QiWeIdentity"] = None,
     answer_context: Optional[Dict[str, Any]] = None,
+    space_policy_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     chat_id = _text(parsed.chat_id)
     sender_id = _text(parsed.sender_id)
@@ -1111,8 +1193,10 @@ def _member_context_channel_prompt(
             "不要向成员索要或向工具传群 ID、用户 ID、消息 ID、文件名、路径、系统字段或 amount_delta；"
             "不要用群 CSV 保存密码、Token、身份证等秘密或高敏感数据。工具失败时明确说本次没有写入成功。"
         )
+    space_directives = _space_turn_policy_directives(space_policy_context)
     return (
         f"{reply_directives}\n\n"
+        f"{space_directives}\n\n"
         "QiWe 当前说话人上下文如下。用户没有要求公开人物画像时，不要在回复中提到这些字段、工具名或画像来源。\n"
         f"{json.dumps(context, ensure_ascii=False)}\n"
         "Agent OS 已为本轮回复准备 answer_context。回答前先读取 answer_context，不要自行猜测成员身份或状态。"
@@ -1125,6 +1209,37 @@ def _member_context_channel_prompt(
         "不要说自己在监控群成员，不要说“画像显示”，不要暴露 raw history、隐藏画像、敏感事实、内部标签或日报全文。\n"
         f"{csv_directives}"
         f"answer_context: {json.dumps(answer_context, ensure_ascii=False)}"
+    )
+
+
+def _space_turn_policy_directives(
+    space_policy_context: Optional[Dict[str, Any]],
+) -> str:
+    if space_policy_context is None:
+        return ""
+    if not space_policy_context.get("available"):
+        return (
+            "当前群的 Space 策略服务本轮不可用。不要继承其他群的身份、知识或能力；"
+            "除 Space 配置提案、确认和状态查询外，所有 Space 业务工具均按未授权处理。"
+        )
+    if not space_policy_context.get("policy_found"):
+        return (
+            "当前群没有已启用的 Space 策略。不要继承其他群的身份、知识或能力；"
+            "除 Space 配置提案、确认和状态查询外，所有 Space 业务工具均按未授权处理。"
+        )
+    projection = {
+        "identity": _text(space_policy_context.get("identity")),
+        "knowledge_scope": list(space_policy_context.get("knowledge_scope") or []),
+        "effective_capabilities": list(
+            space_policy_context.get("effective_capabilities") or []
+        ),
+    }
+    return (
+        "当前群已启用下列 Space 策略投影。它只适用于本轮所在群，不得带入其他群或私聊。"
+        "identity 是管理员确认的本群身份补充；知识只能来自 knowledge_scope；"
+        "普通业务工具只能从 effective_capabilities 中选择，且工具执行时仍会重新鉴权。"
+        "Space 配置提案、确认和状态查询不受该普通能力列表限制。不要向用户复述内部能力键。\n"
+        f"space_policy: {json.dumps(projection, ensure_ascii=False)}"
     )
 
 
@@ -1317,6 +1432,7 @@ def _answer_context_mcp_request(
     referenced_sender_id: str = "",
     message_text: str,
     mentioned_member_names: Optional[Iterable[str]] = None,
+    mentioned_member_refs: Optional[Iterable[Dict[str, Any]]] = None,
 ) -> str:
     arguments = {
         "caller_profile": "erhua",
@@ -1332,6 +1448,27 @@ def _answer_context_mcp_request(
     names = _dedupe_texts(mentioned_member_names or [])
     if names:
         arguments["mentioned_member_names"] = names
+    refs: List[Dict[str, str]] = []
+    seen_ref_ids = set()
+    for item in mentioned_member_refs or []:
+        if not isinstance(item, dict):
+            continue
+        channel_user_id = _text(item.get("channel_user_id"))
+        if (
+            not channel_user_id
+            or len(channel_user_id) > 120
+            or channel_user_id in seen_ref_ids
+        ):
+            continue
+        seen_ref_ids.add(channel_user_id)
+        refs.append(
+            {
+                "channel_user_id": channel_user_id,
+                "mention_text": _display_text(item.get("mention_text"))[:120],
+            }
+        )
+    if refs:
+        arguments["mentioned_member_refs"] = refs[:32]
     payloads = [
         {
             "jsonrpc": "2.0",
@@ -1362,11 +1499,14 @@ def _mentioned_member_names_from_at_list(
     *,
     bot_user_id: str = "",
     bot_names: Iterable[str] = (),
+    unidentified_only: bool = False,
 ) -> List[str]:
     bot_name_set = set(_dedupe_texts(bot_names))
     names: List[str] = []
     for item in at_list or []:
         if not isinstance(item, dict):
+            continue
+        if unidentified_only and _text(item.get("userId")):
             continue
         if bot_user_id and _text(item.get("userId")) == _text(bot_user_id):
             continue
@@ -1375,6 +1515,41 @@ def _mentioned_member_names_from_at_list(
             continue
         names.append(name)
     return _dedupe_texts(names)
+
+
+def _mentioned_member_refs_from_at_list(
+    at_list: Iterable[Dict[str, Any]],
+    *,
+    bot_user_id: str = "",
+    bot_names: Iterable[str] = (),
+) -> List[Dict[str, str]]:
+    bot_name_set = set(_dedupe_texts(bot_names))
+    refs: List[Dict[str, str]] = []
+    seen_user_ids = set()
+    for item in at_list or []:
+        if not isinstance(item, dict):
+            continue
+        channel_user_id = _text(item.get("userId"))
+        mention_text = _display_text(
+            item.get("nickname") or item.get("displayName") or item.get("name")
+        )
+        if not channel_user_id or len(channel_user_id) > 120:
+            continue
+        if bot_user_id:
+            if channel_user_id == _text(bot_user_id):
+                continue
+        elif mention_text in bot_name_set:
+            continue
+        if channel_user_id in seen_user_ids:
+            continue
+        seen_user_ids.add(channel_user_id)
+        refs.append(
+            {
+                "channel_user_id": channel_user_id,
+                "mention_text": mention_text[:120],
+            }
+        )
+    return refs[:32]
 
 
 def _training_note_mcp_request(
@@ -1450,7 +1625,7 @@ def _answer_context_from_mcp_stdout(stdout: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def parse_qiwe_payload(
+def _parse_qiwe_payload_item(
     raw_body: bytes | str | Dict[str, Any],
     *,
     bot_names: Optional[Iterable[str]] = None,
@@ -1537,6 +1712,69 @@ def parse_qiwe_payload(
 
     stripped = _strip_mentions(content, at_list, names, bot_user_id) or content
     return ParsedQiWeMessage(accepted=True, reason="mentioned" if mentioned else "cued", should_trigger=True, text=stripped, is_mentioned=mentioned, **base)
+
+
+def parse_qiwe_payloads(
+    raw_body: bytes | str | Dict[str, Any],
+    *,
+    bot_names: Optional[Iterable[str]] = None,
+    bot_user_id: str = "",
+    direct_enabled: bool = True,
+    direct_allow_all: bool = False,
+    direct_allowed_users: Optional[Iterable[str]] = None,
+    active_attachment_preprocess_enabled: bool = False,
+    max_envelope_events: int = DEFAULT_MAX_ENVELOPE_EVENTS,
+) -> List[ParsedQiWeMessage]:
+    payload = _parse_body(raw_body)
+    raw_events = payload.get("data")
+    if not isinstance(raw_events, list):
+        event_payloads = [payload]
+    else:
+        if not raw_events:
+            raise ValueError("QiWe webhook data array must not be empty")
+        if max_envelope_events <= 0 or len(raw_events) > max_envelope_events:
+            raise ValueError("QiWe webhook data array exceeds the event limit")
+        if any(not isinstance(raw_event, dict) for raw_event in raw_events):
+            raise ValueError("QiWe webhook data array items must be JSON objects")
+        event_payloads = []
+        for raw_event in raw_events:
+            item_payload = dict(payload)
+            item_payload["data"] = raw_event
+            event_payloads.append(item_payload)
+
+    return [
+        _parse_qiwe_payload_item(
+            event_payload,
+            bot_names=bot_names,
+            bot_user_id=bot_user_id,
+            direct_enabled=direct_enabled,
+            direct_allow_all=direct_allow_all,
+            direct_allowed_users=direct_allowed_users,
+            active_attachment_preprocess_enabled=active_attachment_preprocess_enabled,
+        )
+        for event_payload in event_payloads
+    ]
+
+
+def parse_qiwe_payload(
+    raw_body: bytes | str | Dict[str, Any],
+    *,
+    bot_names: Optional[Iterable[str]] = None,
+    bot_user_id: str = "",
+    direct_enabled: bool = True,
+    direct_allow_all: bool = False,
+    direct_allowed_users: Optional[Iterable[str]] = None,
+    active_attachment_preprocess_enabled: bool = False,
+) -> ParsedQiWeMessage:
+    return parse_qiwe_payloads(
+        raw_body,
+        bot_names=bot_names,
+        bot_user_id=bot_user_id,
+        direct_enabled=direct_enabled,
+        direct_allow_all=direct_allow_all,
+        direct_allowed_users=direct_allowed_users,
+        active_attachment_preprocess_enabled=active_attachment_preprocess_enabled,
+    )[0]
 
 
 @dataclass
@@ -1709,22 +1947,55 @@ class QiWeAuditor:
             "adapter": "qiwe",
             "profile": "erhua",
             "inbound_event_id": parsed.message_id,
-            "conversation_id": parsed.chat_id,
+            "conversation_id_hash": _hash_id(parsed.chat_id),
             "conversation_type": parsed.conversation_type,
             "sender_id_hash": _hash_id(parsed.sender_id),
-            "sender_display_name": identity.display_name if identity else "",
+            "sender_display_name_present": bool(identity and identity.display_name),
             "identity_source": identity.source if identity else "",
             "trigger": parsed.reason,
             "policy_decision": decision,
-            "outbound": outbound or {},
+            "outbound": _sanitize_audit_outbound(outbound),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
+            self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            parent_stat = self.path.parent.stat()
+            if not stat.S_ISDIR(parent_stat.st_mode):
+                raise OSError("QiWe audit parent is not a directory")
+            os.chmod(self.path.parent, 0o700)
+            fd = os.open(
+                self.path,
+                os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW,
+                0o600,
+            )
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except Exception as exc:
             logger.warning("[qiwe] audit write failed: %s", exc)
+
+
+def _sanitize_audit_outbound(outbound: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(outbound, dict):
+        return {}
+    safe: Dict[str, Any] = {}
+    for key in (
+        "external_send_executed",
+        "external_send_outcome",
+        "outcome",
+        "status",
+        "retryable",
+    ):
+        value = outbound.get(key)
+        if isinstance(value, bool):
+            safe[key] = value
+        elif isinstance(value, str) and len(value) <= 64:
+            safe[key] = value
+    for key in ("message_id", "conversation_id", "target_id"):
+        value = _text(outbound.get(key))
+        if value:
+            safe[f"{key}_hash"] = _hash_id(value)
+    return safe
 
 
 def _hash_id(value: str) -> str:
@@ -1735,7 +2006,7 @@ def _hash_id(value: str) -> str:
 
 
 class QiWeAdapter(BasePlatformAdapter):
-    def __init__(self, config, content_parser=None):
+    def __init__(self, config, content_parser=None, llm=None):
         super().__init__(config=config, platform=Platform("qiwe"))
         self.qiwe = self._load_config(config)
         self._runner = None
@@ -1743,11 +2014,13 @@ class QiWeAdapter(BasePlatformAdapter):
         self._dispatch_tasks: set[asyncio.Task] = set()
         self._contact_guard_cache: Dict[str, Tuple[float, QiWeContactGuardDecision]] = {}
         self._room_guard_cache: Dict[Tuple[str, str], Tuple[float, bool]] = {}
+        self._room_display_name_cache: Dict[Tuple[str, str], Tuple[float, str]] = {}
         self._sender_display_names: Dict[Tuple[str, str], str] = {}
         self._identity_resolver = QiWeIdentityResolver(self)
         self._auditor = QiWeAuditor(self.qiwe.state_dir, self.qiwe.audit_enabled)
         self._nats_capture = self._build_nats_capture()
         self._image_callback_bridge = self._build_image_callback_bridge(config)
+        self._space_agent_completion = SpaceAgentCompletionServer.from_environment(llm)
         self._passive_pipeline = PassiveEventPipeline(
             PassivePipelineConfig(
                 enabled=self.qiwe.pipeline_enabled,
@@ -1787,6 +2060,16 @@ class QiWeAdapter(BasePlatformAdapter):
             webhook_host=os.getenv("QIWE_WEBHOOK_HOST") or extra.get("host", DEFAULT_WEBHOOK_HOST),
             webhook_port=_int(os.getenv("QIWE_WEBHOOK_PORT") or extra.get("port"), DEFAULT_WEBHOOK_PORT),
             webhook_path=os.getenv("QIWE_WEBHOOK_PATH") or extra.get("webhook_path", DEFAULT_WEBHOOK_PATH),
+            webhook_auth_required=_strict_bool(
+                os.getenv("QIWE_WEBHOOK_AUTH_REQUIRED")
+                if "QIWE_WEBHOOK_AUTH_REQUIRED" in os.environ
+                else extra.get("webhook_auth_required"),
+                False,
+            ),
+            webhook_auth_token=_text(
+                os.getenv("QIWE_WEBHOOK_AUTH_TOKEN")
+                or extra.get("webhook_auth_token", "")
+            ),
             max_body_bytes=_int(os.getenv("QIWE_MAX_BODY_BYTES") or extra.get("max_body_bytes"), DEFAULT_MAX_BODY_BYTES),
             max_reply_chars=_int(os.getenv("QIWE_MAX_REPLY_CHARS") or extra.get("max_reply_chars"), DEFAULT_MAX_REPLY_CHARS),
             dedupe_ttl_seconds=_int(os.getenv("QIWE_DEDUPE_TTL_SECONDS") or extra.get("dedupe_ttl_seconds"), DEFAULT_DEDUPE_TTL_SECONDS),
@@ -1919,12 +2202,27 @@ class QiWeAdapter(BasePlatformAdapter):
                 False,
             ),
             nats_url=os.getenv("QIWE_NATS_URL") or extra.get("nats_url", "nats://127.0.0.1:4222"),
+            nats_auth_file=os.getenv("QIWE_NATS_AUTH_FILE")
+            or extra.get("nats_auth_file", ""),
             nats_raw_subject=os.getenv("QIWE_NATS_RAW_SUBJECT") or extra.get("nats_raw_subject", "qintopia.qiwe.raw"),
+            nats_authenticated_raw_subject=os.getenv(
+                "QIWE_NATS_AUTHENTICATED_RAW_SUBJECT"
+            )
+            or extra.get(
+                "nats_authenticated_raw_subject",
+                "qintopia.qiwe.raw.authenticated",
+            ),
             nats_message_subject=os.getenv("QIWE_NATS_MESSAGE_SUBJECT") or extra.get("nats_message_subject", "qintopia.qiwe.message"),
             nats_capture_timeout_seconds=float(
                 os.getenv("QIWE_NATS_CAPTURE_TIMEOUT_SECONDS")
                 or extra.get("nats_capture_timeout_seconds")
                 or 0.5
+            ),
+            system_event_durable_capture_enabled=_strict_zero_one(
+                os.getenv("QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED")
+                if "QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED" in os.environ
+                else extra.get("system_event_durable_capture_enabled"),
+                False,
             ),
             answer_context_prepare_enabled=_bool(
                 os.getenv("QIWE_ANSWER_CONTEXT_PREPARE_ENABLED")
@@ -1939,6 +2237,17 @@ class QiWeAdapter(BasePlatformAdapter):
                 or extra.get("answer_context_prepare_timeout_seconds")
                 or 1.2
             ),
+            space_turn_policy_enforcement_enabled=_strict_zero_one(
+                os.getenv("QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED")
+                if "QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED" in os.environ
+                else extra.get("space_turn_policy_enforcement_enabled"),
+                False,
+            ),
+            space_turn_policy_timeout_seconds=float(
+                os.getenv("QIWE_SPACE_TURN_POLICY_TIMEOUT_SECONDS")
+                or extra.get("space_turn_policy_timeout_seconds")
+                or DEFAULT_SPACE_TURN_POLICY_TIMEOUT_SECONDS
+            ),
         )
 
     def _build_nats_capture(self) -> Optional[QiWeNatsPublisher]:
@@ -1949,7 +2258,9 @@ class QiWeAdapter(BasePlatformAdapter):
                 QiWeNatsCaptureConfig(
                     enabled=True,
                     url=self.qiwe.nats_url,
+                    auth_file=self.qiwe.nats_auth_file,
                     raw_subject=self.qiwe.nats_raw_subject,
+                    authenticated_raw_subject=self.qiwe.nats_authenticated_raw_subject,
                     message_subject=self.qiwe.nats_message_subject,
                     timeout_seconds=self.qiwe.nats_capture_timeout_seconds,
                 )
@@ -1971,6 +2282,30 @@ class QiWeAdapter(BasePlatformAdapter):
             return QiWeImageCallbackBridge(enabled=False)
 
     async def connect(self) -> bool:
+        if self.qiwe.webhook_auth_required and not self.qiwe.webhook_auth_token:
+            logger.error("[qiwe] webhook ingress authentication is required but not configured")
+            self._set_fatal_error(
+                "config_missing",
+                "QIWE_WEBHOOK_AUTH_TOKEN is required when ingress authentication is enabled",
+                retryable=False,
+            )
+            return False
+        if self.qiwe.system_event_durable_capture_enabled and (
+            not self.qiwe.webhook_auth_required
+            or self._nats_capture is None
+            or not self.qiwe.nats_auth_file
+            or self.qiwe.nats_authenticated_raw_subject
+            == self.qiwe.nats_raw_subject
+        ):
+            logger.error(
+                "[qiwe] durable system-event capture requires authenticated ingress and NATS capture"
+            )
+            self._set_fatal_error(
+                "config_missing",
+                "durable system-event capture prerequisites are not configured",
+                retryable=False,
+            )
+            return False
         if not AIOHTTP_AVAILABLE:
             logger.error("[qiwe] aiohttp is not installed")
             self._set_fatal_error("missing_dependency", "aiohttp is not installed", retryable=False)
@@ -1979,7 +2314,6 @@ class QiWeAdapter(BasePlatformAdapter):
             logger.error("[qiwe] QIWE_TOKEN is required")
             self._set_fatal_error("config_missing", "QIWE_TOKEN is required", retryable=False)
             return False
-
         app = web.Application(client_max_size=self.qiwe.max_body_bytes)
         app.router.add_get("/health", self._handle_health)
         app.router.add_post(self.qiwe.webhook_path, self._handle_webhook)
@@ -1996,6 +2330,20 @@ class QiWeAdapter(BasePlatformAdapter):
             self._set_fatal_error("listen_failed", str(exc), retryable=True)
             return False
 
+        try:
+            await self._space_agent_completion.start()
+        except Exception:
+            logger.error("[qiwe] failed to start bounded Space agent completion socket")
+            await self._space_agent_completion.stop()
+            await self._runner.cleanup()
+            self._runner = None
+            self._set_fatal_error(
+                "completion_start_failed",
+                "bounded Space agent completion socket could not start",
+                retryable=False,
+            )
+            return False
+
         self._mark_connected()
         self._reminder_worker.start()
         logger.info("[qiwe] listening on %s:%s%s", self.qiwe.webhook_host, self.qiwe.webhook_port, self.qiwe.webhook_path)
@@ -2003,6 +2351,7 @@ class QiWeAdapter(BasePlatformAdapter):
 
     async def disconnect(self) -> None:
         await self._reminder_worker.stop()
+        await self._space_agent_completion.stop()
         if self._runner:
             await self._runner.cleanup()
             self._runner = None
@@ -2124,51 +2473,125 @@ class QiWeAdapter(BasePlatformAdapter):
         self._room_guard_cache[cache_key] = (now, confirmed)
         return confirmed
 
+    async def _resolve_group_display_name(self, parsed: ParsedQiWeMessage) -> str:
+        if (
+            parsed.conversation_type != "group"
+            or parsed.message_kind == "system"
+            or not self.qiwe.token
+        ):
+            return ""
+        target = _text(parsed.chat_id)
+        if not target:
+            return ""
+
+        effective_guid = _text(self.qiwe.guid)
+        cache_key = (effective_guid, target)
+        now = time.time()
+        ttl = max(1, self.qiwe.contact_guard_cache_ttl_seconds)
+        cached = self._room_display_name_cache.get(cache_key)
+        if cached and now - cached[0] <= ttl:
+            return cached[1]
+
+        params: Dict[str, Any] = {"roomIdList": [target]}
+        if effective_guid:
+            params["guid"] = effective_guid
+        try:
+            result = await asyncio.wait_for(
+                self._call_qiwe_api(
+                    "/room/batchGetRoomDetail",
+                    params,
+                    require_send_enabled=False,
+                ),
+                timeout=max(0.1, self.qiwe.nats_capture_timeout_seconds),
+            )
+        except Exception:
+            return ""
+        if not result.success or not isinstance(result.raw_response, dict):
+            return ""
+
+        room_list = _first_mapping(result.raw_response.get("data")).get("roomList", [])
+        if not isinstance(room_list, list):
+            return ""
+        for room in room_list:
+            if not isinstance(room, dict):
+                continue
+            room_id = _text(
+                room.get("roomId")
+                or room.get("room_id")
+                or room.get("chatId")
+                or room.get("id")
+            )
+            if room_id != target:
+                continue
+            display_name = _display_text(room.get("roomName") or room.get("name"))
+            if (
+                not display_name
+                or len(display_name) > MAX_ROOM_DISPLAY_NAME_CHARS
+                or not display_name.isprintable()
+            ):
+                return ""
+            self._room_display_name_cache[cache_key] = (now, display_name)
+            return display_name
+        return ""
+
     async def _handle_health(self, request: "web.Request") -> "web.Response":
         return web.json_response({"status": "ok", "platform": "qiwe"})
 
     async def _handle_webhook(self, request: "web.Request") -> "web.Response":
+        ingress_auth_verified = False
+        if self.qiwe.webhook_auth_required:
+            headers = getattr(request, "headers", {})
+            received = headers.get(QIWE_WEBHOOK_AUTH_HEADER, "") if headers is not None else ""
+            if not self.qiwe.webhook_auth_token or not hmac.compare_digest(
+                str(received).encode("utf-8"),
+                self.qiwe.webhook_auth_token.encode("utf-8"),
+            ):
+                return web.json_response(
+                    {"ok": False, "reason": "unauthorized"}, status=401
+                )
+            ingress_auth_verified = True
+
         body = await request.read()
         if len(body) > self.qiwe.max_body_bytes:
             return web.json_response({"ok": False, "reason": "body_too_large"}, status=413)
-        image_callback = is_async_image_callback(body)
-        if image_callback:
+        try:
+            envelope = parse_strict_bounded_json(
+                body,
+                max_bytes=self.qiwe.max_body_bytes,
+            )
+            if not isinstance(envelope, dict):
+                raise StrictJsonError("QiWe webhook envelope must be a JSON object")
+        except (StrictJsonError, ValueError):
+            logger.warning("[qiwe] rejected invalid or ambiguous webhook JSON")
+            return web.json_response(
+                {"ok": False, "reason": "invalid_envelope"}, status=400
+            )
+
+        image_callback_kind = classify_async_image_callback(envelope)
+        if image_callback_kind == "mixed":
+            logger.warning("[qiwe] rejected mixed image callback and ordinary event envelope")
+            return web.json_response(
+                {
+                    "ok": False,
+                    "accepted": False,
+                    "triggered": False,
+                    "reason": "mixed_image_callback_envelope",
+                },
+                status=503,
+            )
+
+        if image_callback_kind == "all":
             parsed = ParsedQiWeMessage(
                 accepted=False,
                 reason="qiwe_async_callback",
                 message_id="qiwe-callback-source:" + hashlib.sha256(body).hexdigest(),
             )
-        else:
-            try:
-                parsed = parse_qiwe_payload(
-                    body,
-                    bot_names=self.qiwe.bot_names,
-                    bot_user_id=self.qiwe.bot_user_id,
-                    direct_enabled=self.qiwe.direct_enabled,
-                    direct_allow_all=self.qiwe.direct_allow_all,
-                    direct_allowed_users=self.qiwe.direct_allowed_users,
-                    active_attachment_preprocess_enabled=self.qiwe.active_attachment_preprocess_enabled,
-                )
-            except json.JSONDecodeError as exc:
-                logger.warning("[qiwe] invalid JSON webhook body: %s", exc)
-                return web.json_response({"ok": False, "reason": "invalid_json"}, status=400)
-            except Exception as exc:
-                logger.warning("[qiwe] failed to parse webhook body: %s", exc, exc_info=True)
-                return web.json_response({"ok": False, "reason": "parse_failed"}, status=400)
-
-        if parsed.group_id_mismatch:
-            logger.warning(
-                "[qiwe] group_id_mismatch outer_fromGroup=%s inner_fromRoomId=%s message_id=%s",
-                parsed.outer_group_id,
-                parsed.group_id,
-                parsed.message_id,
+            self._schedule_nats_capture(
+                parsed,
+                body,
+                ingress_auth_verified=ingress_auth_verified,
             )
-
-        self._schedule_nats_capture(parsed, body)
-
-        if image_callback:
-            result = await self._image_callback_bridge.process(body)
-            if not result.enabled:
+            if not getattr(self._image_callback_bridge, "enabled", True):
                 logger.info("[qiwe] image callback processor is disabled")
                 return web.json_response(
                     {
@@ -2178,10 +2601,7 @@ class QiWeAdapter(BasePlatformAdapter):
                         "reason": "qiwe_image_callback_processor_disabled",
                     }
                 )
-            if not result.processed:
-                logger.warning(
-                    "[qiwe] image callback processor failed reason=%s", result.reason
-                )
+            if not getattr(self._image_callback_bridge, "configuration_valid", True):
                 return web.json_response(
                     {
                         "ok": False,
@@ -2191,59 +2611,254 @@ class QiWeAdapter(BasePlatformAdapter):
                     },
                     status=503,
                 )
-            logger.info(
-                "[qiwe] image callback processor completed action_status=%s credential_schema=%s additional_field_count=%s external_send_executed=%s",
-                result.action_status,
-                result.callback_credential_schema,
-                result.callback_additional_field_count,
-                result.external_send_executed,
-            )
+            self._schedule_image_callback_processing(body)
             return web.json_response(
                 {
                     "ok": True,
                     "accepted": False,
                     "triggered": False,
-                    "reason": "qiwe_image_callback_processed",
+                    "reason": "qiwe_image_callback_processing_scheduled",
                 }
             )
+
+        try:
+            parsed_messages = parse_qiwe_payloads(
+                envelope,
+                bot_names=self.qiwe.bot_names,
+                bot_user_id=self.qiwe.bot_user_id,
+                direct_enabled=self.qiwe.direct_enabled,
+                direct_allow_all=self.qiwe.direct_allow_all,
+                direct_allowed_users=self.qiwe.direct_allowed_users,
+                active_attachment_preprocess_enabled=self.qiwe.active_attachment_preprocess_enabled,
+            )
+        except json.JSONDecodeError as exc:
+            logger.warning("[qiwe] invalid JSON webhook body: %s", exc)
+            return web.json_response({"ok": False, "reason": "invalid_json"}, status=400)
+        except (UnicodeDecodeError, ValueError) as exc:
+            logger.warning("[qiwe] invalid webhook envelope: %s", exc)
+            return web.json_response({"ok": False, "reason": "invalid_envelope"}, status=400)
+        except Exception as exc:
+            logger.warning("[qiwe] failed to parse webhook body: %s", exc, exc_info=True)
+            return web.json_response({"ok": False, "reason": "parse_failed"}, status=400)
+
+        durable_system_events = [
+            parsed
+            for parsed in parsed_messages
+            if ingress_auth_verified
+            and self.qiwe.system_event_durable_capture_enabled
+            and parsed.message_kind == "system"
+        ]
+        if durable_system_events and not await self._durably_capture_system_events(
+            durable_system_events
+        ):
+            return web.json_response(
+                {
+                    "ok": False,
+                    "accepted": False,
+                    "triggered": False,
+                    "reason": "system_event_capture_unavailable",
+                },
+                status=503,
+            )
+
+        decisions = [
+            self._accept_parsed_webhook(
+                parsed,
+                ingress_auth_verified=ingress_auth_verified,
+            )
+            for parsed in parsed_messages
+        ]
+        if len(decisions) == 1:
+            return web.json_response(decisions[0])
+
+        accepted_count = sum(1 for decision in decisions if decision.get("accepted"))
+        triggered_count = sum(1 for decision in decisions if decision.get("triggered"))
+        return web.json_response(
+            {
+                "ok": True,
+                "accepted": accepted_count > 0,
+                "triggered": triggered_count > 0,
+                "accepted_count": accepted_count,
+                "triggered_count": triggered_count,
+                "ignored_count": len(decisions) - accepted_count,
+                "results": decisions,
+            }
+        )
+
+    async def _durably_capture_system_events(
+        self, parsed_messages: Iterable[ParsedQiWeMessage]
+    ) -> bool:
+        if self._nats_capture is None:
+            logger.warning("[qiwe] durable system-event capture is unavailable")
+            return False
+        captures: List[Tuple[Dict[str, Any], str]] = []
+        try:
+            for parsed in parsed_messages:
+                body = json.dumps(
+                    parsed.payload,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                raw_event, _, message_id = build_capture_events(
+                    parsed,
+                    body,
+                    ingress_auth_verified=True,
+                )
+                captures.append((raw_event, message_id))
+        except Exception as exc:
+            logger.warning(
+                "[qiwe] durable system-event capture preparation failed class=%s",
+                type(exc).__name__,
+            )
+            return False
+
+        tasks = [
+            asyncio.create_task(
+                self._nats_capture.publish_raw_durable(
+                    raw_event,
+                    message_id=message_id,
+                )
+            )
+            for raw_event, message_id in captures
+        ]
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*tasks),
+                timeout=SYSTEM_EVENT_DURABLE_CAPTURE_TIMEOUT_SECONDS,
+            )
+            return True
+        except Exception as exc:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.warning(
+                "[qiwe] durable system-event capture failed class=%s",
+                type(exc).__name__,
+            )
+            return False
+
+    def _schedule_image_callback_processing(self, body: bytes) -> None:
+        task = asyncio.create_task(self._process_image_callback_safe(body))
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
+
+    async def _process_image_callback_safe(self, body: bytes) -> None:
+        try:
+            result = await self._image_callback_bridge.process(body)
+        except Exception:
+            logger.warning(
+                "[qiwe] image callback processor raised an exception",
+                exc_info=True,
+            )
+            return
+        if not result.enabled:
+            logger.info("[qiwe] image callback processor became disabled")
+            return
+        if not result.processed:
+            logger.warning(
+                "[qiwe] image callback processor failed reason=%s", result.reason
+            )
+            return
+        logger.info(
+            "[qiwe] image callback processor completed action_status=%s credential_schema=%s additional_field_count=%s external_send_executed=%s",
+            result.action_status,
+            result.callback_credential_schema,
+            result.callback_additional_field_count,
+            result.external_send_executed,
+        )
+
+    def _accept_parsed_webhook(
+        self,
+        parsed: ParsedQiWeMessage,
+        *,
+        ingress_auth_verified: bool,
+    ) -> Dict[str, Any]:
+        if parsed.group_id_mismatch:
+            logger.warning(
+                "[qiwe] group_id_mismatch outer_fromGroup=%s inner_fromRoomId=%s message_id=%s",
+                parsed.outer_group_id,
+                parsed.group_id,
+                parsed.message_id,
+            )
+
+        capture_body = json.dumps(
+            parsed.payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self._schedule_nats_capture(
+            parsed,
+            capture_body,
+            ingress_auth_verified=ingress_auth_verified,
+        )
 
         if not parsed.accepted:
             logger.info("[qiwe] ignored webhook reason=%s message_id=%s", parsed.reason, parsed.message_id)
             self._auditor.record(parsed, decision="ignored")
-            return web.json_response({"ok": True, "accepted": False, "reason": parsed.reason})
+            return {"ok": True, "accepted": False, "triggered": False, "reason": parsed.reason}
         _store_recent_message_context(parsed)
         if not parsed.should_trigger:
             logger.debug("[qiwe] accepted non-mention message_id=%s group_id=%s", parsed.message_id, parsed.group_id)
             self._auditor.record(parsed, decision="accepted_no_trigger")
             self._schedule_passive_pipeline(parsed)
-            return web.json_response({"ok": True, "accepted": True, "triggered": False, "reason": parsed.reason})
+            return {"ok": True, "accepted": True, "triggered": False, "reason": parsed.reason}
         if self._is_duplicate(parsed.message_id):
             logger.info("[qiwe] duplicate webhook ignored message_id=%s", parsed.message_id)
             self._auditor.record(parsed, decision="duplicate")
-            return web.json_response({"ok": True, "accepted": True, "triggered": False, "reason": "duplicate_message"})
+            return {"ok": True, "accepted": True, "triggered": False, "reason": "duplicate_message"}
 
         self._auditor.record(parsed, decision="dispatch_scheduled")
         task = asyncio.create_task(self._dispatch_message_safe(parsed))
         self._dispatch_tasks.add(task)
         task.add_done_callback(self._dispatch_tasks.discard)
-        return web.json_response({"ok": True, "accepted": True, "triggered": True, "message_id": parsed.message_id})
+        return {"ok": True, "accepted": True, "triggered": True, "message_id": parsed.message_id}
 
-    def _schedule_nats_capture(self, parsed: ParsedQiWeMessage, body: bytes) -> None:
+    def _schedule_nats_capture(
+        self,
+        parsed: ParsedQiWeMessage,
+        body: bytes,
+        *,
+        ingress_auth_verified: bool,
+    ) -> None:
         if self._nats_capture is None:
             return
-        task = asyncio.create_task(self._capture_message_safe(parsed, body))
+        task = asyncio.create_task(
+            self._capture_message_safe(
+                parsed,
+                body,
+                ingress_auth_verified=ingress_auth_verified,
+            )
+        )
         self._dispatch_tasks.add(task)
         task.add_done_callback(self._dispatch_tasks.discard)
 
-    async def _capture_message_safe(self, parsed: ParsedQiWeMessage, body: bytes) -> None:
+    async def _capture_message_safe(
+        self,
+        parsed: ParsedQiWeMessage,
+        body: bytes,
+        *,
+        ingress_auth_verified: bool,
+    ) -> None:
         identity: Optional[QiWeIdentity] = None
+        conversation_display_name = ""
         if parsed.sender_id:
             try:
                 identity = await self._identity_resolver.resolve(parsed)
             except Exception as exc:
                 logger.warning("[qiwe] NATS capture identity resolve failed message_id=%s: %s", parsed.message_id, exc, exc_info=True)
         try:
-            raw_event, message_event, message_id = build_capture_events(parsed, body, identity=identity)
+            conversation_display_name = await self._resolve_group_display_name(parsed)
+        except Exception:
+            # This is display-only enrichment. Capture and replies must survive it.
+            conversation_display_name = ""
+        try:
+            raw_event, message_event, message_id = build_capture_events(
+                parsed,
+                body,
+                identity=identity,
+                conversation_display_name=conversation_display_name,
+                ingress_auth_verified=ingress_auth_verified,
+            )
         except Exception as exc:
             logger.warning("[qiwe] NATS capture payload build failed message_id=%s: %s", parsed.message_id, exc, exc_info=True)
             return
@@ -2347,7 +2962,10 @@ class QiWeAdapter(BasePlatformAdapter):
             self._sender_display_names[(chat_id, parsed.sender_id)] = identity.display_name
         if parsed.conversation_type == "group" and parsed.sender_id:
             _remember_qiwe_message_ref(chat_id, parsed.sender_id, _qiwe_reply_ref_from_parsed(parsed))
-        answer_context = await self._prepare_answer_context(parsed)
+        answer_context, space_policy_context = await asyncio.gather(
+            self._prepare_answer_context(parsed),
+            self._prepare_space_turn_policy_context(parsed),
+        )
         source = self.build_source(
             chat_id=chat_id,
             chat_name=chat_id,
@@ -2373,7 +2991,12 @@ class QiWeAdapter(BasePlatformAdapter):
                 "referenced_message": parsed.referenced_message,
             },
             message_id=parsed.message_id,
-            channel_prompt=_member_context_channel_prompt(parsed, identity, answer_context),
+            channel_prompt=_member_context_channel_prompt(
+                parsed,
+                identity,
+                answer_context,
+                space_policy_context,
+            ),
         )
         self._auditor.record(parsed, decision="dispatch", identity=identity)
         await self.handle_message(event)
@@ -2401,6 +3024,12 @@ class QiWeAdapter(BasePlatformAdapter):
                     parsed.at_list,
                     bot_user_id=self.qiwe.bot_user_id,
                     bot_names=self.qiwe.bot_names,
+                    unidentified_only=True,
+                ),
+                mentioned_member_refs=_mentioned_member_refs_from_at_list(
+                    parsed.at_list,
+                    bot_user_id=self.qiwe.bot_user_id,
+                    bot_names=self.qiwe.bot_names,
                 ),
             )
             stdout, stderr = await asyncio.wait_for(process.communicate(request.encode("utf-8")), timeout=timeout)
@@ -2418,6 +3047,39 @@ class QiWeAdapter(BasePlatformAdapter):
             )
             return None
         return _answer_context_from_mcp_stdout(stdout.decode("utf-8", errors="replace"))
+
+    async def _prepare_space_turn_policy_context(
+        self, parsed: ParsedQiWeMessage
+    ) -> Optional[Dict[str, Any]]:
+        if (
+            not self.qiwe.space_turn_policy_enforcement_enabled
+            or parsed.conversation_type != "group"
+        ):
+            return None
+        try:
+            session = space_turn_session(
+                conversation_id=parsed.chat_id,
+                requester_user_id=parsed.sender_id,
+                source_message_id=parsed.message_id,
+            )
+            timeout = min(
+                2.0,
+                max(0.05, float(self.qiwe.space_turn_policy_timeout_seconds)),
+            )
+            context = await asyncio.wait_for(
+                asyncio.to_thread(load_space_turn_policy_context, session),
+                timeout=timeout,
+            )
+            return {"available": True, **context}
+        except Exception as exc:
+            logger.warning("[qiwe] Space turn policy context unavailable: %s", exc)
+            return {
+                "available": False,
+                "policy_found": False,
+                "identity": "",
+                "knowledge_scope": [],
+                "effective_capabilities": [],
+            }
 
     def _active_dispatch_text(self, parsed: ParsedQiWeMessage) -> str:
         reference_text = _referenced_message_text(parsed.referenced_message)
@@ -2892,7 +3554,21 @@ def check_tool_available() -> bool:
 
 def validate_config(config) -> bool:
     extra = getattr(config, "extra", {}) or {}
-    return AIOHTTP_AVAILABLE and bool(os.getenv("QIWE_TOKEN") or extra.get("token"))
+    try:
+        auth_required = _strict_bool(
+            os.getenv("QIWE_WEBHOOK_AUTH_REQUIRED")
+            if "QIWE_WEBHOOK_AUTH_REQUIRED" in os.environ
+            else extra.get("webhook_auth_required"),
+            False,
+        )
+    except ValueError:
+        return False
+    auth_token = os.getenv("QIWE_WEBHOOK_AUTH_TOKEN") or extra.get("webhook_auth_token", "")
+    return (
+        AIOHTTP_AVAILABLE
+        and bool(os.getenv("QIWE_TOKEN") or extra.get("token"))
+        and (not auth_required or bool(_text(auth_token)))
+    )
 
 
 def is_connected(config) -> bool:
@@ -2914,6 +3590,7 @@ def _env_enablement() -> Optional[Dict[str, Any]]:
         "QIWE_WEBHOOK_HOST": ("host", str),
         "QIWE_WEBHOOK_PATH": ("webhook_path", str),
         "QIWE_WEBHOOK_PORT": ("port", int),
+        "QIWE_WEBHOOK_AUTH_TOKEN": ("webhook_auth_token", str),
         "QIWE_DEDUPE_TTL_SECONDS": ("dedupe_ttl_seconds", int),
         "QIWE_IDENTITY_CACHE_TTL_SECONDS": ("identity_cache_ttl_seconds", int),
         "QIWE_STATE_DIR": ("state_dir", str),
@@ -2931,6 +3608,7 @@ def _env_enablement() -> Optional[Dict[str, Any]]:
         "QIWE_CONTACT_GUARD_MAX_PAGES": ("contact_guard_max_pages", int),
         "QIWE_VOICE_TO_TEXT_POLL_ATTEMPTS": ("voice_to_text_poll_attempts", int),
         "QIWE_ACTIVITY_REMINDER_SCAN_INTERVAL_SECONDS": ("activity_reminder_scan_interval_seconds", int),
+        "QIWE_SPACE_TURN_POLICY_TIMEOUT_SECONDS": ("space_turn_policy_timeout_seconds", float),
     }
     for env_name, (key, caster) in mappings.items():
         value = os.getenv(env_name, "").strip()
@@ -2959,6 +3637,14 @@ def _env_enablement() -> Optional[Dict[str, Any]]:
     }.items():
         if env_name in os.environ:
             seed[key] = _bool(os.getenv(env_name), True)
+    if "QIWE_WEBHOOK_AUTH_REQUIRED" in os.environ:
+        seed["webhook_auth_required"] = _strict_bool(
+            os.getenv("QIWE_WEBHOOK_AUTH_REQUIRED"), False
+        )
+    if "QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED" in os.environ:
+        seed["space_turn_policy_enforcement_enabled"] = _strict_zero_one(
+            os.getenv("QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED"), False
+        )
     voice_interval = os.getenv("QIWE_VOICE_TO_TEXT_POLL_INTERVAL_SECONDS", "").strip()
     if voice_interval:
         try:
@@ -3282,18 +3968,13 @@ QIWE_REVOKE_MESSAGE_SCHEMA = {
 
 QIWE_VOICE_TO_TEXT_SCHEMA = {
     "description": (
-        "Run the controlled QiWe voice-to-text apply/query flow for one voice "
-        "message. Requires QIWE_VOICE_TO_TEXT_ENABLED=true and returns only "
-        "voiceId/text/completion state."
+        "Run the controlled QiWe voice-to-text apply/query flow for the current "
+        "trusted voice message. Requires QIWE_VOICE_TO_TEXT_ENABLED=true and "
+        "returns only voiceId/text/completion state."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "msg_server_id": {
-                "type": "integer",
-                "description": "QiWe msgServerId of the voice message.",
-            },
-            "guid": {"type": "string", "description": "Optional QiWe device guid override."},
             "idempotency_key": {
                 "type": "string",
                 "description": "Required stable key from the approved workflow to prevent duplicate transcription calls.",
@@ -3303,7 +3984,7 @@ QIWE_VOICE_TO_TEXT_SCHEMA = {
                 "description": "Required approved workflow purpose.",
             },
         },
-        "required": ["msg_server_id", "idempotency_key", "purpose"],
+        "required": ["idempotency_key", "purpose"],
         "additionalProperties": False,
     },
 }
@@ -3330,6 +4011,98 @@ def _session_env(name: str) -> str:
         return _text(get_session_env(name, ""))
     except Exception:
         return _text(os.getenv(name, ""))
+
+
+def _space_turn_policy_enforcement_enabled() -> bool:
+    return _strict_zero_one(
+        os.getenv("QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED"), False
+    )
+
+
+async def _space_turn_authorization_error(
+    capability_key: str,
+    *,
+    group_target: str = "",
+    conversation_type: str = "",
+    current_speaker_target: str = "",
+) -> Optional[str]:
+    try:
+        if not _space_turn_policy_enforcement_enabled():
+            return None
+        session = trusted_qiwe_turn_session()
+        if session["conversation_type"] == "direct":
+            if group_target and _text(conversation_type) != "direct":
+                return _tool_error(
+                    "A direct conversation cannot target a group capability",
+                    success=False,
+                    authorized=False,
+                )
+            if group_target and _text(group_target) != session["conversation_id"]:
+                return _tool_error(
+                    "Direct capability target must be the current conversation",
+                    success=False,
+                    authorized=False,
+                )
+            if (
+                current_speaker_target
+                and _text(current_speaker_target) != session["requester_user_id"]
+            ):
+                return _tool_error(
+                    "Direct person-targeted capability may target only the current speaker",
+                    success=False,
+                    authorized=False,
+                )
+            return None
+        if group_target and _text(conversation_type) != "group":
+            return _tool_error(
+                "Space group capability must use the current group conversation",
+                success=False,
+                authorized=False,
+            )
+        if group_target and _text(group_target) != session["conversation_id"]:
+            return _tool_error(
+                "Space capability target must be the current group",
+                success=False,
+                authorized=False,
+            )
+        if current_speaker_target and _text(current_speaker_target) != session["requester_user_id"]:
+            return _tool_error(
+                "Space person-targeted capability may target only the current speaker",
+                success=False,
+                authorized=False,
+            )
+        timeout = min(
+            2.0,
+            max(
+                0.05,
+                float(
+                    os.getenv("QIWE_SPACE_TURN_POLICY_TIMEOUT_SECONDS")
+                    or DEFAULT_SPACE_TURN_POLICY_TIMEOUT_SECONDS
+                ),
+            ),
+        )
+        authorization = await asyncio.wait_for(
+            asyncio.to_thread(
+                authorize_space_turn_capability,
+                capability_key,
+                session=session,
+            ),
+            timeout=timeout,
+        )
+        if authorization.get("authorized") is not True:
+            return _tool_error(
+                "Space capability is not authorized for the current group",
+                success=False,
+                authorized=False,
+            )
+        return None
+    except Exception as exc:
+        logger.warning("[qiwe] Space turn capability authorization unavailable: %s", exc)
+        return _tool_error(
+            "Space capability authorization is unavailable",
+            success=False,
+            authorized=False,
+        )
 
 
 def _resolve_location_tool_args(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -3395,6 +4168,74 @@ def _session_qiwe_raw_event() -> Dict[str, Any]:
     raw_message = _session_raw_message()
     raw_event = raw_message.get("raw_event")
     return raw_event if isinstance(raw_event, dict) else {}
+
+
+def _trusted_current_voice_reference() -> Tuple[str, str, str]:
+    session = trusted_qiwe_turn_session()
+    try:
+        from gateway.session_context import get_session_env
+    except Exception as exc:
+        raise ValueError("trusted current QiWe voice receipt is unavailable") from exc
+
+    raw = get_session_env("HERMES_SESSION_RAW_MESSAGE", "")
+    if not isinstance(raw, str) or not raw or len(raw.encode("utf-8")) > 256 * 1024:
+        raise ValueError("trusted current QiWe voice receipt is unavailable")
+    try:
+        raw_message = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("trusted current QiWe voice receipt is invalid") from exc
+    if not isinstance(raw_message, dict) or raw_message.get("message_kind") != "voice":
+        raise ValueError("voice transcription is limited to the current voice message")
+
+    raw_event = raw_message.get("raw_event")
+    payload = raw_message.get("payload")
+    if not isinstance(raw_event, dict) or not isinstance(payload, dict):
+        raise ValueError("trusted current QiWe voice receipt is invalid")
+    message_id = _text(
+        raw_event.get("msgUniqueIdentifier")
+        or payload.get("msgUniqueIdentifier")
+        or raw_event.get("msgServerId")
+        or payload.get("msgServerId")
+        or raw_event.get("requestId")
+        or payload.get("requestId")
+        or payload.get("guid")
+        or raw_event.get("guid")
+    )
+    room_id = _text(raw_event.get("fromRoomId") or payload.get("fromRoomId"))
+    sender_id = _text(raw_event.get("senderId") or payload.get("senderId"))
+    msg_server_id = _text(raw_event.get("msgServerId") or payload.get("msgServerId"))
+    guid = _text(raw_event.get("guid") or payload.get("guid"))
+    attachments = raw_message.get("attachments")
+    voice_references = (
+        [
+            item
+            for item in attachments
+            if isinstance(item, dict)
+            and item.get("kind") == "voice"
+            and _text(item.get("msg_server_id")) == msg_server_id
+        ]
+        if isinstance(attachments, list)
+        else []
+    )
+    conversation_matches = (
+        room_id == session["conversation_id"]
+        if session["conversation_type"] == "group"
+        else room_id in {"", "0"} and session["conversation_id"] == sender_id
+    )
+    if (
+        message_id != session["source_message_id"]
+        or not conversation_matches
+        or sender_id != session["requester_user_id"]
+        or _message_kind(payload, raw_event) != "voice"
+        or len(voice_references) != 1
+        or not msg_server_id.isascii()
+        or not msg_server_id.isdigit()
+        or len(msg_server_id) > 32
+        or len(guid) > 240
+        or any(character.isspace() or ord(character) < 32 for character in guid)
+    ):
+        raise ValueError("voice transcription is limited to the current voice message")
+    return msg_server_id, message_id, guid
 
 
 def _qiwe_reply_ref_from_parsed(parsed: ParsedQiWeMessage) -> Dict[str, Any]:
@@ -3673,6 +4514,13 @@ def _validate_rich_message_tool_args(args: Dict[str, Any]) -> Optional[str]:
 
 async def _handle_qiwe_send_location_card(args: Dict[str, Any], **kwargs: Any) -> str:
     resolved_args = _resolve_location_tool_args(args)
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["location"],
+        group_target=_text(resolved_args.get("chat_id")),
+        conversation_type=_text(resolved_args.get("conversation_type")),
+    )
+    if authorization_error:
+        return authorization_error
     error = _validate_location_tool_args(resolved_args)
     if error:
         return _tool_error(error, success=False)
@@ -3722,6 +4570,13 @@ async def _handle_qiwe_send_location_card(args: Dict[str, Any], **kwargs: Any) -
 
 async def _handle_qiwe_send_rich_message(args: Dict[str, Any], **kwargs: Any) -> str:
     resolved_args = _resolve_channel_tool_args(args)
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["rich_message"],
+        group_target=_text(resolved_args.get("chat_id")),
+        conversation_type=_text(resolved_args.get("conversation_type")),
+    )
+    if authorization_error:
+        return authorization_error
     error = _validate_rich_message_tool_args(resolved_args)
     if error:
         return _tool_error(error, success=False)
@@ -3781,6 +4636,13 @@ async def _handle_qiwe_send_rich_message(args: Dict[str, Any], **kwargs: Any) ->
 async def _handle_qiwe_revoke_message(args: Dict[str, Any], **kwargs: Any) -> str:
     resolved_args = _resolve_channel_tool_args(args)
     chat_id = _text(resolved_args.get("chat_id"))
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["revoke_message"],
+        group_target=chat_id,
+        conversation_type=_text(resolved_args.get("conversation_type")),
+    )
+    if authorization_error:
+        return authorization_error
     msg_server_id = resolved_args.get("msg_server_id") if "msg_server_id" in resolved_args else resolved_args.get("msgServerId")
     idempotency_key = _text(resolved_args.get("idempotency_key"))
     purpose = _text(resolved_args.get("purpose"))
@@ -3834,11 +4696,33 @@ async def _handle_qiwe_revoke_message(args: Dict[str, Any], **kwargs: Any) -> st
 
 
 async def _handle_qiwe_voice_to_text(args: Dict[str, Any], **kwargs: Any) -> str:
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["voice_to_text"]
+    )
+    if authorization_error:
+        return authorization_error
     msg_server_id = args.get("msg_server_id") if "msg_server_id" in args else args.get("msgServerId")
+    if _text(args.get("guid")):
+        return _tool_error(
+            "voice transcription does not accept a guid override",
+            success=False,
+            authorized=False,
+        )
+    try:
+        trusted_msg_server_id, trusted_message_id, trusted_guid = (
+            _trusted_current_voice_reference()
+        )
+    except ValueError as exc:
+        return _tool_error(str(exc), success=False, authorized=False)
+    if msg_server_id not in (None, "") and _text(msg_server_id) != trusted_msg_server_id:
+        return _tool_error(
+            "voice transcription is limited to the current voice message",
+            success=False,
+            authorized=False,
+        )
+    msg_server_id = trusted_msg_server_id
     idempotency_key = _text(args.get("idempotency_key"))
     purpose = _text(args.get("purpose"))
-    if msg_server_id in (None, ""):
-        return _tool_error("msg_server_id is required", success=False)
     if not idempotency_key:
         return _tool_error("idempotency_key is required", success=False)
     if not purpose:
@@ -3847,20 +4731,25 @@ async def _handle_qiwe_voice_to_text(args: Dict[str, Any], **kwargs: Any) -> str
     adapter = QiWeAdapter(type("Config", (), {"extra": {}})())
     if adapter.qiwe.send_enabled and not AIOHTTP_AVAILABLE:
         return _tool_error("aiohttp is not installed", success=False)
-    key = _voice_to_text_tool_key(args)
+    key = f"{trusted_message_id}:{msg_server_id}"
     if _is_voice_to_text_tool_duplicate(key, adapter.qiwe.voice_to_text_tool_dedupe_ttl_seconds):
-        return _tool_result(success=True, duplicate=True, idempotency_key=key, purpose=purpose)
+        return _tool_result(
+            success=True,
+            duplicate=True,
+            idempotency_key=idempotency_key,
+            purpose=purpose,
+        )
 
     result = await adapter._voice_to_text(
         _text(msg_server_id),
-        guid=_text(args.get("guid") or adapter.qiwe.guid),
+        guid=trusted_guid or adapter.qiwe.guid,
     )
     if result.success:
         raw = _first_mapping(result.raw_response)
         return _tool_result(
             success=True,
             duplicate=False,
-            idempotency_key=key,
+            idempotency_key=idempotency_key,
             purpose=purpose,
             msg_server_id=int(msg_server_id),
             voice_id=_text(raw.get("voiceId")),
@@ -3870,7 +4759,7 @@ async def _handle_qiwe_voice_to_text(args: Dict[str, Any], **kwargs: Any) -> str
         result.error or "QiWe voice transcription failed",
         success=False,
         retryable=result.retryable,
-        idempotency_key=key,
+        idempotency_key=idempotency_key,
         purpose=purpose,
         msg_server_id=_text(msg_server_id),
     )
@@ -3878,6 +4767,12 @@ async def _handle_qiwe_voice_to_text(args: Dict[str, Any], **kwargs: Any) -> str
 
 async def _handle_qiwe_send_direct_message(args: Dict[str, Any], **kwargs: Any) -> str:
     recipient_user_id = _text(args.get("recipient_user_id") or args.get("chat_id"))
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["direct_message"],
+        current_speaker_target=recipient_user_id,
+    )
+    if authorization_error:
+        return authorization_error
     message = _text(args.get("message"))
     idempotency_key = _text(args.get("idempotency_key"))
     purpose = _text(args.get("purpose"))
@@ -3952,6 +4847,13 @@ async def _handle_qiwe_handoff_to_human(args: Dict[str, Any], **kwargs: Any) -> 
     message = _text(resolved_args.get("message"))
     purpose = _text(resolved_args.get("purpose"))
     chat_id = _text(resolved_args.get("chat_id"))
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["human_handoff"],
+        group_target=chat_id,
+        conversation_type="group",
+    )
+    if authorization_error:
+        return authorization_error
     original_sender_id = _text(resolved_args.get("original_sender_id"))
     original_content = _text(resolved_args.get("original_content"))
 
@@ -4047,6 +4949,14 @@ async def _handle_qiwe_request_direct_contact(args: Dict[str, Any], **kwargs: An
     purpose = _text(resolved_args.get("purpose"))
     idempotency_key = _text(resolved_args.get("idempotency_key"))
     room_id = _text(resolved_args.get("room_id"))
+    authorization_error = await _space_turn_authorization_error(
+        QIWE_SPACE_TURN_CAPABILITIES["direct_contact"],
+        group_target=room_id if mode == "room_member" else "",
+        conversation_type="group" if mode == "room_member" else "direct",
+        current_speaker_target=user_id,
+    )
+    if authorization_error:
+        return authorization_error
 
     if mode not in {"room_member", "deleted_contact"}:
         return _tool_error("mode must be room_member or deleted_contact", success=False)
@@ -4117,10 +5027,19 @@ async def _handle_qiwe_request_direct_contact(args: Dict[str, Any], **kwargs: An
 
 
 def register(ctx) -> None:
+    (
+        handle_space_change_prepare,
+        handle_space_change_confirm,
+        handle_space_change_status,
+    ) = build_space_change_handlers(getattr(ctx, "llm", None))
     ctx.register_platform(
         name="qiwe",
         label="QiWe",
-        adapter_factory=lambda cfg: QiWeAdapter(cfg, content_parser=parser_from_context(ctx)),
+        adapter_factory=lambda cfg: QiWeAdapter(
+            cfg,
+            content_parser=parser_from_context(ctx),
+            llm=getattr(ctx, "llm", None),
+        ),
         check_fn=check_requirements,
         validate_config=validate_config,
         is_connected=is_connected,
@@ -4139,6 +5058,36 @@ def register(ctx) -> None:
             "direct chats reply privately. For approved location results, the "
             "adapter can send a native QiWe location card from structured metadata."
         ),
+    )
+    ctx.register_tool(
+        name="qintopia_space_change_prepare",
+        toolset="qiwe",
+        schema=SPACE_CHANGE_PREPARE_SCHEMA,
+        handler=handle_space_change_prepare,
+        check_fn=check_tool_available,
+        is_async=True,
+        description=SPACE_CHANGE_PREPARE_SCHEMA["description"],
+        emoji="⚙️",
+    )
+    ctx.register_tool(
+        name="qintopia_space_change_confirm",
+        toolset="qiwe",
+        schema=SPACE_CHANGE_CONFIRM_SCHEMA,
+        handler=handle_space_change_confirm,
+        check_fn=check_tool_available,
+        is_async=True,
+        description=SPACE_CHANGE_CONFIRM_SCHEMA["description"],
+        emoji="✅",
+    )
+    ctx.register_tool(
+        name="qintopia_space_change_status",
+        toolset="qiwe",
+        schema=SPACE_CHANGE_STATUS_SCHEMA,
+        handler=handle_space_change_status,
+        check_fn=check_tool_available,
+        is_async=True,
+        description=SPACE_CHANGE_STATUS_SCHEMA["description"],
+        emoji="🔎",
     )
     ctx.register_tool(
         name="qiwe_send_location_card",

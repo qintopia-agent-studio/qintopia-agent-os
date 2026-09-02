@@ -792,19 +792,15 @@ def handle_qintopia_complaint_followup_send(args: dict[str, Any], **_: Any) -> s
         or "你看这个处理结果是否解决了你的问题？如果还需要继续跟进，可以直接告诉我。"
     )
     message = f"{prefix}这件投诉/反馈已经有处理结果了：\n\n{approved_resolution}\n\n{followup_question}"
-    comment_id, status = _kanban_add_complaint_comment(
-        task_id,
-        "## 二花回访记录\n\n已根据批准口径私聊投诉人同步处理结果，并询问是否需要继续跟进。",
-    )
     idempotency_key = _complaint_followup_idempotency_key(task_id, requester_id, approved_resolution)
 
     return _json(
         {
             "success": True,
             "skill": "qintopia_complaint_followup_send",
-            "mode": status,
+            "mode": "prepared",
             "task_id": task_id,
-            "comment_id": comment_id,
+            "comment_id": None,
             "actions": [
                 {
                     "tool": "qiwe_send_direct_message",
@@ -822,6 +818,7 @@ def handle_qintopia_complaint_followup_send(args: dict[str, Any], **_: Any) -> s
                 "private follow-up only",
                 "do not invent handling result",
                 "continue follow-up only by appending to the complaint card",
+                "record delivery only after the direct-message sender confirms success",
             ],
         }
     )

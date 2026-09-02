@@ -59,6 +59,7 @@ const requiredFiles = [
   "deploy/runner/deploy-request.schema.json",
   "deploy/runner/deploy-result.schema.json",
   "deploy/runner/install-release-systemd-units.sh",
+  "deploy/runner/quiesce-space-automation-runtime.sh",
   "deploy/runner/qintopia-agent-os-deploy-runner",
   "deploy/runner/activate-erhua-profile.sh",
   "runtime/hermes/validate_hermes_python.py",
@@ -86,6 +87,7 @@ const requiredFiles = [
   "tools/deploy/test-resolve-restart-targets.mjs",
   "tools/deploy/test-deploy-runner-poller.mjs",
   "tools/deploy/test-deploy-runner-promotion.mjs",
+  "tools/deploy/test-pre-promotion-space-runtime-quiesce.mjs",
   "tools/deploy/test-production-timer-activation-runner.mjs",
   "tools/deploy/test-production-observation-runner.mjs",
   "tools/deploy/test-production-worker-run-evidence-smoke.mjs",
@@ -93,6 +95,8 @@ const requiredFiles = [
   "tools/deploy/test-production-hermes-cron-apply-runner.mjs",
   "tools/deploy/test-production-legacy-cron-retirement-runner.mjs",
   "tools/deploy/test-production-runtime-one-shot-runner.mjs",
+  "tools/deploy/test-space-automation-runtime-production.mjs",
+  "runtime/nginx/tests/test-qiwe-webhook-ingress-activation.mjs",
   "tools/deploy/test-xiaoman-creative-profile-candidates-production-apply.mjs",
   "tools/deploy/test-hermes-cron-snapshot-install.mjs",
   "tools/deploy/test-hermes-cron-snapshot-observation.mjs",
@@ -101,6 +105,7 @@ const requiredFiles = [
   "tools/deploy/test-promote-release-tree.mjs",
   "tools/deploy/test-fetch-cos-artifact-permissions.mjs",
   "tools/deploy/test-release-systemd-install.mjs",
+  "tools/deploy/test-release-systemd-rollback.mjs",
   "tools/deploy/test-erhua-legacy-cron-observation.mjs",
   "tools/deploy/test-erhua-legacy-cron-retirement.mjs",
   "tools/deploy/test-xiaoman-legacy-cron-retirement.mjs",
@@ -112,6 +117,8 @@ const requiredFiles = [
   "docs/operations/production-hermes-cron-apply-runbook.md",
   "docs/operations/production-legacy-cron-retirement-runbook.md",
   "docs/operations/production-runtime-one-shot-runbook.md",
+  "docs/operations/qiwe-webhook-ingress-production-runbook.md",
+  "docs/operations/space-automation-runtime-production-runbook.md",
 ];
 
 for (const file of requiredFiles) {
@@ -281,14 +288,18 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     readText("deploy/runner/deploy-request.schema.json")
   );
   const validateRequest = ajv.compile(deployRequestSchema);
+  const sampleCreatedAt = new Date().toISOString();
+  const sampleExpiresAt = new Date(
+    Date.parse(sampleCreatedAt) + 60 * 60 * 1000
+  ).toISOString();
   const sampleRequest = {
     schema_version: 1,
     request_id: "deploy-20260706T000000Z-0123456789ab",
     environment: "production",
     repository: "qintopia-agent-studio/qintopia-agent-os",
     requested_by: "codex",
-    created_at: "2026-07-06T00:00:00Z",
-    expires_at: "2026-07-06T01:00:00Z",
+    created_at: sampleCreatedAt,
+    expires_at: sampleExpiresAt,
     commit_sha: "0123456789abcdef0123456789abcdef01234567",
     runtime_sha: "0123456789abcdef0123456789abcdef01234567",
     runtime_artifact_profile: "huabaosi-production",
@@ -311,7 +322,7 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       algorithm: "hmac-sha256",
       issuer: "github-actions",
       key_id: "production",
-      signed_at: "2026-07-06T00:00:00Z",
+      signed_at: sampleCreatedAt,
       value: "a".repeat(64),
     },
   };
@@ -322,6 +333,32 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       )}`
     );
   }
+  const releaseRollbackRequest = {
+    ...sampleRequest,
+    release_rollback: {
+      expected_current_sha: "fedcba9876543210fedcba9876543210fedcba98",
+      expected_previous_sha: sampleRequest.release_sha,
+    },
+  };
+  if (!validateRequest(releaseRollbackRequest)) {
+    addError("deploy request schema must accept signed release rollback lineage");
+  }
+  if (validateRequest({ ...sampleRequest, rollback_on_smoke_failure: false })) {
+    addError(
+      "deploy request schema must not allow ordinary promotion to disable automatic rollback"
+    );
+  }
+  if (
+    validateRequest({
+      ...releaseRollbackRequest,
+      release_rollback: {
+        ...releaseRollbackRequest.release_rollback,
+        arbitrary_target: sampleRequest.release_sha,
+      },
+    })
+  ) {
+    addError("deploy request schema must reject unbounded release rollback fields");
+  }
   const profileRequest = {
     ...sampleRequest,
     release_scope: ["hermes-profile-erhua"],
@@ -329,6 +366,16 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
   };
   if (!validateRequest(profileRequest)) {
     addError("deploy request schema must accept fixed Erhua profile coupling");
+  }
+  if (
+    validateRequest({
+      ...profileRequest,
+      release_rollback: releaseRollbackRequest.release_rollback,
+    })
+  ) {
+    addError(
+      "deploy request schema must reject release rollback on non-release scopes"
+    );
   }
   for (const restart_targets of [
     ["hermes-xiaoman"],
@@ -366,12 +413,8 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     dry_run: false,
     rollback_on_smoke_failure: false,
     activation: {
-      targets: [
-        "erhua-morning-brief",
-        "xiaoman-weekly-recruitment",
-        "xiaoman-weekly-plan-confirmation",
-        "xiaoman-weekly-preview",
-      ],
+      targets: ["space-automation-runtime"],
+      approval: "approved-production-space-automation-runtime",
     },
   };
   if (!validateRequest(productionActivationRequest)) {
@@ -395,11 +438,20 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     { ...productionActivationRequest, rollback_on_smoke_failure: true },
     {
       ...productionActivationRequest,
-      activation: { targets: ["erhua-morning-brief", "erhua-morning-brief"] },
+      activation: {
+        targets: ["space-automation-runtime"],
+        approval: "wrong-owner-approval",
+      },
     },
     {
       ...productionActivationRequest,
-      activation: { targets: ["unknown-target"] },
+      activation: { targets: ["space-automation-runtime", "space-automation-runtime"] },
+    },
+    {
+      ...productionActivationRequest,
+      activation: {
+        targets: ["space-automation-runtime", "xiaoman-weekly-preview"],
+      },
     },
   ]) {
     if (validateRequest(badRequest)) {
@@ -416,7 +468,11 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     dry_run: false,
     rollback_on_smoke_failure: false,
     observation: {
-      targets: ["qiwe-image-send", "xiaoman-daily-case-report-auto-publish"],
+      targets: [
+        "qiwe-image-send",
+        "space-automation-runtime",
+        "xiaoman-daily-case-report-auto-publish",
+      ],
     },
   };
   if (!validateRequest(productionObservationRequest)) {
@@ -654,6 +710,30 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
       )}`
     );
   }
+  for (const [target, approval] of [
+    ["qiwe-webhook-ingress-apply", "approved-production-qiwe-webhook-ingress-apply"],
+    [
+      "qiwe-webhook-ingress-rollback",
+      "approved-production-qiwe-webhook-ingress-rollback",
+    ],
+    [
+      "space-automation-runtime-rollback",
+      "approved-production-space-automation-runtime-rollback",
+    ],
+  ]) {
+    if (
+      !validateRequest({
+        ...productionRuntimeOneShotRequest,
+        runtime_one_shot: { targets: [target], approval },
+      })
+    ) {
+      addError(
+        `deploy request schema must accept fixed Qiwe webhook ingress target ${target} ${JSON.stringify(
+          validateRequest.errors
+        )}`
+      );
+    }
+  }
   for (const badRequest of [
     {
       ...sampleRequest,
@@ -737,6 +817,20 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     {
       ...productionRuntimeOneShotRequest,
       runtime_one_shot: {
+        targets: ["qiwe-webhook-ingress-apply"],
+        approval: "approved-production-qiwe-webhook-ingress-rollback",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
+        targets: ["space-automation-runtime-rollback"],
+        approval: "approved-production-qiwe-webhook-ingress-rollback",
+      },
+    },
+    {
+      ...productionRuntimeOneShotRequest,
+      runtime_one_shot: {
         targets: ["unknown-target"],
         approval: "approved-production-erhua-morning-brief-one-shot",
       },
@@ -772,6 +866,13 @@ if (exists("deploy/runner/deploy-result.schema.json")) {
     restart_targets: ["qintopia-system-services"],
     checks: [{ name: "deploy-runner", status: "passed" }],
     rollback: { attempted: false, status: "not_needed" },
+    signature: {
+      algorithm: "hmac-sha256",
+      issuer: "qintopia-deploy-runner",
+      key_id: "production",
+      signed_at: "2026-07-06T00:01:00Z",
+      value: "a".repeat(64),
+    },
   };
   if (!validateResult(sampleResult)) {
     addError(
@@ -1054,33 +1155,30 @@ if (exists(".github/workflows/rollback-production.yml")) {
   const executableResolveRun =
     typeof resolveRun === "string" ? stripCommentOnlyLines(resolveRun) : "";
   const releaseTagInput = workflow?.on?.workflow_dispatch?.inputs?.release_tag;
+  const expectedCurrentReleaseTagInput =
+    workflow?.on?.workflow_dispatch?.inputs?.expected_current_release_tag;
   const runtimeArtifactProfileInput =
     workflow?.on?.workflow_dispatch?.inputs?.runtime_artifact_profile;
   const restartTargetsInput = workflow?.on?.workflow_dispatch?.inputs?.restart_targets;
-  const releaseTagOptions = releaseTagInput?.options ?? [];
-  if (releaseTagInput?.type !== "choice") {
+  if (releaseTagInput?.type !== "string" || releaseTagInput?.required !== true) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag must use a choice input"
+      ".github/workflows/rollback-production.yml: release_tag must be a required string input"
     );
   }
-  if (releaseTagOptions.length !== 1) {
+  if (
+    expectedCurrentReleaseTagInput?.type !== "string" ||
+    expectedCurrentReleaseTagInput?.required !== true
+  ) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag options must be narrowed to exactly one verified candidate"
+      ".github/workflows/rollback-production.yml: expected_current_release_tag must be a required string input"
     );
   }
-  if (!releaseTagOptions.every((tag) => /^v[0-9]+\.[0-9]+\.[0-9]+$/.test(tag))) {
+  if (
+    releaseTagInput?.default !== undefined ||
+    releaseTagInput?.options !== undefined
+  ) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag options must be semver-style vX.Y.Z tags"
-    );
-  }
-  if (releaseTagInput?.default !== "v0.2.0" || !releaseTagOptions.includes("v0.2.0")) {
-    addError(
-      ".github/workflows/rollback-production.yml: release_tag must default to verified candidate v0.2.0"
-    );
-  }
-  if (!releaseTagOptions.every((tag) => tag === "v0.2.0")) {
-    addError(
-      ".github/workflows/rollback-production.yml: release_tag options must be exactly [v0.2.0] after v0.2.3 rollback audit"
+      ".github/workflows/rollback-production.yml: release_tag must not hardcode a default or static options"
     );
   }
   if (typeof resolveRun !== "string") {
@@ -1088,22 +1186,19 @@ if (exists(".github/workflows/rollback-production.yml")) {
       ".github/workflows/rollback-production.yml: Resolve rollback target step must have a run script"
     );
   }
-  const releaseTagGuardBlock = `if [[ "$INPUT_RELEASE_TAG" != "v0.2.0" ]]; then
-  echo "Rollback target must be v0.2.0 (verified candidate after v0.2.3 audit)." >&2
-  exit 2
-fi`;
-  if (countExactOccurrences(executableResolveRun, releaseTagGuardBlock) !== 1) {
+  if (
+    countExactOccurrences(
+      executableResolveRun,
+      '[[ ! "$INPUT_RELEASE_TAG" =~ ^v[0-9]+\\.[0-9]+\\.[0-9]+$ ]]'
+    ) !== 1
+  ) {
     addError(
-      ".github/workflows/rollback-production.yml: Resolve rollback target must contain exactly one executable INPUT_RELEASE_TAG guard for audited candidate v0.2.0"
+      ".github/workflows/rollback-production.yml: Resolve rollback target must contain exactly one semver release-tag guard"
     );
   }
-  const targetShaGuardBlock = `if [[ "$target_sha" != "b24c3f714b19962c5a7b57a486f7aa18c4ae3e86" ]]; then
-  echo "Rollback target SHA must match the audited v0.2.0 release commit." >&2
-  exit 2
-fi`;
-  if (countExactOccurrences(executableResolveRun, targetShaGuardBlock) !== 1) {
+  if (/v0\.2\.0|b24c3f714b19962c5a7b57a486f7aa18c4ae3e86/.test(workflowText)) {
     addError(
-      ".github/workflows/rollback-production.yml: Resolve rollback target must contain exactly one executable target_sha guard for audited v0.2.0 commit b24c3f714b19962c5a7b57a486f7aa18c4ae3e86"
+      ".github/workflows/rollback-production.yml: release tags and target SHAs must not be hardcoded"
     );
   }
   if (restartTargetsInput?.type !== "choice") {
@@ -1141,14 +1236,6 @@ fi`;
       addError(`.github/workflows/rollback-production.yml: forbidden ${forbidden}`);
     }
   }
-  const unavailableTargetGuard = `echo "Rollback target v0.2.0 is a legacy single-runtime release and cannot satisfy the required Huabaosi primary plus QiWe companion contract." >&2
-echo "No owner-triggered dual-runtime rollback target is currently verified; no deploy request was created." >&2
-exit 2`;
-  if (countExactOccurrences(executableResolveRun, unavailableTargetGuard) !== 1) {
-    addError(
-      ".github/workflows/rollback-production.yml: legacy v0.2.0 rollback must fail closed exactly once before artifact access or request creation"
-    );
-  }
   for (const forbidden of [
     "inputs.runtime_artifact_profile",
     "INPUT_RUNTIME_ARTIFACT_PROFILE",
@@ -1163,11 +1250,14 @@ exit 2`;
   }
   for (const fragment of [
     "workflow_dispatch:",
+    "type: string",
     "type: choice",
     "Resolve rollback target",
     'gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}"',
     "Rollback target must be a published non-prerelease GitHub Release.",
+    'release_tag_name" != "$INPUT_RELEASE_TAG"',
     "git merge-base --is-ancestor",
+    "Rollback target must be reachable from origin/master.",
     'runtime_artifact_profile="huabaosi-production"',
     "runtime-artifact-profile=${runtime_artifact_profile}",
     "Validate rollback artifacts in Tencent COS",
@@ -1176,10 +1266,13 @@ exit 2`;
     "QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production",
     "${temp_dir}/sidecar-profiles/qiwe-production",
     "ROLLBACK_TARGET_SHA",
+    "expected-current-sha=${expected_current_sha}",
     "QINTOPIA_SIDECAR_ARTIFACT_PROFILE",
     "DEPLOY_RUNTIME_ARTIFACT_PROFILE",
     "DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins",
-    "DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: false",
+    "DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: true",
+    "DEPLOY_ROLLBACK_EXPECTED_CURRENT_SHA",
+    "DEPLOY_ROLLBACK_EXPECTED_PREVIOUS_SHA",
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "wait-deploy-result.sh",
@@ -1190,6 +1283,61 @@ exit 2`;
   ]) {
     if (!workflowText.includes(fragment)) {
       addError(`.github/workflows/rollback-production.yml: missing ${fragment}`);
+    }
+  }
+  const waitStep = job?.steps?.find(
+    (step) => step?.name === "Wait for server rollback result"
+  );
+  if (!waitStep || waitStep.if !== undefined) {
+    addError(
+      ".github/workflows/rollback-production.yml: signed server rollback result wait must be mandatory"
+    );
+  }
+  if (
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY !==
+      "${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}" ||
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY_ID !== "production"
+  ) {
+    addError(
+      ".github/workflows/rollback-production.yml: server rollback result wait must verify the fixed result signature"
+    );
+  }
+  if (workflowText.includes("WAIT_FOR_SERVER_DEPLOY_RESULT")) {
+    addError(
+      ".github/workflows/rollback-production.yml: must not permit server result wait opt-out"
+    );
+  }
+
+  const rollbackStepNames = (job?.steps ?? []).map((step) => step?.name);
+  const resolveIndex = rollbackStepNames.indexOf("Resolve rollback target");
+  const secretCheckIndex = rollbackStepNames.indexOf(
+    "Validate Tencent COS upload configuration"
+  );
+  const artifactCheckIndex = rollbackStepNames.indexOf(
+    "Validate rollback artifacts in Tencent COS"
+  );
+  const requestIndex = rollbackStepNames.indexOf("Create rollback deploy request");
+  if (
+    resolveIndex < 0 ||
+    secretCheckIndex <= resolveIndex ||
+    artifactCheckIndex <= secretCheckIndex ||
+    requestIndex <= artifactCheckIndex
+  ) {
+    addError(
+      ".github/workflows/rollback-production.yml: release and all COS artifact validation must precede request creation"
+    );
+  }
+  for (const [fragment, expectedCount] of [
+    ["fetch-cos-artifact.sh", 3],
+    ["--artifact-type sidecar", 2],
+    ["--artifact-type deploy-bundle", 1],
+    ["QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production", 1],
+    ["QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production", 1],
+  ]) {
+    if (countExactOccurrences(workflowText, fragment) !== expectedCount) {
+      addError(
+        `.github/workflows/rollback-production.yml: expected ${expectedCount} occurrence(s) of ${fragment}`
+      );
     }
   }
 }
@@ -1237,6 +1385,28 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
       ".github/workflows/activate-production-timers.yml: default activation targets must stay limited to Erhua and Xiaoman weekly loop timers"
     );
   }
+  const waitStep = job?.steps?.find(
+    (step) => step?.name === "Wait for server activation result"
+  );
+  if (!waitStep || waitStep.if !== undefined) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: signed server activation result wait must be mandatory"
+    );
+  }
+  if (
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY !==
+      "${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}" ||
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY_ID !== "production"
+  ) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: server activation result wait must verify the fixed result signature"
+    );
+  }
+  if (workflowText.includes("WAIT_FOR_SERVER_DEPLOY_RESULT")) {
+    addError(
+      ".github/workflows/activate-production-timers.yml: must not permit server result wait opt-out"
+    );
+  }
   const uploadJobNames = Object.entries(workflow?.jobs || {})
     .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
     .map(([jobName]) => jobName);
@@ -1264,7 +1434,9 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
     "normalize_csv_allowlist()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish",
+    "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish,space-automation-runtime",
+    "space-automation-runtime",
+    "space-automation-runtime must be the sole activation target when selected.",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-activation",
     "DEPLOY_RESTART_TARGETS: qintopia-system-services",
@@ -1276,7 +1448,6 @@ if (exists(".github/workflows/activate-production-timers.yml")) {
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "wait-deploy-result.sh",
-    "WAIT_FOR_SERVER_DEPLOY_RESULT",
   ]) {
     if (!workflowText.includes(fragment)) {
       addError(`.github/workflows/activate-production-timers.yml: missing ${fragment}`);
@@ -1327,6 +1498,28 @@ if (exists(".github/workflows/observe-production-runtime.yml")) {
       ".github/workflows/observe-production-runtime.yml: default observation targets must stay limited to QiWe image-send and Xiaoman daily report"
     );
   }
+  const waitStep = job?.steps?.find(
+    (step) => step?.name === "Wait for server observation result"
+  );
+  if (!waitStep || waitStep.if !== undefined) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: signed server observation result wait must be mandatory"
+    );
+  }
+  if (
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY !==
+      "${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}" ||
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY_ID !== "production"
+  ) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: server observation result wait must verify the fixed result signature"
+    );
+  }
+  if (workflowText.includes("WAIT_FOR_SERVER_DEPLOY_RESULT")) {
+    addError(
+      ".github/workflows/observe-production-runtime.yml: must not permit server result wait opt-out"
+    );
+  }
   const uploadJobNames = Object.entries(workflow?.jobs || {})
     .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
     .map(([jobName]) => jobName);
@@ -1355,6 +1548,7 @@ if (exists(".github/workflows/observe-production-runtime.yml")) {
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
     "qiwe-image-send,xiaoman-daily-case-report-auto-publish",
+    "space-automation-runtime",
     "hermes-cron-snapshot",
     "hermes-cron-live-parity",
     "erhua-morning-brief-worker-run",
@@ -1369,7 +1563,6 @@ if (exists(".github/workflows/observe-production-runtime.yml")) {
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "wait-deploy-result.sh",
-    "WAIT_FOR_SERVER_DEPLOY_RESULT",
   ]) {
     if (!workflowText.includes(fragment)) {
       addError(`.github/workflows/observe-production-runtime.yml: missing ${fragment}`);
@@ -1643,12 +1836,37 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "erhua-morning-brief",
     "hermes-cron-snapshot-install",
     "qiwe-image-send-intro-text-enable",
+    "qiwe-webhook-ingress-apply",
+    "qiwe-webhook-ingress-rollback",
+    "space-automation-runtime-rollback",
   ]) {
     if (!targetOptions.includes(expectedTarget)) {
       addError(
         `.github/workflows/run-production-runtime-one-shot.yml: missing target option ${expectedTarget}`
       );
     }
+  }
+  const waitStep = job?.steps?.find(
+    (step) => step?.name === "Wait for server runtime one-shot result"
+  );
+  if (!waitStep || waitStep.if !== undefined) {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: signed server runtime one-shot result wait must be mandatory"
+    );
+  }
+  if (
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY !==
+      "${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}" ||
+    waitStep?.env?.DEPLOY_REQUEST_SIGNING_KEY_ID !== "production"
+  ) {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: server runtime one-shot result wait must verify the fixed result signature"
+    );
+  }
+  if (workflowText.includes("WAIT_FOR_SERVER_DEPLOY_RESULT")) {
+    addError(
+      ".github/workflows/run-production-runtime-one-shot.yml: must not permit server result wait opt-out"
+    );
   }
   const uploadJobNames = Object.entries(workflow?.jobs || {})
     .filter(([, candidateJob]) => candidateJob?.permissions?.contents === "write")
@@ -1677,12 +1895,15 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "require_allowed_value()",
     "release_sha must be a lowercase 40-character git SHA.",
     "git merge-base --is-ancestor",
-    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install,qiwe-image-send-intro-text-enable",
+    "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install,qiwe-image-send-intro-text-enable,qiwe-webhook-ingress-apply,qiwe-webhook-ingress-rollback,space-automation-runtime-rollback",
     "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
     "approved-production-xiaoman-daily-case-report-config-v1",
     "approved-production-xiaoman-creative-profile-candidates",
     "approved-production-erhua-morning-brief-one-shot",
     "approved-production-hermes-cron-snapshot",
+    "approved-production-qiwe-webhook-ingress-apply",
+    "approved-production-qiwe-webhook-ingress-rollback",
+    "approved-production-space-automation-runtime-rollback",
     "payload_sha256 must be a lowercase 64-character SHA-256 for Xiaoman creative-profile candidates apply.",
     "pnpm deploy:runner:check",
     "DEPLOY_RELEASE_SCOPE: production-runtime-one-shot",
@@ -1698,7 +1919,6 @@ if (exists(".github/workflows/run-production-runtime-one-shot.yml")) {
     "create-deploy-request.mjs",
     "upload-deploy-request.sh",
     "wait-deploy-result.sh",
-    "WAIT_FOR_SERVER_DEPLOY_RESULT",
   ]) {
     if (!workflowText.includes(fragment)) {
       addError(
@@ -1737,6 +1957,15 @@ for (const fragment of [
   "DEPLOY_REQUEST_SIGNING_KEY_ID",
   "signature key_id mismatch",
   "request is expired",
+  "request is stale",
+  "request TTL exceeds 60 minutes",
+  "created_at is too far in the future",
+  "signature.signed_at must be within 5 minutes of created_at",
+  "signature.signed_at is too far in the future",
+  "signature is stale",
+  "ordinary release promotion requires rollback_on_smoke_failure=true",
+  "release rollback target is not the server's exact previous release",
+  "current release manifest does not persist the requested previous lineage",
   "repository mismatch",
   "cos.prefix must be qintopia-agent-os",
   "deploy-requests/production/requests",
@@ -1745,6 +1974,8 @@ for (const fragment of [
   'if [[ -e "${RELEASE_ROOT}/current" || -L "${RELEASE_ROOT}/current" ]]',
   'previous_sha="${previous_target##*/}"',
   "promoted_current=true",
+  "release_lineage_changed=true",
+  "restore_original_previous_pointer",
   'RUNNER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"',
   '"${RUNNER_DIR}/promote-release.sh"',
   'release_installer="${RELEASE_ROOT}/${release_sha}/deploy/runner/install-release-systemd-units.sh"',
@@ -1752,8 +1983,10 @@ for (const fragment of [
   'release_smoke="${RELEASE_ROOT}/${release_sha}/deploy/runner/smoke-release.sh"',
   'run_with_safe_failure_capture "$release_smoke"',
   "marker_rejected",
+  '"${RUNNER_DIR}/quiesce-space-automation-runtime.sh"',
   '"${RUNNER_DIR}/rollback-release.sh"',
   'deploy_stage="install-release-systemd-units"',
+  'deploy_stage="quiesce-space-automation-runtime"',
   'deploy_stage="smoke-release"',
   '"failure_stage": deploy_failure_stage',
   '"exit_status": int(deploy_failure_status or "0")',
@@ -1762,12 +1995,17 @@ for (const fragment of [
   'deploy_failure_stage="$deploy_stage"',
   'deploy_failure_status="$status"',
   'if [[ "$promoted_current" == "true"',
+  "refresh_promoted_current",
+  '--expected-current-sha "$release_sha"',
+  '--expected-previous-sha "$original_current_sha"',
+  "rollback_args+=(--restore-previous-absent)",
   "rollback failed",
   "rollback succeeded",
   "hermes-profile-erhua requires exactly hermes-erhua",
   "production-activation must be the only release scope",
   "production-activation requires exactly qintopia-system-services",
   "production-activation requires rollback_on_smoke_failure=false",
+  "space-automation-runtime must be the sole activation target when selected",
   "activation metadata is only allowed for production-activation",
   "production-observation must be the only release scope",
   "production-observation requires exactly qintopia-system-services",
@@ -1804,6 +2042,11 @@ for (const fragment of [
   "production-legacy-cron-retirement",
   "production-runtime-one-shot",
   "runtime_one_shot.backfill_date",
+  "qiwe-webhook-ingress-production.sh",
+  "approved-production-qiwe-webhook-ingress-apply",
+  "approved-production-qiwe-webhook-ingress-rollback",
+  "approved-production-space-automation-runtime",
+  "approved-production-space-automation-runtime-rollback",
   "activate-erhua-morning-brief-production.sh",
   "erhua-morning-brief-one-shot-production.sh",
   "retire-erhua-legacy-cron-production.sh",
@@ -1818,6 +2061,9 @@ for (const fragment of [
   "enable-qiwe-image-send-intro-text-production.sh",
   "activate-xiaoman-daily-case-report-auto-publish-production.sh",
   "qiwe-image-send-production-observation-smoke.sh",
+  "activate-space-automation-runtime-production.sh",
+  "rollback-space-automation-runtime-production.sh",
+  "space-automation-runtime-production-observation-smoke.sh",
   "xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh",
   "production-worker-run-evidence-smoke.sh",
   "hermes-cron-snapshot-observation-smoke.sh",
@@ -1835,6 +2081,8 @@ for (const fragment of [
   "approved-production-xiaoman-weekly-plan-confirmation-hermes-cron",
   "approved-production-xiaoman-weekly-preview-hermes-cron",
   "hermes_cron_apply_failure_detail",
+  "activation_failure_detail",
+  "qintopia_activation_safe_failure=",
   "qintopia_hermes_cron_apply_safe_failure=",
   "hermes_cron_apply.mode",
   "run_worker_run_evidence_observation",
@@ -1847,6 +2095,49 @@ for (const fragment of [
 ]) {
   if (!runnerText.includes(fragment)) {
     addError(`deploy/runner/qintopia-agent-os-deploy-runner: missing ${fragment}`);
+  }
+}
+
+const quiesceCall = '"${RUNNER_DIR}/quiesce-space-automation-runtime.sh"';
+const quiesceCallIndex = runnerText.indexOf(quiesceCall);
+const promoteCallIndex = runnerText.indexOf('"${RUNNER_DIR}/promote-release.sh"');
+if (
+  quiesceCallIndex < 0 ||
+  promoteCallIndex < 0 ||
+  quiesceCallIndex > promoteCallIndex ||
+  !runnerText.includes(
+    'if [[ "$dry_run" != "true" ]]; then\n    deploy_stage="quiesce-space-automation-runtime"'
+  )
+) {
+  addError(
+    "deploy runner must quiesce Space runtime only for non-dry-run ordinary releases and before promotion"
+  );
+}
+
+const spaceRuntimeQuiescePath = "deploy/runner/quiesce-space-automation-runtime.sh";
+const spaceRuntimeQuiesceText = exists(spaceRuntimeQuiescePath)
+  ? readText(spaceRuntimeQuiescePath)
+  : "";
+for (const fragment of [
+  'SYSTEMCTL="/usr/bin/systemctl"',
+  'DISPATCHER_TIMER="qintopia-agentos-automation-dispatcher.timer"',
+  'DISPATCHER_SERVICE="qintopia-agentos-automation-dispatcher.service"',
+  'EXECUTION_WORKER="qintopia-agentos-space-automation-execution-worker.service"',
+  '"$SYSTEMCTL" disable --now "$DISPATCHER_TIMER"',
+  '"$SYSTEMCTL" disable --now "$EXECUTION_WORKER"',
+  '"$SYSTEMCTL" stop "$DISPATCHER_SERVICE"',
+  "--property=LoadState",
+  "--property=UnitFileState",
+  "--property=ActiveState",
+  "could not prove the pre-promotion Space automation runtime is disabled",
+]) {
+  if (!spaceRuntimeQuiesceText.includes(fragment)) {
+    addError(`${spaceRuntimeQuiescePath}: missing ${fragment}`);
+  }
+}
+for (const forbidden of ["eval ", "source ", "systemctl_bin", "SYSTEMCTL:-"]) {
+  if (spaceRuntimeQuiesceText.includes(forbidden)) {
+    addError(`${spaceRuntimeQuiescePath}: forbidden fragment ${forbidden}`);
   }
 }
 
@@ -1912,8 +2203,8 @@ const rollbackReadmeText = exists("deploy/rollback/README.md")
   ? readText("deploy/rollback/README.md")
   : "";
 for (const fragment of [
-  "No owner-triggered dual-runtime rollback target is currently verified",
-  "fails before artifact",
+  "no release tag or commit SHA is hardcoded",
+  "invalid, unpublished, prerelease, off-`master`, or incomplete target fails",
   "Huabaosi primary sidecar, QiWe companion sidecar, and deploy",
   "`runtime_artifact_profile=huabaosi-production`",
   "global profile choice.",
@@ -2006,6 +2297,9 @@ for (const fragment of [
   "DEPLOY_RUNTIME_ONE_SHOT_PAYLOAD_SHA256",
   "DEPLOY_RUNTIME_ONE_SHOT_APPROVAL",
   "request.runtime_one_shot",
+  "DEPLOY_ROLLBACK_EXPECTED_CURRENT_SHA",
+  "DEPLOY_ROLLBACK_EXPECTED_PREVIOUS_SHA",
+  "request.release_rollback",
   "requireSha",
   "forbidCosPrefixOverride",
 ]) {
@@ -2081,6 +2375,17 @@ for (const fragment of [
   "os.replace",
   "os.fsync",
   "rollback current target verification failed",
+  "current release does not match expected current SHA",
+  "previous release does not match expected previous SHA",
+  "current manifest previous SHA mismatch",
+  "rollback previous target verification failed",
+  "rollback previous absence verification failed",
+  "restore previous SHA and restore previous absent are mutually exclusive",
+  "--restore-previous-absent",
+  "extract_unit_manifest",
+  '"$previous_installer" --release-root "$release_root" --release-sha "$previous_sha"',
+  '"$systemctl_bin" disable --now "$unit_name"',
+  'rm -f -- "${unit_dir}/${unit_name}"',
 ]) {
   if (rollbackReleaseText && !rollbackReleaseText.includes(fragment)) {
     addError(`deploy/runner/rollback-release.sh: missing ${fragment}`);
@@ -2108,7 +2413,22 @@ const runnerReadWritePaths = runnerServiceText
     line.slice("ReadWritePaths=".length).trim().split(/\s+/).filter(Boolean)
   )
   .map(normalizeReadWritePathToken);
+if (
+  runnerServiceText &&
+  !runnerServiceText.split("\n").some((line) => line.trim() === "ProtectSystem=strict")
+) {
+  addError("deploy runner service must enforce ProtectSystem=strict");
+}
+if (
+  runnerServiceText &&
+  runnerServiceText
+    .split("\n")
+    .some((line) => /^ProtectSystem=(?:false|no|yes|full)$/i.test(line.trim()))
+) {
+  addError("deploy runner service must not weaken ProtectSystem below strict");
+}
 const qintopiaAgentosStatePath = "/home/ubuntu/.local/state/qintopia-agentos";
+const systemdUnitPath = "/etc/systemd/system";
 const ubuntuUserSystemdUnitPath = "/home/ubuntu/.config/systemd/user";
 const hermesCronSnapshotPath =
   "/home/ubuntu/.local/state/qintopia-agentos/hermes-cron-snapshot";
@@ -2142,6 +2462,21 @@ if (
   addError(
     "deploy runner ReadWritePaths normalization rejected the fixed snapshot repo"
   );
+}
+if (runnerServiceText && !runnerReadWritePaths.includes(systemdUnitPath)) {
+  addError(
+    "deploy runner service must explicitly allow fixed systemd unit installation"
+  );
+}
+if (
+  runnerServiceText &&
+  runnerReadWritePaths.some(
+    (candidatePath) =>
+      candidatePath !== systemdUnitPath &&
+      readWritePathCovers(candidatePath, systemdUnitPath)
+  )
+) {
+  addError("deploy runner service must not grant broader system configuration writes");
 }
 if (
   runnerServiceText &&
@@ -2267,6 +2602,10 @@ const waitResultText = exists("deploy/runner/wait-deploy-result.sh")
 for (const fragment of [
   "DEPLOY_RESULT_TIMEOUT_SECONDS",
   "DEPLOY_RESULT_POLL_SECONDS",
+  "DEPLOY_REQUEST_SIGNING_KEY",
+  "DEPLOY_REQUEST_SIGNING_KEY_ID",
+  "qintopia-deploy-runner",
+  "deploy result signature verification failed",
   "qintopia-agent-os/deploy-results/production",
   "deploy result {key} mismatch",
   "deploy-request-validation",
@@ -2412,6 +2751,9 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/install-release-systemd-units.sh"], {
     cwd: repoRoot,
   });
+  execFileSync("bash", ["-n", "deploy/runner/quiesce-space-automation-runtime.sh"], {
+    cwd: repoRoot,
+  });
   execFileSync("bash", ["-n", "deploy/runner/rollback-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/smoke-release.sh"], { cwd: repoRoot });
   execFileSync("bash", ["-n", "deploy/runner/upload-deploy-request.sh"], {
@@ -2432,6 +2774,8 @@ try {
     "deploy/sidecar/scripts/erhua-morning-brief-one-shot-production.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/qiwe-webhook-ingress-production.sh",
+    "deploy/sidecar/scripts/qiwe-webhook-provider-callback-reviewed-command.sh",
   ]) {
     execFileSync("bash", ["-n", scriptPath], { cwd: repoRoot });
   }
@@ -2460,6 +2804,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-deploy-runner-promotion.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-pre-promotion-space-runtime-quiesce.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-production-timer-activation-runner.mjs"], {
@@ -2510,6 +2857,9 @@ try {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-release-systemd-install.mjs"], {
+    cwd: repoRoot,
+  });
+  execFileSync("node", ["tools/deploy/test-release-systemd-rollback.mjs"], {
     cwd: repoRoot,
   });
   execFileSync("node", ["tools/deploy/test-erhua-legacy-cron-observation.mjs"], {
@@ -2575,6 +2925,9 @@ try {
   execFileSync("node", ["tools/deploy/test-qiwe-image-production-observation.mjs"], {
     cwd: repoRoot,
   });
+  execFileSync("node", ["tools/deploy/test-space-automation-runtime-production.mjs"], {
+    cwd: repoRoot,
+  });
   execFileSync("node", ["tools/deploy/test-xiaoman-image-send-staging-evidence.mjs"], {
     cwd: repoRoot,
   });
@@ -2604,6 +2957,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/runner/qintopia-agent-os-deploy-runner",
     "deploy/runner/poll-deploy-requests.sh",
     "deploy/runner/install-release-systemd-units.sh",
+    "deploy/runner/quiesce-space-automation-runtime.sh",
     "deploy/runner/deploy-request.schema.json",
     "agents/erhua/config.template.yaml",
     "runtime/hermes/render_profile_overlay.py",
@@ -2647,6 +3001,11 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/apply-erhua-activity-recruitment-hermes-cron.sh",
     "deploy/sidecar/scripts/activate-qiwe-image-send-production.sh",
     "deploy/sidecar/scripts/rollback-qiwe-image-send-production.sh",
+    "deploy/sidecar/scripts/activate-space-automation-runtime-production.sh",
+    "deploy/sidecar/scripts/rollback-space-automation-runtime-production.sh",
+    "deploy/sidecar/scripts/space-automation-runtime-production-observation-smoke.sh",
+    "runtime/nginx/templates/qiwe-webhook.location.conf.template",
+    "runtime/nginx/templates/qiwe-webhook.disabled.conf",
     "deploy/sidecar/scripts/apply-xiaoman-activity-read-through-production-config.py",
     "deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py",
     "deploy/sidecar/scripts/xiaoman-daily-case-report-auto-publish-worker.sh",
@@ -2677,6 +3036,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh",
     "deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh",
     "deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh",
+    "deploy/sidecar/scripts/qiwe-webhook-ingress-production.sh",
+    "deploy/sidecar/scripts/qiwe-webhook-provider-callback-reviewed-command.sh",
     "deploy/sidecar/scripts/xiaoman-activity-downstream-observation-smoke.sh",
     "deploy/sidecar/scripts/xiaoman-activity-image-generation-starter-observation-smoke.sh",
     "deploy/sidecar/scripts/xiaoman-activity-production-preflight-smoke.sh",
@@ -2795,6 +3156,7 @@ if (exists("deploy/runner/qintopia-agent-os-deploy-runner.service")) {
     "WorkingDirectory=/var/lib/qintopia-agent-os-deploy",
     "Environment=QINTOPIA_DEPLOY_RUNNER_STATE_DIR=/var/lib/qintopia-agent-os-deploy",
     "/var/lib/qintopia-agent-os-deploy",
+    "/etc/nginx/snippets",
   ]) {
     if (!runnerService.includes(fragment)) {
       addError(`deploy runner service is missing ${fragment}`);
@@ -2815,6 +3177,8 @@ if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
     'QIWE_BIN="${QIWE_ARTIFACT_DIR}/qintopia-message-sidecar"',
     "qintopia-agentos-qiwe-image-send-preflight.service",
     "qintopia-agentos-qiwe-image-send-worker.service",
+    "qintopia-agentos-space-automation-execution-worker.service",
+    "run-space-automation-execution-worker --apply",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.service",
     "xiaoman-daily-case-report-auto-publish-worker.sh",
     "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer",
@@ -2834,9 +3198,9 @@ if (exists("deploy/sidecar/scripts/render-systemd-units.sh")) {
       addError(`release systemd renderer is missing ${fragment}`);
     }
   }
-  if (countExactOccurrences(renderer, '    "$QIWE_BIN"') !== 2) {
+  if (countExactOccurrences(renderer, '    "$QIWE_BIN"') !== 3) {
     addError(
-      "release systemd renderer must bind exactly the QiWe preflight and worker services to the companion binary"
+      "release systemd renderer must bind exactly the QiWe preflight, image worker, and Space automation worker to the companion binary"
     );
   }
 }
