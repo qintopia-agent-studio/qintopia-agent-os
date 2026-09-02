@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.175](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.174...v0.2.175) (2026-09-02)
+
+
+### Documentation
+
+* align Xiaoman daily report Rust contract ([#696](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/696)) ([7dadef2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7dadef277f1dc8097db01b86c310026e839013bd))
+* refresh Xiaoman Rust migration observation status ([#695](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/695)) ([28496e7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/28496e7b64daba2862efb9332c999a7ac93cac9c))
+
 ## [0.2.174](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.173...v0.2.174) (2026-09-02)
 
 
