@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.174](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.173...v0.2.174) (2026-09-02)
+
+
+### Features
+
+* **space:** harden conversational self-extension rollout ([#697](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/697)) ([853dc25](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/853dc258c151a6ce04d90150723767fdbe892cac))
+
+
+### Bug Fixes
+
+* improve Erhua morning brief quality ([#694](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/694)) ([680e239](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/680e23936a11422fd55fa81a7d58a8b3484be167))
+
+
+### Documentation
+
+* clarify release sequence handling ([2d1a8cb](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2d1a8cbf774f449599a6831c0c12b58f0ff83633))
+* clarify release sequence handling ([77cee4b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/77cee4bf2975fc75312d532ba352427608047393))
+* refresh Xiaoman Rust migration status ([2815ab4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2815ab46f2cc0efb3e34cda56f6242bb9af5abf0))
+* refresh Xiaoman Rust migration status ([e271697](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e271697f02df11ec724bc2716cde32e2a7611556))
+
 ## [0.2.173](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.172...v0.2.173) (2026-08-28)
 
 
