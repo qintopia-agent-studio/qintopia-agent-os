@@ -159,6 +159,7 @@ render_long_running_service() {
   local extra_env_file="${6:-}"
   local runtime_directory="${7:-}"
   local extra_release_env="${8:-}"
+  local runtime_bin="${9:-$BIN}"
   local runtime_directory_lines=""
   if [[ -n "$runtime_directory" ]]; then
     runtime_directory_lines="RuntimeDirectory=${runtime_directory}
@@ -182,8 +183,9 @@ ${extra_env_file}
 ${runtime_directory_lines}
 Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}
 # EnvironmentFile values override Environment values. Bind immutable release identity
-# at the final exec boundary so stale persistent values cannot shadow this release.
-ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} ${extra_release_env:+$extra_release_env }${BIN} ${command}
+# and migrations at the final exec boundary so stale persistent values cannot shadow
+# this release.
+ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR} ${extra_release_env:+$extra_release_env }${runtime_bin} ${command}
 Restart=always
 RestartSec=${restart_sec}
 NoNewPrivileges=true
@@ -198,7 +200,7 @@ render_oneshot_service() {
   local service_name="$1"
   local description="$2"
   local command="$3"
-  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}"
+  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}"
   if [[ -n "${4:-}" ]]; then
     release_environment+=" ${4}"
   fi
@@ -228,7 +230,7 @@ render_guarded_oneshot_service() {
   local description="$2"
   local preflight_command="$3"
   local command="$4"
-  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}"
+  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}"
   if [[ -n "${5:-}" ]]; then
     release_environment+=" ${5}"
   fi
@@ -306,7 +308,7 @@ render_release_script_oneshot_service() {
   local service_name="$1"
   local description="$2"
   local script_path="$3"
-  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}"
+  local release_environment="QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}"
   if [[ -n "${4:-}" ]]; then
     release_environment+=" ${4}"
   fi
@@ -375,6 +377,9 @@ Install scope for the M9 window:
 - Do not enable new worker services or timers by default unless this plan names an
   owner-reviewed default-enabled exception.
 - Operations timers are rendered for review but should remain disabled unless explicitly approved.
+- The generic Space automation dispatcher timer and execution worker service are
+  installed disabled. Enabling either requires the reviewed Space capability and
+  runtime gates; release installation never starts them.
 - The Xiaoman activity signal worker timer may be enabled by default after owner
   review because it writes only AgentOS work_items from Xiaoman event_signals.
   It must not write Feishu, send QiWe messages, or create visual assets.
@@ -445,6 +450,28 @@ render_all() {
     "5" \
     "" \
     "qintopia-agentos"
+
+  render_oneshot_service \
+    "qintopia-agentos-automation-dispatcher.service" \
+    "Qintopia AgentOS Space automation dispatcher" \
+    "run-automation-dispatcher --once --apply"
+  render_timer \
+    "qintopia-agentos-automation-dispatcher.timer" \
+    "Run Qintopia AgentOS Space automation dispatcher" \
+    "qintopia-agentos-automation-dispatcher.service" \
+    "1min" \
+    "${QINTOPIA_AUTOMATION_DISPATCHER_TIMER_INTERVAL:-1min}"
+
+  render_long_running_service \
+    "qintopia-agentos-space-automation-execution-worker.service" \
+    "Qintopia AgentOS Space automation execution worker" \
+    "network-online.target postgresql.service" \
+    "run-space-automation-execution-worker --apply" \
+    "10" \
+    "" \
+    "" \
+    "" \
+    "$QIWE_BIN"
 
   render_long_running_service \
     "qintopia-message-embedding-worker.service" \
@@ -786,6 +813,9 @@ validate_output() {
     "_M9_SYSTEMD_PLAN.txt"
     "qintopia-message-sidecar.service"
     "qintopia-agentos-operations-intake.service"
+    "qintopia-agentos-automation-dispatcher.service"
+    "qintopia-agentos-automation-dispatcher.timer"
+    "qintopia-agentos-space-automation-execution-worker.service"
     "qintopia-message-embedding-worker.service"
     "qintopia-message-identity-worker.service"
     "qintopia-agentos-member-profile-worker.service"
@@ -855,9 +885,9 @@ validate_output() {
   for file in "$OUTPUT_DIR"/*.service; do
     grep -F "WorkingDirectory=${MONOREPO_DIR}" "$file" >/dev/null
     grep -F "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null
-    grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA}" "$file" >/dev/null
+    grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null
     case "$(basename "$file")" in
-      qintopia-agentos-qiwe-image-send-preflight.service | qintopia-agentos-qiwe-image-send-worker.service)
+      qintopia-agentos-qiwe-image-send-preflight.service | qintopia-agentos-qiwe-image-send-worker.service | qintopia-agentos-space-automation-execution-worker.service)
         grep -F " ${QIWE_BIN} " "$file" >/dev/null
         ;;
       qintopia-agentos-xiaoman-daily-case-report-auto-publish.service)

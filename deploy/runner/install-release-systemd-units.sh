@@ -68,11 +68,6 @@ if [[ "$current_target" != "$release_dir" ]]; then
 fi
 
 render_script="${release_dir}/deploy/sidecar/scripts/render-systemd-units.sh"
-if [[ ! -x "$render_script" ]]; then
-  echo "release systemd renderer is missing or not executable: ${render_script}" >&2
-  exit 1
-fi
-
 systemctl_bin="${SYSTEMCTL:-systemctl}"
 unit_dir="${QINTOPIA_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 sidecar_env_file="/etc/qintopia/message-sidecar.env"
@@ -98,6 +93,110 @@ if [[ -n "${QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE:-}" ]]; then
       ;;
   esac
 fi
+
+quiesce_space_automation_runtime() {
+  local dispatcher_timer="qintopia-agentos-automation-dispatcher.timer"
+  local dispatcher_service="qintopia-agentos-automation-dispatcher.service"
+  local execution_worker="qintopia-agentos-space-automation-execution-worker.service"
+  local shutdown_status=0
+  local loaded_count=0
+  local observed
+  local unit
+
+  for unit in "$dispatcher_timer" "$dispatcher_service" "$execution_worker"; do
+    if ! observed="$("$systemctl_bin" show --property=LoadState --value "$unit" 2>/dev/null)"; then
+      shutdown_status=1
+      continue
+    fi
+    case "$observed" in
+      loaded)
+        loaded_count=$((loaded_count + 1))
+        ;;
+      not-found)
+        if ! observed="$("$systemctl_bin" show --property=ActiveState --value "$unit" 2>/dev/null)" || [[ "$observed" != "inactive" ]]; then
+          shutdown_status=1
+        fi
+        ;;
+      *)
+        shutdown_status=1
+        ;;
+    esac
+  done
+
+  if [[ "$loaded_count" == "0" ]]; then
+    return "$shutdown_status"
+  fi
+  if [[ "$loaded_count" != "3" ]]; then
+    shutdown_status=1
+  fi
+
+  if ! "$systemctl_bin" disable --now "$dispatcher_timer" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if ! "$systemctl_bin" disable --now "$execution_worker" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if ! "$systemctl_bin" stop "$dispatcher_service" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if ! "$systemctl_bin" stop "$execution_worker" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if ! "$systemctl_bin" reset-failed "$dispatcher_service" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if ! "$systemctl_bin" reset-failed "$execution_worker" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if ! "$systemctl_bin" reset-failed "$dispatcher_timer" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+
+  if "$systemctl_bin" is-enabled --quiet "$dispatcher_timer" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if "$systemctl_bin" is-active --quiet "$dispatcher_timer" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if "$systemctl_bin" is-enabled --quiet "$execution_worker" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if "$systemctl_bin" is-active --quiet "$execution_worker" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+  if "$systemctl_bin" is-active --quiet "$dispatcher_service" >/dev/null 2>&1; then
+    shutdown_status=1
+  fi
+
+  for unit in "$dispatcher_timer" "$dispatcher_service" "$execution_worker"; do
+    if ! observed="$("$systemctl_bin" show --property=LoadState --value "$unit" 2>/dev/null)" || [[ "$observed" != "loaded" ]]; then
+      shutdown_status=1
+    fi
+  done
+  for unit in "$dispatcher_timer" "$execution_worker"; do
+    if ! observed="$("$systemctl_bin" show --property=UnitFileState --value "$unit" 2>/dev/null)" || [[ "$observed" != "disabled" ]]; then
+      shutdown_status=1
+    fi
+  done
+  for unit in "$dispatcher_timer" "$dispatcher_service" "$execution_worker"; do
+    if ! observed="$("$systemctl_bin" show --property=ActiveState --value "$unit" 2>/dev/null)" || [[ "$observed" != "inactive" ]]; then
+      shutdown_status=1
+    fi
+  done
+
+  return "$shutdown_status"
+}
+
+if ! quiesce_space_automation_runtime; then
+  echo "release install could not prove the Space automation runtime is disabled" >&2
+  exit 1
+fi
+
+if [[ ! -x "$render_script" ]]; then
+  echo "release systemd renderer is missing or not executable: ${render_script}" >&2
+  exit 1
+fi
+
 render_dir="$(mktemp -d)"
 cleanup() {
   rm -rf "$render_dir"
@@ -255,6 +354,9 @@ prepare_ubuntu_owned_directory \
 
 unit_files=(
   qintopia-message-sidecar.service
+  qintopia-agentos-automation-dispatcher.service
+  qintopia-agentos-automation-dispatcher.timer
+  qintopia-agentos-space-automation-execution-worker.service
   qintopia-message-embedding-worker.service
   qintopia-message-identity-worker.service
   qintopia-agentos-member-profile-worker.service
@@ -337,6 +439,11 @@ for unit_file in "${runner_unit_files[@]}"; do
 done
 
 "$systemctl_bin" daemon-reload
+
+if ! quiesce_space_automation_runtime; then
+  echo "release install could not prove the Space automation runtime is disabled" >&2
+  exit 1
+fi
 
 internal_timers=(
   qintopia-agentos-operations-workflow-sync.timer

@@ -287,8 +287,29 @@ qiwe_voice_to_text -> /msg/voiceToTextApply -> /msg/voiceToTextQuery
 ```
 
 `QIWE_VOICE_TO_TEXT_ENABLED` still defaults to false. When enabled, this tool returns
-only the voice id and final text result for an explicitly selected `msg_server_id`;
+only the voice id and final text result for the current gateway-authenticated voice
+message. The model cannot select another `msg_server_id` or override the device `guid`;
 voice messages do not automatically enter model processing.
+
+## Official Documentation Research Worker
+
+The Space planner does not fetch documentation inside the credential-bearing gateway
+process. Its default researcher is disabled unless
+`QINTOPIA_SPACE_EVENT_RESEARCH_ENABLED=1`, then launches one fixed release-owned Python
+worker without stdin or inherited environment/file descriptors. Only numeric crawl
+bounds cross the process boundary. The worker owns the fixed Qiwe entry-page registry,
+rejects redirects and every non-`https://doc.qiweapi.com/doc-<number>` link, and returns
+one bounded JSON document on stdout while stderr is discarded. A fixed request budget is
+independent of the successful-page limit, so failed same-origin links cannot turn the
+total timeout into the only crawl bound. The parent applies an independent schema,
+origin, text, page-count, byte, exit-status, and timeout check before placing any result
+in an `OFFICIAL_DOCUMENT` untrusted-reference block.
+
+This is process and data-flow containment, not same-UID filesystem isolation. Until the
+worker has a dedicated OS identity or equivalent credential-free container, official
+research stays default-off in production. It never receives the administrator intent,
+current Space, actor, room, destination, provider credentials, arbitrary URL, proxy, or
+Hermes/NATS/database/deploy environment.
 
 ## Normalized Message Pipeline
 

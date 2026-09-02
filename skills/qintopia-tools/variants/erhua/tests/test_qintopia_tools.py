@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 def load_plugin():
@@ -142,6 +143,217 @@ class QintopiaToolsTest(unittest.TestCase):
         self.assertEqual(payload["scope_used"], ["Public"])
         self.assertIn("Member-scoped", payload["not_accessed"])
         self.assertEqual(payload["results"][0]["path"], "gis-locations.md")
+
+    def test_space_turn_guard_denies_qintopia_tool_without_current_space_grant(self):
+        class Policy:
+            @staticmethod
+            def authorize_space_turn_capability(capability_key):
+                return {
+                    "success": True,
+                    "authorized": False,
+                    "capability_key": capability_key,
+                    "external_send_executed": False,
+                }
+
+        called = []
+        guarded = self.module._space_turn_authorized_handler(
+            "erhua.knowledge.public",
+            lambda args, **_kwargs: called.append(args)
+            or json.dumps({"success": True}),
+        )
+        with patch.object(
+            self.module, "_space_turn_policy_enforcement_applies", return_value=True
+        ), patch.object(
+            self.module, "_space_turn_policy_plugin", return_value=Policy()
+        ):
+            payload = json.loads(guarded({"query": "一栋"}))
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertEqual(called, [])
+
+    def test_space_turn_guard_uses_exact_registered_qintopia_capability(self):
+        seen = []
+
+        class Policy:
+            @staticmethod
+            def authorize_space_turn_capability(capability_key):
+                seen.append(capability_key)
+                return {
+                    "success": True,
+                    "authorized": True,
+                    "capability_key": capability_key,
+                    "external_send_executed": False,
+                }
+
+            @staticmethod
+            def trusted_space_turn_session():
+                return {
+                    "conversation_id": "trusted-room",
+                    "requester_user_id": "trusted-actor",
+                    "source_message_id": "trusted-message",
+                }
+
+        guarded = self.module._space_turn_handler(
+            "qintopia_complaint_intake_create",
+            lambda _args, **_kwargs: json.dumps({"success": True}),
+        )
+        with patch.object(
+            self.module, "_space_turn_policy_enforcement_applies", return_value=True
+        ), patch.object(
+            self.module, "_space_turn_policy_plugin", return_value=Policy()
+        ):
+            payload = json.loads(guarded({}))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(seen, ["erhua.workflow.complaint"])
+
+    def test_enabled_space_turn_enforcement_never_bypasses_missing_session(self):
+        called = []
+
+        class Policy:
+            @staticmethod
+            def authorize_space_turn_capability(_capability_key):
+                raise ValueError("trusted session missing")
+
+        guarded = self.module._space_turn_authorized_handler(
+            "erhua.knowledge.public",
+            lambda args, **_kwargs: called.append(args)
+            or json.dumps({"success": True}),
+        )
+        with patch.dict(
+            os.environ,
+            {"QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED": "1"},
+            clear=False,
+        ), patch.object(
+            self.module, "_space_turn_policy_plugin", return_value=Policy()
+        ):
+            self.assertTrue(self.module._space_turn_policy_enforcement_applies())
+            payload = json.loads(guarded({"query": "一栋"}))
+
+        self.assertFalse(payload["success"])
+        self.assertFalse(payload["authorized"])
+        self.assertEqual(called, [])
+
+    def test_space_turn_blocks_legacy_task_ids_without_space_ownership(self):
+        called = []
+
+        class Policy:
+            @staticmethod
+            def authorize_space_turn_capability(capability_key):
+                return {
+                    "success": True,
+                    "authorized": True,
+                    "capability_key": capability_key,
+                    "external_send_executed": False,
+                }
+
+        with patch.object(
+            self.module, "_space_turn_policy_enforcement_applies", return_value=True
+        ), patch.object(
+            self.module, "_space_turn_policy_plugin", return_value=Policy()
+        ):
+            for tool_name in sorted(
+                self.module.SPACE_TURN_UNSCOPED_TASK_REFERENCE_TOOLS
+            ):
+                guarded = self.module._space_turn_handler(
+                    tool_name,
+                    lambda args, **_kwargs: called.append(args)
+                    or json.dumps({"success": True}),
+                )
+                payload = json.loads(guarded({"task_id": "other-space-task"}))
+                self.assertFalse(payload["success"])
+                self.assertTrue(payload["authorized"])
+                self.assertEqual(
+                    payload["reason_code"], "space_resource_ownership_unverified"
+                )
+
+        self.assertEqual(called, [])
+
+    def test_space_turn_binds_complaint_create_to_trusted_current_message(self):
+        captured = []
+
+        class Policy:
+            @staticmethod
+            def authorize_space_turn_capability(capability_key):
+                return {
+                    "success": True,
+                    "authorized": True,
+                    "capability_key": capability_key,
+                    "external_send_executed": False,
+                }
+
+            @staticmethod
+            def trusted_space_turn_session():
+                return {
+                    "conversation_id": "trusted-room",
+                    "requester_user_id": "trusted-actor",
+                    "source_message_id": "trusted-message",
+                }
+
+        guarded = self.module._space_turn_handler(
+            "qintopia_complaint_intake_create",
+            lambda args, **_kwargs: captured.append(args)
+            or json.dumps({"success": True}),
+        )
+        with patch.object(
+            self.module, "_space_turn_policy_enforcement_applies", return_value=True
+        ), patch.object(
+            self.module, "_space_turn_policy_plugin", return_value=Policy()
+        ):
+            payload = json.loads(
+                guarded(
+                    {
+                        "source_channel": "feishu_internal",
+                        "source_conversation_id": "forged-room",
+                        "source_message_id": "forged-message",
+                        "requester_channel_user_id": "forged-actor",
+                        "idempotency_key": "forged-key",
+                        "original_message": "需要反馈",
+                    }
+                )
+            )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(captured[0]["source_channel"], "qiwe_group_internal")
+        self.assertEqual(captured[0]["source_conversation_id"], "trusted-room")
+        self.assertEqual(captured[0]["source_message_id"], "trusted-message")
+        self.assertEqual(captured[0]["requester_channel_user_id"], "trusted-actor")
+        self.assertNotIn("idempotency_key", captured[0])
+
+    def test_space_public_knowledge_grant_cannot_read_internal_index(self):
+        class Policy:
+            @staticmethod
+            def authorize_space_turn_capability(capability_key):
+                return {
+                    "success": True,
+                    "authorized": capability_key == "erhua.knowledge.public",
+                    "capability_key": capability_key,
+                    "external_send_executed": False,
+                }
+
+        guarded = self.module._space_turn_handler(
+            "qintopia_kb_search", self.module.handle_qintopia_kb_search
+        )
+        with patch.object(
+            self.module, "_space_turn_policy_enforcement_applies", return_value=True
+        ), patch.object(
+            self.module, "_space_turn_policy_plugin", return_value=Policy()
+        ):
+            payload = json.loads(
+                guarded(
+                    {
+                        "query": "秦托邦1栋",
+                        "information_classes": ["Internal", "Member-scoped"],
+                        "allow_member_scoped": True,
+                    }
+                )
+            )
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["scope_used"], ["Public"])
+        self.assertIn("Internal", payload["not_accessed"])
+        self.assertIn("Member-scoped", payload["not_accessed"])
 
     def test_xiaoqin_product_search_is_public_only_and_has_baselines(self):
         payload = json.loads(

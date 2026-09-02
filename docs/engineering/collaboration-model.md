@@ -80,15 +80,24 @@ Release Please is configured to include `ci:`, `build:`, `docs:`, and `chore:` e
 when they affect release, deploy, collaboration, or operating procedures. Pure `test:`
 and `style:` commits stay hidden from release notes.
 
-When a version is ready, the owner reviews and merges the Release Please PR. That merge
-prepares the version and creates a draft GitHub Release. It does not deploy production.
-Production deployment still requires manually publishing the draft GitHub Release, which
-triggers the `release.published` deploy workflow.
+When a version is ready, the owner normally reviews and merges the Release Please PR.
+That merge prepares the version and creates a draft GitHub Release. Publishing the draft
+triggers the existing `release.published` deploy workflow; manual owner merge and
+publication remains the default.
 
-Release merging is manual-only. Do not use auto-merge for Release Please PRs, and do not
-let bots or programming agents automatically merge release PRs or publish draft GitHub
-Releases. The owner makes the merge and publish decisions after the required exact-head
-validation has passed.
+The only pre-authorized exception is the default-disabled `Low-Risk Auto Release`
+workflow for append-only QiWe event-mapping bundles, optionally including one fixed-
+kernel restricted-parser recipe, produced by the isolated programming-extension runner.
+It may advance only a same-repository PR with the fixed actor, branch, title, and
+`qintopia-low-risk-auto` label. Before each of candidate merge, Release Please merge,
+and draft publication, it must bind required checks to the exact head and rerun the
+classifier over the complete unpublished range. The only allowed history is one
+candidate squash directly after the latest published SHA followed by one Release Please
+metadata squash. Exact CI-run-backed Release validation and a canonical draft identity
+digest are rechecked before mutation. The exception ends at Release publication: it
+cannot activate runtime configuration, permissions, credentials, capabilities,
+schedules, external sends, or production ingress. All other releases, and the initial
+infrastructure rollout that introduces this policy, remain manual owner decisions.
 
 If the Release Please PR stays open while more feature PRs merge, Release Please updates
 the same release PR. Avoid editing root `CHANGELOG.md` or

@@ -21,7 +21,8 @@
     "current_target",
     "restart_targets",
     "checks",
-    "rollback"
+    "rollback",
+    "signature"
   ],
   "properties": {
     "schema_version": { "const": 1 },
@@ -82,6 +83,18 @@
         "attempted": { "type": "boolean" },
         "status": { "enum": ["not_needed", "succeeded", "failed", "skipped"] },
         "target": { "type": "string" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "issuer", "key_id", "signed_at", "value"],
+      "properties": {
+        "algorithm": { "const": "hmac-sha256" },
+        "issuer": { "const": "qintopia-deploy-runner" },
+        "key_id": { "type": "string", "minLength": 1 },
+        "signed_at": { "type": "string", "format": "date-time" },
+        "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
     "error": { "type": "string" }

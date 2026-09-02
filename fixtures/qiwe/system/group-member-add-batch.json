@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "cmd": 15000,
+      "msgType": 1002,
+      "msgUniqueIdentifier": "fixture-event-batch-v1",
+      "fromRoomId": "fixture-room-a",
+      "timestamp": 1786669200,
+      "msgData": { "changedMemberList": "bWVtYmVyLWE=" }
+    },
+    {
+      "cmd": 15500,
+      "newMsgType": "GROUP_MEMBER_ADD",
+      "msgUniqueIdentifier": "fixture-event-batch-v2",
+      "fromRoomId": "fixture-room-a",
+      "timestamp": 1786669260,
+      "msgData": { "changedMemberList": "bWVtYmVyLWI=" }
+    }
+  ]
+}

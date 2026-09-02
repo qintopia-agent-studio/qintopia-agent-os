@@ -16,6 +16,8 @@ const signingKey = "test-signing-key";
 const keyId = "production";
 const requestId = "deploy-20260810T000000Z-abcdef123456";
 const sha = "113ce49141b06fc44edcee42026aee0a614ac027";
+const createdAt = new Date().toISOString();
+const expiresAt = new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString();
 
 const writeExecutable = (relativePath, content) => {
   const filePath = path.join(tmpRoot, relativePath);
@@ -52,8 +54,8 @@ const buildRequest = (overrides = {}) => {
     environment: "production",
     repository: "qintopia-agent-studio/qintopia-agent-os",
     requested_by: "codex",
-    created_at: "2026-08-10T00:00:00Z",
-    expires_at: "2099-08-10T01:00:00Z",
+    created_at: createdAt,
+    expires_at: expiresAt,
     commit_sha: sha,
     runtime_sha: sha,
     runtime_artifact_profile: "huabaosi-production",
@@ -87,7 +89,7 @@ const buildRequest = (overrides = {}) => {
     algorithm: "hmac-sha256",
     issuer: "github-actions",
     key_id: keyId,
-    signed_at: "2026-08-10T00:00:00Z",
+    signed_at: request.created_at,
   };
   request.signature = {
     ...signatureMetadata,
@@ -178,6 +180,29 @@ echo "qiwe_image_send_production_observation_state=disabled"
 echo "DATABASE_URL=postgres://secret@example.invalid/qintopia"
 echo "QIWE_TOKEN=secret-token"
 echo "QiWe image-send production observation passed"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "space-automation-runtime-production-observation-smoke.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'space:%s\n' "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE:-}" >> ${JSON.stringify(
+      observationLog
+    )}
+if [[ "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_OBSERVATION_ENABLE:-}" != "1" ]]; then
+  exit 9
+fi
+if [[ "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_EXPECTED_STATE:-}" != "auto" ]]; then
+  exit 10
+fi
+echo "space_automation_runtime_observation_state=enabled"
+echo "space_automation_runtime_artifact_profile=qiwe-production"
+echo "space_automation_runtime_release_sha=${sha}"
+echo "space_automation_runtime_dispatcher_timer_next_elapse_present=true"
+echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak"
 `
   );
   writeExecutable(
@@ -482,6 +507,55 @@ exit 99
     ].join("\n")
   ) {
     throw new Error(`unexpected observation log ${JSON.stringify(actualLog)}`);
+  }
+
+  const spaceRuntimeRequestId = "deploy-20260810T000002Z-abcdef123456";
+  const spaceRuntimeRequestFile = path.join(
+    tmpRoot,
+    "space-runtime-observation-request.json"
+  );
+  fs.writeFileSync(
+    spaceRuntimeRequestFile,
+    `${JSON.stringify(
+      buildRequest({
+        request_id: spaceRuntimeRequestId,
+        observation: { targets: ["space-automation-runtime"] },
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  const spaceRuntimeObservation = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", spaceRuntimeRequestFile],
+    { cwd: stateDir, env, encoding: "utf8" }
+  );
+  if (spaceRuntimeObservation.status !== 0) {
+    throw new Error(
+      `Space runtime observation routing failed\n${spaceRuntimeObservation.stdout}\n${spaceRuntimeObservation.stderr}`
+    );
+  }
+  const spaceRuntimeResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${spaceRuntimeRequestId}.json`),
+      "utf8"
+    )
+  );
+  const spaceRuntimeCheck = spaceRuntimeResult.checks.find(
+    (check) => check.name === "production-observation"
+  );
+  const spaceRuntimeDetail = JSON.parse(spaceRuntimeCheck.detail);
+  if (
+    spaceRuntimeDetail.targets[0].target !== "space-automation-runtime" ||
+    spaceRuntimeDetail.targets[0].status !== "passed" ||
+    spaceRuntimeDetail.targets[0].detail !==
+      `space_automation_runtime_observation_state=enabled; space_automation_runtime_artifact_profile=qiwe-production; space_automation_runtime_release_sha=${sha}; space_automation_runtime_dispatcher_timer_next_elapse_present=true` ||
+    JSON.stringify(spaceRuntimeResult).includes("must-not-leak")
+  ) {
+    throw new Error(
+      `unexpected Space runtime observation evidence ${spaceRuntimeCheck.detail}`
+    );
   }
 
   writeExecutable(
