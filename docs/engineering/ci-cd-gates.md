@@ -34,8 +34,8 @@ The runtime gate adds:
 - sidecar Rust tests
 - no-credential sidecar smoke checks
 - a Rust coverage baseline artifact and blocking strict Clippy gate
-- a Xiaoman downstream apply smoke against a disposable GitHub Actions PostgreSQL
-  service
+- a guarded PostgreSQL integration and downstream apply smoke against a disposable
+  GitHub Actions PostgreSQL service
 
 ## Secret And Runtime-State Gate
 
@@ -73,15 +73,15 @@ deployment script, package, workflow, or configuration changes run `pnpm check:r
 after the light gate.
 
 Heavy checks are risk-tiered separately. Sidecar, Postgres, deploy sidecar script, or CI
-workflow changes run `rust-quality-baseline` with Rust 1.96 and
-`xiaoman-postgres-integration`; explicit non-Release manual dispatches also force the
-heavy tier. Authenticated Release Please dispatches also force light, runtime, Rust, and
-PostgreSQL validation on the exact release head. The Rust job stores LCOV, setup logs,
-and a text summary as a short-retention artifact. Strict Clippy runs with
-`cargo clippy --all-targets -- -D warnings` and blocks the heavy tier. The PostgreSQL
-integration uses only a disposable `qintopia_test` service and runs the guarded
-control-plane apply smoke with no production database URL, secrets, Feishu, QiWe, or
-external adapters.
+workflow changes run `rust-quality-baseline` with Rust 1.96 and the
+`postgres-integration` job displayed as `PostgreSQL integration`; explicit non-Release
+manual dispatches also force the heavy tier. Authenticated Release Please dispatches
+also force light, runtime, Rust, and PostgreSQL validation on the exact release head.
+The Rust job stores LCOV, setup logs, and a text summary as a short-retention artifact.
+Strict Clippy runs with `cargo clippy --all-targets -- -D warnings` and blocks the heavy
+tier. The PostgreSQL integration uses only a disposable `qintopia_test` service and runs
+the guarded control-plane apply smoke with no production database URL, secrets, Feishu,
+QiWe, or external adapters.
 
 ## Local Pre-PR Mirror
 
@@ -142,15 +142,16 @@ target. A successful no-review job provides the required check without changing 
 
 ### Low-Risk Auto Release
 
-`Low-Risk Auto Release` is the sole pre-authorized automated merge/publication
-exception. It is default-off. Before configuring it, the owner must deploy and observe a
-reviewed deploy-runner hardening release containing the repository's
-`ProtectSystem=strict` boundary, inspect that effective property on the server, verify
-that only the fixed required `ReadWritePaths` remain writable, and prove signed server
-results are consumed by the production deployment workflow. The fixed write set includes
-`/etc/systemd/system` because the reviewed release installer manages an allowlisted unit
-manifest; it does not include `/etc` or another parent directory. The low-risk lane must
-remain disabled until that hardening is deployed and observed.
+`Low-Risk Auto Release` is the sole pre-authorized manual-dispatch merge/publication
+exception. It is default-off and has no pull-request or workflow-completion trigger.
+Before configuring it, the owner must deploy and observe a reviewed deploy-runner
+hardening release containing the repository's `ProtectSystem=strict` boundary, inspect
+that effective property on the server, verify that only the fixed required
+`ReadWritePaths` remain writable, and prove signed server results are consumed by the
+production deployment workflow. The fixed write set includes `/etc/systemd/system`
+because the reviewed release installer manages an allowlisted unit manifest; it does not
+include `/etc` or another parent directory. The low-risk lane must remain disabled until
+that hardening is deployed and observed.
 
 After that prerequisite, the lane can run only when the owner configures all of:
 
@@ -230,11 +231,10 @@ Artifact publication is opt-in and lives in the `Artifacts` workflow. Use
 - `build_deploy_bundle`
 - `upload_cos`
 
-As an explicit automation shortcut, a push to `master` whose head commit message
-contains `[publish-artifacts]` publishes only the ordinary Huabaosi production sidecar
-artifact plus the deploy bundle, then uploads them to COS. It does not auto-build the
-independent QiWe production artifact. Normal docs, planning, and repository maintenance
-commits do not build or upload artifacts.
+Artifacts have no `master` push publication path. Normal docs, planning, and repository
+maintenance commits do not build or upload artifacts. Every Artifacts workflow
+publication is initiated through an explicit `workflow_dispatch` with the desired build
+and upload inputs.
 
 The artifact families are distinct:
 

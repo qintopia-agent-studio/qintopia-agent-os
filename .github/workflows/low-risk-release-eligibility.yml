@@ -1,20 +1,6 @@
 name: Low-Risk Auto Release
 
 on:
-  pull_request_target:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - labeled
-      - ready_for_review
-  workflow_run:
-    workflows:
-      - CI
-      - PR Agent
-      - Release Please
-    types:
-      - completed
   workflow_dispatch:
 
 concurrency:
@@ -66,8 +52,6 @@ jobs:
           AUTOMATION_ACTOR: ${{ vars.QINTOPIA_LOW_RISK_AUTO_RELEASE_ACTOR || '' }}
           AUTOMATION_ENABLED: ${{ vars.QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED || '0' }}
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion || '' }}
-          EVENT_WORKFLOW_NAME: ${{ github.event.workflow_run.name || '' }}
           GH_TOKEN: ${{ secrets.QINTOPIA_LOW_RISK_RELEASE_TOKEN }}
           OWNER_ACKNOWLEDGEMENT:
             ${{ vars.QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT || '' }}
@@ -132,15 +116,6 @@ jobs:
           if [[ "$token_actor" != "$AUTOMATION_ACTOR" ]]; then
             fail "the dedicated token does not belong to the fixed automation actor"
           fi
-          if [[ "$EVENT_NAME" == "workflow_run" && \
-            "$EVENT_WORKFLOW_CONCLUSION" != "success" ]]; then
-            record_decision \
-              "upstream_checks" \
-              "no_action" \
-              "the triggering trusted workflow did not succeed"
-            exit 0
-          fi
-
           fetch_master() {
             git fetch --no-tags origin master
             MASTER_SHA="$(git rev-parse origin/master)"
@@ -280,7 +255,7 @@ jobs:
               "repos/${EXPECTED_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")"
             jq -e --argjson required \
               '["changes", "check", "Rust quality baseline",
-                "Xiaoman PostgreSQL integration", "Release Please validation"]' \
+                "PostgreSQL integration", "Release Please validation"]' \
               '[.[] | .jobs[]] as $jobs |
                [$required[] as $name |
                  ([$jobs[] | select(.name == $name)]) as $matching |
@@ -943,8 +918,7 @@ jobs:
               release_validation_result=$?
             if [[ "$checks_result" != "0" || \
               "$release_validation_result" != "0" ]]; then
-              if [[ "$EVENT_NAME" == "workflow_run" && \
-                "$EVENT_WORKFLOW_NAME" == "Release Please" ]]; then
+              if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
                 gh workflow run ci.yml \
                   --repo "$EXPECTED_REPOSITORY" \
                   --ref "$RELEASE_HEAD_REF" \
@@ -1039,16 +1013,6 @@ jobs:
               "release_please_pr" \
               "merge_requested" \
               "exact patch-only Release Please metadata passed re-audit"
-            exit 0
-          fi
-
-          if [[ "$EVENT_NAME" != "workflow_dispatch" && \
-            !( "$EVENT_NAME" == "workflow_run" && \
-              "$EVENT_WORKFLOW_NAME" == "Release Please" ) ]]; then
-            record_decision \
-              "idle" \
-              "no_action" \
-              "no candidate or Release Please PR is ready"
             exit 0
           fi
 

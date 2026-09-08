@@ -491,6 +491,11 @@ for (const requiredFragment of [
 const ciWorkflow = fs.existsSync(path.join(repoRoot, ".github/workflows/ci.yml"))
   ? readText(".github/workflows/ci.yml")
   : "";
+const artifactsWorkflow = fs.existsSync(
+  path.join(repoRoot, ".github/workflows/artifacts.yml")
+)
+  ? readText(".github/workflows/artifacts.yml")
+  : "";
 const prAgentWorkflow = fs.existsSync(
   path.join(repoRoot, ".github/workflows/pr-agent.yml")
 )
@@ -500,6 +505,38 @@ if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
   errors.push(
     ".github/workflows/ci.yml: checkouts must keep enough history for commitlint"
   );
+}
+
+for (const [workflowName, workflowText, expectedEvent] of [
+  ["low-risk-release-eligibility.yml", lowRiskEligibilityWorkflow, "workflow_dispatch"],
+  ["artifacts.yml", artifactsWorkflow, "workflow_dispatch"],
+]) {
+  if (!workflowText) continue;
+  try {
+    const parsed = YAML.parse(workflowText);
+    const events = Object.keys(parsed?.on ?? {});
+    if (!events.includes(expectedEvent)) {
+      errors.push(
+        `.github/workflows/${workflowName}: must retain ${expectedEvent} trigger`
+      );
+    }
+    if (workflowName === "low-risk-release-eligibility.yml") {
+      if (events.length !== 1 || events[0] !== "workflow_dispatch") {
+        errors.push(
+          ".github/workflows/low-risk-release-eligibility.yml: Low-Risk Auto Release must be manual-only"
+        );
+      }
+    }
+    if (workflowName === "artifacts.yml" && events.includes("push")) {
+      errors.push(
+        ".github/workflows/artifacts.yml: Artifacts must not publish automatically on push"
+      );
+    }
+  } catch (error) {
+    errors.push(
+      `.github/workflows/${workflowName}: workflow YAML could not be parsed: ${error.message}`
+    );
+  }
 }
 
 if (ciWorkflow && !ciWorkflow.includes("pnpm pr:check-body")) {
@@ -622,7 +659,7 @@ if (ciWorkflow) {
         ".github/workflows/ci.yml: workflow_dispatch must require an explicit Release Please PR number input contract"
       );
     }
-    for (const jobName of ["changes", "check"]) {
+    for (const jobName of ["changes", "check-light", "check"]) {
       const permission =
         parsedWorkflow?.jobs?.[jobName]?.permissions?.["pull-requests"];
       if (permission !== "read") {
@@ -665,14 +702,18 @@ if (ciWorkflow) {
         ".github/workflows/ci.yml: authenticated Release Please validation must force full, Rust, and PostgreSQL checks"
       );
     }
-    const checkSteps = parsedWorkflow?.jobs?.check?.steps;
-    if (!Array.isArray(checkSteps)) {
-      errors.push(".github/workflows/ci.yml: jobs.check.steps must be a step list");
+    const checkLightSteps = parsedWorkflow?.jobs?.["check-light"]?.steps;
+    if (!Array.isArray(checkLightSteps)) {
+      errors.push(
+        ".github/workflows/ci.yml: jobs.check-light.steps must be a step list"
+      );
     } else {
-      const lightCheckStep = checkSteps.find((step) => step?.name === "Light check");
+      const lightCheckStep = checkLightSteps.find(
+        (step) => step?.name === "Light check"
+      );
       if (!lightCheckStep) {
         errors.push(
-          ".github/workflows/ci.yml: Light check must be in jobs.check.steps"
+          ".github/workflows/ci.yml: Light check must be in jobs.check-light.steps"
         );
       } else {
         const runScript = String(lightCheckStep.run ?? "");
@@ -687,12 +728,12 @@ if (ciWorkflow) {
           );
         }
       }
-      const releasePleaseCheckStep = checkSteps.find(
+      const releasePleaseCheckStep = checkLightSteps.find(
         (step) => step?.name === "Release Please PR check"
       );
       if (!releasePleaseCheckStep) {
         errors.push(
-          ".github/workflows/ci.yml: Release Please PR check must be in jobs.check.steps"
+          ".github/workflows/ci.yml: Release Please PR check must be in jobs.check-light.steps"
         );
       } else {
         const runScript = String(releasePleaseCheckStep.run ?? "");
@@ -719,13 +760,41 @@ if (ciWorkflow) {
           }
         }
       }
-      if (
-        checkSteps.some(
-          (step) => step?.name === "Publish Release Please validation status"
-        )
-      ) {
+    }
+
+    const checkJob = parsedWorkflow?.jobs?.check;
+    const checkNeeds = Array.isArray(checkJob?.needs)
+      ? checkJob.needs
+      : [checkJob?.needs];
+    for (const requiredJob of [
+      "changes",
+      "check-light",
+      "runtime-check",
+      "rust-quality-baseline",
+      "postgres-integration",
+    ]) {
+      if (!checkNeeds.includes(requiredJob)) {
         errors.push(
-          ".github/workflows/ci.yml: jobs.check must not publish Release Please status before independent heavy jobs finish"
+          `.github/workflows/ci.yml: jobs.check must wait for ${requiredJob}`
+        );
+      }
+    }
+    const aggregationStep = checkJob?.steps?.find(
+      (step) => step?.name === "Verify parallel check results"
+    );
+    const aggregationScript = String(aggregationStep?.run ?? "");
+    for (const requiredFragment of [
+      "validate_gated_result",
+      "RUST_QUALITY_RESULT",
+      "POSTGRES_RESULT",
+      "RUST_QUALITY_CHECK",
+      "POSTGRES_INTEGRATION_CHECK",
+      "true:success",
+      "false:skipped",
+    ]) {
+      if (!aggregationScript.includes(requiredFragment)) {
+        errors.push(
+          `.github/workflows/ci.yml: check aggregation must include ${requiredFragment}`
         );
       }
     }
@@ -743,7 +812,7 @@ if (ciWorkflow) {
         "changes",
         "check",
         "rust-quality-baseline",
-        "xiaoman-postgres-integration",
+        "postgres-integration",
       ]) {
         if (!releaseNeeds.includes(requiredJob)) {
           errors.push(
@@ -775,7 +844,7 @@ if (ciWorkflow) {
       for (const requiredFragment of [
         "needs.check.result",
         "needs.rust-quality-baseline.result",
-        "needs.xiaoman-postgres-integration.result",
+        "needs.postgres-integration.result",
         "statuses/${HEAD_SHA}",
         "check_state",
         'context="check"',
@@ -1021,35 +1090,40 @@ if (ciWorkflow) {
       }
     }
 
-    const postgresJob = parsedWorkflow?.jobs?.["xiaoman-postgres-integration"];
+    const postgresJob = parsedWorkflow?.jobs?.["postgres-integration"];
     if (!postgresJob) {
-      errors.push(".github/workflows/ci.yml: missing xiaoman-postgres-integration job");
+      errors.push(".github/workflows/ci.yml: missing postgres-integration job");
     } else {
+      if (postgresJob.name !== "PostgreSQL integration") {
+        errors.push(
+          ".github/workflows/ci.yml: postgres-integration must be named PostgreSQL integration"
+        );
+      }
       const condition = String(postgresJob.if ?? "");
       if (!condition.includes("postgres-integration-check == 'true'")) {
         errors.push(
-          ".github/workflows/ci.yml: xiaoman-postgres-integration must be gated by postgres-integration-check"
+          ".github/workflows/ci.yml: postgres-integration must be gated by postgres-integration-check"
         );
       }
       if (condition.includes("full-check == 'true'")) {
         errors.push(
-          ".github/workflows/ci.yml: xiaoman-postgres-integration must not run for every full-check change"
+          ".github/workflows/ci.yml: postgres-integration must not run for every full-check change"
         );
       }
       if (condition.includes("release-please-pr != 'true'")) {
         errors.push(
-          ".github/workflows/ci.yml: xiaoman-postgres-integration must not exclude authenticated Release Please validation"
+          ".github/workflows/ci.yml: postgres-integration must not exclude authenticated Release Please validation"
         );
       }
       const postgres = postgresJob.services?.postgres;
       if (postgres?.image !== "pgvector/pgvector:pg16") {
         errors.push(
-          ".github/workflows/ci.yml: Xiaoman integration must use the temporary PostgreSQL 16 service with the vector extension"
+          ".github/workflows/ci.yml: PostgreSQL integration must use the temporary PostgreSQL 16 service with the vector extension"
         );
       }
       if (postgresJob.env?.QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE !== "1") {
         errors.push(
-          ".github/workflows/ci.yml: Xiaoman integration must explicitly enable its disposable apply smoke"
+          ".github/workflows/ci.yml: PostgreSQL integration must explicitly enable its disposable apply smoke"
         );
       }
       if (
@@ -1058,7 +1132,7 @@ if (ciWorkflow) {
         )
       ) {
         errors.push(
-          ".github/workflows/ci.yml: Xiaoman integration must target only the disposable qintopia_test database"
+          ".github/workflows/ci.yml: PostgreSQL integration must target only the disposable qintopia_test database"
         );
       }
       if (
@@ -1069,7 +1143,7 @@ if (ciWorkflow) {
         )
       ) {
         errors.push(
-          ".github/workflows/ci.yml: Xiaoman integration must run the guarded apply smoke"
+          ".github/workflows/ci.yml: PostgreSQL integration must run the guarded apply smoke"
         );
       }
       const groupSendIntegrationStep = postgresJob.steps?.find(
@@ -1084,7 +1158,7 @@ if (ciWorkflow) {
       ]) {
         if (!groupSendIntegrationCommand.includes(requiredFragment)) {
           errors.push(
-            `.github/workflows/ci.yml: Xiaoman integration Rust send-ready test must include ${requiredFragment}`
+            `.github/workflows/ci.yml: PostgreSQL integration Rust send-ready test must include ${requiredFragment}`
           );
         }
       }

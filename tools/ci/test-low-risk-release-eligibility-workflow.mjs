@@ -18,18 +18,11 @@ const job = workflow?.jobs?.advance;
 
 assert.deepEqual(
   Object.keys(workflow.on),
-  ["pull_request_target", "workflow_run", "workflow_dispatch"],
-  "auto-release may wake only from trusted base workflows, PR metadata, or a manual retry"
+  ["workflow_dispatch"],
+  "auto-release may run only from an explicit manual dispatch"
 );
-assert.deepEqual(pullRequestTarget?.types, [
-  "opened",
-  "reopened",
-  "synchronize",
-  "labeled",
-  "ready_for_review",
-]);
-assert.deepEqual(workflowRun?.workflows, ["CI", "PR Agent", "Release Please"]);
-assert.deepEqual(workflowRun?.types, ["completed"]);
+assert.equal(pullRequestTarget, undefined);
+assert.equal(workflowRun, undefined);
 assert.equal(workflowDispatch, null);
 assert.equal(workflow?.concurrency?.group, "low-risk-auto-release");
 assert.equal(workflow?.concurrency?.["cancel-in-progress"], false);
@@ -142,7 +135,7 @@ const requiredValidationJobs = [
   "changes",
   "check",
   "Rust quality baseline",
-  "Xiaoman PostgreSQL integration",
+  "PostgreSQL integration",
   "Release Please validation",
 ].map((name) => ({ name, status: "completed", conclusion: "success" }));
 
@@ -520,7 +513,7 @@ for (const fragment of [
   '.path == ".github/workflows/ci.yml"',
   "[.[] | .jobs[]] as $jobs",
   '"Rust quality baseline"',
-  '"Xiaoman PostgreSQL integration"',
+  '"PostgreSQL integration"',
   '"Release Please validation"',
   "assert_latest_published_unchanged",
   "LATEST_PUBLISHED_ID",

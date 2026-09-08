@@ -7,6 +7,8 @@ CI helpers must:
 
 - treat docs-only changes differently from runtime/artifact builds where safe;
 - keep required checks explicit for skills, workflows, MCP, runtime, deploy, and agents;
+- keep the required `check` status stable when CI heavy tiers are split into separate
+  jobs;
 - fail closed when production-adjacent files change;
 - enforce Conventional Commits commit message types for local and CI validation;
 - validate pull request bodies so agents cannot submit empty templates;
@@ -73,9 +75,10 @@ eligibility.
 
 ### Low-Risk Auto Release
 
-`Low-Risk Auto Release` is the sole default-off exception to manual merge and Release
-publication. It is disabled unless `QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED` is exactly
-`1`, `QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT` is exactly
+`Low-Risk Auto Release` is a manual-only, default-off exception to manual merge and
+Release publication. It has no pull-request or workflow-completion triggers and is
+disabled unless `QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED` is exactly `1`,
+`QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT` is exactly
 `approved-low-risk-auto-release-v1`, a fixed automation actor is configured, and the
 dedicated repository-scoped token belongs to that actor.
 
@@ -137,11 +140,12 @@ Rust quality and disposable PostgreSQL integration jobs are risk-tiered separate
 ordinary Hermes, deploy-runner, documentation, or metadata changes do not pay the full
 sidecar/PostgreSQL cost unless they touch the sidecar, Postgres, deploy sidecar scripts,
 or the CI workflow itself. Manual workflow dispatches and authenticated Release Please
-validation always force the full heavy tier. The PR-attached `check` and release
-statuses are published after their corresponding jobs finish; the manual PR-Agent
-dispatch publishes its existing required status after the authenticated no-review job
-succeeds. This keeps workflow-dispatch validation visible to the master ruleset without
-adding another check tier.
+validation always force the full heavy tier. The CI heavy jobs may run independently,
+but the final required `check` status remains the stable aggregation gate. The
+PR-attached `check` and release statuses are published after their corresponding jobs
+finish; the manual PR-Agent dispatch publishes its existing required status after the
+authenticated no-review job succeeds. This keeps workflow-dispatch validation visible to
+the master ruleset without adding another check tier.
 
 The matching local path is `pnpm check:pr:auto` for day-to-day work and
 `pnpm check:pr:heavy` when you want the full local Rust/PostgreSQL mirror before pushing
@@ -153,13 +157,13 @@ workflow authenticates the Release Please PR and skips the external PR-Agent act
 successful job satisfies the required check without reviewing or editing generated
 release metadata.
 
-## Rust Quality And Xiaoman Integration
+## Rust Quality And PostgreSQL Integration
 
 Sidecar, Postgres, deploy sidecar scripts, or CI workflow changes run a Rust 1.96
 quality baseline. It uploads LCOV and a coverage summary, then executes the non-ignored
 sidecar suite with all features so staging-only adapter tests run before strict
 default/all-feature Clippy. The all-feature test is not a production build and must not
-execute ignored PostgreSQL tests. The Xiaoman downstream integration job owns those
-ignored tests and the guarded apply smoke against a disposable GitHub Actions PostgreSQL
-service. It must not accept production database URLs, secrets, Feishu credentials, QiWe
-credentials, or external adapters.
+execute ignored PostgreSQL tests. The `postgres-integration` job, displayed as
+`PostgreSQL integration`, owns those ignored tests and the guarded apply smoke against a
+disposable GitHub Actions PostgreSQL service. It must not accept production database
+URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.
