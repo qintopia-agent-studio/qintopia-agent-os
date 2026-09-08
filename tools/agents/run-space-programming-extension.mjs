@@ -25,7 +25,6 @@ const PROTOCOL_VERSION = 1;
 const FIXED_PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin";
 const BRANCH_PREFIX = "qintopia-programming-agent/";
 const PR_TITLE = "feat(qiwe): add bounded provider event mapping";
-const AUTO_LABEL = "qintopia-low-risk-auto";
 const EXPECTED_REPOSITORY = "qintopia-agent-studio/qintopia-agent-os";
 const EXPECTED_REMOTES = new Set([
   `git@github.com:${EXPECTED_REPOSITORY}.git`,
@@ -1239,25 +1238,6 @@ export async function runOnce(options = {}) {
       fail("pr_create_ambiguous");
     }
     brokerCompleted = true;
-
-    execute(
-      "gh",
-      [
-        "pr",
-        "edit",
-        String(pr.prNumber),
-        "--repo",
-        EXPECTED_REPOSITORY,
-        "--add-label",
-        AUTO_LABEL,
-      ],
-      {
-        cwd: worktree,
-        env: githubEnv,
-        timeoutMs: 30_000,
-        failureCode: "pr_create_failed",
-      }
-    );
     return {
       schema_version: PROTOCOL_VERSION,
       status: "pr_created",

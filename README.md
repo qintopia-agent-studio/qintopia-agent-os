@@ -155,14 +155,10 @@ Production deployment normally starts only when the owner manually publishes the
 GitHub Release. The existing `release.published` workflow then builds artifacts, uploads
 them to COS, and creates the signed production deploy request.
 
-One pre-authorized exception exists for append-only QiWe event-mapping bundles created
-by the conversational programming-extension runner. The default-disabled low-risk lane
-may merge the exact fixed-label candidate, validate and merge the exact Release Please
-PR, and publish its already-audited draft only after required checks and a final audit
-of the complete unpublished range. It cannot activate QiWe ingress, capabilities,
-automations, credentials, systemd units, or production configuration. The initial
-schema, callback-authentication, and release-policy change remains a manual owner
-release.
+Append-only QiWe event-mapping bundles created by the conversational programming-
+extension runner still stop at an ordinary PR. Their classifier result does not
+authorize merge or publication. Every candidate PR, Release Please PR, and draft Release
+requires explicit owner review and action.
 
 ## Migration Archive
 

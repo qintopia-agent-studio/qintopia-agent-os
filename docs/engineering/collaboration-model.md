@@ -85,19 +85,10 @@ That merge prepares the version and creates a draft GitHub Release. Publishing t
 triggers the existing `release.published` deploy workflow; manual owner merge and
 publication remains the default.
 
-The only pre-authorized exception is the default-disabled `Low-Risk Auto Release`
-workflow for append-only QiWe event-mapping bundles, optionally including one fixed-
-kernel restricted-parser recipe, produced by the isolated programming-extension runner.
-It may advance only a same-repository PR with the fixed actor, branch, title, and
-`qintopia-low-risk-auto` label. Before each of candidate merge, Release Please merge,
-and draft publication, it must bind required checks to the exact head and rerun the
-classifier over the complete unpublished range. The only allowed history is one
-candidate squash directly after the latest published SHA followed by one Release Please
-metadata squash. Exact CI-run-backed Release validation and a canonical draft identity
-digest are rechecked before mutation. The exception ends at Release publication: it
-cannot activate runtime configuration, permissions, credentials, capabilities,
-schedules, external sends, or production ingress. All other releases, and the initial
-infrastructure rollout that introduces this policy, remain manual owner decisions.
+Append-only QiWe event-mapping bundles produced by the isolated programming-extension
+runner are still ordinary pull requests. Low-risk classification constrains the
+generated diff but does not authorize merge, Release Please advancement, or draft
+publication. Every release remains an explicit owner decision.
 
 If the Release Please PR stays open while more feature PRs merge, Release Please updates
 the same release PR. Avoid editing root `CHANGELOG.md` or

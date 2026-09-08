@@ -964,19 +964,10 @@ Use `rg` and `rg --files` for search.
   Please owns routine release changelog updates from merged Conventional Commits.
 - Merging a Release Please PR prepares a version and draft GitHub Release. Manual owner
   publication remains the default production boundary.
-- The sole automated merge/publication exception is the default-disabled
-  `Low-Risk Auto Release` workflow for a same-repository, fixed-actor, fixed-label,
-  single-commit, append-only QiWe event-mapping bundle with at most one declarative
-  restricted-parser recipe. It must revalidate required checks and exact heads at every
-  stage, audit the complete unpublished range before candidate merge, Release Please
-  merge, and draft publication, and reject any file outside the classifier allowlist. It
-  must never activate production configuration, credentials, permissions, adapters,
-  services, timers, automations, or external sends. Enabling this exception requires the
-  explicit repository variables and dedicated token documented in
-  `docs/engineering/ci-cd-gates.md`; all other release merging and publication requires
-  an explicit manual owner decision.
-- The initial Space schema, callback authentication, and release-policy rollout is not
-  eligible for that exception and must be manually reviewed and published by the owner.
+- Low-risk classification is a safety boundary for the conversational programming-
+  extension runner, not approval to merge or publish. Every generated candidate PR,
+  Release Please PR, and draft Release must be reviewed and advanced explicitly by the
+  owner.
 - Authenticated QiWe event provenance is transport-owned. The sidecar may set
   `ingress_auth_verified=true` only because it actually received the event on the exact
   configured authenticated NATS subject while the trusted-subject gate is enabled;

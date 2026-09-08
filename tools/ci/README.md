@@ -18,7 +18,6 @@ CI helpers must:
 
 ```bash
 pnpm ci:low-risk:test
-pnpm ci:low-risk:eligibility:test
 pnpm check:pr:auto
 pnpm check:pr:quick
 pnpm check:pr:heavy
@@ -73,36 +72,9 @@ non-official URLs. Python, Rust, shell, SQL migrations, workflows, authenticatio
 dependencies, deployment, and send-path code therefore cannot receive low-risk
 eligibility.
 
-### Low-Risk Auto Release
-
-`Low-Risk Auto Release` is a manual-only, default-off exception to manual merge and
-Release publication. It has no pull-request or workflow-completion triggers and is
-disabled unless `QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED` is exactly `1`,
-`QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT` is exactly
-`approved-low-risk-auto-release-v1`, a fixed automation actor is configured, and the
-dedicated repository-scoped token belongs to that actor.
-
-The workflow advances three exact-head stages. First it verifies the fixed actor,
-same-repository branch, label provenance, single candidate commit, required checks, and
-classifier result before squash-merging the mapping PR. The candidate squash must be the
-only commit after the latest published SHA. Second it authenticates the exact Release
-Please PR, requires CI and PR-Agent checks, validates the bot-created
-`Release Please validation` status against its exact run, workflow path, repository,
-branch, head SHA, and unique successful required jobs, then merges exactly one metadata
-squash. Third it requires the publication range to contain only those two squashes and
-rechecks the draft tag, current `master`, latest published Release, and the complete
-`previous_published_tag..candidate_master_sha` range before publishing that draft.
-
-The draft contract binds its bot author, release id, exact tag and name, target, exact
-changelog section, and zero assets into a canonical digest. The workflow rechecks that
-digest immediately before publication and again after publication, then refetches the
-tag SHA. Any mismatch fails closed.
-
-Every stage reruns the append-only classifier before mutation. The workflow cannot
-create a deploy request, activate ingress, capabilities, mappings, automations,
-services, timers, credentials, or sends. Any file outside the
-mapping/fixture/expectation/optional primitive/optional mapping-summary contract stops
-the lane and returns the change to an explicit manual owner decision.
+Low-risk eligibility evidence is advisory input to manual review. It does not authorize
+merge, Release Please advancement, publication, deployment, or activation; every such
+action remains a manual owner decision.
 
 ## Local Pre-PR Tiers
 

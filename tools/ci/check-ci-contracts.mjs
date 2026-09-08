@@ -249,10 +249,7 @@ if (!fs.existsSync(path.join(repoRoot, readmePath))) {
     "check:pr:heavy",
     "check:pr:auto",
     "Low-Risk Classification",
-    "Low-Risk Auto Release",
-    "three exact-head stages",
     "eligibility evidence",
-    "previous_published_tag..candidate_master_sha",
     "manual owner decision",
     "fixtures/qiwe/event-mappings/**/*.mapping.json",
     "fixtures/qiwe/event-mappings/_primitives/**/*.primitive.json",
@@ -282,7 +279,6 @@ for (const scriptName of [
   "pr:tools:check",
   "ci:low-risk:classify",
   "ci:low-risk:test",
-  "ci:low-risk:eligibility:test",
 ]) {
   if (!packageJson.scripts?.[scriptName]) {
     errors.push(`${packagePath}: missing ${scriptName}`);
@@ -300,8 +296,6 @@ for (const requiredPath of [
   "tools/ci/test-xiaoman-production-claim-boundary.mjs",
   "tools/ci/classify-low-risk-change.mjs",
   "tools/ci/test-classify-low-risk-change.mjs",
-  "tools/ci/test-low-risk-release-eligibility-workflow.mjs",
-  ".github/workflows/low-risk-release-eligibility.yml",
   "tools/agents/pr-body.mjs",
   "tools/agents/pr-doctor.mjs",
   "tools/agents/pr-bootstrap.mjs",
@@ -317,14 +311,13 @@ for (const requiredPath of [
 if (!packageJson.scripts?.["tools:ci:check"]?.includes("pnpm ci:low-risk:test")) {
   errors.push("package.json: tools:ci:check must include pnpm ci:low-risk:test");
 }
-if (
-  !packageJson.scripts?.["tools:ci:check"]?.includes(
-    "pnpm ci:low-risk:eligibility:test"
-  )
-) {
-  errors.push(
-    "package.json: tools:ci:check must include pnpm ci:low-risk:eligibility:test"
-  );
+for (const retiredPath of [
+  ".github/workflows/low-risk-release-eligibility.yml",
+  "tools/ci/test-low-risk-release-eligibility-workflow.mjs",
+]) {
+  if (fs.existsSync(path.join(repoRoot, retiredPath))) {
+    errors.push(`${retiredPath}: retired auto-release path must remain removed`);
+  }
 }
 const lowRiskClassifier = fs.existsSync(
   path.join(repoRoot, "tools/ci/classify-low-risk-change.mjs")
@@ -405,47 +398,6 @@ for (const requiredFragment of [
   }
 }
 
-const lowRiskEligibilityWorkflowPath =
-  ".github/workflows/low-risk-release-eligibility.yml";
-const lowRiskEligibilityWorkflow = fs.existsSync(
-  path.join(repoRoot, lowRiskEligibilityWorkflowPath)
-)
-  ? readText(lowRiskEligibilityWorkflowPath)
-  : "";
-for (const requiredFragment of [
-  'readonly AUTO_PR_TITLE="feat(qiwe): add bounded provider event mapping"',
-  'CANDIDATE_MERGED_BY="$(jq -r \'.merged_by.login // ""\'',
-  'RELEASE_MERGED_BY="$(jq -r \'.merged_by.login // ""\'',
-  "candidate squash base is not the latest published commit",
-  "candidate squash is not the only unpublished commit",
-  "Release Please base is not the sole candidate squash",
-  "publication range must contain candidate and metadata squashes only",
-  "check_release_validation()",
-  '.creator.login // ""',
-  '.path == ".github/workflows/ci.yml"',
-  "[.[] | .jobs[]] as $jobs",
-  "release-pr-validation-pre-merge.json",
-  "publish-release-validation-pre-publish.json",
-  "draft Release identity is outside the fixed contract",
-  "draft Release body is not the exact changelog release section",
-  "Release canonical summary changed during the audit",
-  "draft-release-contract-final.json",
-  "published-release-contract.json",
-  "published Release tag moved after publication",
-]) {
-  if (
-    lowRiskEligibilityWorkflow &&
-    !lowRiskEligibilityWorkflow.includes(requiredFragment)
-  ) {
-    errors.push(`${lowRiskEligibilityWorkflowPath}: must retain ${requiredFragment}`);
-  }
-}
-if (/^\s*uses:/m.test(lowRiskEligibilityWorkflow)) {
-  errors.push(
-    `${lowRiskEligibilityWorkflowPath}: privileged lane must not execute external Actions`
-  );
-}
-
 const prBodyCheck = fs.existsSync(path.join(repoRoot, "tools/ci/check-pr-body.mjs"))
   ? readText("tools/ci/check-pr-body.mjs")
   : "";
@@ -508,7 +460,6 @@ if (ciWorkflow && !ciWorkflow.includes("fetch-depth: 0")) {
 }
 
 for (const [workflowName, workflowText, expectedEvent] of [
-  ["low-risk-release-eligibility.yml", lowRiskEligibilityWorkflow, "workflow_dispatch"],
   ["artifacts.yml", artifactsWorkflow, "workflow_dispatch"],
 ]) {
   if (!workflowText) continue;
@@ -519,13 +470,6 @@ for (const [workflowName, workflowText, expectedEvent] of [
       errors.push(
         `.github/workflows/${workflowName}: must retain ${expectedEvent} trigger`
       );
-    }
-    if (workflowName === "low-risk-release-eligibility.yml") {
-      if (events.length !== 1 || events[0] !== "workflow_dispatch") {
-        errors.push(
-          ".github/workflows/low-risk-release-eligibility.yml: Low-Risk Auto Release must be manual-only"
-        );
-      }
     }
     if (workflowName === "artifacts.yml" && events.includes("push")) {
       errors.push(
