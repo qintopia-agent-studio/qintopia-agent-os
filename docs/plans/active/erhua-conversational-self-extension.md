@@ -270,9 +270,9 @@ synthetic fixture, canonical expectation, optionally one fixed-format mapping su
 and, when necessary, one fixed-kernel restricted-parser recipe accepted by the low-risk
 classifier, for at most five files. The runner uses fixed validation commands, creates a
 `qintopia-programming-agent/` branch with a `feat(qiwe):` commit and PR title, records
-an `awaiting_publish` PR handoff through the lease, and only then applies the fixed
-`qintopia-low-risk-auto` label. It cannot merge, publish, deploy, send, run a migration
-or alter runtime authentication.
+an `awaiting_publish` PR handoff through the lease, and stops for manual review. It
+cannot apply an auto-release label, merge, publish, deploy, send, run a migration or
+alter runtime authentication.
 
 The runner rejects GitHub tokens in its startup environment. Codex execution, allowed
 path review, complete committed-diff review, fixed validation, low-risk classification,
@@ -299,14 +299,9 @@ identity or equivalent container that cannot read production env, Hermes, COS, d
 server, or GitHub credentials. The separate PR orchestration boundary retains the GitHub
 token outside that sandbox.
 
-A separate `Low-Risk Auto Release` workflow is the sole pre-authorized consumer of that
-label. It is default-disabled, authenticates a fixed dedicated actor/token, and may
-advance only the append-only mapping bundle, its optional restricted recipe, and its
-optional fixed-format summary. It revalidates exact required checks and the complete
-unpublished range before candidate merge, exact Release Please merge, and draft
-publication. Any additional code, dependency, schema, authentication, permission,
-deployment, or production configuration change stops for owner review. The workflow
-cannot activate the published runtime or issue a production deploy request itself.
+The classifier result is evidence for the human reviewer, not authorization to merge or
+publish. The owner must explicitly review and advance the candidate PR, Release Please
+PR, and draft Release.
 
 The first rollout is a manual, default-disabled `--once` command. Scheduling the runner
 or installing a service is a later owner-reviewed operation after the broker and

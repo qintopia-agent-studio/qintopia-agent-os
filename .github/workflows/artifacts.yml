@@ -30,9 +30,6 @@ on:
         required: true
         default: true
         type: boolean
-  push:
-    branches:
-      - master
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -71,8 +68,6 @@ jobs:
       - name: Decide artifact publication
         id: plan
         shell: bash
-        env:
-          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message || '' }}
         run: |
           set -euo pipefail
 
@@ -90,15 +85,6 @@ jobs:
             build_staging_sidecar="${{ inputs.build_staging_sidecar }}"
             build_deploy_bundle="${{ inputs.build_deploy_bundle }}"
             upload_cos="${{ inputs.upload_cos }}"
-          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/master" ]]; then
-            if [[ "$HEAD_COMMIT_MESSAGE" == *"[publish-artifacts]"* ]]; then
-              publish=true
-              build_sidecar=true
-              build_qiwe_sidecar=false
-              build_staging_sidecar=false
-              build_deploy_bundle=true
-              upload_cos=true
-            fi
           fi
 
           {
@@ -129,8 +115,8 @@ jobs:
     steps:
       - name: Skip artifact publication
         run: >-
-          echo "Artifact publication is opt-in. Use workflow_dispatch or include
-          [publish-artifacts] in the commit message."
+          echo "Artifact publication is manual. Use workflow_dispatch to select the
+          artifacts to build and publish."
 
   sidecar-artifact:
     runs-on: ubuntu-latest
