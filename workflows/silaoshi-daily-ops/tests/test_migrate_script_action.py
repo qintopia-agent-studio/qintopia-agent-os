@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,10 @@ class MigrateScriptActionTest(unittest.TestCase):
         self.assertEqual(migrated["silaoshi-base-notify"]["script"], str(self.transform_target))
         self.assertEqual(json.loads(self.config.read_text())["action"]["timeout_seconds"], 900)
         self.assertTrue(self.secret.is_file())
+        self.assertEqual(self.secret.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(self.config.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(self.transform_target.stat().st_mode & 0o777, 0o750)
+        self.assertEqual(self.subscriptions.stat().st_uid, os.getuid())
         self.assertEqual(json.loads(self.subscriptions.with_suffix(".json.pre-bridge").read_text()), self.original)
 
     def test_apply_refuses_to_overwrite_backup(self):

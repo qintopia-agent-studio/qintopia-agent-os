@@ -8,6 +8,7 @@ import ast
 import hashlib
 import json
 import os
+import pwd
 import secrets
 import shutil
 import sys
@@ -108,12 +109,16 @@ def build_migration(
     return migrated, config
 
 
-def _atomic_write(path: Path, data: bytes, mode: int) -> None:
+def _atomic_write(
+    path: Path, data: bytes, mode: int, owner: tuple[int, int] | None = None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         os.write(fd, data)
         os.fchmod(fd, mode)
+        if owner is not None:
+            os.fchown(fd, owner[0], owner[1])
         os.fsync(fd)
         os.close(fd)
         fd = -1
@@ -138,9 +143,12 @@ def main() -> int:
     parser.add_argument("--config-target", required=True, type=Path)
     parser.add_argument("--secret-target", required=True, type=Path)
     parser.add_argument("--python", default=sys.executable)
+    parser.add_argument("--runtime-user", default=pwd.getpwuid(os.getuid()).pw_name)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--rollback", action="store_true")
     args = parser.parse_args()
+    runtime_account = pwd.getpwnam(args.runtime_user)
+    runtime_owner = (runtime_account.pw_uid, runtime_account.pw_gid)
 
     if args.apply and args.rollback:
         raise MigrationError("choose only one of --apply or --rollback")
@@ -149,7 +157,13 @@ def main() -> int:
         if not backup.is_file():
             raise MigrationError("migration backup is unavailable")
         restored = backup.read_bytes()
-        _atomic_write(args.subscriptions, restored, 0o600)
+        current = args.subscriptions.stat()
+        _atomic_write(
+            args.subscriptions,
+            restored,
+            current.st_mode & 0o777,
+            (current.st_uid, current.st_gid),
+        )
         print(
             json.dumps(
                 {
@@ -181,13 +195,35 @@ def main() -> int:
         raise MigrationError("transform source is unavailable")
     if backup.exists():
         raise MigrationError("migration backup already exists")
+    subscription_metadata = args.subscriptions.stat()
     shutil.copy2(args.subscriptions, backup)
     os.chmod(backup, 0o600)
     if not args.secret_target.exists():
-        _atomic_write(args.secret_target, (secrets.token_hex(32) + "\n").encode(), 0o600)
-    _atomic_write(args.config_target, (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode(), 0o600)
-    _atomic_write(args.transform_target, args.transform_source.read_bytes(), 0o700)
-    _atomic_write(args.subscriptions, (json.dumps(migrated, ensure_ascii=False, indent=2) + "\n").encode(), 0o600)
+        _atomic_write(
+            args.secret_target,
+            (secrets.token_hex(32) + "\n").encode(),
+            0o640,
+            (0, runtime_account.pw_gid) if os.geteuid() == 0 else runtime_owner,
+        )
+    config_owner = (0, runtime_account.pw_gid) if os.geteuid() == 0 else runtime_owner
+    _atomic_write(
+        args.config_target,
+        (json.dumps(config, ensure_ascii=False, indent=2) + "\n").encode(),
+        0o640,
+        config_owner,
+    )
+    _atomic_write(
+        args.transform_target,
+        args.transform_source.read_bytes(),
+        0o750,
+        config_owner,
+    )
+    _atomic_write(
+        args.subscriptions,
+        (json.dumps(migrated, ensure_ascii=False, indent=2) + "\n").encode(),
+        subscription_metadata.st_mode & 0o777,
+        (subscription_metadata.st_uid, subscription_metadata.st_gid),
+    )
     report["secret_present"] = True
     report["backup_fingerprint"] = hashlib.sha256(backup.read_bytes()).hexdigest()
     print(json.dumps(report, sort_keys=True))
