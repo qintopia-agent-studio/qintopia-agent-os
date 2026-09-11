@@ -300,6 +300,7 @@ const run = (command, args, options = {}) =>
       cwd: repoRoot,
       encoding: "utf8",
       stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
+      env: options.env ?? process.env,
     }) ?? ""
   ).trim();
 
@@ -426,7 +427,9 @@ const files = [
   ...collectVendoredYamlFiles().map(copyVendoredYamlFile),
 ];
 
-run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"]);
+run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"], {
+  env: { ...process.env, COPYFILE_DISABLE: "1" },
+});
 const archiveSha256 = sha256File(archivePath);
 files.push({
   path: archiveName,
