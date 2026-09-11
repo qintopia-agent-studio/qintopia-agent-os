@@ -186,15 +186,11 @@ runs under a dedicated OS identity or equivalent container with no read access t
 production env, Hermes, COS, database, server, or GitHub credentials; the PR
 orchestration boundary must hold the GitHub token outside that sandbox.
 
-Manual owner review remains the default after this handoff. The only exception is the
-separate, default-disabled `Low-Risk Auto Release` workflow, which may consume the fixed
-label after independently revalidating the exact PR, required checks, append-only
-classifier, CI-run-backed Release Please validation, strict candidate-plus-metadata
-commit topology, draft identity digest, and complete unpublished range. That workflow
-does not broaden the programming runner and cannot activate production behavior. Any new
-permission, dependency, migration, authentication, encryption, send path, deployment
-change, or file outside the mapping/fixture/expectation/optional primitive/optional
-mapping-summary allowlist stops for owner review.
+Manual owner review is mandatory after this handoff. Low-risk classification constrains
+the generated diff but never authorizes merge or publication. Any new permission,
+dependency, migration, authentication, encryption, send path, deployment change, or file
+outside the mapping/fixture/expectation/optional primitive/optional mapping-summary
+allowlist stops for owner review.
 
 The restricted recipe contract is documented in `qiwe-restricted-parser-primitives.md`.
 A provider encoding outside that fixed kernel is an owner-reviewed runtime extension,

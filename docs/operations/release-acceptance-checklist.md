@@ -25,8 +25,8 @@ send externally.
 - Confirm the PR-attached `Release Please validation` status is `SUCCESS` on the same
   head SHA that will be merged.
 - Confirm the linked run completed `check`, `Rust quality baseline`, and
-  `Xiaoman PostgreSQL integration` successfully; skipped heavy jobs are not valid
-  Release Please evidence.
+  `PostgreSQL integration` successfully; skipped heavy jobs are not valid Release Please
+  evidence.
 - If `PR-Agent review assistant` is missing, manually dispatch `pr-agent.yml` with the
   same release head and PR number, then confirm its authenticated no-review job passes.
 - If Release Please force-updates the branch after new commits land on `master`, discard

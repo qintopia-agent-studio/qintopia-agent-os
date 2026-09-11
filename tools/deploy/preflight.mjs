@@ -1035,7 +1035,7 @@ for (const phrase of [
   "build_sidecar:",
   "build_deploy_bundle:",
   "upload_cos:",
-  "[publish-artifacts]",
+  "Artifact publication is manual.",
   "sidecar-artifact",
   "deploy-bundle-artifact",
   "actions/upload-artifact@v7",

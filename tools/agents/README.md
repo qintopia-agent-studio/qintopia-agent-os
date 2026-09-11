@@ -99,9 +99,9 @@ base is therefore discarded without push or PR creation.
 
 Within that prerequisite, the runner connects only to
 `/run/qintopia-agentos/operations-intake.sock`, uses a temporary worktree, runs fixed
-validation, creates a PR through `pnpm pr:create`, and applies the fixed
-`qintopia-low-risk-auto` label only after the broker records an `awaiting_publish` PR
-handoff. It does not merge, publish, deploy, send or connect to Postgres.
+validation, creates a PR through `pnpm pr:create`, and records an `awaiting_publish` PR
+handoff. It does not apply an auto-release label, merge, publish, deploy, send or
+connect to Postgres.
 
 The trusted current-Space status path reports only the PR number and short identity
 fingerprints. It reaches `released/ready_to_replan` only when the active sidecar embeds
@@ -110,13 +110,8 @@ trusted status wrapper then retrieves the retained intent through a same-Space i
 operation, reruns the bounded planner, and idempotently creates the normal shadow
 proposal; administrator confirmation is still required.
 
-Manual review is the default after the runner stops. A separate, default-disabled
-`Low-Risk Auto Release` workflow may consume that label only after verifying its fixed
-actor and token, exact PR head and required checks, append-only mapping/recipe
-classification, exact CI-run-backed Release Please validation, strict candidate plus
-metadata commit topology, draft identity digest, and the complete unpublished range at
-every mutation. The workflow cannot activate production ingress, configuration,
-capabilities, automations, credentials, services, timers, deployments, or sends.
+Manual review is mandatory after the runner stops. The classifier result constrains the
+generated diff but does not authorize merge, publication, deployment, or activation.
 
 If the existing mapping DSL cannot express a documented encoding, the runner may add one
 append-only `*.primitive.json` recipe with the same mapping/fixture/expectation bundle.

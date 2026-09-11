@@ -34,8 +34,8 @@ The runtime gate adds:
 - sidecar Rust tests
 - no-credential sidecar smoke checks
 - a Rust coverage baseline artifact and blocking strict Clippy gate
-- a Xiaoman downstream apply smoke against a disposable GitHub Actions PostgreSQL
-  service
+- a guarded PostgreSQL integration and downstream apply smoke against a disposable
+  GitHub Actions PostgreSQL service
 
 ## Secret And Runtime-State Gate
 
@@ -73,15 +73,15 @@ deployment script, package, workflow, or configuration changes run `pnpm check:r
 after the light gate.
 
 Heavy checks are risk-tiered separately. Sidecar, Postgres, deploy sidecar script, or CI
-workflow changes run `rust-quality-baseline` with Rust 1.96 and
-`xiaoman-postgres-integration`; explicit non-Release manual dispatches also force the
-heavy tier. Authenticated Release Please dispatches also force light, runtime, Rust, and
-PostgreSQL validation on the exact release head. The Rust job stores LCOV, setup logs,
-and a text summary as a short-retention artifact. Strict Clippy runs with
-`cargo clippy --all-targets -- -D warnings` and blocks the heavy tier. The PostgreSQL
-integration uses only a disposable `qintopia_test` service and runs the guarded
-control-plane apply smoke with no production database URL, secrets, Feishu, QiWe, or
-external adapters.
+workflow changes run `rust-quality-baseline` with Rust 1.96 and the
+`postgres-integration` job displayed as `PostgreSQL integration`; explicit non-Release
+manual dispatches also force the heavy tier. Authenticated Release Please dispatches
+also force light, runtime, Rust, and PostgreSQL validation on the exact release head.
+The Rust job stores LCOV, setup logs, and a text summary as a short-retention artifact.
+Strict Clippy runs with `cargo clippy --all-targets -- -D warnings` and blocks the heavy
+tier. The PostgreSQL integration uses only a disposable `qintopia_test` service and runs
+the guarded control-plane apply smoke with no production database URL, secrets, Feishu,
+QiWe, or external adapters.
 
 ## Local Pre-PR Mirror
 
@@ -140,59 +140,8 @@ The workflow authenticates the open bot-owned PR and exact checkout SHA, then sk
 external PR-Agent action because generated Release Please metadata is not an AI review
 target. A successful no-review job provides the required check without changing the PR.
 
-### Low-Risk Auto Release
-
-`Low-Risk Auto Release` is the sole pre-authorized automated merge/publication
-exception. It is default-off. Before configuring it, the owner must deploy and observe a
-reviewed deploy-runner hardening release containing the repository's
-`ProtectSystem=strict` boundary, inspect that effective property on the server, verify
-that only the fixed required `ReadWritePaths` remain writable, and prove signed server
-results are consumed by the production deployment workflow. The fixed write set includes
-`/etc/systemd/system` because the reviewed release installer manages an allowlisted unit
-manifest; it does not include `/etc` or another parent directory. The low-risk lane must
-remain disabled until that hardening is deployed and observed.
-
-After that prerequisite, the lane can run only when the owner configures all of:
-
-- repository variable `QINTOPIA_LOW_RISK_AUTO_RELEASE_ENABLED=1`;
-- repository variable `QINTOPIA_LOW_RISK_AUTO_RELEASE_OWNER_ACKNOWLEDGEMENT` with the
-  exact value `approved-low-risk-auto-release-v1`;
-- repository variable `QINTOPIA_LOW_RISK_AUTO_RELEASE_ACTOR` naming the dedicated Bot
-  account; and
-- repository secret `QINTOPIA_LOW_RISK_RELEASE_TOKEN`, scoped to the repository and
-  owned by that exact account.
-
-The workflow checks the token's `/user` identity against the configured actor and never
-falls back to `github.token`. It accepts only a same-repository, single-commit
-`qintopia-programming-agent/` PR with the fixed title and the `qintopia-low-risk-auto`
-label applied by that actor. The append-only classifier permits only bounded mapping,
-synthetic fixture, canonical expectation, and at most one fixed-kernel restricted-parser
-recipe file. A candidate is exactly one commit with three required JSON files or four
-when the mapping references the optional recipe; Markdown, runtime code, dependencies,
-migrations, workflow changes, secrets, and deployment files are outside the class.
-
-The workflow is a three-stage state machine:
-
-1. Revalidate the candidate PR's exact head and required checks, audit the candidate and
-   complete unpublished range, then squash-merge it as the single commit directly after
-   the latest published SHA.
-2. Authenticate the exact Release Please PR, dispatch exact-head CI and PR-Agent checks,
-   bind the bot-created validation status to the exact successful CI run and unique
-   required jobs, validate its generated metadata-only diff, and squash-merge exactly
-   one metadata commit.
-3. Require the draft tag to point to current `master`, repeat required-check and
-   complete unpublished-range audits, require the full range to contain only the
-   candidate and metadata squashes, then publish that existing draft Release. The draft
-   author, id, tag, name, target, exact changelog body, and zero-asset state are bound
-   to a canonical digest that is rechecked before and after publication.
-
-Every stage rechecks current `master`, the latest published Release, tree identity, and
-required checks immediately before mutation. Any race or extra unpublished change stops
-the lane. Publication still enters the normal `release.published` artifact/deploy path;
-this workflow cannot access COS, create a deploy request, change production
-configuration, activate ingress/capabilities/automations, or send a message. The initial
-Space schema, callback authentication, and auto-release policy rollout remains manually
-reviewed and published.
+Low-risk classification does not authorize merge or publication. Generated mapping PRs,
+Release Please PRs, and draft Releases all require explicit owner review and action.
 
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
@@ -230,11 +179,10 @@ Artifact publication is opt-in and lives in the `Artifacts` workflow. Use
 - `build_deploy_bundle`
 - `upload_cos`
 
-As an explicit automation shortcut, a push to `master` whose head commit message
-contains `[publish-artifacts]` publishes only the ordinary Huabaosi production sidecar
-artifact plus the deploy bundle, then uploads them to COS. It does not auto-build the
-independent QiWe production artifact. Normal docs, planning, and repository maintenance
-commits do not build or upload artifacts.
+Artifacts have no `master` push publication path. Normal docs, planning, and repository
+maintenance commits do not build or upload artifacts. Every Artifacts workflow
+publication is initiated through an explicit `workflow_dispatch` with the desired build
+and upload inputs.
 
 The artifact families are distinct:
 

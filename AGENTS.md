@@ -964,19 +964,10 @@ Use `rg` and `rg --files` for search.
   Please owns routine release changelog updates from merged Conventional Commits.
 - Merging a Release Please PR prepares a version and draft GitHub Release. Manual owner
   publication remains the default production boundary.
-- The sole automated merge/publication exception is the default-disabled
-  `Low-Risk Auto Release` workflow for a same-repository, fixed-actor, fixed-label,
-  single-commit, append-only QiWe event-mapping bundle with at most one declarative
-  restricted-parser recipe. It must revalidate required checks and exact heads at every
-  stage, audit the complete unpublished range before candidate merge, Release Please
-  merge, and draft publication, and reject any file outside the classifier allowlist. It
-  must never activate production configuration, credentials, permissions, adapters,
-  services, timers, automations, or external sends. Enabling this exception requires the
-  explicit repository variables and dedicated token documented in
-  `docs/engineering/ci-cd-gates.md`; all other release merging and publication requires
-  an explicit manual owner decision.
-- The initial Space schema, callback authentication, and release-policy rollout is not
-  eligible for that exception and must be manually reviewed and published by the owner.
+- Low-risk classification is a safety boundary for the conversational programming-
+  extension runner, not approval to merge or publish. Every generated candidate PR,
+  Release Please PR, and draft Release must be reviewed and advanced explicitly by the
+  owner.
 - Authenticated QiWe event provenance is transport-owned. The sidecar may set
   `ingress_auth_verified=true` only because it actually received the event on the exact
   configured authenticated NATS subject while the trusted-subject gate is enabled;
@@ -1011,13 +1002,13 @@ Use `rg` and `rg --files` for search.
 - A Release Please PR created or updated with `GITHUB_TOKEN` may have no automatic PR
   checks because GitHub suppresses recursive workflow triggers. Before merging such a
   PR, run the manual CI validation command on its exact head branch and require the
-  workflow `changes`, `check`, `Rust quality baseline`, and
-  `Xiaoman PostgreSQL integration` jobs plus the PR-attached `Release Please validation`
-  commit status to pass. Run the manual PR-Agent validation on that same exact head when
-  the ruleset-required `PR-Agent review assistant` check was suppressed. Both dispatches
-  must fail if the PR is not open, does not target `master`, is not bot-authored, or the
-  checked-out SHA differs from the PR head. The authenticated PR-Agent dispatch must
-  skip external AI review and must not edit or comment on the generated Release PR.
+  workflow `changes`, `check`, `Rust quality baseline`, and `PostgreSQL integration`
+  jobs plus the PR-attached `Release Please validation` commit status to pass. Run the
+  manual PR-Agent validation on that same exact head when the ruleset-required
+  `PR-Agent review assistant` check was suppressed. Both dispatches must fail if the PR
+  is not open, does not target `master`, is not bot-authored, or the checked-out SHA
+  differs from the PR head. The authenticated PR-Agent dispatch must skip external AI
+  review and must not edit or comment on the generated Release PR.
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap`.
@@ -1398,11 +1389,11 @@ Use `rg` and `rg --files` for search.
   reviewed production features; an all-features CI build must never be promoted or
   treated as a production artifact.
 - Heavy PR checks are risk-tiered. Keep `check` meaningful for ordinary PRs, but run
-  `rust-quality-baseline` and `xiaoman-postgres-integration` only for sidecar, Postgres,
-  deploy sidecar script, or CI workflow changes. Explicit manual dispatches and
-  authenticated Release Please validation force the full light, runtime, Rust, and
-  PostgreSQL tiers. Do not weaken production deploy or published Release gates; those
-  remain the full safety boundary.
+  `rust-quality-baseline` and `postgres-integration` only for sidecar, Postgres, deploy
+  sidecar script, or CI workflow changes. Explicit manual dispatches and authenticated
+  Release Please validation force the full light, runtime, Rust, and PostgreSQL tiers.
+  Do not weaken production deploy or published Release gates; those remain the full
+  safety boundary.
 - QiWe image-send production activation is guarded, not automatic. Activation requires
   the persistent sidecar env file to contain exactly one
   `QINTOPIA_QIWE_IMAGE_SEND_ENABLED=1`, exactly one
@@ -1949,8 +1940,8 @@ Use `rg` and `rg --files` for search.
 - PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
   live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
   profile symlink without that reviewed cutover, smoke evidence, and rollback note.
-- `xiaoman-postgres-integration` in GitHub Actions may enable the guarded apply smoke
-  only against its disposable `qintopia_test` PostgreSQL service. It must not use a
+- `postgres-integration` in GitHub Actions may enable the guarded apply smoke only
+  against its disposable `qintopia_test` PostgreSQL service. It must not use a
   production database URL, secrets, Feishu, QiWe, or external adapters.
 
 ## Package Placement

@@ -221,7 +221,6 @@ function fakeExecutor(repoRoot, events, options = {}) {
         isDraft: false,
       });
     }
-    if (command === "gh" && args[0] === "pr" && args[1] === "edit") return "";
     if (command === "git" && args[0] === "worktree" && args[1] === "remove") {
       return "";
     }
@@ -419,13 +418,6 @@ const finishIndex = success.events.findIndex(
   (event) =>
     event.type === "socket" && event.operation === "space_programming_extension_finish"
 );
-const labelIndex = success.events.findIndex(
-  (event) =>
-    event.type === "command" &&
-    event.command === "gh" &&
-    event.args[0] === "pr" &&
-    event.args[1] === "edit"
-);
 assert.ok(classifierIndex >= 0);
 assert.ok(committedDiffIndex >= 0);
 assert.ok(lastClassifierIndex > committedDiffIndex);
@@ -435,7 +427,6 @@ assert.ok(helperIndex > prCheckIndex);
 assert.ok(authenticatedFetchIndex > helperIndex);
 assert.ok(prCreateIndex > authenticatedFetchIndex);
 assert.ok(finishIndex > classifierIndex);
-assert.ok(labelIndex > finishIndex);
 for (const event of commands.slice(0, helperIndex + 1)) {
   assert.equal(event.env?.GH_TOKEN, undefined);
   assert.equal(event.env?.GITHUB_TOKEN, undefined);
@@ -450,11 +441,8 @@ assert.ok(
   )
 );
 assert.ok(
-  commands.some(
-    (event) =>
-      event.command === "gh" &&
-      event.args.includes("--add-label") &&
-      event.args.includes("qintopia-low-risk-auto")
+  commands.every(
+    (event) => event.command !== "gh" || !event.args.includes("--add-label")
   )
 );
 for (const event of commands) {
