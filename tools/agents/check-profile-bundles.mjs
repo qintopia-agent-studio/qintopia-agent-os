@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import YAML from "yaml";
-import { loadHermesProfileRegistry } from "../deploy/hermes-profile-registry.mjs";
 
 const repoRoot = process.cwd();
 const errors = [];
@@ -24,19 +23,6 @@ const readJson = (relativePath) => JSON.parse(readText(relativePath));
 const erhuaWeatherBroadcastPath =
   "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py";
 
-let erhuaExpectedWecomEnabled = null;
-try {
-  const erhuaProfile = loadHermesProfileRegistry().find(
-    (profile) => profile.id === "erhua"
-  );
-  if (erhuaProfile === undefined) {
-    throw new Error("Erhua profile missing");
-  }
-  erhuaExpectedWecomEnabled = erhuaProfile.wecom.expected_enabled;
-} catch {
-  addError("runtime/hermes/profile-registry.yaml: invalid Hermes profile registry");
-}
-
 if (exists("agents/erhua/config.template.yaml")) {
   const overlay = readYaml("agents/erhua/config.template.yaml");
   const expected = {
@@ -46,11 +32,6 @@ if (exists("agents/erhua/config.template.yaml")) {
       model: {
         provider: "custom:livecool.net",
         base_url: "",
-      },
-      channel: {
-        wecom: {
-          enabled: erhuaExpectedWecomEnabled,
-        },
       },
       custom_provider: {
         name: "Livecool.net",

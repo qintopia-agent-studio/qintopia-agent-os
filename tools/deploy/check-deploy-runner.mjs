@@ -2894,6 +2894,11 @@ for (const fragment of [
   "hermes-profile-registry.mjs",
   "--services",
   '[[ "${#units[@]}" -ne 7 ]]',
+  "/usr/sbin/runuser -u ubuntu",
+  "XDG_RUNTIME_DIR=/run/user/1000",
+  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+  '"${USER_SYSTEMCTL[@]}" is-active --quiet',
+  '"${USER_SYSTEMCTL[@]}" show',
 ]) {
   if (!hermesCoreReadinessText.includes(fragment)) {
     addError(`deploy/runner/check-hermes-core-readiness.sh: missing ${fragment}`);

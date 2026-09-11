@@ -39,7 +39,7 @@ class MigrateScriptActionTest(unittest.TestCase):
                     "script": str(self.action),
                     "timeout": 900,
                     "success_template": "success {returncode}",
-                    "failure_template": "failure {stderr}",
+                    "failure_template": "failure {returncode} {result_hash}",
                 },
             },
             "other-route": {"secret": "unchanged"},

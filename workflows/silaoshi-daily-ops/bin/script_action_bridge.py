@@ -12,8 +12,10 @@ import re
 import secrets
 import socket
 import sqlite3
+import string
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,7 @@ from typing import Any
 
 MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 8 * 1024
+MAX_OUTPUT_BYTES = 64 * 1024
 DEFAULT_CONFIG = "/etc/qintopia/silaoshi-script-action.json"
 DELIVERY_KEYS = ("delivery_id", "event_id", "record_id", "recordId", "id")
 RECORD_ID_RE = re.compile(r"\brec[a-zA-Z0-9]{8,}\b")
@@ -54,6 +57,8 @@ def load_config(path: Path) -> dict[str, Any]:
         raise BridgeError("action timeout_seconds must be between 1 and 900")
     if not isinstance(retries, int) or not 0 <= retries <= 3:
         raise BridgeError("action max_retries must be between 0 and 3")
+    for key in ("success_template", "failure_template"):
+        _notification_message(str(action.get(key, "")), 0, "0" * 64)
     return cfg
 
 
@@ -183,7 +188,14 @@ def _validate_action(cfg: dict[str, Any]) -> list[str]:
     return command
 
 
-def _notify(cfg: dict[str, Any], success: bool, stdout: str, stderr: str, returncode: int) -> None:
+def _notification_message(template: str, returncode: int, result_hash: str) -> str:
+    for _, field, _, _ in string.Formatter().parse(template):
+        if field and field not in {"returncode", "result_hash"}:
+            raise BridgeError("notification template contains a forbidden field")
+    return template.format(returncode=returncode, result_hash=result_hash)
+
+
+def _notify(cfg: dict[str, Any], success: bool, returncode: int, result_hash: str) -> None:
     action = cfg["action"]
     command = action.get("notification_command")
     if not command:
@@ -191,12 +203,72 @@ def _notify(cfg: dict[str, Any], success: bool, stdout: str, stderr: str, return
     if not isinstance(command, list) or not all(isinstance(x, str) and x for x in command):
         raise BridgeError("notification command is invalid")
     template = action.get("success_template" if success else "failure_template", "")
-    message = str(template).format(
-        returncode=returncode,
-        stdout=stdout[-2000:],
-        stderr=stderr[-2000:],
+    message = _notification_message(str(template), returncode, result_hash)
+    subprocess.run(
+        command,
+        input=message,
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=180,
+        check=True,
     )
-    subprocess.run(command, input=message, text=True, capture_output=True, timeout=180, check=True)
+
+
+def _run_bounded_action(command: list[str], payload: str, timeout: int) -> tuple[str, str, int]:
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    captured = [bytearray(), bytearray()]
+
+    def drain(stream: Any, output: bytearray) -> None:
+        while chunk := stream.read(8192):
+            if len(output) < MAX_OUTPUT_BYTES:
+                output.extend(chunk[: MAX_OUTPUT_BYTES - len(output)])
+
+    readers = [
+        threading.Thread(target=drain, args=(proc.stdout, captured[0]), daemon=True),
+        threading.Thread(target=drain, args=(proc.stderr, captured[1]), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+    assert proc.stdin is not None
+
+    def feed() -> None:
+        try:
+            proc.stdin.write(payload.encode())
+        except BrokenPipeError:
+            pass
+        finally:
+            proc.stdin.close()
+
+    writer = threading.Thread(target=feed, daemon=True)
+    writer.start()
+    timed_out = False
+    try:
+        returncode = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        try:
+            os.killpg(proc.pid, 9)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        returncode = -1
+    finally:
+        writer.join()
+        for reader in readers:
+            reader.join()
+        assert proc.stdout is not None and proc.stderr is not None
+        proc.stdout.close()
+        proc.stderr.close()
+    stdout = captured[0].decode(errors="replace")
+    stderr = "script timed out" if timed_out else captured[1].decode(errors="replace")
+    return stdout, stderr, returncode
 
 
 def run_one(conn: sqlite3.Connection, cfg: dict[str, Any], now: int | None = None) -> bool:
@@ -219,18 +291,11 @@ def run_one(conn: sqlite3.Connection, cfg: dict[str, Any], now: int | None = Non
     stderr = ""
     returncode = -1
     try:
-        proc = subprocess.run(
+        stdout, stderr, returncode = _run_bounded_action(
             _validate_action(cfg),
-            input=payload_json,
-            text=True,
-            capture_output=True,
-            timeout=cfg["action"].get("timeout_seconds", 900),
-            check=False,
+            payload_json,
+            cfg["action"].get("timeout_seconds", 900),
         )
-        stdout, stderr, returncode = proc.stdout or "", proc.stderr or "", proc.returncode
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout or ""
-        stderr = "script timed out"
     except (BridgeError, OSError) as exc:
         stderr = str(exc)
     success = returncode == 0
@@ -250,7 +315,7 @@ def run_one(conn: sqlite3.Connection, cfg: dict[str, Any], now: int | None = Non
     notification_status = "not_due"
     if status in {"succeeded", "failed"}:
         try:
-            _notify(cfg, success, stdout, stderr, returncode)
+            _notify(cfg, success, returncode, result_hash)
             notification_status = "sent" if cfg["action"].get("notification_command") else "disabled"
         except (BridgeError, OSError, subprocess.SubprocessError):
             notification_status = "failed"

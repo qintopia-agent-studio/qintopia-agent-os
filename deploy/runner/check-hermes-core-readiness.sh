@@ -8,6 +8,13 @@ readonly MIN_FREE_KB=5242880
 readonly SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(CDPATH= cd -- "${SCRIPT_DIR}/../.." && pwd)"
 readonly PROFILE_REGISTRY_READER="${REPO_ROOT}/tools/deploy/hermes-profile-registry.mjs"
+readonly USER_SYSTEMCTL=(
+  /usr/sbin/runuser -u ubuntu -- /usr/bin/env -i
+  PATH=/usr/local/bin:/usr/bin:/bin
+  XDG_RUNTIME_DIR=/run/user/1000
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+  /usr/bin/systemctl --user
+)
 
 node_bin=""
 for candidate in /usr/bin/node /usr/local/bin/node /opt/homebrew/bin/node; do
@@ -88,11 +95,11 @@ else
 fi
 
 for unit in "${units[@]}"; do
-  if ! systemctl --user is-active --quiet "$unit"; then
+  if ! "${USER_SYSTEMCTL[@]}" is-active --quiet "$unit"; then
     fail "${unit}=not_active"
     continue
   fi
-  exec_start=$(systemctl --user show "$unit" -p ExecStart --value 2>/dev/null || true)
+  exec_start=$("${USER_SYSTEMCTL[@]}" show "$unit" -p ExecStart --value 2>/dev/null || true)
   if [[ "$exec_start" != *"$HERMES_PYTHON"* ]]; then
     fail "${unit}=unexpected_execstart"
   fi

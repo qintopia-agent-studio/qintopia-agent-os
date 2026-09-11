@@ -98,6 +98,38 @@ class ScriptActionBridgeTest(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1.8)
         self.assertEqual(self.conn.execute("SELECT status FROM jobs").fetchone()[0], "retry")
 
+    def test_action_output_is_bounded_while_streams_are_drained(self):
+        self.action.write_text(
+            "import sys\n"
+            "sys.stdout.write('o' * 200000)\n"
+            "sys.stderr.write('e' * 200000)\n"
+        )
+        self.cfg["action"]["script_sha256"] = self.bridge.hashlib.sha256(self.action.read_bytes()).hexdigest()
+        stdout, stderr, returncode = self.bridge._run_bounded_action(
+            self.bridge._validate_action(self.cfg), "{}", 10
+        )
+        self.assertEqual(returncode, 0)
+        self.assertEqual(len(stdout.encode()), self.bridge.MAX_OUTPUT_BYTES)
+        self.assertEqual(len(stderr.encode()), self.bridge.MAX_OUTPUT_BYTES)
+
+    def test_timeout_terminates_child_process_group(self):
+        child_pid = Path(self.tmp.name) / "child.pid"
+        self.action.write_text(
+            "import pathlib,subprocess,sys,time\n"
+            "child=subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])\n"
+            f"pathlib.Path({str(child_pid)!r}).write_text(str(child.pid))\n"
+            "time.sleep(30)\n"
+        )
+        self.cfg["action"]["script_sha256"] = self.bridge.hashlib.sha256(self.action.read_bytes()).hexdigest()
+        _, _, returncode = self.bridge._run_bounded_action(
+            self.bridge._validate_action(self.cfg), "{}", 1
+        )
+        self.assertEqual(returncode, -1)
+        pid = int(child_pid.read_text())
+        time.sleep(0.1)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
     def test_terminal_result_runs_notification_without_replaying_action(self):
         notification = Path(self.tmp.name) / "notification.py"
         receipt = Path(self.tmp.name) / "notification.txt"
@@ -107,16 +139,41 @@ class ScriptActionBridgeTest(unittest.TestCase):
         self.cfg["action"].update(
             {
                 "notification_command": [os.sys.executable, str(notification), str(receipt)],
-                "success_template": "completed rc={returncode}",
+                "success_template": "completed rc={returncode} hash={result_hash}",
             }
         )
         self.bridge.enqueue(self.conn, self.envelope(), now=1000)
         self.bridge.run_one(self.conn, self.cfg, now=1000)
-        self.assertEqual(receipt.read_text(), "completed rc=0")
+        message = receipt.read_text()
+        self.assertRegex(message, r"^completed rc=0 hash=[0-9a-f]{64}$")
         self.assertEqual(
             self.conn.execute("SELECT notification_status FROM jobs").fetchone()[0], "sent"
         )
         self.assertFalse(self.bridge.run_one(self.conn, self.cfg, now=1001))
+
+    def test_notification_cannot_include_action_output(self):
+        notification = Path(self.tmp.name) / "notification.py"
+        receipt = Path(self.tmp.name) / "notification.txt"
+        notification.write_text(
+            "import pathlib,sys\npathlib.Path(sys.argv[1]).write_text(sys.stdin.read())\n"
+        )
+        self.action.write_text("import sys\nprint('stdout-secret')\nprint('stderr-secret', file=sys.stderr)\n")
+        self.cfg["action"].update(
+            {
+                "script_sha256": self.bridge.hashlib.sha256(self.action.read_bytes()).hexdigest(),
+                "notification_command": [os.sys.executable, str(notification), str(receipt)],
+                "success_template": "done {returncode} {result_hash}",
+            }
+        )
+        self.bridge.enqueue(self.conn, self.envelope(), now=1000)
+        self.bridge.run_one(self.conn, self.cfg, now=1000)
+        message = receipt.read_text()
+        self.assertNotIn("stdout-secret", message)
+        self.assertNotIn("stderr-secret", message)
+
+    def test_notification_template_rejects_output_fields(self):
+        with self.assertRaises(self.bridge.BridgeError):
+            self.bridge._notification_message("failure {stderr}", 1, "0" * 64)
 
     def test_restart_recovers_an_interrupted_job(self):
         self.bridge.enqueue(self.conn, self.envelope(), now=1000)
