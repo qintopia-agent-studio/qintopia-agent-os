@@ -29,6 +29,13 @@ try {
     path.join(source, "hermes_cli", "main.py"),
     "print('builder fixture')\n"
   );
+  fs.mkdirSync(path.join(source, "apps", "desktop", "'", "var"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(source, "apps", "desktop", "'", "var", "fixture"),
+    "non-runtime upstream fixture\n"
+  );
   execFileSync("git", ["init", "--quiet", source]);
   execFileSync("git", [
     "-C",
@@ -138,6 +145,10 @@ try {
     assert.equal(
       fs.existsSync(path.join(output, manifest.runtime.site_packages_path)),
       true
+    );
+    assert.equal(
+      fs.existsSync(path.join(output, "core", "apps", "desktop", "'")),
+      false
     );
     console.log("Hermes core artifact builder test passed.");
   }

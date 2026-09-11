@@ -143,6 +143,7 @@ function copyTree(source, target, sourceRoot = source) {
   if (metadata.isDirectory()) {
     fs.mkdirSync(target, { mode: 0o755 });
     for (const name of fs.readdirSync(source).sort()) {
+      const relativeEntry = path.relative(sourceRoot, path.join(source, name));
       if (
         name === ".git" ||
         name === ".venv" ||
@@ -152,7 +153,8 @@ function copyTree(source, target, sourceRoot = source) {
         name === "node_modules" ||
         name === "__pycache__" ||
         name === ".pytest_cache" ||
-        (source === sourceRoot && name === "contributors")
+        (source === sourceRoot && name === "contributors") ||
+        relativeEntry === "apps/desktop/'"
       ) {
         continue;
       }
