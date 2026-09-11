@@ -9,7 +9,7 @@ import YAML from "yaml";
 
 const repoRoot = process.cwd();
 const packageRoot = path.join(repoRoot, "skills/qintopia-tools");
-const variants = ["erhua", "xiaoman", "wenyuange"];
+const variants = ["erhua", "huabaosi", "xiaoman", "wenyuange"];
 const requiredRegisteredTools = {
   erhua: [
     "qintopia_wenyuange_lookup",
@@ -20,6 +20,7 @@ const requiredRegisteredTools = {
     "qintopia_erhua_csv_query",
     "qintopia_daily_digest_publish",
   ],
+  huabaosi: [],
   xiaoman: [
     "qintopia_wenyuange_lookup",
     "qintopia_weather_lookup",
@@ -95,6 +96,9 @@ for (const variant of variants) {
   }
   if (variant === "xiaoman" && !pluginYaml.includes("- pre_gateway_dispatch")) {
     errors.push("xiaoman: plugin.yaml must declare pre_gateway_dispatch");
+  }
+  if (variant === "huabaosi" && !pluginYaml.includes("- pre_tool_call")) {
+    errors.push("huabaosi: plugin.yaml must declare pre_tool_call");
   }
   if (variant === "xiaoman") {
     for (const envName of [
@@ -194,6 +198,8 @@ missing = sorted(required - set(ctx.names))
 assert not missing, missing
 if "${variant}" == "xiaoman":
     assert "pre_gateway_dispatch" in ctx.hooks
+if "${variant}" == "huabaosi":
+    assert "pre_tool_call" in ctx.hooks
 `,
       ],
       {
@@ -216,35 +222,36 @@ if "${variant}" == "xiaoman":
   }
 
   let tempRoot;
-  try {
-    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `qintopia-tools-${variant}-`));
-    const pluginsDir = path.join(tempRoot, "plugins");
-    fs.mkdirSync(path.join(pluginsDir, "qintopia-tools"), { recursive: true });
-    fs.copyFileSync(
-      path.join(repoRoot, variantPath),
-      path.join(pluginsDir, "qintopia-tools", "__init__.py")
-    );
-    fs.cpSync(
-      path.join(repoRoot, "skills/qintopia-weather"),
-      path.join(pluginsDir, "qintopia-weather"),
-      { recursive: true }
-    );
-    fs.cpSync(
-      path.join(repoRoot, "skills/knowledge-retrieval"),
-      path.join(pluginsDir, "knowledge-retrieval"),
-      { recursive: true }
-    );
-    fs.cpSync(
-      path.join(repoRoot, "skills/erhua-csv"),
-      path.join(pluginsDir, "erhua-csv"),
-      { recursive: true }
-    );
+  if (variant !== "huabaosi")
+    try {
+      tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `qintopia-tools-${variant}-`));
+      const pluginsDir = path.join(tempRoot, "plugins");
+      fs.mkdirSync(path.join(pluginsDir, "qintopia-tools"), { recursive: true });
+      fs.copyFileSync(
+        path.join(repoRoot, variantPath),
+        path.join(pluginsDir, "qintopia-tools", "__init__.py")
+      );
+      fs.cpSync(
+        path.join(repoRoot, "skills/qintopia-weather"),
+        path.join(pluginsDir, "qintopia-weather"),
+        { recursive: true }
+      );
+      fs.cpSync(
+        path.join(repoRoot, "skills/knowledge-retrieval"),
+        path.join(pluginsDir, "knowledge-retrieval"),
+        { recursive: true }
+      );
+      fs.cpSync(
+        path.join(repoRoot, "skills/erhua-csv"),
+        path.join(pluginsDir, "erhua-csv"),
+        { recursive: true }
+      );
 
-    execFileSync(
-      "python3",
-      [
-        "-c",
-        `
+      execFileSync(
+        "python3",
+        [
+          "-c",
+          `
 import importlib.util
 import json
 import pathlib
@@ -287,33 +294,33 @@ if "qintopia_complaint_intake_create" in ctx.tools:
     for item in forbidden:
         assert item not in payload_text, payload_text
 `,
-      ],
-      {
-        cwd: tempRoot,
-        env: {
-          ...process.env,
-          PYTHONDONTWRITEBYTECODE: "1",
-          QINTOPIA_PROFILE_ID: variant,
-          QINTOPIA_DIFY_RAW_TOOLS_ENABLE: "",
-          QINTOPIA_MESSAGE_STORE_ENABLE: "",
-          QINTOPIA_AGENT_OS_SKILLS_DIR: "",
-          QINTOPIA_AGENT_OS_RELEASE_DIR: "",
-          QINTOPIA_AGENT_OS_MONOREPO_DIR: "",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
+        ],
+        {
+          cwd: tempRoot,
+          env: {
+            ...process.env,
+            PYTHONDONTWRITEBYTECODE: "1",
+            QINTOPIA_PROFILE_ID: variant,
+            QINTOPIA_DIFY_RAW_TOOLS_ENABLE: "",
+            QINTOPIA_MESSAGE_STORE_ENABLE: "",
+            QINTOPIA_AGENT_OS_SKILLS_DIR: "",
+            QINTOPIA_AGENT_OS_RELEASE_DIR: "",
+            QINTOPIA_AGENT_OS_MONOREPO_DIR: "",
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        }
+      );
+    } catch (error) {
+      errors.push(
+        `missing operations-intake smoke failed for ${variant}: ${
+          error.stderr?.toString() ?? error
+        }`
+      );
+    } finally {
+      if (tempRoot) {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
       }
-    );
-  } catch (error) {
-    errors.push(
-      `missing operations-intake smoke failed for ${variant}: ${
-        error.stderr?.toString() ?? error
-      }`
-    );
-  } finally {
-    if (tempRoot) {
-      fs.rmSync(tempRoot, { recursive: true, force: true });
     }
-  }
 
   if (variant === "erhua") {
     let missingCsvRoot;
