@@ -8,6 +8,7 @@ allowed_targets:
   - hermes-silaoshi
   - hermes-huabaosi
   - hermes-guanerye
+  - hermes-core
 
 no_restart_paths:
   - "*.md"
@@ -123,6 +124,15 @@ rules:
     reason: Guanerye engineering profile behavior.
     paths:
       - "agents/guanerye/**"
+
+  - target: hermes-core
+    reason: Independent official Hermes core artifact, runtime, and release transaction.
+    paths:
+      - "runtime/hermes/core-release-contracts/**"
+      - "runtime/hermes/hermes-core-launcher.py"
+      - "runtime/hermes/profile-registry.yaml"
+      - "tools/deploy/*hermes-core*"
+      - "deploy/runner/*hermes-core*"
 
   - target: qintopia-system-services
     reason:

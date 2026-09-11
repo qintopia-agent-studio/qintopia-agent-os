@@ -6,6 +6,9 @@ import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const repoRoot = process.cwd();
 const bundleName = "qintopia-agent-os-deploy-bundle";
@@ -16,6 +19,20 @@ const archiveName = `${bundleName}.tar.gz`;
 const archivePath = path.join(bundleDir, archiveName);
 const manifestPath = path.join(bundleDir, "artifact-manifest.json");
 const checksumPath = path.join(bundleDir, "SHA256SUMS");
+const vendoredYamlVersion = "2.9.0";
+const vendoredYamlRoot = fs.realpathSync(
+  path.dirname(require.resolve("yaml/package.json"))
+);
+const vendoredYamlPackage = JSON.parse(
+  fs.readFileSync(path.join(vendoredYamlRoot, "package.json"), "utf8")
+);
+if (
+  vendoredYamlPackage.name !== "yaml" ||
+  vendoredYamlPackage.version !== vendoredYamlVersion ||
+  Object.keys(vendoredYamlPackage.dependencies ?? {}).length !== 0
+) {
+  throw new Error("deploy bundle requires dependency-free yaml@2.9.0");
+}
 
 const sourceFiles = [
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
@@ -127,12 +144,29 @@ const sourceFiles = [
   "deploy/sidecar/docs/m9f-legacy-reference-removal.md",
   "deploy/sidecar/docs/systemd-cutover-plan.md",
   "deploy/runner/README.md",
+  "deploy/runner/check-hermes-core-readiness.sh",
+  "deploy/runner/check-hermes-wecom-readiness.sh",
+  "deploy/runner/check-hermes-wecom-parity.sh",
+  "deploy/runner/fetch-hermes-core-artifact.sh",
+  "deploy/runner/bootstrap-hermes-core-root.sh",
+  "deploy/runner/plan-hermes-core-release.sh",
+  "deploy/runner/stage-hermes-core-release.sh",
+  "deploy/runner/install-hermes-core-systemd-units.sh",
+  "deploy/runner/qintopia-hermes-core-launcher",
+  "deploy/runner/run-hermes-core-release.sh",
   "agents/erhua/config.template.yaml",
   "runtime/hermes/render_profile_overlay.py",
   "runtime/hermes/migrate_erhua_livecool_env.py",
   "runtime/hermes/profile_transaction.py",
   "runtime/hermes/verify_runtime_provider.py",
   "runtime/hermes/validate_hermes_python.py",
+  "runtime/hermes/profile-registry.yaml",
+  "runtime/hermes/core-release-contracts/artifact-manifest.schema.json",
+  "runtime/hermes/core-release-contracts/build-receipt.schema.json",
+  "runtime/hermes/core-release-contracts/lineage.schema.json",
+  "runtime/hermes/core-release-contracts/transaction-journal.schema.json",
+  "runtime/hermes/core-release-contracts/update-receipt.schema.json",
+  "runtime/hermes/core-release-contracts/validation-summary.schema.json",
   "runtime/hermes/cron/reviewed-cron-jobs.json",
   "runtime/nginx/templates/qiwe-webhook.location.conf.template",
   "runtime/nginx/templates/qiwe-webhook.disabled.conf",
@@ -160,6 +194,18 @@ const sourceFiles = [
   "deploy/runner/qintopia-agent-os-deploy-runner.service",
   "deploy/runner/qintopia-agent-os-deploy-runner.timer",
   "tools/deploy/collect-release-deploy-results.mjs",
+  "tools/deploy/hermes-profile-registry.mjs",
+  "tools/deploy/check-hermes-wecom-readiness.mjs",
+  "tools/deploy/check-hermes-wecom-parity.mjs",
+  "tools/deploy/verify-hermes-core-artifact.mjs",
+  "tools/deploy/extract-hermes-core-artifact.py",
+  "tools/deploy/bootstrap-hermes-core-root.mjs",
+  "tools/deploy/plan-hermes-core-release.mjs",
+  "tools/deploy/stage-hermes-core-release.mjs",
+  "tools/deploy/commit-hermes-core-lineage.mjs",
+  "tools/deploy/run-hermes-core-release-transaction.mjs",
+  "tools/deploy/render-hermes-core-systemd-unit.mjs",
+  "tools/deploy/run-hermes-core-release-production.mjs",
   "tools/deploy/build-erhua-member-recognition-canary-evidence.mjs",
   "tools/deploy/build-erhua-member-recognition-canary-mcp-input.mjs",
   "tools/deploy/build-erhua-member-recognition-roster-audit.mjs",
@@ -279,26 +325,67 @@ const toolOutput = (command, args, fallback = "") => {
   }
 };
 
-const copyFile = (relativePath) => {
-  const sourcePath = path.join(repoRoot, relativePath);
+const copyPayloadFile = (sourcePath, targetRelativePath, sourceLabel) => {
   if (!fs.existsSync(sourcePath)) {
-    throw new Error(`deploy bundle source file not found: ${relativePath}`);
+    throw new Error(`deploy bundle source file not found: ${sourceLabel}`);
+  }
+  const metadata = fs.lstatSync(sourcePath);
+  if (metadata.isSymbolicLink() || !metadata.isFile()) {
+    throw new Error(`deploy bundle source must be a regular file: ${sourceLabel}`);
   }
 
-  const targetPath = path.join(payloadDir, relativePath);
+  const targetPath = path.join(payloadDir, ...targetRelativePath.split("/"));
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.copyFileSync(sourcePath, targetPath);
 
-  const mode = fs.statSync(sourcePath).mode & 0o777;
+  const mode = metadata.mode & 0o777;
   fs.chmodSync(targetPath, mode);
 
   return {
-    path: `payload/${relativePath}`,
-    source_path: relativePath,
+    path: `payload/${targetRelativePath}`,
+    source_path: sourceLabel,
     sha256: sha256File(targetPath),
     size_bytes: fs.statSync(targetPath).size,
     mode: mode.toString(8).padStart(4, "0"),
   };
+};
+
+const copyFile = (relativePath) =>
+  copyPayloadFile(path.join(repoRoot, relativePath), relativePath, relativePath);
+
+const collectVendoredYamlFiles = () => {
+  const discovered = [];
+  const walk = (directoryPath, relativeDirectory = "") => {
+    for (const entry of fs.readdirSync(directoryPath, { withFileTypes: true })) {
+      const absolutePath = path.join(directoryPath, entry.name);
+      const relativePath = path.posix.join(relativeDirectory, entry.name);
+      const metadata = fs.lstatSync(absolutePath);
+      if (metadata.isSymbolicLink()) {
+        throw new Error("vendored yaml package must not contain symlinks");
+      }
+      if (metadata.isDirectory()) {
+        walk(absolutePath, relativePath);
+      } else if (metadata.isFile()) {
+        discovered.push(relativePath);
+      } else {
+        throw new Error("vendored yaml package must contain only regular files");
+      }
+    }
+  };
+  walk(vendoredYamlRoot);
+  return discovered.sort();
+};
+
+const copyVendoredYamlFile = (relativePath) => {
+  const sourcePath = path.resolve(vendoredYamlRoot, ...relativePath.split("/"));
+  if (!sourcePath.startsWith(`${vendoredYamlRoot}${path.sep}`)) {
+    throw new Error("vendored yaml path escaped package root");
+  }
+  return copyPayloadFile(
+    sourcePath,
+    `node_modules/yaml/${relativePath}`,
+    `dependency:yaml@${vendoredYamlVersion}/${relativePath}`
+  );
 };
 
 const collectDirectoryFiles = (relativeDir) => {
@@ -334,9 +421,10 @@ const branch =
 fs.rmSync(bundleDir, { recursive: true, force: true });
 fs.mkdirSync(payloadDir, { recursive: true });
 
-const files = [...sourceFiles, ...sourceDirs.flatMap(collectDirectoryFiles)].map(
-  copyFile
-);
+const files = [
+  ...[...sourceFiles, ...sourceDirs.flatMap(collectDirectoryFiles)].map(copyFile),
+  ...collectVendoredYamlFiles().map(copyVendoredYamlFile),
+];
 
 run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"]);
 const archiveSha256 = sha256File(archivePath);
@@ -372,6 +460,9 @@ const manifest = {
   files,
   validation: {
     required_workflow_jobs: ["check", "deploy-bundle-artifact"],
+    runtime_node_dependencies: [
+      { name: "yaml", version: vendoredYamlVersion, dependencies: [] },
+    ],
     paired_runtime_artifact:
       "M9-F must also name an approved sidecar runtime artifact SHA; deploy bundle does not contain the runtime binary.",
     server_verification: [

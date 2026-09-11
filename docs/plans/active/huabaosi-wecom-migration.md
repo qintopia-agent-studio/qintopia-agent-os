@@ -3,6 +3,12 @@
 Status: phase 5 code merged; server patch extracted; staging artifact now compiles the
 canary gateway; staging canary and phase 6 pending
 
+This plan is governed by [Hermes core detachment](hermes-core-detachment.md). The latest
+read-only review found no successful Hermes WeCom connection or inbound message in the
+retained 30-day journal window, but that does not authorize disabling or deleting the
+configured WeCom path. Phase 6 must preserve the current profile configuration while
+moving its behavior into reviewed release-managed boundaries.
+
 Scope: 阿亮画报师 / Huabaosi WeCom conversation gateway migration into this
 monorepo-managed Agent OS release flow.
 

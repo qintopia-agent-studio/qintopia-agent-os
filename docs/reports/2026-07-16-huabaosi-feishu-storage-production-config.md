@@ -4,8 +4,8 @@ Date: 2026-07-16
 
 ## Observation
 
-The production host `paxon-server` was inspected through SSH without printing secrets.
-The active release symlink pointed at
+The production host was inspected through SSH without printing secrets. The active
+release symlink pointed at
 `/home/ubuntu/qintopia-agent-os-releases/a7c9d9cd06cabbf73c5826de816194fe41c691dc`. The
 Huabaosi image-generation timer was still `disabled` and `inactive`.
 

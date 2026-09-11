@@ -1,12 +1,12 @@
 # Xiaoman Activity Read-Through Production Recovery
 
-Date: 2026-07-17 Server: `paxon-server` Scope: Xiaoman
+Date: 2026-07-17 Server: production host Scope: Xiaoman
 `qintopia_xiaoman_activity_list_by_date` read-through for Feishu Base activity records.
 
 ## Summary
 
 GitHub Release `v0.2.12` contained the Xiaoman activity read-through code from
-`fix: xiaoman activity read-through records (#163)`, but `paxon-server` was still
+`fix: xiaoman activity read-through records (#163)`, but the production host was still
 serving the previous production release (`v0.2.11`). Xiaoman therefore continued to
 return a worker-command preview instead of actual Feishu activity records.
 
@@ -30,13 +30,13 @@ The tool had not read Feishu Base records in that session. It had returned an
 - The published Release included #163, which added read-through output for
   `record_count`, `records`, and `summaries`.
 - The automatic `Deploy Production` workflow for `v0.2.12` failed.
-- `paxon-server` remained on release `a7c9d9cd06cabbf73c5826de816194fe41c691dc`
+- The production host remained on release `a7c9d9cd06cabbf73c5826de816194fe41c691dc`
   (`v0.2.11`).
 - Xiaoman's production `.env` was missing the read-through and Feishu Base runtime
   flags.
 - The profile-local Xiaoman `qintopia-tools` plugin was not yet using the `v0.2.12`
   release variant.
-- After a deploy-bundle / Hermes-plugin-only deployment, `paxon-server` switched
+- After a deploy-bundle / Hermes-plugin-only deployment, the production host switched
   `current` to `53b893c7bf5ff7411f1ac314329a882169312442`, while keeping the approved
   production sidecar runtime from `v0.2.11`.
 - The first runtime check then failed with
@@ -52,7 +52,7 @@ Publishing a GitHub Release created the version record, but production still dep
 the deploy runner consuming a signed deploy request from COS and switching
 `/home/ubuntu/qintopia-agent-os-releases/current`.
 
-The Release existed, but `paxon-server` was still on `v0.2.11`.
+The Release existed, but the production host was still on `v0.2.11`.
 
 ### Production Deploy Failed On The Deployed Runner's Old Sidecar Feature Allowlist
 
@@ -117,7 +117,7 @@ The production recovery avoided hot-copying source files or building on the serv
 3. Kept the already-approved production runtime artifact:
    `a7c9d9cd06cabbf73c5826de816194fe41c691dc`.
 4. Restarted only `hermes-xiaoman`.
-5. Confirmed `paxon-server` `current` now points to
+5. Confirmed the production host `current` now points to
    `53b893c7bf5ff7411f1ac314329a882169312442`.
 6. Confirmed Xiaoman's profile plugin is a symlink to:
 
@@ -133,7 +133,7 @@ The production recovery avoided hot-copying source files or building on the serv
 
 ## Verification
 
-The controlled Xiaoman tool was executed on `paxon-server` for `2026-07-17` with
+The controlled Xiaoman tool was executed on the production host for `2026-07-17` with
 `table_role=activity_occurrence` and `timezone=Asia/Shanghai`.
 
 Result:
@@ -190,7 +190,7 @@ The code path was correct in `v0.2.12`, but the production feature depends on se
 independent layers being true at the same time:
 
 - the GitHub Release must exist;
-- the deploy runner must successfully promote that release on `paxon-server`;
+- the deploy runner must successfully promote that release on the production host;
 - Xiaoman's live Hermes profile must load the release plugin, not a stale local copy;
 - the profile environment must enable read-through and Feishu Base mode;
 - the worker binary must be the canonical release-local binary;
@@ -207,7 +207,7 @@ to the required runtime state.
 - When a Release changes production sidecar feature policy and deploy-runner validation
   in the same commit, deploy the `deploy-bundle` / runner validation first or run a
   dry-run that proves the current server runner can fetch the new sidecar artifact.
-- Add a release acceptance check that verifies `paxon-server` `current` equals the
+- Add a release acceptance check that verifies the production host `current` equals the
   target Release SHA before declaring a feature live.
 - Add a Xiaoman read-through acceptance check after each relevant deployment:
   `read_through=true`, `requires_local_execution=false`, and sanitized
@@ -233,7 +233,7 @@ deploy_bundle_sha=53b893c7bf5ff7411f1ac314329a882169312442
 
 Result: passed.
 
-The `paxon-server` deploy runner downloaded the `v0.2.12` sidecar artifact from COS,
+The production host deploy runner downloaded the `v0.2.12` sidecar artifact from COS,
 validated SHA256SUMS, accepted the production Cargo feature set, downloaded the deploy
 bundle, and assembled the dry-run staging release without switching `current`.
 

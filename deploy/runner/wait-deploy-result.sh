@@ -252,6 +252,20 @@ def validation_failed_result(result):
     return False
 
 
+def hermes_core_request_identity(request):
+    core = request.get("hermes_core_release")
+    if request.get("release_scope") != ["hermes-core-release"] or not isinstance(core, dict):
+        return None
+    required = (
+        "tag", "commit_sha", "source_archive_sha256",
+        "artifact_identity_sha256", "artifact_manifest_sha256",
+        "previous_commit_sha",
+    )
+    if any(not isinstance(core.get(key), str) or not core.get(key) for key in required):
+        raise SystemExit("Hermes core validation failure has no trusted identity")
+    return core
+
+
 with open(sys.argv[1], encoding="utf-8") as fh:
     result = json.load(fh)
 with open(sys.argv[2], encoding="utf-8") as fh:
@@ -302,20 +316,45 @@ if result.get("request_id") != sys.argv[3]:
 if result.get("environment") != "production":
     raise SystemExit("deploy result environment mismatch")
 
-expected_identity = normalized_identity(request) if validation_failed_result(result) else request
-for key in (
-    "release_sha",
-    "commit_sha",
-    "runtime_sha",
-    "runtime_artifact_profile",
-    "deploy_bundle_sha",
-):
-    if result.get(key) != expected_identity.get(key):
-        raise SystemExit(f"deploy result {key} mismatch")
-if result.get("release_scope") != expected_identity.get("release_scope"):
-    raise SystemExit("deploy result release_scope mismatch")
-if result.get("restart_targets") != expected_identity.get("restart_targets"):
-    raise SystemExit("deploy result restart_targets mismatch")
+if validation_failed_result(result) and result.get("validation_failure") is True:
+    expected_identity = None
+elif validation_failed_result(result) and request.get("release_scope") == ["hermes-core-release"]:
+    core = hermes_core_request_identity(request)
+    result_core = result.get("hermes_core")
+    if not isinstance(result_core, dict):
+        raise SystemExit("deploy result Hermes core identity is missing")
+    for key in (
+        "tag", "commit_sha", "source_archive_sha256",
+        "artifact_identity_sha256", "artifact_manifest_sha256",
+        "previous_commit_sha",
+    ):
+        if result_core.get(key) != core.get(key):
+            raise SystemExit(f"deploy result hermes_core {key} mismatch")
+    if result_core.get("new_version") is not None or result_core.get("transaction_status") != "failed":
+        raise SystemExit("deploy result Hermes core validation failure shape is invalid")
+    expected_identity = request
+else:
+    expected_identity = normalized_identity(request) if validation_failed_result(result) else request
+
+if expected_identity is None:
+    if result.get("release_scope") != ["production-observation"]:
+        raise SystemExit("validation failure result scope is invalid")
+    if result.get("restart_targets") != ["qintopia-system-services"]:
+        raise SystemExit("validation failure result restart target is invalid")
+else:
+    for key in (
+        "release_sha",
+        "commit_sha",
+        "runtime_sha",
+        "runtime_artifact_profile",
+        "deploy_bundle_sha",
+    ):
+        if result.get(key) != expected_identity.get(key):
+            raise SystemExit(f"deploy result {key} mismatch")
+    if result.get("release_scope") != expected_identity.get("release_scope"):
+        raise SystemExit("deploy result release_scope mismatch")
+    if result.get("restart_targets") != expected_identity.get("restart_targets"):
+        raise SystemExit("deploy result restart_targets mismatch")
 
 print(result.get("status", ""))
 PY

@@ -46,7 +46,7 @@ EXPECTED_OVERLAY = {
         },
         "channel": {
             "wecom": {
-                "enabled": True,
+                "enabled": False,
             },
         },
         "custom_provider": {
@@ -309,8 +309,8 @@ def verify_command(args: argparse.Namespace) -> None:
     if not isinstance(channel, dict):
         raise ValueError("rendered config channel must be a mapping")
     wecom = channel.get("wecom")
-    if not isinstance(wecom, dict) or wecom.get("enabled") is not True:
-        raise ValueError("rendered config must enable the WeCom channel")
+    if not isinstance(wecom, dict) or wecom.get("enabled") is not False:
+        raise ValueError("rendered config must preserve the disabled WeCom channel")
     forbidden = set(provider) & FORBIDDEN_PROVIDER_FIELDS
     if forbidden:
         raise ValueError(

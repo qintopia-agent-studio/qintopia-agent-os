@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import YAML from "yaml";
+import { loadHermesProfileRegistry } from "../deploy/hermes-profile-registry.mjs";
 
 const repoRoot = process.cwd();
 const errors = [];
@@ -23,6 +24,19 @@ const readJson = (relativePath) => JSON.parse(readText(relativePath));
 const erhuaWeatherBroadcastPath =
   "skills/qintopia-weather/scripts/qintopia-erhua-weather-broadcast.py";
 
+let erhuaExpectedWecomEnabled = null;
+try {
+  const erhuaProfile = loadHermesProfileRegistry().find(
+    (profile) => profile.id === "erhua"
+  );
+  if (erhuaProfile === undefined) {
+    throw new Error("Erhua profile missing");
+  }
+  erhuaExpectedWecomEnabled = erhuaProfile.wecom.expected_enabled;
+} catch {
+  addError("runtime/hermes/profile-registry.yaml: invalid Hermes profile registry");
+}
+
 if (exists("agents/erhua/config.template.yaml")) {
   const overlay = readYaml("agents/erhua/config.template.yaml");
   const expected = {
@@ -35,7 +49,7 @@ if (exists("agents/erhua/config.template.yaml")) {
       },
       channel: {
         wecom: {
-          enabled: true,
+          enabled: erhuaExpectedWecomEnabled,
         },
       },
       custom_provider: {
@@ -341,6 +355,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "runtime/hermes/profile_transaction.py",
     "runtime/hermes/verify_runtime_provider.py",
     "runtime/hermes/validate_hermes_python.py",
+    "runtime/hermes/profile-registry.yaml",
+    "tools/deploy/hermes-profile-registry.mjs",
   ]) {
     if (!deployBundle.includes(required)) {
       addError(

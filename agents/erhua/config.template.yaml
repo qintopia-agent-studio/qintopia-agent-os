@@ -6,7 +6,7 @@ managed:
     base_url: ""
   channel:
     wecom:
-      enabled: true
+      enabled: false
   custom_provider:
     name: Livecool.net
     base_url: https://livecool.net/v1

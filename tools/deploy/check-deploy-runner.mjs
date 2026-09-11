@@ -55,6 +55,16 @@ const requiredFiles = [
   ".github/workflows/retire-production-legacy-crons.yml",
   ".github/workflows/run-production-runtime-one-shot.yml",
   "deploy/runner/README.md",
+  "deploy/runner/check-hermes-core-readiness.sh",
+  "deploy/runner/check-hermes-wecom-readiness.sh",
+  "deploy/runner/check-hermes-wecom-parity.sh",
+  "deploy/runner/fetch-hermes-core-artifact.sh",
+  "deploy/runner/bootstrap-hermes-core-root.sh",
+  "deploy/runner/plan-hermes-core-release.sh",
+  "deploy/runner/stage-hermes-core-release.sh",
+  "deploy/runner/install-hermes-core-systemd-units.sh",
+  "deploy/runner/qintopia-hermes-core-launcher",
+  "deploy/runner/run-hermes-core-release.sh",
   "deploy/runner/manifest.yaml",
   "deploy/runner/deploy-request.schema.json",
   "deploy/runner/deploy-result.schema.json",
@@ -63,6 +73,12 @@ const requiredFiles = [
   "deploy/runner/qintopia-agent-os-deploy-runner",
   "deploy/runner/activate-erhua-profile.sh",
   "runtime/hermes/validate_hermes_python.py",
+  "runtime/hermes/core-release-contracts/artifact-manifest.schema.json",
+  "runtime/hermes/core-release-contracts/build-receipt.schema.json",
+  "runtime/hermes/core-release-contracts/lineage.schema.json",
+  "runtime/hermes/core-release-contracts/transaction-journal.schema.json",
+  "runtime/hermes/core-release-contracts/update-receipt.schema.json",
+  "runtime/hermes/core-release-contracts/validation-summary.schema.json",
   "deploy/runner/poll-deploy-requests.sh",
   "deploy/runner/promote-release.sh",
   "deploy/runner/rollback-release.sh",
@@ -76,6 +92,30 @@ const requiredFiles = [
   "deploy/sidecar/scripts/render-systemd-units.sh",
   "tools/deploy/create-deploy-request.mjs",
   "tools/deploy/collect-release-deploy-results.mjs",
+  "tools/deploy/hermes-profile-registry.mjs",
+  "tools/deploy/test-hermes-profile-registry.mjs",
+  "tools/deploy/check-hermes-wecom-readiness.mjs",
+  "tools/deploy/test-hermes-wecom-readiness.mjs",
+  "tools/deploy/check-hermes-wecom-parity.mjs",
+  "tools/deploy/test-hermes-wecom-parity.mjs",
+  "tools/deploy/verify-hermes-core-artifact.mjs",
+  "tools/deploy/test-hermes-core-artifact-verifier.mjs",
+  "tools/deploy/extract-hermes-core-artifact.py",
+  "tools/deploy/test-extract-hermes-core-artifact.mjs",
+  "tools/deploy/test-fetch-hermes-core-artifact.mjs",
+  "tools/deploy/bootstrap-hermes-core-root.mjs",
+  "tools/deploy/test-bootstrap-hermes-core-root.mjs",
+  "tools/deploy/plan-hermes-core-release.mjs",
+  "tools/deploy/stage-hermes-core-release.mjs",
+  "tools/deploy/commit-hermes-core-lineage.mjs",
+  "tools/deploy/run-hermes-core-release-transaction.mjs",
+  "tools/deploy/render-hermes-core-systemd-unit.mjs",
+  "tools/deploy/run-hermes-core-release-production.mjs",
+  "tools/deploy/test-hermes-core-release-transaction.mjs",
+  "tools/deploy/test-hermes-core-release-production.mjs",
+  "tools/deploy/test-plan-hermes-core-release.mjs",
+  "tools/deploy/test-hermes-core-systemd-unit.mjs",
+  "tools/deploy/test-deploy-bundle-runtime-dependencies.mjs",
   "tools/deploy/resolve-release-deploy-base.mjs",
   "tools/deploy/validate-legacy-runner-bootstrap.mjs",
   "tools/deploy/resolve-release-restart-targets.mjs",
@@ -358,6 +398,42 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     })
   ) {
     addError("deploy request schema must reject unbounded release rollback fields");
+  }
+  const hermesCoreRequest = { ...sampleRequest };
+  for (const key of [
+    "commit_sha",
+    "runtime_sha",
+    "runtime_artifact_profile",
+    "deploy_bundle_sha",
+    "release_sha",
+  ]) {
+    delete hermesCoreRequest[key];
+  }
+  hermesCoreRequest.release_scope = ["hermes-core-release"];
+  hermesCoreRequest.restart_targets = ["hermes-core"];
+  hermesCoreRequest.hermes_core_release = {
+    repository: "https://github.com/NousResearch/hermes-agent.git",
+    tag: "v3.0.0",
+    commit_sha: "1111111111111111111111111111111111111111",
+    source_archive_sha256: "a".repeat(64),
+    artifact_identity_sha256: "b".repeat(64),
+    artifact_manifest_sha256: "c".repeat(64),
+    previous_version: "2.9.0",
+    previous_commit_sha: "2222222222222222222222222222222222222222",
+    archive_sha256: "d".repeat(64),
+  };
+  if (!validateRequest(hermesCoreRequest)) {
+    addError("deploy request schema must accept fixed Hermes core release requests");
+  }
+  if (
+    validateRequest({
+      ...hermesCoreRequest,
+      commit_sha: sampleRequest.commit_sha,
+    })
+  ) {
+    addError(
+      "deploy request schema must reject mixed Hermes core and ordinary release fields"
+    );
   }
   const profileRequest = {
     ...sampleRequest,
@@ -877,6 +953,39 @@ if (exists("deploy/runner/deploy-result.schema.json")) {
   if (!validateResult(sampleResult)) {
     addError(
       `deploy/runner/deploy-result.schema.json: sample result failed validation ${JSON.stringify(
+        validateResult.errors
+      )}`
+    );
+  }
+  const hermesCoreResult = { ...sampleResult };
+  for (const key of [
+    "release_sha",
+    "commit_sha",
+    "runtime_sha",
+    "runtime_artifact_profile",
+    "deploy_bundle_sha",
+  ]) {
+    delete hermesCoreResult[key];
+  }
+  hermesCoreResult.status = "rolled_back";
+  hermesCoreResult.release_scope = ["hermes-core-release"];
+  hermesCoreResult.previous_sha = "";
+  hermesCoreResult.current_target = "";
+  hermesCoreResult.restart_targets = ["hermes-core"];
+  hermesCoreResult.rollback = { attempted: true, status: "succeeded" };
+  hermesCoreResult.hermes_core = {
+    tag: "v3.0.0",
+    commit_sha: "1111111111111111111111111111111111111111",
+    source_archive_sha256: "a".repeat(64),
+    artifact_identity_sha256: "b".repeat(64),
+    artifact_manifest_sha256: "c".repeat(64),
+    previous_commit_sha: "2222222222222222222222222222222222222222",
+    new_version: null,
+    transaction_status: "rolled_back",
+  };
+  if (!validateResult(hermesCoreResult)) {
+    addError(
+      `deploy/runner/deploy-result.schema.json: Hermes core result failed validation ${JSON.stringify(
         validateResult.errors
       )}`
     );
@@ -2098,6 +2207,56 @@ for (const fragment of [
   }
 }
 
+const hermesWecomParityText = exists("deploy/runner/check-hermes-wecom-parity.sh")
+  ? readText("deploy/runner/check-hermes-wecom-parity.sh")
+  : "";
+for (const fragment of [
+  "/home/ubuntu/.hermes",
+  "/home/ubuntu/.local/state/qintopia-agentos/hermes-core-staging",
+  "--candidate-home",
+  "/usr/bin/env -i",
+  "check-hermes-wecom-parity.mjs",
+]) {
+  if (!hermesWecomParityText.includes(fragment)) {
+    addError(`deploy/runner/check-hermes-wecom-parity.sh: missing ${fragment}`);
+  }
+}
+const hermesWecomParityCommands = stripCommentOnlyLines(hermesWecomParityText);
+for (const forbidden of [
+  "source ",
+  "systemctl ",
+  "git ",
+  "curl ",
+  "ssh ",
+  "rm ",
+  "mv ",
+]) {
+  if (hermesWecomParityCommands.includes(forbidden)) {
+    addError(
+      `deploy/runner/check-hermes-wecom-parity.sh: read-only parity contains ${forbidden}`
+    );
+  }
+}
+
+const hermesWecomParityCheckerText = exists(
+  "tools/deploy/check-hermes-wecom-parity.mjs"
+)
+  ? readText("tools/deploy/check-hermes-wecom-parity.mjs")
+  : "";
+for (const fragment of [
+  "loadHermesProfileRegistry",
+  'key.startsWith("WECOM_")',
+  "wecom_config_mismatch",
+  "wecom_env_mismatch",
+  "production_baseline_must_be_fixed",
+  "production_candidate_outside_staging_root",
+  "hermes_wecom_parity=",
+]) {
+  if (!hermesWecomParityCheckerText.includes(fragment)) {
+    addError(`tools/deploy/check-hermes-wecom-parity.mjs: missing ${fragment}`);
+  }
+}
+
 const quiesceCall = '"${RUNNER_DIR}/quiesce-space-automation-runtime.sh"';
 const quiesceCallIndex = runnerText.indexOf(quiesceCall);
 const promoteCallIndex = runnerText.indexOf('"${RUNNER_DIR}/promote-release.sh"');
@@ -2719,6 +2878,586 @@ for (const fragment of [
   }
 }
 
+const hermesCoreReadinessText = exists("deploy/runner/check-hermes-core-readiness.sh")
+  ? readText("deploy/runner/check-hermes-core-readiness.sh")
+  : "";
+for (const fragment of [
+  "NousResearch/hermes-agent",
+  "status --porcelain",
+  '[[ "$branch" != "main" ]]',
+  "@{upstream}",
+  "origin/main..HEAD",
+  "readonly MIN_FREE_KB=5242880",
+  '[[ "$exec_start" != *"$HERMES_PYTHON"* ]]',
+  "hermes_core_readiness=blocked",
+  "hermes_core_readiness=ready",
+  "hermes-profile-registry.mjs",
+  "--services",
+  '[[ "${#units[@]}" -ne 7 ]]',
+]) {
+  if (!hermesCoreReadinessText.includes(fragment)) {
+    addError(`deploy/runner/check-hermes-core-readiness.sh: missing ${fragment}`);
+  }
+}
+const hermesCoreReadinessCommands = stripCommentOnlyLines(hermesCoreReadinessText);
+for (const forbidden of [
+  "git fetch",
+  "systemctl restart",
+  "systemctl stop",
+  "rm -",
+  "mv ",
+]) {
+  if (hermesCoreReadinessCommands.includes(forbidden)) {
+    addError(
+      `deploy/runner/check-hermes-core-readiness.sh: read-only preflight contains ${forbidden}`
+    );
+  }
+}
+
+const hermesWecomReadinessText = exists("deploy/runner/check-hermes-wecom-readiness.sh")
+  ? readText("deploy/runner/check-hermes-wecom-readiness.sh")
+  : "";
+for (const fragment of [
+  "/home/ubuntu/.hermes",
+  "--staging-home",
+  "staging_home_is_production_home",
+  "/usr/bin/env -i",
+  "check-hermes-wecom-readiness.mjs",
+]) {
+  if (!hermesWecomReadinessText.includes(fragment)) {
+    addError(`deploy/runner/check-hermes-wecom-readiness.sh: missing ${fragment}`);
+  }
+}
+const hermesWecomReadinessCommands = stripCommentOnlyLines(hermesWecomReadinessText);
+for (const forbidden of [
+  "source ",
+  "systemctl ",
+  "git ",
+  "curl ",
+  "ssh ",
+  "rm ",
+  "mv ",
+]) {
+  if (hermesWecomReadinessCommands.includes(forbidden)) {
+    addError(
+      `deploy/runner/check-hermes-wecom-readiness.sh: read-only preflight contains ${forbidden}`
+    );
+  }
+}
+
+const hermesWecomCheckerText = exists("tools/deploy/check-hermes-wecom-readiness.mjs")
+  ? readText("tools/deploy/check-hermes-wecom-readiness.mjs")
+  : "";
+for (const fragment of [
+  "loadHermesProfileRegistry",
+  "profile_registry_invalid",
+  'bot_id: "WECOM_BOT_ID"',
+  'secret: "WECOM_SECRET"',
+  "uniqueKeys: true",
+  "config_symlink",
+  "env_symlink",
+  "hermes_wecom_readiness=",
+]) {
+  if (!hermesWecomCheckerText.includes(fragment)) {
+    addError(`tools/deploy/check-hermes-wecom-readiness.mjs: missing ${fragment}`);
+  }
+}
+
+const hermesProfileRegistryText = exists("runtime/hermes/profile-registry.yaml")
+  ? readText("runtime/hermes/profile-registry.yaml")
+  : "";
+for (const fragment of [
+  "schema_version: 1",
+  "id: default",
+  "systemd_user_service: hermes-gateway.service",
+  "id: erhua",
+  "systemd_user_service: hermes-gateway-erhua.service",
+  "id: guanerye",
+  "id: huabaosi",
+  "id: silaoshi",
+  "id: wenyuange",
+  "id: xiaoman",
+  "expected_enabled: true",
+  "expected_enabled: false",
+  "qiwe_platform:",
+  "preserve: true",
+]) {
+  if (!hermesProfileRegistryText.includes(fragment)) {
+    addError(`runtime/hermes/profile-registry.yaml: missing ${fragment}`);
+  }
+}
+
+const hermesCoreArtifactVerifierText = exists(
+  "tools/deploy/verify-hermes-core-artifact.mjs"
+)
+  ? readText("tools/deploy/verify-hermes-core-artifact.mjs")
+  : "";
+for (const fragment of [
+  "NousResearch/hermes-agent",
+  "expectedManifestSha256",
+  "artifact_identity_sha256",
+  "artifact_symlink_rejected",
+  "artifact_hardlink_rejected",
+  "artifact_inventory_mismatch",
+  "checksum_inventory_mismatch",
+  "hermes_core_artifact_verification=blocked",
+  "hermes_core_artifact_verification=ready",
+]) {
+  if (!hermesCoreArtifactVerifierText.includes(fragment)) {
+    addError(`tools/deploy/verify-hermes-core-artifact.mjs: missing ${fragment}`);
+  }
+}
+for (const forbidden of ['from "ajv', 'from "yaml"', "node_modules"]) {
+  if (hermesCoreArtifactVerifierText.includes(forbidden)) {
+    addError(
+      `tools/deploy/verify-hermes-core-artifact.mjs: production verifier contains runtime dependency ${forbidden}`
+    );
+  }
+}
+
+const hermesCoreFetchText = exists("deploy/runner/fetch-hermes-core-artifact.sh")
+  ? readText("deploy/runner/fetch-hermes-core-artifact.sh")
+  : "";
+for (const fragment of [
+  "readonly STATE_ROOT=/var/lib/qintopia-agent-os-deploy",
+  "readonly INGRESS_ROOT=",
+  "readonly COS_OBJECT_PREFIX=qintopia-agent-os/hermes-core",
+  "--expected-archive-sha256",
+  'object_key="${COS_OBJECT_PREFIX}/${expected_commit}/hermes-core-${expected_commit}.tar.gz"',
+  'exec 9<>"$INGRESS_LOCK"',
+  '"$FLOCK_BIN" -n 9',
+  "state_space_insufficient",
+  ".staging-${expected_commit}.XXXXXX",
+  "result_code=commit_uncertain",
+  "readonly MAX_ARCHIVE_BYTES=$((512 * 1024 * 1024))",
+  "readonly DOWNLOAD_TIMEOUT_SECONDS=600",
+  "readonly MAX_FAILED_QUARANTINES=2",
+  "readonly TIMEOUT_BIN=/usr/bin/timeout",
+  "readonly PRLIMIT_BIN=/usr/bin/prlimit",
+  "result_code=coscli_override_rejected",
+  "result_code=quarantine_capacity_reached",
+  "result_code=existing_artifact_commit_uncertain",
+  '--fsize="${MAX_ARCHIVE_BYTES}:${MAX_ARCHIVE_BYTES}"',
+]) {
+  if (!hermesCoreFetchText.includes(fragment)) {
+    addError(`deploy/runner/fetch-hermes-core-artifact.sh: missing ${fragment}`);
+  }
+}
+for (const forbidden of [
+  "--object-key",
+  "--archive-path",
+  "TENCENT_COS_PREFIX",
+  "systemctl",
+]) {
+  if (hermesCoreFetchText.includes(forbidden)) {
+    addError(`deploy/runner/fetch-hermes-core-artifact.sh: contains ${forbidden}`);
+  }
+}
+
+const hermesCoreExtractorText = exists("tools/deploy/extract-hermes-core-artifact.py")
+  ? readText("tools/deploy/extract-hermes-core-artifact.py")
+  : "";
+for (const fragment of [
+  "MAX_ARCHIVE_BYTES",
+  "MAX_UNCOMPRESSED_ARCHIVE_BYTES",
+  "MAX_EXTENDED_HEADER_TOTAL_BYTES",
+  "MAX_EXTENDED_HEADERS",
+  "_prescan_tar_headers",
+  "archive_digest_mismatch",
+  "archive_truncated",
+  "archive_link_rejected",
+  "archive_special_file_rejected",
+  "archive_sparse_rejected",
+  "archive_extension_total_invalid",
+  "archive_duplicate_path",
+  "os.O_EXCL",
+  "commit_uncertain",
+]) {
+  if (!hermesCoreExtractorText.includes(fragment)) {
+    addError(`tools/deploy/extract-hermes-core-artifact.py: missing ${fragment}`);
+  }
+}
+for (const forbidden of ["extractall(", "extract(", "subprocess", "systemctl"]) {
+  if (hermesCoreExtractorText.includes(forbidden)) {
+    addError(`tools/deploy/extract-hermes-core-artifact.py: contains ${forbidden}`);
+  }
+}
+
+const hermesCoreBootstrapText = exists("tools/deploy/bootstrap-hermes-core-root.mjs")
+  ? readText("tools/deploy/bootstrap-hermes-core-root.mjs")
+  : "";
+for (const fragment of [
+  'FIXED_CORE_ROOT = "/var/lib/qintopia-hermes-core"',
+  "FIXED_BOOTSTRAP_LOCK_PATH =",
+  'FIXED_PENDING_ROOT_NAME = ".qintopia-hermes-core.bootstrap.pending"',
+  "verifyCurrentReceiptBinding",
+  "bootstrap_commit_uncertain",
+  "bootstrap_quarantine_commit_uncertain",
+  "bootstrap_space_insufficient",
+  "legacyCheckoutTouched: false",
+  "serviceChanges: 0",
+]) {
+  if (!hermesCoreBootstrapText.includes(fragment)) {
+    addError(`tools/deploy/bootstrap-hermes-core-root.mjs: missing ${fragment}`);
+  }
+}
+for (const forbidden of ["systemctl", "child_process", "execFile", "spawn", "rmSync"]) {
+  if (hermesCoreBootstrapText.includes(forbidden)) {
+    addError(`tools/deploy/bootstrap-hermes-core-root.mjs: contains ${forbidden}`);
+  }
+}
+
+const hermesCoreBootstrapRunnerText = exists(
+  "deploy/runner/bootstrap-hermes-core-root.sh"
+)
+  ? readText("deploy/runner/bootstrap-hermes-core-root.sh")
+  : "";
+for (const fragment of [
+  "readonly STATE_ROOT=/var/lib/qintopia-agent-os-deploy",
+  "readonly FLOCK_BIN=/usr/bin/flock",
+  'exec 9<>"${LOCK_FILE}"',
+  '"${FLOCK_BIN}" -n 9',
+  "QINTOPIA_HERMES_CORE_BOOTSTRAP_LOCK_HELD=1",
+  "os.O_CREAT | os.O_EXCL",
+  "os.fsync(parent_descriptor)",
+  "lock_fd_identity=",
+  "/usr/bin/env -i",
+]) {
+  if (!hermesCoreBootstrapRunnerText.includes(fragment)) {
+    addError(`deploy/runner/bootstrap-hermes-core-root.sh: missing ${fragment}`);
+  }
+}
+
+const hermesCorePlannerText = exists("tools/deploy/plan-hermes-core-release.mjs")
+  ? readText("tools/deploy/plan-hermes-core-release.mjs")
+  : "";
+for (const fragment of [
+  'FIXED_CORE_ROOT = "/var/lib/qintopia-hermes-core"',
+  'FIXED_TRUSTED_PARENT = "/var/lib"',
+  "MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024",
+  "computeHermesCoreLineageFingerprint",
+  'path.join(lineageRoot, "active")',
+  "expectedTopLevelTarget = `lineage/active/${role}`",
+  "validateInheritedLock",
+  "manager_lock_not_held",
+  "candidate_lineage_binding_invalid",
+  "pointerChanges: 0",
+  "serviceChanges: 0",
+  "--dry-run",
+  "hermes_core_release_dry_run=ready",
+  "hermes_core_release_dry_run=blocked",
+]) {
+  if (!hermesCorePlannerText.includes(fragment)) {
+    addError(`tools/deploy/plan-hermes-core-release.mjs: missing ${fragment}`);
+  }
+}
+for (const forbidden of [
+  "--core-root",
+  "systemctl",
+  "child_process",
+  "execFile",
+  "spawn",
+  "rmSync",
+  "renameSync",
+  "symlinkSync",
+  'from "ajv',
+  'from "yaml"',
+]) {
+  if (hermesCorePlannerText.includes(forbidden)) {
+    addError(
+      `tools/deploy/plan-hermes-core-release.mjs: dry-run planner contains forbidden ${forbidden}`
+    );
+  }
+}
+
+const hermesCorePlanRunnerText = exists("deploy/runner/plan-hermes-core-release.sh")
+  ? readText("deploy/runner/plan-hermes-core-release.sh")
+  : "";
+for (const fragment of [
+  "readonly CORE_ROOT=/var/lib/qintopia-hermes-core",
+  "readonly FLOCK_BIN=/usr/bin/flock",
+  'exec 9<>"${LOCK_FILE}"',
+  '"${FLOCK_BIN}" -n 9',
+  "QINTOPIA_HERMES_CORE_LOCK_HELD=1",
+  "/usr/bin/env -i",
+]) {
+  if (!hermesCorePlanRunnerText.includes(fragment)) {
+    addError(`deploy/runner/plan-hermes-core-release.sh: missing ${fragment}`);
+  }
+}
+
+const hermesCoreStagerText = exists("tools/deploy/stage-hermes-core-release.mjs")
+  ? readText("tools/deploy/stage-hermes-core-release.mjs")
+  : "";
+for (const fragment of [
+  'FIXED_CORE_ROOT = "/var/lib/qintopia-hermes-core"',
+  '"/var/lib/qintopia-agent-os-deploy/hermes-core-ingress"',
+  "validateInheritedLock",
+  "verifyHermesCoreArtifact",
+  "COPYFILE_EXCL",
+  "fs.fsyncSync",
+  "fs.renameSync(temporaryPath, candidatePath)",
+  "quarantinePartial",
+  "candidate_quarantine_failed",
+  "candidate_quarantine_commit_uncertain",
+  "candidate_staging_commit_uncertain",
+  "alreadyStaged: true",
+  "pointerChanges: 0",
+  "serviceChanges: 0",
+  "--stage",
+  "hermes_core_candidate_staging=ready",
+  "hermes_core_candidate_staging=blocked",
+]) {
+  if (!hermesCoreStagerText.includes(fragment)) {
+    addError(`tools/deploy/stage-hermes-core-release.mjs: missing ${fragment}`);
+  }
+}
+for (const forbidden of [
+  "--core-root",
+  "--source",
+  "systemctl",
+  "child_process",
+  "execFile",
+  "spawn",
+  "rmSync",
+  "symlinkSync",
+  'from "ajv',
+  'from "yaml"',
+]) {
+  if (hermesCoreStagerText.includes(forbidden)) {
+    addError(
+      `tools/deploy/stage-hermes-core-release.mjs: stager contains forbidden ${forbidden}`
+    );
+  }
+}
+
+const hermesCoreStageRunnerText = exists("deploy/runner/stage-hermes-core-release.sh")
+  ? readText("deploy/runner/stage-hermes-core-release.sh")
+  : "";
+for (const fragment of [
+  "readonly CORE_ROOT=/var/lib/qintopia-hermes-core",
+  "readonly FLOCK_BIN=/usr/bin/flock",
+  'exec 9<>"${LOCK_FILE}"',
+  '"${FLOCK_BIN}" -n 9',
+  "QINTOPIA_HERMES_CORE_LOCK_HELD=1",
+  "/usr/bin/env -i",
+]) {
+  if (!hermesCoreStageRunnerText.includes(fragment)) {
+    addError(`deploy/runner/stage-hermes-core-release.sh: missing ${fragment}`);
+  }
+}
+
+const hermesCoreSystemdInstallerText = exists(
+  "deploy/runner/install-hermes-core-systemd-units.sh"
+)
+  ? readText("deploy/runner/install-hermes-core-systemd-units.sh")
+  : "";
+for (const fragment of [
+  "INSTALL_ROOT=/usr/local/libexec",
+  "qintopia-hermes-core-launcher",
+  "USER_UNIT_ROOT=/etc/systemd/user",
+  "--service-map",
+  "render-hermes-core-systemd-unit.mjs",
+  "20-qintopia-hermes-core.conf",
+  "chown root:root",
+  "chmod 0444",
+  "daemon-reload",
+  "hermes_core_systemd_install=ready",
+]) {
+  if (!hermesCoreSystemdInstallerText.includes(fragment)) {
+    addError(`deploy/runner/install-hermes-core-systemd-units.sh: missing ${fragment}`);
+  }
+}
+for (const forbidden of ["eval ", "bash -c", "ssh "]) {
+  if (hermesCoreSystemdInstallerText.includes(forbidden)) {
+    addError(
+      `deploy/runner/install-hermes-core-systemd-units.sh: contains ${forbidden}`
+    );
+  }
+}
+
+const hermesCoreSystemdRendererText = exists(
+  "tools/deploy/render-hermes-core-systemd-unit.mjs"
+)
+  ? readText("tools/deploy/render-hermes-core-systemd-unit.mjs")
+  : "";
+for (const fragment of [
+  "loadHermesProfileRegistry",
+  'FIXED_LAUNCHER = "/usr/local/libexec/qintopia-hermes-core-launcher"',
+  "ExecStart=",
+  "HERMES_HOME=/home/ubuntu/.hermes",
+]) {
+  if (!hermesCoreSystemdRendererText.includes(fragment)) {
+    addError(`tools/deploy/render-hermes-core-systemd-unit.mjs: missing ${fragment}`);
+  }
+}
+
+const hermesCoreProductionControllerText = exists(
+  "tools/deploy/run-hermes-core-release-production.mjs"
+)
+  ? readText("tools/deploy/run-hermes-core-release-production.mjs")
+  : "";
+for (const fragment of [
+  "executeHermesCoreReleaseTransaction",
+  "fetch-hermes-core-artifact.sh",
+  "stageHermesCoreRelease",
+  "install-hermes-core-systemd-units.sh",
+  "previous_commit_mismatch",
+  "previous_version_mismatch",
+  "QINTOPIA_HERMES_CORE_COMMIT",
+  "verifyHermesCoreLineage",
+  "commitHermesCoreLineage",
+  "restoreHermesCoreLineage",
+  "hermes_core_production=blocked",
+]) {
+  if (!hermesCoreProductionControllerText.includes(fragment)) {
+    addError(
+      `tools/deploy/run-hermes-core-release-production.mjs: missing ${fragment}`
+    );
+  }
+}
+if (
+  hermesCoreProductionControllerText.includes(
+    "executeHermesCoreReleaseTransactionForTest"
+  )
+) {
+  addError(
+    "tools/deploy/run-hermes-core-release-production.mjs: production must not call the test-only Hermes core transaction entry point"
+  );
+}
+for (const forbidden of [
+  "process.env.CORE_ROOT",
+  "--core-root",
+  "--service",
+  "shell: true",
+]) {
+  if (hermesCoreProductionControllerText.includes(forbidden)) {
+    addError(
+      `tools/deploy/run-hermes-core-release-production.mjs: contains ${forbidden}`
+    );
+  }
+}
+
+const hermesCoreProductionRunnerText = exists(
+  "deploy/runner/run-hermes-core-release.sh"
+)
+  ? readText("deploy/runner/run-hermes-core-release.sh")
+  : "";
+for (const fragment of [
+  "CORE_ROOT=/var/lib/qintopia-hermes-core",
+  "state/manager.lock",
+  "QINTOPIA_HERMES_CORE_LOCK_HELD=1",
+  '"$FLOCK_BIN" -n 9',
+  "run-hermes-core-release-production.mjs",
+]) {
+  if (!hermesCoreProductionRunnerText.includes(fragment)) {
+    addError(`deploy/runner/run-hermes-core-release.sh: missing ${fragment}`);
+  }
+}
+
+const hermesCoreLauncherText = exists("deploy/runner/qintopia-hermes-core-launcher")
+  ? readText("deploy/runner/qintopia-hermes-core-launcher")
+  : "";
+for (const fragment of [
+  "ACTIVE_GENERATION_LINK=",
+  "runtime/venv/bin/python",
+  "runtime/hermes-core-launcher.py",
+  "unset PYTHONPATH PYTHONHOME PYTHONINSPECT PYTHONSTARTUP VIRTUAL_ENV",
+  'exec "$runtime_python" -I "$runtime_launcher"',
+]) {
+  if (!hermesCoreLauncherText.includes(fragment)) {
+    addError(`deploy/runner/qintopia-hermes-core-launcher: missing ${fragment}`);
+  }
+}
+
+const hermesCoreLineageCommitText = exists(
+  "tools/deploy/commit-hermes-core-lineage.mjs"
+)
+  ? readText("tools/deploy/commit-hermes-core-lineage.mjs")
+  : "";
+for (const fragment of [
+  "commitHermesCoreLineage",
+  "verifyHermesCoreManagerLockBoundary",
+  "candidate_lineage_binding_invalid",
+  "release_install_commit_uncertain",
+  "generation_commit_uncertain",
+  "generation_quarantine_commit_uncertain",
+  "lineage_commit_uncertain",
+  "lineage_recovery_commit_uncertain",
+  "restoreHermesCoreLineage",
+  "lineage_rollback_identity_invalid",
+  "lineage_rollback_commit_uncertain",
+  'path.join(lineageRoot, ".active.pending")',
+  "pointerChanges: 1",
+  "serviceChanges: 0",
+]) {
+  if (!hermesCoreLineageCommitText.includes(fragment)) {
+    addError(`tools/deploy/commit-hermes-core-lineage.mjs: missing ${fragment}`);
+  }
+}
+
+const hermesCoreTransactionText = exists(
+  "tools/deploy/run-hermes-core-release-transaction.mjs"
+)
+  ? readText("tools/deploy/run-hermes-core-release-transaction.mjs")
+  : "";
+for (const fragment of [
+  "executeHermesCoreReleaseTransactionForTest",
+  "executeHermesCoreReleaseTransaction",
+  "loadHermesProfileRegistry",
+  'path.join(resolvedRoot, "state", "transactions")',
+  "rollback_stopping_candidate",
+  "rollback_restoring_lineage",
+  "rollback_starting_original",
+  "[...profiles].reverse()",
+  "hermes_core_transaction_rollback_failed",
+  "hermes_core_transaction_rollback_journal_uncertain",
+  "HermesCoreTransactionCrash",
+  "started_candidate_services",
+  "load_state",
+  "active_state",
+  "unit_file_state",
+  "restoreUnitFileState",
+  "exec_start_sha256",
+]) {
+  if (!hermesCoreTransactionText.includes(fragment)) {
+    addError(
+      `tools/deploy/run-hermes-core-release-transaction.mjs: missing ${fragment}`
+    );
+  }
+}
+for (const forbidden of [
+  "systemctl",
+  "child_process",
+  "execFile",
+  "spawn",
+  "runuser",
+  "process.argv",
+  "--service",
+  "--core-root",
+]) {
+  if (hermesCoreTransactionText.includes(forbidden)) {
+    addError(
+      `tools/deploy/run-hermes-core-release-transaction.mjs: repository-only coordinator contains forbidden ${forbidden}`
+    );
+  }
+}
+for (const forbidden of [
+  "systemctl",
+  "child_process",
+  "execFile",
+  "spawn",
+  "rmSync",
+  'from "ajv',
+  'from "yaml"',
+]) {
+  if (hermesCoreLineageCommitText.includes(forbidden)) {
+    addError(
+      `tools/deploy/commit-hermes-core-lineage.mjs: low-level commit contains forbidden ${forbidden}`
+    );
+  }
+}
+
 for (const script of requiredFiles.filter((file) =>
   file.startsWith("deploy/runner/")
 )) {
@@ -2744,6 +3483,91 @@ try {
   execFileSync("bash", ["-n", "deploy/runner/qintopia-agent-os-deploy-runner"], {
     cwd: repoRoot,
   });
+  execFileSync("bash", ["-n", "deploy/runner/check-hermes-core-readiness.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("bash", ["-n", "deploy/runner/check-hermes-wecom-readiness.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("bash", ["-n", "deploy/runner/check-hermes-wecom-parity.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync(process.execPath, ["tools/deploy/test-hermes-profile-registry.mjs"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync(process.execPath, ["tools/deploy/test-hermes-wecom-readiness.mjs"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync(process.execPath, ["tools/deploy/test-hermes-wecom-parity.mjs"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync(
+    process.execPath,
+    ["tools/deploy/test-hermes-core-artifact-verifier.mjs"],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    }
+  );
+  execFileSync("bash", ["-n", "deploy/runner/fetch-hermes-core-artifact.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync(
+    process.execPath,
+    ["tools/deploy/test-extract-hermes-core-artifact.mjs"],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    }
+  );
+  execFileSync(process.execPath, ["tools/deploy/test-fetch-hermes-core-artifact.mjs"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync("bash", ["-n", "deploy/runner/bootstrap-hermes-core-root.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync(process.execPath, ["tools/deploy/test-bootstrap-hermes-core-root.mjs"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync(process.execPath, ["tools/deploy/test-plan-hermes-core-release.mjs"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  execFileSync(
+    process.execPath,
+    ["tools/deploy/test-hermes-core-release-transaction.mjs"],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    }
+  );
+  execFileSync(
+    process.execPath,
+    ["tools/deploy/test-hermes-core-release-production.mjs"],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    }
+  );
+  execFileSync("bash", ["-n", "deploy/runner/plan-hermes-core-release.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync("bash", ["-n", "deploy/runner/stage-hermes-core-release.sh"], {
+    cwd: repoRoot,
+  });
+  execFileSync(
+    process.execPath,
+    ["tools/deploy/test-deploy-bundle-runtime-dependencies.mjs"],
+    {
+      cwd: repoRoot,
+      stdio: "inherit",
+    }
+  );
   execFileSync("bash", ["-n", "deploy/runner/poll-deploy-requests.sh"], {
     cwd: repoRoot,
   });
@@ -2957,6 +3781,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/runner/qintopia-agent-os-deploy-runner",
     "deploy/runner/poll-deploy-requests.sh",
     "deploy/runner/install-release-systemd-units.sh",
+    "deploy/runner/install-hermes-core-systemd-units.sh",
+    "deploy/runner/qintopia-hermes-core-launcher",
     "deploy/runner/quiesce-space-automation-runtime.sh",
     "deploy/runner/deploy-request.schema.json",
     "agents/erhua/config.template.yaml",
@@ -2970,6 +3796,7 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "tools/deploy/resolve-release-deploy-base.mjs",
     "tools/deploy/resolve-release-restart-targets.mjs",
     "tools/deploy/resolve-restart-targets.mjs",
+    "tools/deploy/render-hermes-core-systemd-unit.mjs",
     "deploy/sidecar/scripts/fetch-cos-artifact.sh",
     "deploy/sidecar/scripts/staging-runtime-prerequisite-observation-smoke.sh",
     "deploy/sidecar/scripts/huabaosi-image-generation-staging-readiness-smoke.sh",

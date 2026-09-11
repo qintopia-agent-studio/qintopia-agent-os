@@ -4,8 +4,8 @@ Date: 2026-07-17 Asia/Shanghai
 
 ## Current State
 
-A read-only server continuation checked the fixed staging runtime boundary on
-`paxon-server` after the staging sidecar artifact had been provisioned.
+A read-only server continuation checked the fixed staging runtime boundary on the
+production host after the staging sidecar artifact had been provisioned.
 
 The immutable staging sidecar is present and still matches the reviewed artifact:
 

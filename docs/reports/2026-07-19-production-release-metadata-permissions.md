@@ -5,7 +5,7 @@ Date: 2026-07-19 Asia/Shanghai
 ## Observed Evidence
 
 After `v0.2.15` was published, a read-only check of the still-current `v0.2.14` release
-on `paxon-server` found the sidecar binary mode `0755`, while
+on the production host found the sidecar binary mode `0755`, while
 `sidecar/artifact-manifest.json` and `sidecar/SHA256SUMS` were mode `0640`.
 
 The unprivileged Huabaosi Feishu production observation could execute the binary but

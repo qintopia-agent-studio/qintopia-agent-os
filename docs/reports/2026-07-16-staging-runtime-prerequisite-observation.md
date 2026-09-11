@@ -5,7 +5,8 @@ Date: 2026-07-16 Asia/Shanghai
 ## Current State
 
 A read-only SSH observation checked whether the fixed staging runtime prerequisites for
-Huabaosi image generation and QiWe image send are already present on `paxon-server`.
+Huabaosi image generation and QiWe image send are already present on the production
+host.
 
 The checked server reported hostname `VM-0-4-ubuntu`. The two fixed staging paths are
 still missing:
@@ -22,7 +23,7 @@ the guarded scripts, evidence checkers, and templates.
 
 ## Command Shape
 
-The observation used `ssh -o BatchMode=yes paxon-server` and only executed fixed
+The observation used an administrator-provided SSH connection and only executed fixed
 read-only shell checks:
 
 - print the remote hostname;
@@ -53,9 +54,9 @@ hide this missing runtime boundary.
 
 ## Continuation Recheck
 
-A later continuation repeated the same fixed-path read-only SSH checks on
-`paxon-server`. The server was still reachable as `VM-0-4-ubuntu`, but the fixed staging
-env file and release root were still absent:
+A later continuation repeated the same fixed-path read-only SSH checks on The production
+host was still reachable as `VM-0-4-ubuntu`, but the fixed staging env file and release
+root were still absent:
 
 ```text
 /etc/qintopia/message-sidecar-staging.env: missing
@@ -70,10 +71,10 @@ not live staging send evidence.
 
 ## Resume Recheck
 
-A resumed SSH check reached `paxon-server` again and confirmed hostname `VM-0-4-ubuntu`.
-The fixed staging env file and fixed staging release root were still absent, and no
-staged `sidecar/qintopia-message-sidecar` candidate could be listed because the release
-root itself was missing.
+A resumed SSH check reached the production host again and confirmed hostname
+`VM-0-4-ubuntu`. The fixed staging env file and fixed staging release root were still
+absent, and no staged `sidecar/qintopia-message-sidecar` candidate could be listed
+because the release root itself was missing.
 
 The resumed check was read-only. It did not read env contents, execute a sidecar,
 connect to Postgres, call QiWe, or send externally. After the fixed inputs are

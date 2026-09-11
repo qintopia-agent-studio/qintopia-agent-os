@@ -65,7 +65,7 @@ class ProfileOverlayTests(unittest.TestCase):
 
             self.assertEqual(rendered, repeated)
             self.assertEqual(original["channel"]["qiwe"], rendered["channel"]["qiwe"])
-            self.assertTrue(rendered["channel"]["wecom"]["enabled"])
+            self.assertFalse(rendered["channel"]["wecom"]["enabled"])
             self.assertEqual(original["unrelated_flag"], rendered["unrelated_flag"])
             self.assertEqual("gpt-5.2", rendered["model"]["default"])
             self.assertEqual(original["model"]["default"], rendered["model"]["default"])
@@ -152,13 +152,13 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertNotIn("must-not-survive", report.read_text())
             self.assertEqual(45, yaml.safe_load(output.read_text())["custom_providers"][1]["timeout"])
 
-    def test_disabled_wecom_channel_is_enabled_without_leaking_runtime_fields(self) -> None:
+    def test_enabled_wecom_channel_is_disabled_without_leaking_runtime_fields(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             base = directory / "base.yaml"
             base_config = yaml.safe_load((FIXTURES / "erhua-base.yaml").read_text())
             base_config["channel"]["wecom"] = {
-                "enabled": False,
+                "enabled": True,
                 "extra": {
                     "bot_id": "fixture-bot-id",
                     "secret": "fixture-secret",
@@ -167,7 +167,7 @@ class ProfileOverlayTests(unittest.TestCase):
             base.write_text(yaml.safe_dump(base_config, sort_keys=False))
             output, report = self.render(directory, base)
             rendered = yaml.safe_load(output.read_text())
-            self.assertTrue(rendered["channel"]["wecom"]["enabled"])
+            self.assertFalse(rendered["channel"]["wecom"]["enabled"])
             self.assertEqual(
                 {
                     "bot_id": "fixture-bot-id",
@@ -841,10 +841,21 @@ class ProfileOverlayTests(unittest.TestCase):
             self.render(profile)
             env_file = profile / ".env"
             env_file.write_text('LIVECOOL_API_KEY="not-a-real-secret"\n')
+            profile_metadata = directory / "profile-metadata.json"
+            profile_metadata.write_text("{}\n")
+            fake_python = fake_bin / "python3"
+            fake_python.write_text(
+                "#!/bin/sh\n"
+                f'if [ "${{1:-}}" = "-" ]; then exec "{os.sys.executable}" "$@"; fi\n'
+                "exit 0\n"
+            )
+            os.chmod(fake_python, 0o755)
             fake_runuser = fake_bin / "runuser"
             fake_runuser.write_text(
                 "#!/bin/sh\n"
-                "case \"$*\" in\n"
+                "last_argument=\n"
+                "for argument do last_argument=$argument; done\n"
+                "case \"$last_argument\" in\n"
                 "  *\" doctor\") echo \"model.provider 'custom:livecool.net' is not a recognized provider\" ;;\n"
                 "esac\n"
                 "exit 0\n"
@@ -858,6 +869,8 @@ class ProfileOverlayTests(unittest.TestCase):
                     str(release_root),
                     "--restart-targets",
                     "hermes-erhua",
+                    "--profile-metadata",
+                    str(profile_metadata),
                 ],
                 cwd=ROOT,
                 env={
@@ -884,6 +897,8 @@ class ProfileOverlayTests(unittest.TestCase):
                     str(release_root),
                     "--restart-targets",
                     "hermes-erhua",
+                    "--profile-metadata",
+                    str(profile_metadata),
                     "--evidence-output",
                     str(evidence),
                 ],

@@ -273,6 +273,7 @@ from datetime import datetime, timezone
 path, request_file, request_id, error = sys.argv[1:5]
 now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 sha_pattern = re.compile(r"^[0-9a-f]{40}$")
+sha256_pattern = re.compile(r"^[0-9a-f]{64}$")
 approved_profiles = {"huabaosi-production", "qiwe-production"}
 
 try:
@@ -287,6 +288,11 @@ def normalized_sha(value):
     return value if sha_pattern.fullmatch(value) else "0" * 40
 
 
+def normalized_sha256(value):
+    value = str(value or "")
+    return value if sha256_pattern.fullmatch(value) else "0" * 64
+
+
 runtime_artifact_profile = str(request.get("runtime_artifact_profile") or "")
 if runtime_artifact_profile not in approved_profiles:
     runtime_artifact_profile = "huabaosi-production"
@@ -299,7 +305,71 @@ restart_targets = request.get("restart_targets")
 if not isinstance(restart_targets, list) or not restart_targets:
     restart_targets = ["qintopia-system-services"]
 
-result = {
+is_hermes_core_release = release_scope == ["hermes-core-release"]
+core_keys = {
+    "repository", "tag", "commit_sha", "source_archive_sha256",
+    "artifact_identity_sha256", "artifact_manifest_sha256",
+    "previous_version", "previous_commit_sha", "archive_sha256",
+}
+hermes_core_request = request.get("hermes_core_release")
+core_request_valid = (
+    is_hermes_core_release
+    and isinstance(hermes_core_request, dict)
+    and set(hermes_core_request) == core_keys
+    and hermes_core_request.get("repository") == "https://github.com/NousResearch/hermes-agent.git"
+    and isinstance(hermes_core_request.get("tag"), str)
+    and re.fullmatch(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", hermes_core_request.get("tag", ""))
+    and all(re.fullmatch(r"^[0-9a-f]{40}$", hermes_core_request.get(key, "")) for key in ("commit_sha", "previous_commit_sha"))
+    and all(re.fullmatch(r"^[0-9a-f]{64}$", hermes_core_request.get(key, "")) for key in ("source_archive_sha256", "artifact_identity_sha256", "artifact_manifest_sha256", "archive_sha256"))
+    and isinstance(hermes_core_request.get("previous_version"), str)
+    and re.fullmatch(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$", hermes_core_request.get("previous_version", ""))
+    and hermes_core_request.get("commit_sha") != hermes_core_request.get("previous_commit_sha")
+)
+if core_request_valid:
+    result = {
+        "schema_version": 1,
+        "request_id": request_id,
+        "environment": "production",
+        "status": "failed",
+        "started_at": now,
+        "finished_at": now,
+        "release_scope": ["hermes-core-release"],
+        "previous_sha": "",
+        "current_target": "",
+        "restart_targets": ["hermes-core"],
+        "checks": [{"name": "deploy-request-validation", "status": "failed"}],
+        "rollback": {"attempted": False, "status": "not_needed"},
+        "error": error,
+        "hermes_core": {
+            "tag": hermes_core_request["tag"],
+            "commit_sha": hermes_core_request["commit_sha"],
+            "source_archive_sha256": hermes_core_request["source_archive_sha256"],
+            "artifact_identity_sha256": hermes_core_request["artifact_identity_sha256"],
+            "artifact_manifest_sha256": hermes_core_request["artifact_manifest_sha256"],
+            "previous_commit_sha": hermes_core_request["previous_commit_sha"],
+            "new_version": None,
+            "transaction_status": "failed",
+        },
+    }
+elif is_hermes_core_release:
+    result = {
+        "schema_version": 1,
+        "request_id": request_id,
+        "environment": "production",
+        "status": "failed",
+        "started_at": now,
+        "finished_at": now,
+        "release_scope": ["production-observation"],
+        "previous_sha": "",
+        "current_target": "",
+        "restart_targets": ["qintopia-system-services"],
+        "checks": [{"name": "deploy-request-validation", "status": "failed"}],
+        "rollback": {"attempted": False, "status": "not_needed"},
+        "validation_failure": True,
+        "error": error,
+    }
+else:
+    result = {
     "schema_version": 1,
     "request_id": request_id,
     "environment": "production",
@@ -318,7 +388,7 @@ result = {
     "checks": [{"name": "deploy-request-validation", "status": "failed"}],
     "rollback": {"attempted": False, "status": "not_needed"},
     "error": error,
-}
+    }
 signing_key = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY", "")
 signing_key_id = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID", "")
 if not signing_key or not signing_key_id:

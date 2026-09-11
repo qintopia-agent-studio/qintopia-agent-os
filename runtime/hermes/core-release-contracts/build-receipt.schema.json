@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia-agent-os.local/schemas/hermes-core-build-receipt.schema.json",
+  "title": "Hermes Core Build Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_type",
+    "outcome",
+    "repository",
+    "tag",
+    "commit_sha",
+    "source_archive_sha256",
+    "artifact_identity_sha256",
+    "python_abi",
+    "dependency_lock_sha256",
+    "runtime_binding_sha256",
+    "hermes_cli_version",
+    "started_at",
+    "completed_at",
+    "builder",
+    "source_checkout",
+    "dependency_install"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "receipt_type": { "const": "hermes-core-build" },
+    "outcome": { "const": "success" },
+    "repository": {
+      "const": "https://github.com/NousResearch/hermes-agent.git"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "source_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "python_abi": { "type": "string", "pattern": "^cp[0-9]{2,3}$" },
+    "dependency_lock_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtime_binding_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hermes_cli_version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$"
+    },
+    "started_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "completed_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"
+    },
+    "builder": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "image_digest"],
+      "properties": {
+        "os": { "const": "linux" },
+        "arch": { "const": "x86_64" },
+        "image_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "source_checkout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clean", "tag_commit_verified"],
+      "properties": {
+        "clean": { "const": true },
+        "tag_commit_verified": { "const": true }
+      }
+    },
+    "dependency_install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locked", "hashes_verified"],
+      "properties": {
+        "locked": { "const": true },
+        "hashes_verified": { "const": true }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia-agent-os.local/schemas/hermes-core-validation-summary.schema.json",
+  "title": "Hermes Core Validation Summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "summary_type",
+    "outcome",
+    "artifact_identity_sha256",
+    "runtime_binding_sha256",
+    "profile_contract",
+    "checks",
+    "sensitive_values_included"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "summary_type": { "const": "hermes-core-validation" },
+    "outcome": { "const": "success" },
+    "artifact_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtime_binding_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "profile_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_count",
+        "wecom_enabled_count",
+        "wecom_disabled_count",
+        "qiwe_preserved_count"
+      ],
+      "properties": {
+        "profile_count": { "const": 7 },
+        "wecom_enabled_count": { "const": 5 },
+        "wecom_disabled_count": { "const": 2 },
+        "qiwe_preserved_count": { "const": 1 }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_validation",
+        "source_integrity",
+        "dependency_lock",
+        "hermes_cli_smoke"
+      ],
+      "properties": {
+        "schema_validation": { "const": "passed" },
+        "source_integrity": { "const": "passed" },
+        "dependency_lock": { "const": "passed" },
+        "hermes_cli_smoke": { "const": "passed" }
+      }
+    },
+    "sensitive_values_included": { "const": false }
+  }
+}

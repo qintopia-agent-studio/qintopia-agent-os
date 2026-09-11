@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia-agent-os.local/schemas/hermes-core-lineage.schema.json",
+  "title": "Hermes Core Lineage Generation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generation_type",
+    "fingerprint_sha256",
+    "current_commit",
+    "previous_commit",
+    "rollback_reserve_commit"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generation_type": { "const": "hermes-core-lineage" },
+    "fingerprint_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "current_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "previous_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "rollback_reserve_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    }
+  }
+}
