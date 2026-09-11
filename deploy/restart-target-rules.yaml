@@ -48,6 +48,7 @@ no_restart_paths:
   - "runtime/hermes/tests/**"
   - "runtime/hermes/cron/**"
   - "runtime/hermes/scripts/**"
+  - "runtime/hermes/check_core_plugin_compatibility.py"
 
 production_adjacent_paths:
   - "agents/**"
@@ -118,6 +119,7 @@ rules:
     paths:
       - "agents/huabaosi/**"
       - "skills/feishu-base/**"
+      - "skills/qintopia-tools/variants/huabaosi/**"
       - "workflows/visual-asset-request/**"
 
   - target: hermes-guanerye
@@ -147,6 +149,7 @@ rules:
       - "deploy/rollback/**"
       - "deploy/smoke/**"
       - "deploy/manifests/**"
+      - "workflows/silaoshi-daily-ops/**"
       - "deploy/restart-target-rules.yaml"
       - "tools/deploy/**"
       - "mcp/**"

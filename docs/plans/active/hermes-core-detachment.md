@@ -237,6 +237,11 @@ release 必须保持两个独立发布流：各自拥有版本、审批、验收
 7. 用自有 bridge 替换对 `hermes_cli.kanban_db` 的直接导入。
 8. 切换前明确保留或排空活动中的 Hermes Kanban workspace。
 
+实现进度（2026-09-11）：Huabaosi 完成门禁已迁入 `pre_tool_call`
+插件并通过允许/拒绝fixture；Silaoshi `silaoshi-base-notify` 已实现 release-managed
+bridge、签名入口、SQLite 持久幂等、900 秒上限、有限重试、终态通知和脱敏审计。真实服务器迁移 dry-run 已通过，生产 subscription 切换需等待该版本进入 release 并完成 runner
+staging smoke。
+
 退出门禁：WeCom 兼容 replay、Silaoshi
 webhook、Kanban 幂等、完成门禁和 bridge 的定向测试全部通过，Qintopia 运行包不再依赖被移除的 Hermes 内部 API。
 

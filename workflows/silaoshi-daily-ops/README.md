@@ -10,12 +10,37 @@ covers SOP follow-up, activity review, service follow-up, and operating summarie
 - Keep service follow-up within approved workbench boundaries.
 - Avoid direct production sends until the external adapter allowlist is reviewed.
 
+## Hermes Script Action Bridge
+
+`bin/script_action_bridge.py` replaces the local Hermes core `script_action` patch for
+the single `silaoshi-base-notify` route. The official Hermes `script` transform invokes
+`bin/hermes_script_transform.py`, which submits a signed bounded payload to a local Unix
+socket and returns `[SILENT]` after the runner durably accepts it.
+
+The runner stores one row per delivery ID in a mode-0600 SQLite database. It executes
+only the server-local action script whose SHA-256 is pinned in the root-owned config,
+uses a maximum 900-second timeout, retries failures at most twice, and never replays a
+successful action when its final status notification fails. Logs contain only the
+delivery hash, attempt, return code, status, and notification status.
+
+Real script paths, destination IDs, templates, and the HMAC key remain in
+`/etc/qintopia`. `bin/migrate_script_action.py` derives those bindings from the current
+server-local route and scripts without printing their values. Dry-run is the default;
+`--apply` writes an atomic subscription update and a mode-0600 `.pre-bridge` backup;
+`--rollback` restores that backup byte for byte.
+
+The production service template is `systemd/qintopia-silaoshi-script-action.service`.
+Obtain server access details from an administrator. Before applying the subscription
+migration, install the reviewed service unit, start the runner, and confirm its Unix
+socket is mode 0600.
+
 ## Production Boundary
 
-- This workflow is a planning and package boundary until fixtures are added.
-- It must not enable external sends or Feishu write expansion in the same PR as package
-  scaffolding.
-- It must not write Hermes profile live state.
+- The bridge may invoke only the pinned server-local resident action and notification
+  adapter.
+- The service runs as the unprivileged Hermes owner and writes only its socket, job
+  database, and existing Silaoshi profile runtime paths.
+- Hermes profile state changes only through the reviewed migration or rollback command.
 
 ## Acceptance Scenarios
 
@@ -28,4 +53,6 @@ covers SOP follow-up, activity review, service follow-up, and operating summarie
 
 ```bash
 pnpm workflows:check
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover \
+  -s workflows/silaoshi-daily-ops/tests -v
 ```
