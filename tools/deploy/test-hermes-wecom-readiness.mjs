@@ -37,7 +37,8 @@ const expectedStates = new Map([
 ]);
 
 function writeProfile(profile, enabled) {
-  const profileDirectory = path.join(stagingHome, "profiles", profile);
+  const profileDirectory =
+    profile === "default" ? stagingHome : path.join(stagingHome, "profiles", profile);
   fs.mkdirSync(profileDirectory, { recursive: true });
   fs.writeFileSync(
     path.join(profileDirectory, "config.yaml"),
@@ -180,7 +181,7 @@ try {
   assertSanitized(malformed);
   writeProfile("huabaosi", true);
 
-  const secretEnv = path.join(stagingHome, "profiles", "default", ".env");
+  const secretEnv = path.join(stagingHome, ".env");
   fs.writeFileSync(
     secretEnv,
     "WECOM_BOT_ID=fixture-bot-value\nQINTOPIA_SOURCE_TEST=fixture-secret-value\n",
@@ -227,16 +228,13 @@ try {
   fs.rmSync(targetEnv);
   writeProfile("xiaoman", true);
 
-  const defaultProfile = path.join(stagingHome, "profiles", "default");
+  const defaultProfile = stagingHome;
   const defaultProfileTarget = path.join(tmpRoot, "default-profile-target");
   fs.renameSync(defaultProfile, defaultProfileTarget);
   fs.symlinkSync(defaultProfileTarget, defaultProfile);
   const symlinkedProfile = runChecker();
   assert.notEqual(symlinkedProfile.status, 0);
-  assert.match(
-    symlinkedProfile.stdout,
-    /hermes_wecom_error=default:profile_dir_symlink/
-  );
+  assert.match(symlinkedProfile.stdout, /hermes_wecom_error=hermes_home_symlink/);
   assertSanitized(symlinkedProfile);
   fs.rmSync(defaultProfile);
   fs.renameSync(defaultProfileTarget, defaultProfile);

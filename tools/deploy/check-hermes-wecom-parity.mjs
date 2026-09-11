@@ -225,7 +225,8 @@ function mapsEqual(left, right) {
 function inspectHome(home, profile) {
   requireDirectory(home, "hermes_home");
   requireDirectory(path.join(home, "profiles"), "profiles_dir");
-  const profileDirectory = path.join(home, "profiles", profile);
+  const profileDirectory =
+    profile === "default" ? home : path.join(home, "profiles", profile);
   requireDirectory(profileDirectory, "profile_dir");
   const config = parseConfig(
     readRegularText(path.join(profileDirectory, "config.yaml"), "config")

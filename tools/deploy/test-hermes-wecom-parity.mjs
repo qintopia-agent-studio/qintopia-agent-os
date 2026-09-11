@@ -25,7 +25,7 @@ const states = new Map([
 ]);
 
 function writeProfile(home, profile, enabled, parent = "channel") {
-  const directory = path.join(home, "profiles", profile);
+  const directory = profile === "default" ? home : path.join(home, "profiles", profile);
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(
     path.join(directory, "config.yaml"),
@@ -97,13 +97,13 @@ try {
   assert.match(ready.stdout, /hermes_wecom_parity_profiles=7/);
   assertSanitized(ready);
 
-  const unrelatedEnv = path.join(candidateHome, "profiles", "default", ".env");
+  const unrelatedEnv = path.join(candidateHome, ".env");
   fs.appendFileSync(unrelatedEnv, "ANOTHER_UNRELATED=value\n");
   const unrelated = run();
   assert.equal(unrelated.status, 0, output(unrelated));
   assertSanitized(unrelated);
 
-  const secretEnv = path.join(candidateHome, "profiles", "default", ".env");
+  const secretEnv = path.join(candidateHome, ".env");
   fs.writeFileSync(
     secretEnv,
     fs

@@ -240,7 +240,8 @@ function inspectProfile(hermesHome, profile, expectedEnabled, requiredBindings) 
     present_keys: [],
     errors: [],
   };
-  const profileDirectory = path.join(hermesHome, "profiles", profile);
+  const profileDirectory =
+    profile === "default" ? hermesHome : path.join(hermesHome, "profiles", profile);
   const profileDirectoryError = readDirectory(profileDirectory, "profile_dir");
   if (profileDirectoryError !== null) {
     result.errors.push(profileDirectoryError.code);
