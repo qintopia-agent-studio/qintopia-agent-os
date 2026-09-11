@@ -151,10 +151,11 @@ function findWecom(config) {
       matches.push(parent.wecom);
     }
   }
+  if (matches.length === 0) {
+    return null;
+  }
   if (matches.length !== 1 || !isRecord(matches[0])) {
-    throw new Error(
-      matches.length === 0 ? "wecom_config_missing" : "wecom_config_ambiguous"
-    );
+    throw new Error("wecom_config_ambiguous");
   }
   if (typeof matches[0].enabled !== "boolean") {
     throw new Error("wecom_enabled_invalid");
@@ -234,7 +235,12 @@ function inspectHome(home, profile) {
   const env = parseWecomEnv(
     readRegularText(path.join(profileDirectory, ".env"), "env", true)
   );
-  return { wecom: canonicalize(findWecom(config)), env };
+  const wecom = findWecom(config);
+  return {
+    wecom: wecom === null ? null : canonicalize(wecom),
+    enabled: wecom?.enabled ?? false,
+    env,
+  };
 }
 
 function inspectProfile(baselineHome, candidateHome, registryProfile) {
@@ -261,8 +267,8 @@ function inspectProfile(baselineHome, candidateHome, registryProfile) {
     result.errors.push(`candidate_${error.message}`);
     return result;
   }
-  result.baselineEnabled = baseline.wecom.enabled;
-  result.candidateEnabled = candidate.wecom.enabled;
+  result.baselineEnabled = baseline.enabled;
+  result.candidateEnabled = candidate.enabled;
   if (result.baselineEnabled !== result.expectedEnabled) {
     result.errors.push("baseline_enabled_mismatch");
   }

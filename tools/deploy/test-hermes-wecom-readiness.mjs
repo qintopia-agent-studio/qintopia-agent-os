@@ -71,6 +71,12 @@ function createFixture() {
   for (const [profile, enabled] of expectedStates) {
     writeProfile(profile, enabled);
   }
+  fs.rmSync(path.join(stagingHome, "profiles", "wenyuange", "config.yaml"));
+  fs.writeFileSync(
+    path.join(stagingHome, "profiles", "wenyuange", "config.yaml"),
+    "model:\n  default: fixture\n",
+    "utf8"
+  );
 }
 
 function snapshotTree(root) {

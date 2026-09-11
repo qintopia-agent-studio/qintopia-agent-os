@@ -263,6 +263,13 @@ function inspectProfile(hermesHome, profile, expectedEnabled, requiredBindings) 
 
   const wecom = findWecomConfig(parsedConfig.value);
   if (!wecom.ok) {
+    if (wecom.error.code === "wecom_config_missing" && !expectedEnabled) {
+      result.actual_enabled = false;
+      result.wecom_config = "absent_disabled";
+      result.bindings = "not_required_disabled";
+      result.env_file = "not_checked_disabled";
+      return result;
+    }
     result.errors.push(wecom.error.code);
     return result;
   }

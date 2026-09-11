@@ -57,6 +57,12 @@ function createHomes() {
     writeProfile(baselineHome, profile, enabled);
     writeProfile(candidateHome, profile, enabled, "platforms");
   }
+  for (const home of [baselineHome, candidateHome]) {
+    fs.writeFileSync(
+      path.join(home, "profiles", "wenyuange", "config.yaml"),
+      "model:\n  default: fixture\n"
+    );
+  }
 }
 
 function run() {
