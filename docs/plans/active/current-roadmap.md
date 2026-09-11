@@ -1,6 +1,6 @@
 # Current Roadmap
 
-Updated: 2026-08-02
+Updated: 2026-09-09
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
@@ -68,15 +68,43 @@ unless correcting historical evidence.
    - Treat `SOUL.md`, skills, cron, and MCP declarations as reviewed distribution-owned
      files.
    - Preserve runtime data and local secrets on the server.
+   - Complete the one-time Hermes core detachment described in
+     [Hermes core detachment](hermes-core-detachment.md) before enabling direct upstream
+     core updates. Qintopia behavior must remain in release-managed plugins, workflows,
+     runtime packages, or accepted upstream changes.
+   - Implement the independent artifact, receipt, transaction, rollback, and retention
+     work packages in the
+     [Hermes core release manager design](hermes-core-release-manager.md). Do not add
+     the production `hermes-core-release` request scope until its local fault-injection
+     rollback suite passes.
+   - HC-1 provides strict core manifest/receipt schemas and a dependency-free
+     fail-closed artifact verifier. HC-2 now vendors the required YAML runtime in the
+     deploy bundle and has a root-owned `/var/lib/qintopia-hermes-core` dry-run planner
+     with a single atomic `lineage/active` generation pointer. Candidate staging from a
+     fixed root-owned ingress now has copy-before/copy-after verification, atomic
+     rename, fsync, and failure quarantine. Fixed-key ingress download, bounded
+     streaming extraction, two-release bootstrap, immutable generation commit, and
+     crash-recovery fault injection are also complete in repository fixtures. No real
+     clean artifact has been downloaded and no production root, runner request,
+     signature scope, or systemd integration has changed. HC-3 through HC-5 remain
+     required, so do not treat these HC-2 primitives as a production update path.
+     Readers must resolve `lineage/active` once and read all three roles from that same
+     generation.
    - Start with one low-risk profile before touching group-facing behavior.
    - Migrate Xiaoman's reviewed non-secret profile behavior through the phased
      [Xiaoman profile bundle migration](xiaoman-profile-bundle-migration.md). The first
      PR packages a strict renderer and read-only parity smoke only; live profile
      symlinks require later parity and rollback evidence.
-   - Migrate the live Huabaosi WeCom conversation boundary into the reviewed release
-     flow through [Huabaosi WeCom migration](huabaosi-wecom-migration.md). The
-     production Bot remains on Hermes until observation, Rust shadow capture, policy
-     preview, canary, and rollback evidence are reviewed in separate PRs.
+   - Preserve the current Hermes WeCom profile configurations and migrate their behavior
+     through the reviewed [Hermes core detachment](hermes-core-detachment.md) plan. The
+     2026-09-09 read-only review found no successful connection in the retained 30-day
+     journal window, but usage is not a reason to disable or delete configuration. The
+     [Huabaosi WeCom migration](huabaosi-wecom-migration.md) remains the detailed
+     production compatibility path, alongside the active `qiwe-platform` path.
+   - Use `runtime/hermes/profile-registry.yaml` as the single seven-profile source for
+     core readiness, WeCom enabled-state preservation, staging parity, service
+     switching, and rollback. Erhua's separately managed `qiwe-platform` stays declared
+     as preserved and must not be changed by Hermes core promotion.
    - PR #140 and PR #141 completed Xiaoman profile bundle and values migration work, but
      the live profile symlink cutover still requires a separate reviewed PR.
 

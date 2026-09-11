@@ -91,6 +91,7 @@ allowed_scope = {
     "sidecar-runtime",
     "deploy-bundle",
     "hermes-plugins",
+    "hermes-core-release",
     "hermes-profile-erhua",
     "production-activation",
     "production-observation",
@@ -155,6 +156,7 @@ allowed_targets = {
     "hermes-silaoshi",
     "hermes-huabaosi",
     "hermes-guanerye",
+    "hermes-core",
 }
 sha = re.compile(r"^[0-9a-f]{40}$")
 request_id = re.compile(r"^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$")
@@ -198,12 +200,6 @@ if data.get("repository") != "qintopia-agent-studio/qintopia-agent-os":
     fail("repository mismatch")
 if not request_id.fullmatch(require_string(data, "request_id")):
     fail("request_id format mismatch")
-for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "release_sha"):
-    if not sha.fullmatch(require_string(data, key)):
-        fail(f"{key} must be a lowercase 40-character SHA")
-if data.get("runtime_artifact_profile") not in allowed_runtime_artifact_profiles:
-    fail("runtime_artifact_profile must be an approved production profile")
-
 created_at = parse_datetime(require_string(data, "created_at"), "created_at")
 expires_at = parse_datetime(require_string(data, "expires_at"), "expires_at")
 now = datetime.now(timezone.utc)
@@ -229,11 +225,55 @@ if not isinstance(release_scope, list) or not release_scope:
 if set(release_scope) - allowed_scope or len(set(release_scope)) != len(release_scope):
     fail("release_scope contains unsupported or duplicate entries")
 
+hermes_core_release = data.get("hermes_core_release")
+is_hermes_core_release = release_scope == ["hermes-core-release"]
+if is_hermes_core_release:
+    expected_core_keys = {
+        "repository",
+        "tag",
+        "commit_sha",
+        "source_archive_sha256",
+        "artifact_identity_sha256",
+        "artifact_manifest_sha256",
+        "previous_version",
+        "previous_commit_sha",
+        "archive_sha256",
+    }
+    if not isinstance(hermes_core_release, dict) or set(hermes_core_release) != expected_core_keys:
+        fail("hermes_core_release metadata is incomplete or contains unsupported fields")
+    if hermes_core_release.get("repository") != "https://github.com/NousResearch/hermes-agent.git":
+        fail("hermes_core_release repository mismatch")
+    if not re.fullmatch(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", hermes_core_release.get("tag", "")):
+        fail("hermes_core_release tag is invalid")
+    for key in ("commit_sha", "previous_commit_sha"):
+        if not sha.fullmatch(hermes_core_release.get(key, "")):
+            fail(f"hermes_core_release {key} must be a lowercase 40-character SHA")
+    for key in ("source_archive_sha256", "artifact_identity_sha256", "artifact_manifest_sha256", "archive_sha256"):
+        if not re.fullmatch(r"^[0-9a-f]{64}$", hermes_core_release.get(key, "")):
+            fail(f"hermes_core_release {key} must be a lowercase 64-character SHA")
+    if not re.fullmatch(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$", hermes_core_release.get("previous_version", "")):
+        fail("hermes_core_release previous_version is invalid")
+    if hermes_core_release["commit_sha"] == hermes_core_release["previous_commit_sha"]:
+        fail("hermes_core_release candidate and previous commits must differ")
+else:
+    if hermes_core_release is not None:
+        fail("hermes_core_release metadata is only allowed for hermes-core-release")
+    for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "release_sha"):
+        if not sha.fullmatch(require_string(data, key)):
+            fail(f"{key} must be a lowercase 40-character SHA")
+    if data.get("runtime_artifact_profile") not in allowed_runtime_artifact_profiles:
+        fail("runtime_artifact_profile must be an approved production profile")
+
 restart_targets = data.get("restart_targets")
 if not isinstance(restart_targets, list) or not restart_targets:
     fail("restart_targets must be a non-empty list")
 if set(restart_targets) - allowed_targets or len(set(restart_targets)) != len(restart_targets):
     fail("restart_targets contains unsupported or duplicate entries")
+if is_hermes_core_release:
+    if restart_targets != ["hermes-core"]:
+        fail("hermes-core-release requires exactly hermes-core")
+    if data.get("rollback_on_smoke_failure") is not True:
+        fail("hermes-core-release requires rollback_on_smoke_failure=true")
 if "hermes-profile-erhua" in release_scope:
     if release_scope != ["hermes-profile-erhua"]:
         fail("hermes-profile-erhua must be the only release scope")
@@ -516,6 +556,14 @@ runtime_one_shot_targets="$(json_get runtime_one_shot.targets)"
 runtime_one_shot_backfill_date="$(json_get runtime_one_shot.backfill_date)"
 runtime_one_shot_payload_sha256="$(json_get runtime_one_shot.payload_sha256)"
 runtime_one_shot_approval="$(json_get runtime_one_shot.approval)"
+hermes_core_tag="$(json_get hermes_core_release.tag)"
+hermes_core_commit="$(json_get hermes_core_release.commit_sha)"
+hermes_core_source_sha256="$(json_get hermes_core_release.source_archive_sha256)"
+hermes_core_identity_sha256="$(json_get hermes_core_release.artifact_identity_sha256)"
+hermes_core_manifest_sha256="$(json_get hermes_core_release.artifact_manifest_sha256)"
+hermes_core_previous_version="$(json_get hermes_core_release.previous_version)"
+hermes_core_previous_commit="$(json_get hermes_core_release.previous_commit_sha)"
+hermes_core_archive_sha256="$(json_get hermes_core_release.archive_sha256)"
 if [[ "$force_dry_run" == true ]]; then
   dry_run=true
 fi
@@ -764,7 +812,8 @@ write_result() {
     "${RESULT_DIR}/${request_id}.observation.json" \
     "${RESULT_DIR}/${request_id}.legacy-cron-retirement.json" \
     "${RESULT_DIR}/${request_id}.hermes-cron-apply.json" \
-    "${RESULT_DIR}/${request_id}.runtime-one-shot.json" <<'PY'
+    "${RESULT_DIR}/${request_id}.runtime-one-shot.json" \
+    "${RESULT_DIR}/${request_id}.hermes-core.json" "$request_file" <<'PY'
 import hashlib
 import hmac
 import json
@@ -803,7 +852,9 @@ import sys
     legacy_cron_retirement_evidence_path,
     hermes_cron_apply_evidence_path,
     runtime_one_shot_evidence_path,
-) = sys.argv[1:32]
+    hermes_core_evidence_path,
+    request_path,
+) = sys.argv[1:34]
 
 runner_check = {
     "name": "deploy-runner",
@@ -827,14 +878,7 @@ result = {
     "status": status,
     "started_at": started_at,
     "finished_at": finished_at,
-    "release_sha": release_sha,
-    "commit_sha": commit_sha,
-    "runtime_sha": runtime_sha,
-    "runtime_artifact_profile": runtime_artifact_profile,
-    "deploy_bundle_sha": deploy_bundle_sha,
     "release_scope": [item for item in release_scope.split(",") if item],
-    "previous_sha": previous_sha,
-    "current_target": current_target,
     "restart_targets": [item for item in restart_targets.split(",") if item],
     "checks": [runner_check],
     "rollback": {
@@ -842,6 +886,83 @@ result = {
         "status": rollback_status,
     },
 }
+if release_scope == "hermes-core-release":
+    if os.path.isfile(hermes_core_evidence_path):
+        with open(hermes_core_evidence_path, encoding="utf-8") as fh:
+            hermes_core_evidence = json.load(fh)
+        try:
+            with open(request_path, encoding="utf-8") as fh:
+                request_core = json.load(fh).get("hermes_core_release", {})
+        except Exception:
+            raise SystemExit("validated Hermes core request could not be read")
+        required_core_fields = (
+            "tag", "commit_sha", "source_archive_sha256",
+            "artifact_identity_sha256", "artifact_manifest_sha256",
+            "previous_commit_sha",
+        )
+        if any(
+            not isinstance(request_core.get(field), str) or not request_core.get(field)
+            for field in required_core_fields
+        ):
+            raise SystemExit("validated Hermes core request identity is incomplete")
+        if any(
+            hermes_core_evidence.get(field) != request_core.get(field)
+            for field in required_core_fields
+        ):
+            raise SystemExit("Hermes core evidence identity does not match request")
+        if (
+            hermes_core_evidence.get("new_version") is not None
+            and not isinstance(hermes_core_evidence.get("new_version"), str)
+        ):
+            raise SystemExit("Hermes core evidence version is invalid")
+        result["hermes_core"] = {
+            "tag": hermes_core_evidence.get("tag"),
+            "commit_sha": hermes_core_evidence.get("commit_sha"),
+            "source_archive_sha256": hermes_core_evidence.get("source_archive_sha256"),
+            "artifact_identity_sha256": hermes_core_evidence.get("artifact_identity_sha256"),
+            "artifact_manifest_sha256": hermes_core_evidence.get("artifact_manifest_sha256"),
+            "previous_commit_sha": hermes_core_evidence.get("previous_commit_sha"),
+            "new_version": hermes_core_evidence.get("new_version"),
+            "transaction_status": hermes_core_evidence.get("transaction_status"),
+        }
+    else:
+        try:
+            with open(request_path, encoding="utf-8") as fh:
+                request_core = json.load(fh).get("hermes_core_release", {})
+        except Exception:
+            raise SystemExit("validated Hermes core request could not be read")
+        required_core_fields = (
+            "tag", "commit_sha", "source_archive_sha256",
+            "artifact_identity_sha256", "artifact_manifest_sha256",
+            "previous_commit_sha",
+        )
+        if any(
+            not isinstance(request_core.get(field), str) or not request_core.get(field)
+            for field in required_core_fields
+        ):
+            raise SystemExit("validated Hermes core request identity is incomplete")
+        result["hermes_core"] = {
+            "tag": request_core["tag"],
+            "commit_sha": request_core["commit_sha"],
+            "source_archive_sha256": request_core["source_archive_sha256"],
+            "artifact_identity_sha256": request_core["artifact_identity_sha256"],
+            "artifact_manifest_sha256": request_core["artifact_manifest_sha256"],
+            "previous_commit_sha": request_core["previous_commit_sha"],
+            "new_version": None,
+            "transaction_status": "rolled_back" if rollback_status == "succeeded" else "failed",
+        }
+    result["previous_sha"] = ""
+    result["current_target"] = ""
+else:
+    result.update({
+        "release_sha": release_sha,
+        "commit_sha": commit_sha,
+        "runtime_sha": runtime_sha,
+        "runtime_artifact_profile": runtime_artifact_profile,
+        "deploy_bundle_sha": deploy_bundle_sha,
+        "previous_sha": previous_sha,
+        "current_target": current_target,
+    })
 if os.path.isfile(profile_evidence_path):
     with open(profile_evidence_path, encoding="utf-8") as fh:
         profile_evidence = json.load(fh)
@@ -2026,7 +2147,25 @@ run_production_runtime_one_shot() {
   write_result succeeded
 }
 
+run_hermes_core_release() {
+  deploy_stage="hermes-core-release"
+  rm -f "${RESULT_DIR}/${request_id}.hermes-core.json"
+  if "${RUNNER_DIR}/run-hermes-core-release.sh" \
+    --request-file "$request_file" \
+    --evidence-output "${RESULT_DIR}/${request_id}.hermes-core.json"; then
+    deploy_stage="write-hermes-core-success-result"
+    write_result succeeded
+  else
+    return $?
+  fi
+}
+
 run_promotion() {
+  if [[ "$release_scope" == "hermes-core-release" ]]; then
+    run_hermes_core_release
+    return
+  fi
+
   if [[ "$release_scope" == "production-hermes-cron-apply" ]]; then
     run_production_hermes_cron_apply
     return
@@ -2178,7 +2317,30 @@ run_promotion() {
     deploy_failure_stage="$deploy_stage"
     deploy_failure_status="$status"
     refresh_promoted_current
-    if [[ "$release_scope" == "hermes-profile-erhua" && "$profile_activation_attempted" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
+    if [[ "$release_scope" == "hermes-core-release" ]]; then
+      hermes_core_transaction_status=""
+      if [[ -f "${RESULT_DIR}/${request_id}.hermes-core.json" ]]; then
+        hermes_core_transaction_status="$(python3 - "${RESULT_DIR}/${request_id}.hermes-core.json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    value = json.load(fh).get("transaction_status", "")
+if value in {"rolled_back", "failed"}:
+    print(value)
+PY
+        )"
+      fi
+      if [[ "$hermes_core_transaction_status" == "rolled_back" ]]; then
+        write_result rolled_back "Hermes core transaction failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback succeeded" \
+          true succeeded ""
+      elif [[ "$hermes_core_transaction_status" == "failed" ]]; then
+        write_result failed "Hermes core transaction failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback failed" \
+          true failed ""
+      else
+        write_result failed "Hermes core release failed during ${deploy_failure_stage} (exit ${deploy_failure_status})"
+      fi
+    elif [[ "$release_scope" == "hermes-profile-erhua" && "$profile_activation_attempted" == "true" && "$rollback_on_smoke_failure" == "true" ]]; then
       rollback_target="$profile_release_dir"
       rollback_ok=true
       assert_current_profile_release || rollback_ok=false

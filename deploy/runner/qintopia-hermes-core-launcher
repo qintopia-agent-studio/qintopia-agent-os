@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly CORE_ROOT=/var/lib/qintopia-hermes-core
+readonly ACTIVE_GENERATION_LINK="${CORE_ROOT}/lineage/active"
+readonly PROFILE_PATTERN='^[a-z][a-z0-9]*$'
+readonly COMMIT_PATTERN='^[0-9a-f]{40}$'
+
+blocked() {
+  printf 'hermes_core_launcher=blocked\n' >&2
+  printf 'hermes_core_launcher_error=%s\n' "$1" >&2
+  exit 1
+}
+
+if [[ "$#" -ne 5 || "$1" != "--profile" || "$3" != "gateway" || "$4" != "run" || "$5" != "--replace" ]]; then
+  blocked invocation_invalid
+fi
+profile="$2"
+if [[ ! "$profile" =~ $PROFILE_PATTERN ]]; then
+  blocked profile_invalid
+fi
+case "$profile" in
+  default|erhua|guanerye|huabaosi|silaoshi|wenyuange|xiaoman) ;;
+  *) blocked profile_invalid ;;
+esac
+
+if [[ ! -L "$ACTIVE_GENERATION_LINK" ]]; then
+  blocked active_generation_invalid
+fi
+generation_target="$(readlink -- "$ACTIVE_GENERATION_LINK" 2>/dev/null || true)"
+if [[ ! "$generation_target" =~ ^generations/generation-[0-9a-f]{64}$ ]]; then
+  blocked active_generation_invalid
+fi
+generation_dir="$(realpath -- "$ACTIVE_GENERATION_LINK" 2>/dev/null || true)"
+if [[ "$generation_dir" != "$CORE_ROOT/lineage/generations/generation-"* ]]; then
+  blocked active_generation_invalid
+fi
+
+current_target="$(readlink -- "$generation_dir/current" 2>/dev/null || true)"
+if [[ ! "$current_target" =~ ^../../../releases/[0-9a-f]{40}$ ]]; then
+  blocked current_release_invalid
+fi
+release_dir="$(realpath -- "$generation_dir/current" 2>/dev/null || true)"
+if [[ ! "$release_dir" =~ ^$CORE_ROOT/releases/[0-9a-f]{40}$ ]]; then
+  blocked current_release_invalid
+fi
+release_commit="${release_dir##*/}"
+if [[ ! "$release_commit" =~ $COMMIT_PATTERN ]]; then
+  blocked current_release_invalid
+fi
+
+runtime_python="$release_dir/runtime/venv/bin/python"
+runtime_launcher="$release_dir/runtime/hermes-core-launcher.py"
+if [[ ! -f "$runtime_python" || -L "$runtime_python" || ! -x "$runtime_python" ]]; then
+  blocked runtime_interpreter_invalid
+fi
+if [[ ! -f "$runtime_launcher" || -L "$runtime_launcher" || ! -x "$runtime_launcher" ]]; then
+  blocked runtime_launcher_invalid
+fi
+
+unset PYTHONPATH PYTHONHOME PYTHONINSPECT PYTHONSTARTUP VIRTUAL_ENV
+export PATH="$release_dir/runtime/venv/bin:/usr/local/bin:/usr/bin:/bin"
+export QINTOPIA_HERMES_CORE_COMMIT="$release_commit"
+export HERMES_HOME="${HERMES_HOME:-/home/ubuntu/.hermes}"
+cd "$release_dir"
+exec "$runtime_python" -I "$runtime_launcher" --profile "$profile" gateway run --replace

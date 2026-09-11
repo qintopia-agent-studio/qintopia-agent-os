@@ -24,7 +24,7 @@ not yet present in the latest published production Release.
 
 ## Server State
 
-A read-only check on `paxon-server` observed:
+A read-only check on the production host observed:
 
 ```text
 current=/home/ubuntu/qintopia-agent-os-releases/15576004af3ebd50412a0030f7f9f77580d9bf13
@@ -119,7 +119,7 @@ proven.
 
 1. Make an owner release decision for `#174`: merge the Release Please PR and publish
    `v0.2.14`, or explicitly defer it.
-2. After deployment, verify that `paxon-server` `current` contains the staging env
+2. After deployment, verify that the production host `current` contains the staging env
    renderer.
 3. Provision the fixed server-local staging values and render
    `/etc/qintopia/message-sidecar-staging.env` through the reviewed renderer.

@@ -4,7 +4,7 @@ Date: 2026-08-03
 
 ## Summary
 
-A real Xiaoman production canary attempt on `paxon-server` reached the pending
+A real Xiaoman production canary attempt on the production host reached the pending
 `poster_brief` stage, then failed closed before approving the brief, calling the image
 provider, writing Feishu, publishing, calling QiWe, or sending. The Huabaosi one-shot
 canary rejected the fixed sidecar environment boundary because the existing production

@@ -53,6 +53,11 @@ from solitaire.activity_service import ActivityService
 from solitaire.feishu_writer import FeishuActivityMapping, FeishuActivityWriter
 from solitaire.llm_parser import HermesSolitaireContentParser
 from solitaire.parser import build_activity_record_from_fields, normalize_start_time_from_event, parse_activity_record, solitaire_created_at_from_event, stable_activity_body
+
+
+def source_field(event, name):
+    source = event.source
+    return source.get(name) if isinstance(source, dict) else getattr(source, name)
 from solitaire.reminder import ReminderWorker, ReminderWorkerConfig
 from solitaire.reminder_policy import FEISHU_ACTIVITY_TYPES, ReminderPolicy
 from solitaire.repository import ActivityRepository
@@ -2127,8 +2132,8 @@ class QiWeParserTests(unittest.TestCase):
         )
         asyncio.run(adapter._dispatch_message(parsed))
 
-        self.assertEqual(adapter.events[0].source["user_id"], "7881303308049798")
-        self.assertIsNone(adapter.events[0].source["user_name"])
+        self.assertEqual(source_field(adapter.events[0], "user_id"), "7881303308049798")
+        self.assertIsNone(source_field(adapter.events[0], "user_name"))
         self.assertEqual(adapter.events[0].raw_message["message_kind"], "text")
         self.assertEqual(adapter.events[0].raw_message["attachments"], [])
         self.assertIn("answer_context_unavailable", adapter.events[0].channel_prompt)
@@ -2752,7 +2757,7 @@ class QiWeParserTests(unittest.TestCase):
         )
         asyncio.run(adapter._dispatch_message(parsed))
 
-        self.assertEqual(adapter.events[0].source["user_name"], "弦默")
+        self.assertEqual(source_field(adapter.events[0], "user_name"), "弦默")
         self.assertIn('"display_name": "弦默"', adapter.events[0].channel_prompt)
         self.assertNotIn("mobile", json.dumps(adapter.events[0].raw_message, ensure_ascii=False))
 
@@ -3229,9 +3234,9 @@ class QiWeParserTests(unittest.TestCase):
             asyncio.run(second._dispatch_message(parsed))
 
         self.assertEqual(first.methods, [])
-        self.assertEqual(first.events[0].source["user_name"], "弦默")
+        self.assertEqual(source_field(first.events[0], "user_name"), "弦默")
         self.assertEqual(second.methods, [])
-        self.assertEqual(second.events[0].source["user_name"], "弦默")
+        self.assertEqual(source_field(second.events[0], "user_name"), "弦默")
         self.assertIn("弦默", cache_text)
         self.assertIn("7881303308049798", cache_text)
         self.assertNotIn("17600000000", cache_text)

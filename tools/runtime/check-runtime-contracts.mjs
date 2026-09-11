@@ -95,6 +95,8 @@ const hermesPatchPackage =
   "docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch";
 const hermesPatchManifestPath = `${hermesPatchPackage}/manifest.yaml`;
 const hermesPatchReadmePath = `${hermesPatchPackage}/README.md`;
+const hermesPatchInventoryPath =
+  "docs/reports/2026-07-15-hermes-core-server-patch-inventory.md";
 
 if (!exists(hermesPatchManifestPath) || !exists(hermesPatchReadmePath)) {
   addError(`${hermesPatchPackage}: missing review-pool package contract`);
@@ -142,6 +144,12 @@ if (!exists(hermesPatchManifestPath) || !exists(hermesPatchReadmePath)) {
     if (!readme.includes(fragment)) {
       addError(`${hermesPatchReadmePath}: must mention ${fragment}`);
     }
+  }
+
+  if (!exists(hermesPatchInventoryPath)) {
+    addError(`${hermesPatchInventoryPath}: patch inventory is missing`);
+  } else if (!readText(hermesPatchInventoryPath).includes(manifest.patch.sha256)) {
+    addError(`${hermesPatchInventoryPath}: patch SHA-256 does not match manifest`);
   }
 }
 

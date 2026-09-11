@@ -36,9 +36,12 @@ emits only its SHA-256 in evidence. It also preserves the Erhua `jobs.json` enve
   points at it.
 - The reviewed Erhua profile overlay has been activated through the
   `hermes-profile-erhua` deploy-runner path so
-  `/home/ubuntu/.hermes/profiles/erhua/config.yaml` has `channel.wecom.enabled=true`.
-  The profile evidence may report only changed paths and hashes, never channel
-  credentials or runtime field values.
+  `/home/ubuntu/.hermes/profiles/erhua/config.yaml` preserves
+  `channel.wecom.enabled=false`. The separate release-managed `qiwe-platform` path must
+  be active and pass its text-send preflight; the cron migration must not turn on the
+  dormant Hermes WeCom channel as a delivery shortcut. Profile and preflight evidence
+  may report only changed paths, hashes, and fixed booleans, never channel credentials,
+  target ids, or runtime field values.
 - The existing auto-publish chain boundaries are present in
   `/etc/qintopia/message-sidecar.env`:
   `QINTOPIA_ERHUA_MORNING_BRIEF_AUTO_PUBLISH_ENABLED=1`,

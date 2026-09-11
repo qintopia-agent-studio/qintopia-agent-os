@@ -11,7 +11,7 @@ fields and no others:
 
 - `model.provider: custom:livecool.net`
 - `model.base_url: ""`
-- `channel.wecom.enabled: true`
+- `channel.wecom.enabled: false`
 - the single custom provider named `Livecool.net`, with `https://livecool.net/v1`,
   `gpt-5.5`, `key_env: LIVECOOL_API_KEY`, and `api_mode: chat_completions`
 

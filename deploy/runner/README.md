@@ -1,5 +1,154 @@
 # Production Deploy Runner
 
+## Hermes Core Readiness
+
+`check-hermes-core-readiness.sh` is a read-only server-side preflight for the Hermes
+core checkout. It verifies the official upstream remote, a clean `main` worktree,
+minimum root-disk headroom, the Hermes interpreter, and the seven gateway services
+without printing configuration, secrets, message content, or worktree paths.
+
+Run it from a reviewed release on the server before the one-time Hermes core detachment
+and before later direct core updates:
+
+```bash
+deploy/runner/check-hermes-core-readiness.sh
+```
+
+It must report `hermes_core_readiness=ready` before the steady-state update sequence:
+
+```bash
+cd /home/ubuntu/.hermes/hermes-agent
+hermes update --check
+hermes update --plan
+hermes update --yes
+```
+
+Do not pass `--backup` by default. Current Hermes releases create a quick state snapshot
+for every profile automatically; `--backup` additionally compresses the full
+`HERMES_HOME` and requires separately reviewed disk or external backup capacity. A
+successful command must also be followed by update-receipt, plugin-compatibility, and
+seven-profile smoke validation as specified in
+`docs/plans/active/hermes-core-detachment.md`.
+
+The preflight intentionally fails while the current server checkout contains Qintopia
+core patches or insufficient disk space. It is a gate, not a cleanup command. Core
+detachment and the first clean-core cutover remain a reviewed maintenance deployment;
+subsequent Qintopia changes continue through `release/current`.
+
+## Hermes WeCom Configuration Readiness
+
+`check-hermes-wecom-readiness.sh` is the read-only companion gate for preserving the
+current seven-profile WeCom configuration contract. With no arguments it checks the
+fixed production Hermes home. For an isolated migrated configuration, pass an explicit
+absolute staging home:
+
+```bash
+deploy/runner/check-hermes-wecom-readiness.sh
+deploy/runner/check-hermes-wecom-readiness.sh --staging-home /absolute/staging/hermes
+```
+
+The checker requires the reviewed enabled state for `default`, `guanerye`, `huabaosi`,
+`silaoshi`, and `xiaoman`, and the reviewed disabled state for `erhua` and `wenyuange`.
+For enabled profiles it verifies that the WeCom bot and secret bindings exist either in
+the parsed channel configuration or as keys in the profile `.env`. It never sources the
+environment file and never prints values, paths, targets, or message content. Symlinked,
+oversized, malformed, ambiguous, or duplicate-key inputs fail closed.
+
+This preflight proves configuration structure, reviewed enablement, and required-key
+presence only. It does not prove network connectivity, actual WeCom delivery, complete
+field-level parity, or equivalence of the old local patch. Those remain separate staging
+replay and canary gates in `docs/plans/active/hermes-core-detachment.md`.
+
+`check-hermes-wecom-parity.sh` is the next gate after the target Hermes version has
+migrated a copied profile home under the fixed staging root. It compares each complete
+WeCom configuration mapping and every `WECOM_*` environment binding against the current
+production baseline. Moving the mapping between `channel.wecom` and `platforms.wecom` is
+accepted; any key, value, target binding, retry setting, media option, or enabled state
+drift fails closed.
+
+```bash
+deploy/runner/check-hermes-wecom-parity.sh \
+  --candidate-home /home/ubuntu/.local/state/qintopia-agentos/hermes-core-staging/<release>/home
+```
+
+The comparison reads values only in local process memory and emits profile names,
+booleans, match status, and fixed error codes. It never prints config values, env
+values, paths, ids, or messages. This proves exact retained configuration parity; it
+does not prove that the target WeCom plugin interprets every retained field identically,
+so replay and canary remain mandatory.
+
+## Hermes Core Artifact Verification
+
+`verify-hermes-core-artifact.mjs` is the HC-1 fail-closed verifier for a staged clean
+Hermes core artifact. It requires the official repository plus exact tag, commit, source
+archive digest, derived artifact identity, and manifest digest. It validates the
+manifest, build receipt, upstream-update receipt, and sanitized validation summary, then
+checks the complete `core/` inventory and `SHA256SUMS`.
+
+The artifact tree must be immutable and owned consistently by the release owner. Under
+the HC-2 production model that abstract manifest owner maps to `root:root`; gateway
+service users receive read-only access and cannot stage or replace releases. Symlinks,
+hardlinks, special files, missing or extra files, unsafe paths, unexpected modes,
+oversized inputs, failed receipts, timestamp drift, and any cross-document identity
+mismatch are rejected. Failure output contains only a fixed error code; it does not
+print artifact paths or document contents.
+
+HC-1 does not authorize production promotion. Until HC-4 binds the expected digests to
+the signed `hermes-core-release` request, caller-supplied expected values are not an
+authenticity boundary. HC-2 and HC-3 must also complete immutable staging, lineage,
+transactional service switching, and rollback before this verifier can enter the live
+runner path.
+
+## Hermes Core Release Dry-Run
+
+`plan-hermes-core-release.sh` is the HC-2 read-only manager boundary. It accepts only
+artifact identity and expected lineage values, fixes the core root to
+`/var/lib/qintopia-hermes-core`, acquires the fixed root-owned manager lock, clears the
+environment, and invokes the dependency-free planner. It rejects caller-supplied root,
+service, command, or apply options.
+
+The active release tuple is represented by one immutable generation below
+`lineage/generations/`; `lineage/active` is the sole future transaction pointer. Stable
+top-level `current`, `previous`, and `rollback-reserve` symlinks resolve through that
+generation. The dry-run validates the complete tuple, protected artifacts, candidate in
+`incoming/<commit>`, ownership, modes, lock inode, layout, and minimum 5 GiB free space.
+Success always reports `pointer_changes=0` and `service_changes=0`.
+
+`stage-hermes-core-release.sh` is the separate HC-2 candidate writer. It reads only the
+identity-selected artifact below the fixed root-owned ingress
+`/var/lib/qintopia-agent-os-deploy/hermes-core-ingress`, verifies it before copying,
+copies into a private random directory with exclusive file creation, verifies the copy,
+then atomically renames it to `incoming/<commit>` and fsyncs the directory. A failed
+partial copy is moved to the fixed root-only quarantine; existing releases and pointers
+are never removed or changed. A quarantine failure and a post-rename fsync failure use
+distinct fail-closed error codes so an operator or later recovery routine cannot mistake
+an uncertain committed candidate for a clean retry.
+
+`fetch-hermes-core-artifact.sh` is the HC-2 ingress writer. It accepts only pinned
+public artifact identity fields, downloads from a fixed COS key, validates the archive
+and identity digests, and uses a bounded streaming extractor that rejects traversal,
+duplicate members, links, special files, truncation, and size/count exhaustion. It
+commits only to the fixed root-owned ingress while holding the fixed `flock` boundary.
+
+`bootstrap-hermes-core-root.sh` is the one-time HC-2 bootstrap wrapper. Under a fixed
+external lock and cleared environment it installs two different verified clean releases,
+creates an immutable generation, and commits the initial
+`(current, previous, rollback-reserve)` tuple through one `lineage/active` rename. Its
+repository fixture covers interrupted release, generation, active-pointer, directory
+`fsync`, quarantine, and retry recovery paths. The low-level generation commit is not a
+standalone production entry point; HC-3 will call it only inside the seven-service
+transaction.
+
+Consumers must resolve `lineage/active` once and read all three role links from that
+same generation. The stable top-level links are compatibility conveniences, not a safe
+way to assemble a transaction snapshot through three separate reads.
+
+HC-2 completion is repository-local only. No real clean artifact has been downloaded,
+the production core root has not been bootstrapped, and no production runner request,
+signature scope, service, or systemd boundary has been changed. HC-3 through HC-5 still
+gate production use. The current checkout, local WeCom patches, seven-profile WeCom
+configuration and enabled states, and Erhua's separate `qiwe-platform` remain unchanged.
+
 `deploy/runner` defines the stable production deployment control plane for Qintopia
 Agent OS.
 

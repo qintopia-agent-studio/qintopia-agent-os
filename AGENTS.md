@@ -1999,12 +1999,12 @@ Allowed server activity:
 - emergency rollback with a follow-up patch and owner record
 
 Resolve the production endpoint and identity from the versioned
-`docs/operations/inventory/server-sources.yaml` record and the owner-approved key path.
-Owner-approved on 2026-08-10: the `paxon-server` SSH alias (`ubuntu@122.51.77.220`,
-`~/.ssh/Paxon.pem`) may be used for reviewed production diagnostics and runbook
-execution. Do not use other undocumented SSH aliases as deployment or diagnostic
-authority. An authentication failure is not authorization to inspect, copy, or change
-private keys.
+`docs/operations/inventory/server-sources.yaml` record and connection details supplied
+by the administrator. SSH hostnames, usernames, aliases, key paths, and known-hosts
+locations are not stored in this repository. When SSH is required, contact the
+administrator for the current authorized connection details; do not infer, hard-code, or
+search for private keys. An authentication failure is not authorization to inspect,
+copy, or change private keys.
 
 Disallowed server activity:
 

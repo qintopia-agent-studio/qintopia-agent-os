@@ -19,8 +19,6 @@ from yaml.events import AliasEvent
 
 MANAGED_MODEL_KEYS = ("provider", "base_url")
 PROVIDER_KEYS = ("name", "base_url", "model", "key_env", "api_mode")
-MANAGED_CHANNEL_KEYS = ("wecom",)
-MANAGED_WECOM_KEYS = ("enabled",)
 PRESERVED_PROVIDER_FIELDS = {"timeout"}
 FORBIDDEN_PROVIDER_FIELDS = {
     "api_key",
@@ -43,11 +41,6 @@ EXPECTED_OVERLAY = {
         "model": {
             "provider": "custom:livecool.net",
             "base_url": "",
-        },
-        "channel": {
-            "wecom": {
-                "enabled": True,
-            },
         },
         "custom_provider": {
             "name": "Livecool.net",
@@ -144,13 +137,9 @@ def validate_overlay(overlay: Any) -> dict[str, Any]:
         "overlay",
     )
     require_exact_mapping(
-        overlay["managed"], ("model", "channel", "custom_provider"), "managed"
+        overlay["managed"], ("model", "custom_provider"), "managed"
     )
     require_exact_mapping(overlay["managed"]["model"], MANAGED_MODEL_KEYS, "model")
-    require_exact_mapping(overlay["managed"]["channel"], MANAGED_CHANNEL_KEYS, "channel")
-    require_exact_mapping(
-        overlay["managed"]["channel"]["wecom"], MANAGED_WECOM_KEYS, "channel.wecom"
-    )
     require_exact_mapping(
         overlay["managed"]["custom_provider"], PROVIDER_KEYS, "custom_provider"
     )
@@ -166,18 +155,6 @@ def render(base: Any, overlay: dict[str, Any]) -> tuple[dict[str, Any], list[str
     model = candidate.get("model")
     if not isinstance(model, dict):
         raise ValueError("base config model must be a mapping")
-    channel = candidate.get("channel")
-    if channel is None:
-        channel = {}
-        candidate["channel"] = channel
-    if not isinstance(channel, dict):
-        raise ValueError("base config channel must be a mapping")
-    wecom = channel.get("wecom")
-    if wecom is None:
-        wecom = {}
-        channel["wecom"] = wecom
-    if not isinstance(wecom, dict):
-        raise ValueError("base config channel.wecom must be a mapping")
     providers = candidate.get("custom_providers")
     if providers is None:
         providers = []
@@ -204,11 +181,6 @@ def render(base: Any, overlay: dict[str, Any]) -> tuple[dict[str, Any], list[str
         if model.get(key) != desired_model[key]:
             changed.append(f"model.{key}")
         model[key] = desired_model[key]
-
-    desired_wecom = overlay["managed"]["channel"]["wecom"]
-    if wecom.get("enabled") is not desired_wecom["enabled"]:
-        changed.append("channel.wecom.enabled")
-    wecom["enabled"] = desired_wecom["enabled"]
 
     provider_name = desired_provider["name"].lower()
     if provider_name in provider_indexes:
@@ -305,12 +277,6 @@ def verify_command(args: argparse.Namespace) -> None:
         )
     if "api_key" in provider or "api_key_env" in provider:
         raise ValueError("rendered provider must not contain an inline credential")
-    channel = candidate.get("channel")
-    if not isinstance(channel, dict):
-        raise ValueError("rendered config channel must be a mapping")
-    wecom = channel.get("wecom")
-    if not isinstance(wecom, dict) or wecom.get("enabled") is not True:
-        raise ValueError("rendered config must enable the WeCom channel")
     forbidden = set(provider) & FORBIDDEN_PROVIDER_FIELDS
     if forbidden:
         raise ValueError(

@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia-agent-os.local/schemas/hermes-core-artifact-manifest.schema.json",
+  "title": "Hermes Core Artifact Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "artifact_type",
+    "artifact_name",
+    "repository",
+    "tag",
+    "commit_sha",
+    "source_archive_sha256",
+    "artifact_identity_sha256",
+    "python_abi",
+    "dependency_lock_sha256",
+    "runtime_binding_sha256",
+    "hermes_cli_version",
+    "runtime",
+    "files",
+    "receipts"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "artifact_type": { "const": "hermes-core" },
+    "artifact_name": {
+      "type": "string",
+      "pattern": "^hermes-core-[0-9a-f]{40}$"
+    },
+    "repository": {
+      "const": "https://github.com/NousResearch/hermes-agent.git"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "source_archive_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact_identity_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "python_abi": { "type": "string", "pattern": "^cp[0-9]{2,3}$" },
+    "dependency_lock_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "runtime_binding_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "hermes_cli_version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$"
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "platform",
+        "interpreter_path",
+        "site_packages_path",
+        "launcher_path"
+      ],
+      "properties": {
+        "kind": { "const": "release-local-venv" },
+        "platform": { "const": "linux-x86_64" },
+        "interpreter_path": { "const": "runtime/venv/bin/python" },
+        "site_packages_path": {
+          "type": "string",
+          "pattern": "^runtime/venv/lib/python[0-9]+\\.[0-9]+/site-packages$"
+        },
+        "launcher_path": { "const": "runtime/hermes-core-launcher.py" }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 200000,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "type", "mode", "owner"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^(?:core|runtime)/[A-Za-z0-9._+@-]+(?:/[A-Za-z0-9._+@-]+)*$"
+              },
+              "type": { "const": "directory" },
+              "mode": { "const": "0555" },
+              "owner": { "const": "release-owner" }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "type", "mode", "owner", "size_bytes", "sha256"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^(?:core|runtime)/[A-Za-z0-9._+@-]+(?:/[A-Za-z0-9._+@-]+)*$"
+              },
+              "type": { "const": "file" },
+              "mode": { "enum": ["0444", "0555"] },
+              "owner": { "const": "release-owner" },
+              "size_bytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 536870912
+              },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          }
+        ]
+      }
+    },
+    "receipts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["build", "update", "validation"],
+      "properties": {
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": { "const": "build-receipt.json" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "update": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": { "const": "update-receipt.json" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": { "const": "validation-summary.json" },
+            "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+          }
+        }
+      }
+    }
+  }
+}

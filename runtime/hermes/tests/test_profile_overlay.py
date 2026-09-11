@@ -65,7 +65,7 @@ class ProfileOverlayTests(unittest.TestCase):
 
             self.assertEqual(rendered, repeated)
             self.assertEqual(original["channel"]["qiwe"], rendered["channel"]["qiwe"])
-            self.assertTrue(rendered["channel"]["wecom"]["enabled"])
+            self.assertNotIn("wecom", rendered["channel"])
             self.assertEqual(original["unrelated_flag"], rendered["unrelated_flag"])
             self.assertEqual("gpt-5.2", rendered["model"]["default"])
             self.assertEqual(original["model"]["default"], rendered["model"]["default"])
@@ -81,7 +81,7 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertNotIn("fixture-livecool-key-not-real", report_text)
             report = json.loads(report_text)
             self.assertTrue(report["secret_values_redacted"])
-            self.assertIn("channel.wecom.enabled", report["changed_paths"])
+            self.assertNotIn("channel.wecom.enabled", report["changed_paths"])
             self.assertNotIn("model.default", report["changed_paths"])
             self.assertEqual("unchanged", json.loads(second_report.read_text())["status"])
 
@@ -109,11 +109,11 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertIn("model fields must be exactly: provider, base_url", result.stderr)
             self.assertFalse(output.exists())
 
-    def test_overlay_cannot_manage_unreviewed_channel_fields(self) -> None:
+    def test_overlay_cannot_manage_channels(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             overlay = yaml.safe_load(OVERLAY.read_text())
-            overlay["managed"]["channel"]["wecom"]["bot_id"] = "must-not-enter-git"
+            overlay["managed"]["channel"] = {"wecom": {"enabled": False}}
             overlay_path = directory / "overlay.yaml"
             overlay_path.write_text(yaml.safe_dump(overlay, sort_keys=False))
             output = directory / "config.yaml"
@@ -130,7 +130,7 @@ class ProfileOverlayTests(unittest.TestCase):
                 str(directory / "report.json"),
                 expect=1,
             )
-            self.assertIn("channel.wecom fields must be exactly: enabled", result.stderr)
+            self.assertIn("managed fields must be exactly: model, custom_provider", result.stderr)
             self.assertFalse(output.exists())
 
     def test_existing_inline_provider_is_replaced_without_secret(self) -> None:
@@ -152,13 +152,13 @@ class ProfileOverlayTests(unittest.TestCase):
             self.assertNotIn("must-not-survive", report.read_text())
             self.assertEqual(45, yaml.safe_load(output.read_text())["custom_providers"][1]["timeout"])
 
-    def test_disabled_wecom_channel_is_enabled_without_leaking_runtime_fields(self) -> None:
+    def test_wecom_channel_and_runtime_fields_are_preserved(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             base = directory / "base.yaml"
             base_config = yaml.safe_load((FIXTURES / "erhua-base.yaml").read_text())
             base_config["channel"]["wecom"] = {
-                "enabled": False,
+                "enabled": True,
                 "extra": {
                     "bot_id": "fixture-bot-id",
                     "secret": "fixture-secret",
@@ -167,18 +167,32 @@ class ProfileOverlayTests(unittest.TestCase):
             base.write_text(yaml.safe_dump(base_config, sort_keys=False))
             output, report = self.render(directory, base)
             rendered = yaml.safe_load(output.read_text())
-            self.assertTrue(rendered["channel"]["wecom"]["enabled"])
-            self.assertEqual(
-                {
-                    "bot_id": "fixture-bot-id",
-                    "secret": "fixture-secret",
-                },
-                rendered["channel"]["wecom"]["extra"],
-            )
+            self.assertEqual(base_config["channel"]["wecom"], rendered["channel"]["wecom"])
             report_text = report.read_text()
-            self.assertIn("channel.wecom.enabled", report_text)
+            self.assertNotIn("channel.wecom.enabled", report_text)
             self.assertNotIn("fixture-bot-id", report_text)
             self.assertNotIn("fixture-secret", report_text)
+
+    def test_missing_wecom_channel_stays_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            base = directory / "base.yaml"
+            base_config = yaml.safe_load((FIXTURES / "erhua-base.yaml").read_text())
+            base.write_text(yaml.safe_dump(base_config, sort_keys=False))
+            output, _ = self.render(directory, base)
+            self.assertNotIn("wecom", yaml.safe_load(output.read_text())["channel"])
+
+    def test_disabled_wecom_channel_stays_disabled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory)
+            base = directory / "base.yaml"
+            base_config = yaml.safe_load((FIXTURES / "erhua-base.yaml").read_text())
+            base_config["channel"]["wecom"] = {"enabled": False}
+            base.write_text(yaml.safe_dump(base_config, sort_keys=False))
+            output, _ = self.render(directory, base)
+            self.assertEqual(
+                {"enabled": False}, yaml.safe_load(output.read_text())["channel"]["wecom"]
+            )
 
     def test_runtime_provider_verifier_requires_affirmative_hermes_resolution(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -841,10 +855,21 @@ class ProfileOverlayTests(unittest.TestCase):
             self.render(profile)
             env_file = profile / ".env"
             env_file.write_text('LIVECOOL_API_KEY="not-a-real-secret"\n')
+            profile_metadata = directory / "profile-metadata.json"
+            profile_metadata.write_text("{}\n")
+            fake_python = fake_bin / "python3"
+            fake_python.write_text(
+                "#!/bin/sh\n"
+                f'if [ "${{1:-}}" = "-" ]; then exec "{os.sys.executable}" "$@"; fi\n'
+                "exit 0\n"
+            )
+            os.chmod(fake_python, 0o755)
             fake_runuser = fake_bin / "runuser"
             fake_runuser.write_text(
                 "#!/bin/sh\n"
-                "case \"$*\" in\n"
+                "last_argument=\n"
+                "for argument do last_argument=$argument; done\n"
+                "case \"$last_argument\" in\n"
                 "  *\" doctor\") echo \"model.provider 'custom:livecool.net' is not a recognized provider\" ;;\n"
                 "esac\n"
                 "exit 0\n"
@@ -858,6 +883,8 @@ class ProfileOverlayTests(unittest.TestCase):
                     str(release_root),
                     "--restart-targets",
                     "hermes-erhua",
+                    "--profile-metadata",
+                    str(profile_metadata),
                 ],
                 cwd=ROOT,
                 env={
@@ -884,6 +911,8 @@ class ProfileOverlayTests(unittest.TestCase):
                     str(release_root),
                     "--restart-targets",
                     "hermes-erhua",
+                    "--profile-metadata",
+                    str(profile_metadata),
                     "--evidence-output",
                     str(evidence),
                 ],

@@ -774,7 +774,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "skills/feishu-base/docs",
     "artifact-manifest.json",
     "SHA256SUMS",
-    'run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"])',
+    'run("tar", ["--no-xattrs", "-C", bundleDir, "-czf", archivePath, "payload"], {',
+    'COPYFILE_DISABLE: "1"',
   ]) {
     if (!buildDeployBundleScript.includes(requiredFragment)) {
       addError(

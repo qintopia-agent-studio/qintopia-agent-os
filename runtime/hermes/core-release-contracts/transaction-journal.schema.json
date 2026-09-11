@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qintopia.local/schemas/hermes-core-transaction-journal.schema.json",
+  "title": "Hermes core release transaction journal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "transaction_type",
+    "revision",
+    "candidate_commit",
+    "candidate_artifact",
+    "original_lineage",
+    "candidate_lineage",
+    "phase",
+    "services",
+    "stopped_services",
+    "started_candidate_services",
+    "rollback"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "transaction_type": { "const": "hermes-core-release" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "candidate_commit": { "$ref": "#/$defs/commit" },
+    "candidate_artifact": { "$ref": "#/$defs/artifact" },
+    "original_lineage": { "$ref": "#/$defs/lineage" },
+    "candidate_lineage": { "$ref": "#/$defs/lineage" },
+    "phase": {
+      "enum": [
+        "prepared",
+        "services_stopping",
+        "services_stopped",
+        "lineage_committing",
+        "lineage_committed",
+        "services_starting",
+        "smoke_running",
+        "committed",
+        "rollback_stopping_candidate",
+        "rollback_restoring_lineage",
+        "rollback_starting_original",
+        "rolled_back",
+        "rollback_failed"
+      ]
+    },
+    "services": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": { "$ref": "#/$defs/service" }
+    },
+    "stopped_services": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/unit" }
+    },
+    "started_candidate_services": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/unit" }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempted", "status", "failure_code"],
+      "properties": {
+        "attempted": { "type": "boolean" },
+        "status": {
+          "enum": ["not_attempted", "in_progress", "succeeded", "failed"]
+        },
+        "failure_code": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "pattern": "^[a-z][a-z0-9_]+$" }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tag",
+        "commit",
+        "source_sha256",
+        "identity_sha256",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "tag": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "commit": { "$ref": "#/$defs/commit" },
+        "source_sha256": { "$ref": "#/$defs/digest" },
+        "identity_sha256": { "$ref": "#/$defs/digest" },
+        "manifest_sha256": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_commit", "previous_commit", "rollback_reserve_commit"],
+      "properties": {
+        "current_commit": { "$ref": "#/$defs/commit" },
+        "previous_commit": { "$ref": "#/$defs/commit" },
+        "rollback_reserve_commit": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "unit": {
+      "type": "string",
+      "pattern": "^hermes-gateway(?:-[a-z][a-z0-9]*)?\\.service$"
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "unit",
+        "load_state",
+        "active_state",
+        "unit_file_state",
+        "exec_start_sha256"
+      ],
+      "properties": {
+        "profile_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*$"
+        },
+        "unit": { "$ref": "#/$defs/unit" },
+        "load_state": { "const": "loaded" },
+        "active_state": { "enum": ["active", "inactive"] },
+        "unit_file_state": { "enum": ["enabled", "disabled"] },
+        "exec_start_sha256": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}
