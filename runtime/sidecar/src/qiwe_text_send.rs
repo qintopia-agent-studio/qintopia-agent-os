@@ -309,7 +309,7 @@ async fn run_apply_core(
             "no_claimable_text_group_message_request",
         ));
     };
-    let plan = match validate_work_item(&work_item, &config) {
+    let plan = match validate_work_item(&work_item, config) {
         Ok(plan) => plan,
         Err(err) => {
             record_failed(&mut tx, &work_item, "policy_denied", Some(&err.to_string())).await?;

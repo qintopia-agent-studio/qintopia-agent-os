@@ -22,8 +22,8 @@ OS 的本地业务测试方式。它服务于两类使用者：不需要理解�
 | 打开指定运行的报告       | `pnpm test:report -- --run <run-id>`             |
 | 检查清单和运行器自身     | `pnpm test:harness`                              |
 
-本机先准备 Node.js 24、pnpm 10、Python 3.12+、Rust
-1.96、Docker（含 Compose，daemon 已启动）和 Java
+当前支持 macOS 和 Linux（需要 Bash/POSIX 进程组）。Windows 请在 WSL2 中使用。本机先准备 Node.js
+24、pnpm 10、Python 3.12+、Rust 1.96、Docker（含 Compose，daemon 已启动）和 Java
 17+。Java 只运行现成 Allure 报告，不增加 Java 业务代码。先执行
 `pnpm install --frozen-lockfile`，然后执行 `pnpm test:setup` 和
 `pnpm test:doctor`。全部业务测试默认一次选择所有已登记场景；一个场景失败不会阻止其他独立场景运行，命令最后仍会以非零状态退出。运行资料写入
@@ -97,3 +97,11 @@ Allure 报告按业务和场景展示状态、步骤、耗时、预期/实际结
 [早报案例说明](../../workflows/erhua-morning-brief/tests/business/README.md)。
 
 Docker 镜像下载失败时先检查本机 Docker 网络，恢复后重跑；运行器不会改 daemon 配置。每次运行使用随机端口和独立卷，场景间核对数据库归属后重新执行 migration；首轮 Rust 编译较慢，后续复用编译缓存。
+
+本机默认 Rust 与 CI 不同时，先执行 `rustup toolchain install 1.96.0`，再通过
+`RUSTUP_TOOLCHAIN=1.96.0 pnpm test:business` 或
+`RUSTUP_TOOLCHAIN=1.96.0 pnpm check:pr:auto`
+对齐版本；运行器会保留这个显式选择。不要为了较新 Clippy 的额外 lint 修改无关业务代码。
+
+交付记录：[已完成计划](../plans/completed/local-business-testing.md) ·
+[验收结果与边界](../reports/2026-09-13-local-business-testing.md)。

@@ -13,6 +13,7 @@ import {
   runDirectory,
   createAllureResult,
   commandForScenario,
+  resetDatabase,
 } from "../lib.mjs";
 
 test("catalog resolves full, feature, alias and parameterized scenario without duplicate execution", () => {
@@ -168,4 +169,22 @@ test("legacy QiWe tests get only their declared import directory", () => {
   assert.equal(command.env.PYTHONPATH, path.join(repoRoot, "skills/qiwe"));
   assert.ok(command.argv.includes(path.join(repoRoot, scenario.target.path)));
   assert.equal(command.cwd, path.join(repoRoot, "skills/qiwe"));
+});
+
+test("a foreign database ownership marker prevents reset before any mutation", async () => {
+  const database = {
+    runId: "this-run",
+    composeEnv: safeEnvironment(),
+    base: [
+      process.execPath,
+      "-e",
+      `
+      const sql = process.argv.at(-1);
+      if (sql !== "SELECT run_id FROM public.harness_run") process.exit(91);
+      process.stdout.write("foreign-run");
+    `,
+      "--",
+    ],
+  };
+  await assert.rejects(resetDatabase(database), /marker mismatch; refusing reset/);
 });
