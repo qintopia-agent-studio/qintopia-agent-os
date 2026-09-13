@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-13 本地业务测试接入与验收](2026-09-13-local-business-testing.md)
+
 - [2026-09-11 Hermes 真实核心迁移验证](2026-09-11-hermes-real-core-validation.md)
 - [2026-08-14 Qintopia root TLS renewal](2026-08-14-qintopia-root-tls-renewal.md)
 - [2026-08-11 Xiaoman character-universe daily report PR body](2026-08-11-xiaoman-character-universe-daily-report-pr-body.md)

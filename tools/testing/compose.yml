@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: qintopia_test
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - qintopia-test-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d qintopia_test -Atc
+          'SELECT 1' >/dev/null",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+    labels:
+      com.qintopia.local-testing.owner: local-business-testing
+      com.qintopia.local-testing.run-id: "${QINTOPIA_TEST_RUN_ID}"
+
+volumes:
+  qintopia-test-data:
+    name: "${QINTOPIA_TEST_VOLUME_NAME}"
+    labels:
+      com.qintopia.local-testing.owner: local-business-testing
+      com.qintopia.local-testing.run-id: "${QINTOPIA_TEST_RUN_ID}"

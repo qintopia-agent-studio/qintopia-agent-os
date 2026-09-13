@@ -1,0 +1,411 @@
+{
+  "schema_version": 1,
+  "businesses": [
+    {
+      "id": "erhua-morning-brief",
+      "name": "二花早报文本发布",
+      "aliases": ["早报", "二花早报", "morning brief"],
+      "scenarios": [
+        {
+          "id": "erhua-morning-brief/success",
+          "name": "正常文本发布",
+          "aliases": ["正常文本发布"],
+          "executor": "pytest",
+          "target": {
+            "path": "workflows/erhua-morning-brief/tests/business/test_text_delivery.py",
+            "args": ["-q"],
+            "count_strategy": "junit",
+            "nodeid": "test_text_delivery[success]"
+          },
+          "requires": ["python", "docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "早报内容生成与校验",
+              "Agent OS 产物/审核/确认/发送状态",
+              "文本发送 worker 的幂等与失败状态"
+            ],
+            "simulated": [
+              "QiWe HTTP channel 与响应",
+              "合成活动、新闻、天气输入；不调用模型"
+            ]
+          },
+          "notes": "文本链；不验证卡片、真实调度或真实渠道送达。"
+        },
+        {
+          "id": "erhua-morning-brief/duplicate-send",
+          "name": "重复执行不重复发送",
+          "aliases": ["重复执行不重复发送"],
+          "executor": "pytest",
+          "target": {
+            "path": "workflows/erhua-morning-brief/tests/business/test_text_delivery.py",
+            "args": ["-q"],
+            "count_strategy": "junit",
+            "nodeid": "test_text_delivery[duplicate-send]"
+          },
+          "requires": ["python", "docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "早报内容生成与校验",
+              "Agent OS 产物/审核/确认/发送状态",
+              "文本发送 worker 的幂等与失败状态"
+            ],
+            "simulated": [
+              "QiWe HTTP channel 与响应",
+              "合成活动、新闻、天气输入；不调用模型"
+            ]
+          },
+          "notes": "文本链；不验证卡片、真实调度或真实渠道送达。"
+        },
+        {
+          "id": "erhua-morning-brief/missing-confirmation",
+          "name": "缺少最终确认时零发送",
+          "aliases": ["缺少最终确认时零发送"],
+          "executor": "pytest",
+          "target": {
+            "path": "workflows/erhua-morning-brief/tests/business/test_text_delivery.py",
+            "args": ["-q"],
+            "count_strategy": "junit",
+            "nodeid": "test_text_delivery[missing-confirmation]"
+          },
+          "requires": ["python", "docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "早报内容生成与校验",
+              "Agent OS 产物/审核/确认/发送状态",
+              "文本发送 worker 的幂等与失败状态"
+            ],
+            "simulated": [
+              "QiWe HTTP channel 与响应",
+              "合成活动、新闻、天气输入；不调用模型"
+            ]
+          },
+          "notes": "文本链；不验证卡片、真实调度或真实渠道送达。"
+        },
+        {
+          "id": "erhua-morning-brief/ambiguous-send",
+          "name": "响应断开后不自动重发",
+          "aliases": ["响应断开后不自动重发"],
+          "executor": "pytest",
+          "target": {
+            "path": "workflows/erhua-morning-brief/tests/business/test_text_delivery.py",
+            "args": ["-q"],
+            "count_strategy": "junit",
+            "nodeid": "test_text_delivery[ambiguous-send]"
+          },
+          "requires": ["python", "docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "早报内容生成与校验",
+              "Agent OS 产物/审核/确认/发送状态",
+              "文本发送 worker 的幂等与失败状态"
+            ],
+            "simulated": [
+              "QiWe HTTP channel 与响应",
+              "合成活动、新闻、天气输入；不调用模型"
+            ]
+          },
+          "notes": "文本链；不验证卡片、真实调度或真实渠道送达。"
+        },
+        {
+          "id": "erhua-morning-brief/cron-contract",
+          "name": "早报定时配置接线",
+          "aliases": ["早报定时配置接线"],
+          "executor": "pytest",
+          "target": {
+            "path": "workflows/erhua-morning-brief/tests/business/test_text_delivery.py",
+            "args": ["-q"],
+            "count_strategy": "junit",
+            "nodeid": "test_morning_brief_cron_declaration"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Hermes早报声明与wrapper配置"],
+            "simulated": ["未启动真实调度器；不发送消息"]
+          },
+          "notes": "文本链；不验证卡片、真实调度或真实渠道送达。"
+        }
+      ]
+    },
+    {
+      "id": "qiwe",
+      "name": "QiWe 消息边界",
+      "aliases": ["微信消息", "qiwe"],
+      "scenarios": [
+        {
+          "id": "qiwe/image-callback-bridge",
+          "name": "QiWe 图片回调桥接契约",
+          "aliases": ["图片回调", "callback bridge"],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/qiwe/tests/test_image_callback_bridge.py",
+            "args": ["-v"],
+            "count_strategy": "unittest",
+            "pythonpath": ["skills/qiwe"],
+            "cwd": "skills/qiwe"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["回调 envelope 校验和进程边界"],
+            "simulated": ["外部 QiWe 服务与凭证"]
+          }
+        },
+        {
+          "id": "qiwe/nats-capture-contract",
+          "name": "QiWe NATS 持久捕获契约",
+          "aliases": ["NATS 捕获", "durable capture"],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/qiwe/tests/test_nats_durable_capture.py",
+            "args": ["-v"],
+            "count_strategy": "unittest",
+            "pythonpath": ["skills/qiwe"],
+            "cwd": "skills/qiwe"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["消息捕获授权、确认和超时规则"],
+            "simulated": ["NATS 服务与真实 channel"]
+          }
+        },
+        {
+          "id": "qiwe/parser-contract",
+          "name": "QiWe 消息解析与路由契约",
+          "aliases": ["QiWe 解析", "parser"],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/qiwe/tests/test_parser.py",
+            "args": ["-v"],
+            "count_strategy": "unittest",
+            "pythonpath": ["skills/qiwe"],
+            "cwd": "skills/qiwe"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 600,
+          "required": true,
+          "boundary": {
+            "real": ["解析、上下文隔离、工具授权和幂等逻辑"],
+            "simulated": ["QiWe SDK、模型和外部网络"]
+          }
+        },
+        {
+          "id": "qiwe/space-change-tools",
+          "name": "QiWe Space 配置工具契约",
+          "aliases": ["Space 工具", "space change"],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/qiwe/tests/test_space_change_tools.py",
+            "args": ["-v"],
+            "count_strategy": "unittest",
+            "pythonpath": ["skills/qiwe"],
+            "cwd": "skills/qiwe"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 300,
+          "required": true,
+          "boundary": {
+            "real": ["Space 变更规划、授权和 schema 契约"],
+            "simulated": ["外部文档源、模型和真实群聊"]
+          }
+        },
+        {
+          "id": "qiwe/webhook-envelope",
+          "name": "QiWe Webhook envelope 契约",
+          "aliases": ["Webhook", "消息 envelope"],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/qiwe/tests/test_webhook_envelope.py",
+            "args": ["-v"],
+            "count_strategy": "unittest",
+            "pythonpath": ["skills/qiwe"],
+            "cwd": "skills/qiwe"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 300,
+          "required": true,
+          "boundary": {
+            "real": ["Webhook schema、签名和安全边界"],
+            "simulated": ["QiWe webhook 网络入口"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "agent-runner",
+      "name": "Agent runner",
+      "aliases": ["Agent 任务", "space agent runner"],
+      "scenarios": [
+        {
+          "id": "agent-runner/space-turn",
+          "name": "Space Agent runner 协议",
+          "aliases": ["Agent runner 协议", "space turn"],
+          "executor": "unittest",
+          "target": {
+            "path": "tools/agents/test_run_space_agent_turn.py",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 600,
+          "required": true,
+          "boundary": {
+            "real": ["runner 协议、claim/finish 和超时逻辑"],
+            "simulated": ["completion socket、数据库和外部模型"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "mcp",
+      "name": "MCP 边界",
+      "aliases": ["MCP", "工具服务"],
+      "scenarios": [
+        {
+          "id": "mcp/qintopia-collab",
+          "name": "协作 MCP 契约",
+          "aliases": ["协作 MCP"],
+          "executor": "unittest",
+          "target": {
+            "path": "mcp/qintopia-collab/tests",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["MCP 输入输出和协作 payload 契约"],
+            "simulated": ["MCP transport 与真实下游"]
+          }
+        },
+        {
+          "id": "mcp/operations-control-plane",
+          "name": "Operations control-plane MCP 契约",
+          "aliases": ["operations MCP", "控制面 MCP"],
+          "executor": "unittest",
+          "target": {
+            "path": "mcp/operations-control-plane/tests",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["控制面 schema 和拒绝边界"],
+            "simulated": ["MCP transport、PostgreSQL 和真实外部系统"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL sidecar 集成",
+      "aliases": ["数据库集成", "PG 集成", "postgres"],
+      "scenarios": [
+        {
+          "id": "postgres/group-message-send",
+          "name": "群消息 send-ready 幂等",
+          "aliases": ["send-ready 幂等"],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/group_message_send.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "group_message_send::tests::postgres_send_ready_is_idempotent_and_fails_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Rust sidecar transaction、send-ready 和 PostgreSQL"],
+            "simulated": ["外部 channel"]
+          }
+        },
+        {
+          "id": "postgres/conversation-policy",
+          "name": "会话策略版本化幂等",
+          "aliases": ["conversation policy"],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/conversation_policy.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Rust sidecar policy事务和 PostgreSQL"],
+            "simulated": ["Feishu/MCP transport"]
+          }
+        },
+        {
+          "id": "postgres/space-control-plane",
+          "name": "Space control-plane 版本化隔离",
+          "aliases": ["Space control-plane PG"],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/space_configuration_integration_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "space_configuration_integration_tests::postgres_space_control_plane_is_versioned_authorized_and_isolated",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Space control-plane 授权、版本和隔离事务"],
+            "simulated": ["外部审批工作台和真实群聊"]
+          }
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "id": "inventory/qiwe-space-agent-completion-peer-credentials",
+      "name": "QiWe completion peer credential 平台专项",
+      "path": "skills/qiwe/tests/test_space_agent_completion.py",
+      "reason": "保留在待接入清单：包含 Linux SO_PEERCRED 条件跳过，当前 macOS 全量会产生可见 skipped；需要 Linux CI/专项目标后再设为 required。"
+    },
+    {
+      "id": "inventory/morning-brief-unit-suite",
+      "name": "二花早报既有 unittest 全套",
+      "path": "workflows/erhua-morning-brief/tests/test_morning_brief.py",
+      "reason": "既有套件包含 Pillow/CJK 字体和渲染后端条件跳过；本地业务场景单独接入文本发布链，完整 unittest 套件保留原生入口并待分层登记。"
+    },
+    {
+      "id": "inventory/broad-sidecar-postgres-suite",
+      "name": "Sidecar 其余 PostgreSQL 集成测试",
+      "path": "runtime/sidecar/src",
+      "reason": "CI 仍维护更大的 exact selector 集合；本地 catalog 先收录三个稳定无外部发送的代表性目标，后续按数据库耗时和隔离要求逐项登记。"
+    },
+    {
+      "id": "inventory/real-model-and-channel",
+      "name": "真实模型与真实 channel 验证",
+      "path": "workflows/erhua-morning-brief",
+      "reason": "生产凭证、线上数据库、真实 Hermes 调度和真实消息送达不属于本地确定性业务套件。"
+    }
+  ]
+}

@@ -88,7 +88,13 @@
     "check:runtime": "pnpm test:qiwe && pnpm fmt:sidecar && pnpm check:sidecar && pnpm test:sidecar && pnpm smoke:sidecar",
     "check": "pnpm check:light && pnpm check:runtime",
     "prepare": "husky",
-    "commitlint:check": "node tools/ci/check-commit-messages.mjs"
+    "commitlint:check": "node tools/ci/check-commit-messages.mjs",
+    "test:setup": "node tools/testing/run.mjs setup",
+    "test:doctor": "node tools/testing/run.mjs doctor",
+    "test:list": "node tools/testing/run.mjs list",
+    "test:business": "node tools/testing/run.mjs business",
+    "test:report": "node tools/testing/run.mjs report",
+    "test:harness": "node tools/testing/run.mjs harness"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",
@@ -98,6 +104,7 @@
     "husky": "^9.1.7",
     "markdownlint-cli2": "^0.23.2",
     "prettier": "^3.9.4",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "allure-commandline": "2.43.0"
   }
 }

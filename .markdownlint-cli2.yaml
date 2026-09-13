@@ -10,6 +10,7 @@ config:
 globs:
   - "**/*.md"
 ignores:
+  - ".local-testing"
   - "node_modules"
   - ".pnpm-store"
   - ".git"

@@ -34,6 +34,7 @@
 - Operations docs: `docs/operations/`
 - Fixtures and replay data: `fixtures/`
 - Historical POC material: `deprecated/`
+- Local business testing guide: `docs/testing/README.md`
 
 ## Commands
 
@@ -42,6 +43,9 @@
 - Pre-commit quick checks: `.husky/pre-commit`
 - Repository check: `pnpm check`
 - Markdown lint: `pnpm lint:md`
+- Local business testing: read `docs/testing/agent-guide.md`; use the `pnpm test:*`
+  entries backed by `node tools/testing/run.mjs` for setup, discovery, targeted runs,
+  full runs, reports, and harness checks.
 - Xiaoman production evidence chain local repository verification:
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
 - Xiaoman daily case-report character-universe local readiness check:
