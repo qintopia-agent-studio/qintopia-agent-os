@@ -34,6 +34,14 @@ ignored）、两个 smoke 及生产/预发布编译边界测试。随后 Clippy 
 `RUSTUP_TOOLCHAIN=1.96.0` 继续验证，不修改无关的
 `conversation_ingress.rs`。最终结果待补充。
 
+## PR 发布记录
+
+首次创建 PR 时新 worktree 分支仍跟踪 `origin/master`，现有 `pr:create`
+把“存在 upstream”误当成“同名远端分支已经存在”，未推送就调用 GitHub，返回 head
+ref 不存在。通过 `git push -u origin HEAD`
+创建同名远端分支并修正 upstream 后重试；未推送 master。后续创建隔离工作分支应使用
+`--no-track`，并在 PR 前核对 upstream；无需修改测试框架。
+
 ## 生产边界与回退
 
 没有部署、真实发送或生产数据库访问。生产发送入口仍保留原 gates、allowlist 和生产 HTTP
