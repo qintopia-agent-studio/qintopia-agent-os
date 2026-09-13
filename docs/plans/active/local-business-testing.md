@@ -20,9 +20,9 @@ transport 和真实进程仅在专项场景启用；第一版数据库场景串�
   `docs/testing/README.md`、`agent-guide.md`、`authoring.md`、`architecture.md`，说明使用方式、Codex 流程、边界、清单语义、案例和验收规则。
 - 在根 `AGENTS.md` 增加测试文档入口和命令索引，在 `docs/README.md` 和
   `docs/engineering/change-routing-index.md` 增加测试文档链接。
-- 文档用明确的 `passed/failed/broken/skipped/blocked`
-  运行摘要语义，要求依赖缺失、空选择和未执行不能报告为通过；Allure 原生状态中将
-  `blocked` 映射为带原因的 `broken`。
+- 文档用明确的 `passed/failed/broken/skipped/interrupted`
+  运行摘要语义，要求依赖缺失、空选择和未执行不能报告为通过；Allure 原生状态中将环境阻断和未执行映射为带原因的
+  `broken`。
 
 验收：文档能指导协作方直接请求定向测试或全量测试；读者能知道早报案例是文本路径、默认模拟 channel、不能证明真实送达。
 
@@ -70,3 +70,25 @@ transport 和真实进程仅在专项场景启用；第一版数据库场景串�
   `docs/plans/completed/`。
 
 最终验收：协作方对 Codex 说“测试二花早报是否会重复发送”即可定位并运行对应场景；说“运行全部业务测试”即可执行完整已登记集合并打开统一报告；任何未执行或模拟结果都不会被描述成真实线上送达。
+
+## 实施记录与审查
+
+- 使用独立 worktree/分支 `codex/local-business-testing`，文档先行提交为 `5ec19b0`。
+- 按用户指定使用 `gpt-5.6-luna` / `xhigh`
+  子代理；初期模型服务多次报错后由主代理接手。独立只读审查代理随后完成审查；主代理核对并修复发送结果断言、子进程组回收、清理超时、bridge 显式门禁和 cron
+  wrapper 文件检查。
+- Rust 唯一生产路径调整为提取共用 `run_apply_core`；生产入口仍使用原有 gates 和
+  `HttpClient::production()`。本地 bridge 仅编译在 test +
+  postgres-integration-tests 内，验证 loopback、固定数据库名、本次归属标记和显式 opt-in。生产配置门禁由既有原生回归验证。
+- 实现简化：现成 pytest/Allure，不新建前端、DSL、消息总线模拟器或真实模型评测平台。运行进度由 Codex/终端显示，Allure 展示运行后报告。
+- 数据库隔离采用每次独立 Compose 项目/随机端口/卷，场景间校验归属后重建业务 schema 并运行真实 migration。健康检查使用 TCP 查询，避免误把镜像初始化期间的临时 socket 服务当作就绪。
+- 本机 Docker registry 下载曾受 TLS 网络故障影响，恢复官方镜像后继续；未修改 Docker
+  daemon。不把本机下载绕行脚本加入仓库。
+- 接入旧 QiWe 测试时发现包搜索路径和 fixture 相对目录依赖，清单显式声明
+  `pythonpath/cwd`，保留旧测试断言。未执行、缺依赖、零测试及必需跳过均不算通过。
+- 本地检查期间有格式/Markdown 行长失败，修复后重新验证；无跳过 hooks 或移除业务断言。
+
+## 后续边界
+
+当前全量是清单中的 16 个场景/测试组，旧测试组共计的原生用例数与 Allure 组数分别报告。MCP 测试验证当前工具契约；跨 Agent 真正 transport、真实 Hermes
+tick、NATS 恢复和模型质量仍需按需求新增专项，不能宣称已经覆盖。早报案例覆盖文本 fallback，不覆盖图片/card 或真实送达。

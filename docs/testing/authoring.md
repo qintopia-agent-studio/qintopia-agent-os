@@ -84,3 +84,16 @@ Allure 步骤只记录实际观测到的动作。每个失败至少提供场景�
 08:10 定时器；本地模拟响应通过只表示发送适配器契约正确，不表示真实 channel 送达。
 
 案例至少覆盖：正常文本发布、重复执行不重复发送、缺少最终确认时零发送、请求已送出但响应断开时不自动重发/不误报成功。案例说明中要写明当前实现定义的状态语义，不能引入系统尚未承诺的回执含义。
+
+## 清单接入细节
+
+以 `tools/testing/catalog.json` 的实际条目为模板，schema 为同目录
+`catalog.schema.json`。pytest 参数变体通过 `target.nodeid` 精确选择，例如
+`test_text_delivery[duplicate-send]`。 `target.path`
+始终相对仓库根；旧 unittest 的包导入目录通过 `target.pythonpath` 显式登记（例如
+`["skills/qiwe"]`），运行器不继承用户的 `PYTHONPATH`。Cargo 目标必须提供完整
+`target.filter` 并使用 `--exact`，禁止零匹配报告成功。
+
+新增后依次运行
+`pnpm test:harness`、单场景、所属 feature、`pnpm test:business`。每个 PostgreSQL 场景独立 seed，不依赖上一个场景的数据。无需新增通用 fixture
+DSL；参考案例的参数表已经表达输入事件、外部响应和独立预期。

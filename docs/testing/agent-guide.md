@@ -72,8 +72,8 @@ pnpm test:report
 或 change-routing index 列出的命令。不要把业务套件通过当作所有原生检查都已通过。
 
 执行器必须识别零测试、未知选择、超时、非零退出和缺依赖。默认不自动重试。全量结果中出现必需的
-`broken`、`skipped` 或 `blocked` 时，不得说“全部通过”；`blocked`
-在 Allure 中显示为带原因的 `broken`。
+`broken` 或 `skipped` 时，不得说“全部通过”；环境阻断在 Allure 中显示为带原因的
+`broken`。
 
 ### 5. 报告结果
 
