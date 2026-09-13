@@ -6,6 +6,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.176](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.175...v0.2.176) (2026-09-11)
+
+
+### Features
+
+* detach Hermes core lifecycle for official updates ([15bc2c7](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/15bc2c7f443c1abec8a7faacc004136435749c88))
+* detach Hermes core release lifecycle ([8faf142](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/8faf1422e2e9365b2d508668f1427ddffbb9c126))
+* migrate Silaoshi webhook action to durable bridge ([aecbe87](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/aecbe87751fa0f189ee9c876138d340068456598))
+* move Huabaosi completion gate to plugin ([ee6e882](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ee6e882a90aacc7f5864222879e92a07aa78bde3))
+
+
+### Bug Fixes
+
+* align deploy preflight with archive hardening ([3827793](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3827793e833ce627333a5856df57df0d9c325031))
+* omit legacy desktop temp fixture ([56259ce](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/56259cebbdf4cf5e4e8c028860299b689708c81e))
+* omit macOS metadata from deploy archive ([eac8b39](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/eac8b3926e62774bc68621fd2baae317a5474533))
+* preserve absent disabled WeCom config ([8410844](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/841084466eeafd9c550c8c063b9c6e487953da66))
+* preserve runtime state during core detachment ([543215a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/543215a3aa54570a1c5df8a93904e5d84471bb9e))
+* preserve Silaoshi bridge runtime access ([a1e6b27](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a1e6b278261fdf08499e3afe2bc86e8126de6d7f))
+* strip extended attributes from deploy archive ([69104fd](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/69104fd76a0801fdb3756264ca0c15756df5aae0))
+* support default Hermes profile layout ([9f329f2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9f329f2345f836b61d3719c2733b84d4821ca785))
+
+
+### CI / Deployment
+
+* remove low-risk auto release ([3be6490](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3be6490aa2da9bc56348a9e43a01ef2939140d4f))
+* streamline workflow validation triggers ([18fd113](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/18fd113dedbef90d996a349e499c8f4abcb1e642))
+* streamline workflows and retire low-risk auto release ([#699](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/699)) ([56766b1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/56766b103f9d34e672ff208aac02e8642c5dafc1))
+
 ## [0.2.175](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.174...v0.2.175) (2026-09-02)
 
 
