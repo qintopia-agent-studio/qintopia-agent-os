@@ -51,6 +51,7 @@ and historical source documents that still have audit or design value.
 24. Reports index: [reports/README.md](reports/README.md)
 25. Completed migration archive:
     [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
+26. Local business testing: [testing/README.md](testing/README.md)
 
 ## Package Entry Points
 
