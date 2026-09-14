@@ -33,6 +33,128 @@ fn id(value: &Value) -> Uuid {
     serde_json::from_value(value.clone()).unwrap()
 }
 
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn confirmed_workbench_saves_assignment_and_contact_atomically() -> Result<()> {
+    let (store, owner, initial) = fixture().await?;
+    let mut first = assignment(&initial, "人员甲 · 合成样例 A");
+    let mut other = first.clone();
+    other.scope = find(&initial, "scopes", "二栋");
+    let two = save(&store, &owner, Change::Assign(Box::new(other))).await?;
+    let two_id = id(&two["change"]["collaboration"]);
+    let audience = Audience {
+        open_reception: true,
+        groups: vec![],
+        people: vec![],
+        residents: "current".into(),
+        reply: PermissionMode::Autonomous,
+        proactive: PermissionMode::Denied,
+        reviewer: None,
+        topics: "仅本栋合成服务咨询".into(),
+        visibility: "general".into(),
+    };
+    let cmd = command(
+        &store,
+        &owner,
+        Change::ConfigureWork {
+            assignment: Box::new(first.clone()),
+            audience: audience.clone(),
+        },
+    )
+    .await?;
+    let before = store.state(&owner).await?;
+    let preview = store.command(&owner, &cmd, false).await?;
+    assert_eq!(preview["persisted"], false);
+    assert_eq!(
+        store.state(&owner).await?,
+        before,
+        "preview must roll back contact and assignment"
+    );
+    let result = store.command(&owner, &cmd, true).await?;
+    assert_eq!(result["persisted"], true);
+    let one_id = id(&result["change"]["collaboration"]);
+    let replay = store.command(&owner, &cmd, true).await?;
+    assert_eq!(replay["replayed"], true);
+    assert_eq!(replay["version"], result["version"]);
+    assert_eq!(
+        result["change"]["after"]["audience"]["topics"],
+        audience.topics
+    );
+    assert_eq!(
+        store.decision(&owner, one_id, "train").await?["status"],
+        "autonomous"
+    );
+    first.collaboration = Some(one_id);
+    first.person = find(&initial, "people", "人员乙 · 合成样例");
+    let mut invalid = audience.clone();
+    invalid.groups = vec![Uuid::new_v4()];
+    let before_failure = store.state(&owner).await?;
+    assert!(save(
+        &store,
+        &owner,
+        Change::ConfigureWork {
+            assignment: Box::new(first.clone()),
+            audience: invalid,
+        }
+    )
+    .await
+    .is_err());
+    assert_eq!(
+        store.state(&owner).await?,
+        before_failure,
+        "invalid contact must roll back replacement and revocation"
+    );
+    let replacement = save(
+        &store,
+        &owner,
+        Change::ConfigureWork {
+            assignment: Box::new(first),
+            audience,
+        },
+    )
+    .await?;
+    assert_eq!(replacement["change"]["replaced"], json!(one_id));
+    assert_eq!(
+        store.decision(&owner, one_id, "train").await?["status"],
+        "denied"
+    );
+    assert_eq!(
+        store.decision(&owner, two_id, "train").await?["status"],
+        "autonomous"
+    );
+    let new_id = id(&replacement["change"]["collaboration"]);
+    assert_eq!(
+        store.decision(&owner, new_id, "train").await?["status"],
+        "autonomous"
+    );
+    let reopened = Store::local(
+        &std::env::var("QINTOPIA_COLLABORATION_TEST_DATABASE_URL")?,
+        &store.tenant,
+    )
+    .await?;
+    let reread = reopened.state(&owner).await?;
+    assert!(reread["organization"]["audiences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|a| a["collaboration"] == json!(new_id)));
+    assert!(
+        store
+            .command(
+                &owner,
+                &Command {
+                    operation_id: Uuid::new_v4(),
+                    ..cmd
+                },
+                true
+            )
+            .await
+            .is_err(),
+        "stale version must not overwrite"
+    );
+    Ok(())
+}
+
 fn find(state: &Value, collection: &str, label: &str) -> Uuid {
     id(&state[collection]
         .as_array()

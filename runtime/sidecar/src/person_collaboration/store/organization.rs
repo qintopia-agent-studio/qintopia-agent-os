@@ -2,6 +2,15 @@
 use super::*;
 
 impl Store {
+    pub(super) async fn work_snapshot(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: Option<Uuid>,
+    ) -> Result<Value> {
+        let Some(id) = id else { return Ok(Value::Null) };
+        Ok(sqlx::query_scalar("SELECT jsonb_build_object('connection',to_jsonb(c)-'tenant_key','appointment',to_jsonb(a)-'tenant_key','audience',(SELECT configuration FROM qintopia_agent_os.collaboration_audiences WHERE collaboration_id=c.id),'grants',(SELECT coalesce(jsonb_agg(to_jsonb(g)-'tenant_key' ORDER BY g.id),'[]') FROM qintopia_agent_os.collaboration_grants g WHERE g.collaboration_id=c.id)) FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND c.id=$2")
+            .bind(&self.tenant).bind(id).fetch_optional(&mut **tx).await?.unwrap_or(Value::Null))
+    }
     pub(super) async fn configuration_snapshot(
         &self,
         tx: &mut Transaction<'_, Postgres>,

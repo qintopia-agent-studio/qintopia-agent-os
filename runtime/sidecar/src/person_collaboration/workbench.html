@@ -2,402 +2,81 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>秦托邦 · 人与智能体</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>秦托邦 · 组织与智能体</title>
     <link rel="stylesheet" href="/workbench.css" />
     <script src="/workbench-view.js" defer></script>
-    <script src="/workbench-catalog.js" defer></script>
     <script src="/workbench-organization.js" defer></script>
+    <script src="/workbench-catalog.js" defer></script>
     <script src="/workbench.js" defer></script>
   </head>
   <body>
-    <header>
-      <div>
-        <span class="eyebrow">人与智能体的协作网络</span><strong>秦托邦</strong>
+    <div id="qt-org-scope">
+      <header class="qo-top">
+        <div class="qo-brand">秦托邦 · 组织与智能体</div>
+        <span class="qo-caption">本地合成资料 · 配置持久保存 · 真实智能体未接入</span>
+      </header>
+      <nav class="qo-tabs" role="tablist" aria-label="组织管理">
+        <button
+          id="tab-overview"
+          role="tab"
+          aria-controls="overview"
+          aria-selected="true"
+          data-page="overview"
+        >
+          组织关系</button
+        ><button
+          id="tab-settings"
+          role="tab"
+          aria-controls="settings"
+          aria-selected="false"
+          tabindex="-1"
+          data-page="settings"
+        >
+          配置任职与范围</button
+        ><button
+          id="tab-ledger"
+          role="tab"
+          aria-controls="ledger"
+          aria-selected="false"
+          tabindex="-1"
+          data-page="ledger"
+        >
+          基础台账
+        </button>
+      </nav>
+      <div id="notice" role="status" aria-live="polite">正在读取本地配置……</div>
+      <div id="recovery" class="qo-actions" hidden>
+        <button id="reload-state">重新读取配置</button
+        ><span class="qo-sub">未保存的输入保留；读取后须重新预览。</span>
       </div>
-      <span class="badge">本地测试数据 · 真实智能体未接入</span>
-    </header>
-    <div class="layout">
-      <aside>
-        <nav aria-label="主导航">
-          <button data-page="overview" aria-current="page">组织关系</button>
-          <button data-page="config">配置任职与范围</button>
-          <button data-page="ledger">基础台账</button>
-        </nav>
-        <p class="aside-note">
-          安排工作，就是把人、岗位、职责、智能体与范围连接起来。<br />每条连接分别设置决定权。
-        </p>
-      </aside>
-      <main>
-        <div id="notice" role="status" aria-live="polite">正在读取本地配置……</div>
-        <section id="review" hidden tabindex="-1">
-          <h2>确认这次变更</h2>
-          <div id="reviewText"></div>
-          <p class="muted">预览尚未保存。请核对对象、连接和权限的变化。</p>
-          <div class="buttons">
-            <button class="primary" id="save">确认保存</button
-            ><button id="cancel">返回修改</button>
-          </div>
-        </section>
-        <div data-view="overview">
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">秦托邦</span>
-              <h1>组织关系</h1>
-              <p>选择岗位，查看谁在负责、由谁管理，以及与哪些智能体共同工作。</p>
-            </div>
-            <button id="newPosition" class="primary">＋ 设置组织岗位</button>
-          </div>
-          <section class="org-layout">
-            <div id="orgTree" aria-label="组织岗位图"></div>
-            <div id="orgDetail"></div>
-          </section>
-          <p class="muted">
-            上下级表示责任归属。实际决定权以任职连接中的授权为准；技术支持可跨岗位协助，不代替业务裁定。
-          </p>
-        </div>
-        <div data-view="ledger" hidden>
-          <h1>基础台账</h1>
-          <p>登记人、智能体、群和岗位；登记本身不会任命人员或授予权限。</p>
-          <div class="view-tabs" aria-label="台账分类">
-            <button data-page="people">人员</button
-            ><button data-page="agents">智能体</button
-            ><button data-page="groups">群</button
-            ><button data-page="roles">岗位</button
-            ><button data-page="duties">职责</button
-            ><button data-page="scopes">范围</button
-            ><button data-page="history">变更记录</button>
-          </div>
-        </div>
-        <div data-view="groups" hidden>
-          <div class="page-heading">
-            <h2>群台账</h2>
-            <button id="registerGroup">＋ 登记已接入群</button>
-          </div>
-          <p>从可访问群清单选择并核验平台身份；此处不创建或解散外部群。</p>
-          <div id="groupLedger" class="catalog"></div>
-        </div>
-        <div data-view="history" hidden>
-          <h2>最近变更记录</h2>
-          <div id="orgHistory"></div>
-        </div>
-        <div data-view="config" hidden>
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">秦托邦 · 全社区</span>
-              <h1>配置任职与范围</h1>
-              <p>每一行是一条完整连接。共享同一个智能体，也各有自己的职责与范围。</p>
-            </div>
-            <button class="primary" id="createRelation">＋ 建立连接</button>
-          </div>
-          <section>
-            <div class="filters">
-              <label
-                >查找连接<input
-                  id="search"
-                  type="search"
-                  placeholder="人员、岗位、职责或群名称"
-              /></label>
-              <label>人<select id="filterPerson"></select></label>
-              <label>智能体<select id="filterAgent"></select></label>
-              <label>职责<select id="filterDuty"></select></label>
-              <label>工作范围<select id="filterScope"></select></label>
-              <label
-                >状态<select id="filterStatus">
-                  <option value="active">当前连接</option>
-                  <option value="all">包含历史连接</option>
-                </select></label
-              >
-            </div>
-            <div class="view-tabs" aria-label="总览呈现方式">
-              <button id="graphView" aria-pressed="true">连接图</button
-              ><button id="listView" aria-pressed="false">连接与权限详情</button>
-            </div>
-            <p id="graphHint" class="muted">
-              沿着同一行阅读：人 → 岗位 → 职责 ↔ 智能体 →
-              工作范围。连线表示工作配合，不表示上下级。
-            </p>
-            <div id="graph"></div>
-            <div id="network" hidden></div>
-          </section>
-        </div>
-        <div data-view="people" hidden>
-          <div class="page-heading" hidden>
-            <div>
-              <h1>人</h1>
-              <p>查看一个人的全部工作安排，也可以从这里为他建立新的连接。</p>
-            </div>
-          </div>
-          <section id="peopleDirectory" class="directory" hidden></section>
-        </div>
-        <div data-view="agents" hidden>
-          <div class="page-heading" hidden>
-            <div>
-              <h1>智能体</h1>
-              <p>查看各个范围由谁配合、谁负责。清单来自已登记的智能体。</p>
-            </div>
-          </div>
-          <section id="agentDirectory" class="directory" hidden></section>
-        </div>
-        <div data-view="assignment" hidden>
-          <div class="page-heading">
-            <div>
-              <button class="back" data-page="config">← 返回任职与范围</button>
-              <h1 id="assignmentHeading">建立连接</h1>
-              <p>明确工作安排，再决定责任人在这项工作中能作出哪些决定。</p>
-            </div>
-            <span id="draftState" class="tag">尚未保存</span>
-          </div>
-          <form id="assignment">
-            <section>
-              <h2><span class="step">1</span> 把工作连接起来</h2>
-              <div class="grid">
-                <div>
-                  <label for="personSearch">人</label
-                  ><input
-                    id="personSearch"
-                    type="search"
-                    placeholder="搜索称呼"
-                    aria-label="搜索人员"
-                  /><select id="person" required aria-label="选择人员"></select>
-                </div>
-                <div>
-                  <label for="role">岗位</label
-                  ><select id="role" required></select>
-                </div>
-                <div>
-                  <label for="duty">承担哪项职责</label
-                  ><select id="duty" required></select>
-                </div>
-                <div>
-                  <label for="agent">智能体</label
-                  ><select id="agent" required></select>
-                </div>
-                <div>
-                  <label for="scope">工作范围</label
-                  ><select id="scope" required></select>
-                </div>
-                <div>
-                  <label for="until">任期截止（可留空）</label
-                  ><input id="until" type="datetime-local" />
-                </div>
-              </div>
-              <p id="dutyContext" class="context"></p>
-              <p id="scopeContext" class="muted"></p>
-              <label for="responsibility">这次工作的补充说明与边界</label
-              ><textarea
-                id="responsibility"
-                required
-                maxlength="2000"
-                rows="3"
-                placeholder="说明这条连接具体负责什么。未约定的合作习惯，由智能体与责任人启动合作时确认。"
-              ></textarea>
-              <details>
-                <summary>私聊与合作启动如何处理</summary>
-                <p>
-                  二花开放接待主动来聊的人。普通咨询、交流和提供信息，无需预先列入名单。主动联系按事情、职责、合作约定及对方意愿决定；在住、过往、全部入住人员是具体任务的对象筛选。
-                </p>
-                <p>
-                  能交流不等于能查看私密资料，也不等于有训练或审核权。智能体应主动引导新责任人开始工作，双方确认汇报节点和习惯；当前页面不替他们设定固定时间，真实合作启动尚未接入。
-                </p>
-              </details>
-              <details>
-                <summary>临时代理</summary>
-                <label for="proxy">代理哪项任职</label
-                ><select id="proxy">
-                  <option value="">不是临时代理</option>
-                </select>
-                <p class="muted">
-                  临时代理需要截止时间。调整当前连接的人员或范围，会保留旧记录，不会结束此人的其他连接。
-                </p>
-              </details>
-            </section>
-            <section>
-              <h2><span class="step">2</span> 这项职责中的决定权</h2>
-              <p id="roleContext"></p>
-              <div class="permission-principle">
-                <strong>少量权限类别，范围内自治</strong>
-                <p>
-                  不用逐条列出厨房、物资或日常服务事项。以下决定权仅作用于上方这条连接，并始终遵守秦托邦的文化与责任边界。人人可以提供信息。
-                </p>
-              </div>
-              <div id="permissions" class="permission-list"></div>
-              <div id="delegation" hidden>
-                <fieldset>
-                  <legend>允许他为哪些工作安排人员并授予权限</legend>
-                  <p class="muted">
-                    这项组织管理权单独限定可交给别人的权限，不代表本人拥有全部业务决定权。
-                  </p>
-                  <label>哪些智能体</label>
-                  <div id="managedAgents" class="checks"></div>
-                  <label>哪些工作领域</label>
-                  <div id="managedDomains" class="checks"></div>
-                  <label>哪些权限类别</label>
-                  <div id="managedActions" class="duty-list"></div>
-                  <label for="depth">允许被安排的人继续授予他人管理权吗</label
-                  ><select id="depth">
-                    <option value="0">不允许继续授予管理权</option>
-                    <option value="1">允许再安排一层</option>
-                    <option value="2">允许再安排两层</option>
-                  </select>
-                </fieldset>
-              </div>
-              <div class="buttons">
-                <button type="submit" class="primary">预览这条连接</button
-                ><button type="button" id="resetEdit">清空，重新建立</button>
-              </div>
-            </section>
-          </form>
-        </div>
-        <div data-view="roles" hidden>
-          <div class="page-heading">
-            <div>
-              <h1>岗位</h1>
-              <p>岗位关联常用职责。选择岗位不会自动给任何人授权。</p>
-            </div>
-            <button class="primary" id="createRole">＋ 新增岗位</button>
-          </div>
-          <section id="roleCatalog" class="directory"></section>
-          <section id="roleEditor" hidden>
-            <h2 id="roleEditorHeading">新增岗位</h2>
-            <form id="roleForm">
-              <label for="roleName">岗位名称</label
-              ><input
-                id="roleName"
-                required
-                maxlength="80"
-                placeholder="例如：物资负责人"
-              /><label for="roleDescription">这个岗位负责什么</label
-              ><textarea
-                id="roleDescription"
-                required
-                maxlength="2000"
-                rows="3"
-              ></textarea>
-              <fieldset>
-                <legend>关联哪些职责</legend>
-                <p class="muted">
-                  职责可以单独维护。这里选岗位适用的工作；具体权限仍需在连接上设置。
-                </p>
-                <div id="roleDuties" class="checks"></div>
-              </fieldset>
-              <div class="buttons">
-                <button type="submit" class="primary">预览岗位设置</button
-                ><button type="button" data-close-editor="roleEditor">收起</button>
-              </div>
-            </form>
-          </section>
-        </div>
-        <div data-view="duties" hidden>
-          <div class="page-heading">
-            <div>
-              <h1>职责</h1>
-              <p>职责说明负责哪类工作；权限说明在这类工作中可以决定什么。</p>
-            </div>
-            <button class="primary" id="createDuty">＋ 新增职责</button>
-          </div>
-          <section id="dutyCatalog" class="directory"></section>
-          <section id="dutyEditor" hidden>
-            <h2 id="dutyEditorHeading">新增职责</h2>
-            <form id="dutyForm">
-              <div class="grid">
-                <div>
-                  <label for="dutyName">职责名称</label
-                  ><input
-                    id="dutyName"
-                    required
-                    maxlength="80"
-                    placeholder="例如：居民服务"
-                  />
-                </div>
-                <div>
-                  <label for="dutyDomain">归属哪类工作</label
-                  ><select id="dutyDomain" required></select>
-                </div>
-              </div>
-              <label for="dutyDescription">工作内容与边界</label
-              ><textarea
-                id="dutyDescription"
-                required
-                maxlength="2000"
-                rows="3"
-                placeholder="例如：整理居民反馈、维护生活知识、协调本范围的日常服务。"
-              ></textarea>
-              <fieldset>
-                <legend>这项职责适用哪些权限类别</legend>
-                <p class="muted">
-                  这是可供选择的权限类别，不会自动授予任何人。可以先保存职责草稿，之后补充。
-                </p>
-                <div id="dutyActions" class="duty-list"></div>
-              </fieldset>
-              <div class="buttons">
-                <button type="submit" class="primary">预览职责设置</button
-                ><button type="button" data-close-editor="dutyEditor">收起</button>
-              </div>
-            </form>
-          </section>
-        </div>
-        <div data-view="scopes" hidden>
-          <div class="page-heading">
-            <div>
-              <h1>工作范围</h1>
-              <p>
-                维护楼栋、业务范围与对应群聊。不同工作通过连接分别安排人员与智能体。
-              </p>
-            </div>
-            <button class="primary" id="createScope">＋ 新增范围</button>
-          </div>
-          <section id="scopeCatalog" class="directory"></section>
-          <section id="scopeEditor" hidden>
-            <h2 id="scopeEditorHeading">新增工作范围</h2>
-            <form id="scopeForm">
-              <div class="grid">
-                <div id="parentField">
-                  <label for="parent">归属范围</label
-                  ><select id="parent"></select>
-                </div>
-                <div>
-                  <label for="scopeName">范围名称</label
-                  ><input
-                    id="scopeName"
-                    required
-                    maxlength="80"
-                    placeholder="例如：四栋"
-                  />
-                </div>
-                <div id="scopeKindField">
-                  <label for="scopeKind">范围类型</label
-                  ><select id="scopeKind">
-                    <option value="building">楼栋</option>
-                    <option value="business">业务范围</option>
-                  </select>
-                </div>
-              </div>
-              <div class="buttons">
-                <button type="submit" class="primary">预览范围设置</button
-                ><button type="button" data-close-editor="scopeEditor">收起</button>
-              </div>
-            </form>
-          </section>
-          <section id="groupEditor" hidden>
-            <h2>为范围选择群聊</h2>
-            <form id="groupBinding">
-              <label for="groupScope">工作范围</label
-              ><select id="groupScope"></select
-              ><label for="groupSearch">查找群</label
-              ><input id="groupSearch" type="search" placeholder="搜索群名称" />
-              <div id="groups" class="checks"></div>
-              <div class="buttons">
-                <button type="submit" class="primary">预览群设置</button
-                ><button type="button" data-close-editor="groupEditor">收起</button>
-              </div>
-            </form>
-            <p class="muted">
-              绑定群聊不证明某个人在住，也不自动给予群成员训练或审核权。
-            </p>
-          </section>
-        </div>
+      <main id="workspace" aria-busy="true">
+        <section
+          id="overview"
+          class="qo-page"
+          role="tabpanel"
+          aria-labelledby="tab-overview"
+        ></section>
+        <section
+          id="settings"
+          class="qo-page"
+          role="tabpanel"
+          aria-labelledby="tab-settings"
+          hidden
+        ></section>
+        <section
+          id="ledger"
+          class="qo-page"
+          role="tabpanel"
+          aria-labelledby="tab-ledger"
+          hidden
+        ></section>
       </main>
+      <footer class="qo-foot">
+        <span>登记不自动授予权限；解除关联不删除对象。</span
+        ><span id="result">尚未读取配置</span>
+      </footer>
     </div>
   </body>
 </html>

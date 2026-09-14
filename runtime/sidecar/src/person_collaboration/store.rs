@@ -272,6 +272,36 @@ impl Store {
         now: DateTime<Utc>,
     ) -> Result<Value> {
         match change {
+            Change::ConfigureWork {
+                assignment,
+                audience,
+            } => {
+                ensure!(
+                    assignment.duty.is_some() && assignment.actions.is_empty(),
+                    "explicit_duty_permissions_required"
+                );
+                let before = self.work_snapshot(tx, assignment.collaboration).await?;
+                let mut result = self.assign(tx, actor, p, assignment, now).await?;
+                let id: Uuid = serde_json::from_value(result["collaboration"].clone())?;
+                // Re-read policy after replacement/revocation; contact validation shares
+                // the same transaction, version lock, idempotency key and audit entry.
+                let current_policy = self.policy(tx, now).await?;
+                self.organization_change(
+                    tx,
+                    actor,
+                    &current_policy,
+                    &Change::SetAudience {
+                        collaboration: id,
+                        audience: audience.clone(),
+                    },
+                    now,
+                )
+                .await?;
+                result["kind"] = json!("configure_work");
+                result["before"] = before;
+                result["after"] = self.work_snapshot(tx, Some(id)).await?;
+                Ok(result)
+            }
             Change::SavePosition { .. }
             | Change::SaveLedger { .. }
             | Change::Lifecycle { .. }

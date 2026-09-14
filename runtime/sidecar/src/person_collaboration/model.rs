@@ -105,6 +105,10 @@ pub struct Assignment {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Change {
+    ConfigureWork {
+        assignment: Box<Assignment>,
+        audience: Audience,
+    },
     SavePosition {
         id: Option<Uuid>,
         role: Uuid,

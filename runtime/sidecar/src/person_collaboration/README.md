@@ -30,6 +30,29 @@ sidecar。风险级别：high（身份和授权）。本目录是现有 sidecar 
 
 ## 本地启动
 
+确认稿工作台独立体验入口：`http://127.0.0.1:18875/`。固定深色主题，横向导航为“组织关系 / 配置任职与范围 / 基础台账”。工作台本轮实现位于独立分支
+`codex/org-agent-workbench-confirmed`，继承 A 冻结后端；原 A 入口继续保留。
+
+本轮首次初始化已完成，后续从本工作区启动：
+
+```bash
+cargo build --manifest-path runtime/sidecar/Cargo.toml
+bash runtime/sidecar/src/person_collaboration/run-local.sh
+```
+
+辅助脚本固定端口 `18875`、既有 loopback 合成库与独立
+`synthetic-collaboration-confirmed-20260911`
+tenant，且清除其他身份覆盖。仅首次初始化空 tenant 时才显式传
+`--init-fixture`；已有数据不能重复初始化。
+
+任职配置通过 `configure_work` 将一项协作的任职、三态权限和触达保存为一个事务。已有
+`assign`、`set_audience`
+等兼容接口保留。触达校验失败会回滚换任与撤权；预览回滚、版本锁、幂等保存和前后审计仍由同一 Store 执行，无新增迁移。同一岗位多项协作分别选择，整项离任通过“结束整项任职”即时收回全部关联权限。
+
+台账主入口为智能体、群、人员、岗位四类。岗位定义、职责和范围在岗位详情中维护，群绑定在群详情中维护。新人员保持待核验，恢复台账不恢复旧授权。
+
+本轮证据见[确认稿工作台验收记录](../../../../docs/reports/2026-09-11-organization-agent-workbench-confirmed.md)。
+
 前提：Rust 1.96、已安装依赖、明确隔离的 `qintopia_test`。本任务验证使用现有
 `agentos-welcome-v1-test` 合成容器，端口仅
 `127.0.0.1:55439`。不要换成其他业务库、生产镜像数据或生产连接。

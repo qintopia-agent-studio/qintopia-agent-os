@@ -1,318 +1,796 @@
-let editingRole = null,
-  editingDuty = null,
-  editingScope = null;
-function focusEditor(id) {
-  discardPreview();
-  $(id).hidden = false;
-  window.scrollTo({ top: $(id).getBoundingClientRect().top + window.scrollY - 20 });
-  $(id).querySelector("input")?.focus({ preventScroll: true });
+const kindNames = { agent: "智能体", group: "群", person: "人员", role: "岗位" };
+function ledgerItems() {
+  if (ledgerKind === "role")
+    return state.organization.positions.map((p) => ({ ...p, scope: p.scope_id }));
+  const records = state.organization.ledger.filter((x) => x.kind === ledgerKind),
+    known =
+      ledgerKind === "agent"
+        ? state.agents.map((id) => ({ id, label: text(id) }))
+        : ledgerKind === "person"
+          ? state.people
+          : state.groups;
+  return [
+    ...records,
+    ...known
+      .filter((p) => !records.some((x) => x.object_ref === p.id))
+      .map((p) => ({
+        id: p.id,
+        object_ref: p.id,
+        label: p.label,
+        status: "active",
+        description: "已有来源记录，尚未补充台账登记。",
+        derived: true,
+        verified: true,
+      })),
+  ];
 }
-function closeEditors() {
-  for (const id of ["roleEditor", "dutyEditor", "scopeEditor", "groupEditor"])
-    $(id).hidden = true;
-  editingRole = null;
-  editingDuty = null;
-  editingScope = null;
-}
-function openRole(role = null) {
-  if (busy) return;
-  editingRole = role;
-  $("roleEditorHeading").textContent = role ? "编辑岗位 · " + role.label : "新增岗位";
-  $("roleName").value = role?.label || "";
-  $("roleDescription").value = role?.description || "";
-  checks("roleDuties", state.duties.filter(active), role?.duty_ids || []);
-  $("roleForm")
-    .querySelectorAll("input, textarea, button[type=submit]")
-    .forEach((n) => (n.disabled = !state.catalog_admin || (role && !active(role))));
-  focusEditor("roleEditor");
-  if (!state.catalog_admin)
-    notice("可以查看岗位设置；当前操作者没有修改岗位目录的管理权。");
-}
-function openDuty(duty = null) {
-  if (busy) return;
-  editingDuty = duty;
-  $("dutyEditorHeading").textContent = duty ? "编辑职责 · " + duty.label : "新增职责";
-  $("dutyName").value = duty?.label || "";
-  $("dutyDescription").value = duty?.description || "";
-  $("dutyDomain").value = duty?.domain || state.domains[0];
-  renderDutyActions(duty?.available_actions || []);
-  $("dutyForm")
-    .querySelectorAll("input, textarea, select, button[type=submit]")
-    .forEach((n) => (n.disabled = !state.catalog_admin || (duty && !active(duty))));
-  focusEditor("dutyEditor");
-}
-function openScope(scope = null) {
-  if (busy) return;
-  editingScope = scope;
-  if (!scope) {
-    const root = state.scopes.find((item) => active(item) && !item.parent);
-    if (root) $("parent").value = root.id;
-  }
-  $("scopeEditorHeading").textContent = scope
-    ? "编辑范围 · " + scope.label
-    : "新增工作范围";
-  $("scopeName").value = scope?.label || "";
-  $("parentField").hidden = Boolean(scope);
-  $("scopeKindField").hidden = Boolean(scope);
-  focusEditor("scopeEditor");
-}
-function catalogImpact(object, item) {
-  const key = object === "duty" ? "duty" : object;
-  const connections = state.relations.filter(
-    (r) => r[key] === item.id && r.status === "active"
+function ledgerRelations(item) {
+  return state.relations.filter(
+    (r) =>
+      r.status === "active" &&
+      (ledgerKind === "role"
+        ? r.role === item.role_id && r.scope === item.scope_id
+        : ledgerKind === "person"
+          ? r.person === item.object_ref
+          : ledgerKind === "agent"
+            ? r.agent === item.object_ref
+            : (audienceOf(r)?.groups || []).includes(item.object_ref))
   );
-  const lines = connections.map((r) => "当前连接：" + relationSummary(r));
-  if (object === "scope") {
-    state.scopes
-      .filter((s) => active(s) && s.parent === item.id)
-      .forEach((s) => lines.push("下级范围：" + s.label));
-    state.bindings
-      .filter((b) => b.scope === item.id)
-      .forEach((b) => lines.push("绑定群聊：" + labelOf("groups", b.conversation)));
-  }
-  return lines;
 }
-function renderDutyActions(chosen = selected("dutyActions")) {
-  const actions = state.actions.filter(
-    (a) => a !== "technical_support" || $("dutyDomain").value === "technical_support"
+function renderLedger() {
+  const root = $("ledger");
+  root.replaceChildren();
+  const create = button(
+    "新增" + kindNames[ledgerKind],
+    () => (ledgerKind === "role" ? openPosition() : openLedger()),
+    "qo-primary"
   );
-  dutyChecks("dutyActions", actions, chosen);
-}
-function changeImpactHint(change, code) {
-  let rows = [];
-  if (code === "role_duties_in_use")
-    rows = state.relations.filter(
-      (r) =>
-        r.status === "active" &&
-        r.role === change.id &&
-        r.duty &&
-        !change.duty_ids.includes(r.duty)
+  create.disabled = !state.catalog_admin;
+  root.append(
+    titleRow("基础台账", "人员、智能体、群和岗位分别登记；关联与授权单独生效", create)
+  );
+  const types = el("div", undefined, "ql-types");
+  types.setAttribute("aria-label", "台账类别");
+  for (const [kind, name] of Object.entries(kindNames)) {
+    const b = button(name, () => {
+      ledgerKind = kind;
+      ledgerSelection = null;
+      ledgerSearch = "";
+      discardPreview();
+      renderLedger();
+    });
+    b.setAttribute("aria-pressed", String(ledgerKind === kind));
+    types.append(b);
+  }
+  root.append(types);
+  const editor = el("div", undefined, "editor-host");
+  editor.id = "catalog-editor";
+  root.append(editor);
+  const layout = el("div", undefined, "ql-layout"),
+    left = el("div"),
+    right = el("div");
+  right.id = "ledger-detail";
+  const search = inputField(
+    left,
+    "ledger-search",
+    "查找" + kindNames[ledgerKind],
+    ledgerSearch,
+    "search"
+  );
+  search.placeholder = "按名称、昵称或说明查找";
+  const list = el("div", undefined, "ql-items");
+  list.id = "ledger-items";
+  list.setAttribute("aria-label", "台账记录");
+  left.append(list);
+  layout.append(left, right);
+  root.append(layout);
+  search.addEventListener("input", () => {
+    ledgerSearch = search.value;
+    drawList();
+  });
+  function drawList() {
+    list.replaceChildren();
+    const records = ledgerItems().filter((x) =>
+      [x.label, x.nickname, x.description].join(" ").includes(ledgerSearch.trim())
     );
-  if (code === "duty_actions_in_use")
-    rows = state.relations.filter(
-      (r) =>
-        r.status === "active" &&
-        r.duty === change.id &&
-        state.grants.some(
-          (g) =>
-            g.collaboration === r.id &&
-            g.revocable &&
-            g.mode !== "denied" &&
-            !change.available_actions.includes(g.action)
+    let item =
+      records.find((x) => x.id === ledgerSelection) ||
+      (ledgerKind === "agent" && records.find((x) => x.object_ref === "erhua")) ||
+      records[0];
+    ledgerSelection = item?.id;
+    for (const r of records) {
+      const b = button("", () => {
+        ledgerSelection = r.id;
+        discardPreview();
+        drawList();
+      });
+      b.className = "ql-item";
+      b.setAttribute("aria-pressed", String(item?.id === r.id));
+      const label = el("span");
+      label.append(
+        el("span", r.label + (r.nickname ? `（${r.nickname}）` : "")),
+        el(
+          "div",
+          r.scope_id || r.scope
+            ? labelOf("scopes", r.scope_id || r.scope)
+            : ledgerKind === "person"
+              ? "统一人员档案"
+              : ledgerKind === "role"
+                ? labelOf("scopes", r.scope_id)
+                : "已登记能力 / 来源",
+          "qo-sub"
         )
-    );
-  if (code === "catalog_in_use" && change.kind === "save_duty")
-    rows = state.relations.filter((r) => r.status === "active" && r.duty === change.id);
-  if (code === "catalog_in_use" && change.kind === "retire_catalog")
-    rows = state.relations.filter(
-      (r) => r.status === "active" && r[change.object] === change.id
-    );
-  return rows.length
-    ? " 当前关联：" +
-        rows.slice(0, 6).map(relationSummary).join("；") +
-        (rows.length > 6 ? `；共 ${rows.length} 条，可在协作总览筛选查看。` : "。")
-    : "";
-}
-function retireCatalog(object, item) {
-  const impact = catalogImpact(object, item);
-  let summary = `停用${{ role: "岗位", duty: "职责", scope: "范围" }[object]}：${item.label}\n保留定义与历史。当前仍在使用时，请先结束或调整任职；恢复台账不恢复已结束的授权。`;
-  if (object === "duty") {
-    const roles = state.roles.filter((r) => r.duty_ids.includes(item.id));
-    if (roles.length)
-      summary +=
-        "\n以下岗位将不再提供这项职责：" + roles.map((r) => r.label).join("、");
+      );
+      b.append(label, el("small", statusNames[r.status] || r.status));
+      list.append(b);
+    }
+    if (!records.length) empty(list, "没有匹配记录，可清空搜索或新增登记。");
+    renderLedgerDetail(item, right);
   }
-  if (impact.length) {
-    notice("当前仍在使用，需先处理关联：" + impact.join("；"), true);
-    window.scrollTo({ top: 0 });
+  drawList();
+  const history = details("最近配置变更记录");
+  history.className = "ql-history";
+  for (const h of state.organization.history || []) {
+    const c = h.result?.change || h.change || {},
+      kind =
+        {
+          configure_work: "任职、权限与触达",
+          assign: "任职与权限",
+          save_ledger: "台账登记",
+          save_position: "岗位归属",
+          lifecycle: "停用 / 恢复",
+          end_appointment: "结束任职",
+          end_collaboration: "解除协作",
+          set_groups: "群范围关联",
+          save_role: "岗位职责",
+          save_duty: "职责定义",
+        }[c.kind] || "配置变更";
+    history.append(
+      sub(
+        `${new Date(h.created_at).toLocaleString()} · ${kind} · ${c.after?.label || c.before?.label || "已记录"}`
+      )
+    );
+  }
+  if (!state.organization.history?.length) history.append(sub("暂无变更记录。"));
+  root.append(history);
+}
+function renderLedgerDetail(item, host) {
+  host.replaceChildren();
+  if (!item) {
+    empty(host, "选择一条台账记录查看详情。");
     return;
   }
-  preview({ kind: "retire_catalog", object, id: item.id }, summary);
-}
-function catalogButtons(card, object, item, edit, add) {
-  const bar = el("div", undefined, "buttons");
-  bar.append(button(state.catalog_admin ? "编辑" : "查看设置", () => edit(item)));
-  if (active(item)) {
-    if (add) bar.append(button("建立连接", () => startRelation({ [object]: item.id })));
-    if (state.catalog_admin)
-      bar.append(button("停用", () => retireCatalog(object, item), "danger"));
-  } else if (state.catalog_admin) {
-    bar.append(
-      button("恢复台账", () =>
-        preview(
-          { kind: "restore_catalog", object, id: item.id },
-          `恢复 ${item.label} 的定义，不恢复任何旧任职和授权。`
-        )
-      )
-    );
-  }
-  card.append(bar);
-}
-function renderCatalogs() {
-  $("createRole").disabled = !state.catalog_admin;
-  $("createDuty").disabled = !state.catalog_admin;
-  directory("roleCatalog", state.roles, (card, role) => {
-    card.append(
-      el("span", active(role) ? "岗位" : "已停用", "tag"),
-      el("p", role.description || "尚未补充岗位说明")
-    );
-    const duties = role.duty_ids
-      .map((id) => state.duties.find((d) => d.id === id))
-      .filter(Boolean);
-    duties.forEach((d) =>
-      card.append(
-        button(
-          d.label,
-          () => {
-            showPage("duties");
-            openDuty(d);
-          },
-          "tag-button"
-        )
-      )
-    );
-    if (!duties.length)
-      card.append(el("p", "尚未关联职责。编辑岗位后可选择已有职责。", "muted"));
-    const count = state.relations.filter(
-      (r) => r.role === role.id && r.status === "active"
-    ).length;
-    card.append(
-      el("p", `${count} 条当前连接。调整岗位不会自动扩大这些连接的权限。`, "muted")
-    );
-    catalogButtons(card, "role", role, openRole, duties.length > 0);
-  });
-  directory("dutyCatalog", state.duties, (card, duty) => {
-    card.append(
-      el("span", active(duty) ? text(duty.domain) : "已停用", "tag"),
-      el("p", duty.description)
-    );
-    const summary = el("details");
-    summary.append(
-      el("summary", `适用的权限类别 · ${duty.available_actions.length} 项`)
-    );
-    duty.available_actions.forEach((a) => summary.append(el("p", text(a), "muted")));
-    if (!duty.available_actions.length)
-      summary.append(el("p", "当前是职责草稿，尚未设置可选权限。", "muted"));
-    card.append(summary);
-    const roles = state.roles.filter((r) => active(r) && r.duty_ids.includes(duty.id));
-    card.append(
+  const panel = box(item.label);
+  panel.append(
+    sub(`${statusNames[item.status]}${item.nickname ? ` · ${item.nickname}` : ""}`),
+    sub(item.description || "尚无补充说明")
+  );
+  if (ledgerKind === "person")
+    panel.append(
       el(
-        "p",
-        "适用岗位：" + (roles.map((r) => r.label).join("、") || "尚未关联岗位"),
-        "muted"
+        "div",
+        item.verified
+          ? "已有核验来源；任职和住宿关系分别管理。"
+          : "待核验：登记不等于确认自然人或渠道身份，当前不能任命。",
+        "qo-note"
       )
     );
-    catalogButtons(card, "duty", duty, openDuty, roles.length > 0);
-  });
-  directory("scopeCatalog", state.scopes, (card, scope) => {
-    const root = !scope.parent;
-    card.append(
+  if (ledgerKind === "agent")
+    panel.append(
+      el(
+        "div",
+        `${item.derived || item.verified ? "能力已登记" : "仅台账登记，尚未接入能力"}；真实智能体尚未接入，配置保存不代表运行已生效。`,
+        "qo-note"
+      )
+    );
+  if (ledgerKind === "group")
+    panel.append(
+      el(
+        "div",
+        "群来自可访问的合成清单；范围绑定与工作触达分别配置，不创建或解散外部群。",
+        "qo-note"
+      )
+    );
+  if (ledgerKind === "role")
+    panel.append(
+      pair(
+        "上级岗位",
+        state.organization.positions.find((x) => x.id === item.parent_id)?.label ||
+          "无上级岗位"
+      ),
+      pair("岗位定义", labelOf("roles", item.role_id)),
+      pair("工作范围", labelOf("scopes", item.scope_id))
+    );
+  const refs = ledgerRelations(item);
+  panel.append(el("h4", ledgerKind === "person" ? "当前任职与协作" : "关联岗位"));
+  if (!refs.length) panel.append(sub("当前没有有效关联。"));
+  for (const r of refs) {
+    const row = el("div", undefined, "ql-relation"),
+      pos = state.organization.positions.find(
+        (p) => p.role_id === r.role && p.scope_id === r.scope
+      );
+    row.append(
       el(
         "span",
-        active(scope) ? (root ? "秦托邦 · 顶层" : "工作范围") : "已停用",
-        "tag"
+        `${pos?.label || labelOf("roles", r.role)} · ${personName(r.person)} · ${agentName(r.agent)}`
       )
     );
-    if (scope.parent)
-      card.append(el("p", "归属：" + labelOf("scopes", scope.parent), "muted"));
-    const groups = state.bindings
-      .filter((b) => b.scope === scope.id)
-      .map((b) => labelOf("groups", b.conversation));
-    card.append(el("p", "群聊：" + (groups.join("、") || "尚未绑定")));
-    const bar = el("div", undefined, "buttons");
-    bar.append(button("查看连接", () => browse("filterScope", scope.id)));
-    if (active(scope)) {
-      bar.append(
-        button("建立连接", () => startRelation({ scope: scope.id })),
-        button("设置群聊", () => {
-          $("groupScope").value = scope.id;
-          groupsForScope();
+    if (!r.immutable) {
+      if (pos) row.append(button("配置任职与范围", () => openWork(pos, r)));
+      row.append(
+        button(ledgerKind === "group" ? "解除群触达" : "解除本项协作", () => {
+          if (ledgerKind === "group") {
+            const { authority_grant, ...a } = audienceOf(r);
+            a.groups = a.groups.filter((id) => id !== item.object_ref);
+            preview(
+              { kind: "set_audience", collaboration: r.id, audience: a },
+              [
+                ["解除触达", item.label],
+                ["工作", `${personName(r.person)} · ${agentName(r.agent)}`],
+                ["影响", "仅取消这项工作的此群触达，其他群和其他岗位保留。"],
+              ],
+              panel
+            );
+          } else
+            preview(
+              { kind: "end_collaboration", collaboration: r.id },
+              [
+                ["解除协作", `${personName(r.person)} · ${agentName(r.agent)}`],
+                ["影响", "本项协作的权限立即失效，历史及其他任职保留。"],
+              ],
+              panel
+            );
         })
       );
-      if (!root)
-        bar.append(
-          button("编辑名称", () => openScope(scope)),
-          button("移除", () => retireCatalog("scope", scope), "danger")
-        );
     }
-    card.append(bar);
-  });
-}
-function groupsForScope() {
-  groups();
-  focusEditor("groupEditor");
-}
-function setupCatalogEvents() {
-  $("roleDescription").required = true;
-  $("dutyDomain").addEventListener("change", () => renderDutyActions());
-  $("createRole").addEventListener("click", () => openRole());
-  $("createDuty").addEventListener("click", () => openDuty());
-  $("createScope").addEventListener("click", () => openScope());
-  document.querySelectorAll("[data-close-editor]").forEach((b) =>
-    b.addEventListener("click", () => {
-      $(b.dataset.closeEditor).hidden = true;
-      discardPreview();
-    })
+    panel.append(row);
+  }
+  const controls = actions();
+  const edit = button(item.derived ? "完善登记" : "编辑资料", () =>
+    ledgerKind === "role" ? openPosition(item) : openLedger(item)
   );
-  $("roleForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const change = {
-      kind: "save_role",
-      id: editingRole?.id || null,
-      label: $("roleName").value,
-      description: $("roleDescription").value,
-      duty_ids: selected("roleDuties"),
-    };
-    preview(
-      change,
-      `${editingRole ? "编辑" : "新增"}岗位：${change.label}\n说明：${change.description || "未填写"}\n关联职责：${change.duty_ids.map((id) => labelOf("duties", id)).join("、") || "暂不关联"}\n已有连接的权限不会自动增加。若移除仍在使用的职责，将拒绝本次变更。`
+  edit.disabled = !state.catalog_admin || item.status === "retired";
+  controls.append(edit);
+  if (!item.derived) {
+    const operation = item.status === "retired" ? "restore" : "retire",
+      label =
+        operation === "restore"
+          ? "恢复在册"
+          : ledgerKind === "person"
+            ? "归档人员"
+            : ledgerKind === "group"
+              ? "停用群触达"
+              : "停用" + kindNames[ledgerKind];
+    const lifecycle = button(
+      label,
+      () =>
+        preview(
+          {
+            kind: "lifecycle",
+            object: ledgerKind === "role" ? "position" : "ledger",
+            id: item.id,
+            operation,
+          },
+          [
+            ["变更", label + "：" + item.label],
+            ["关联工作", `${refs.length} 项当前协作`],
+            [
+              "影响",
+              operation === "restore"
+                ? "恢复台账，不恢复旧任职、授权、触达或任务。"
+                : "立即结束对应关联，收回权限；历史保留，未完成事项另行交接。",
+            ],
+          ],
+          panel
+        ),
+      "qo-danger"
     );
-  });
-  $("dutyForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const change = {
-      kind: "save_duty",
-      id: editingDuty?.id || null,
-      label: $("dutyName").value,
-      description: $("dutyDescription").value,
-      domain: $("dutyDomain").value,
-      available_actions: selected("dutyActions"),
-    };
-    preview(
-      change,
-      `${editingDuty ? "编辑" : "新增"}职责：${change.label}\n工作领域：${text(change.domain)}\n内容与边界：${change.description}\n适用权限：${change.available_actions.map(text).join("、") || "暂无，保存为职责草稿"}\n这些是可选类别，不会自动给任何人授权。若移除仍在使用的权限，将拒绝本次变更。`
+    lifecycle.disabled = !state.catalog_admin;
+    controls.append(lifecycle);
+    if (item.status === "draft" && !item.used) {
+      const remove = button(
+        "删除未使用草稿",
+        () =>
+          preview(
+            {
+              kind: "lifecycle",
+              object: ledgerKind === "role" ? "position" : "ledger",
+              id: item.id,
+              operation: "delete",
+            },
+            [
+              ["删除草稿", item.label],
+              ["边界", "仅限从未使用的误建草稿；人员底层身份及审计仍保留。"],
+            ],
+            panel
+          ),
+        "qo-danger"
+      );
+      remove.disabled = !state.catalog_admin;
+      controls.append(remove);
+    }
+  }
+  panel.append(controls);
+  if (ledgerKind === "role") {
+    const definitions = details("岗位职责与工作范围定义");
+    const role = state.roles.find((r) => r.id === item.role_id);
+    definitions.append(
+      sub(
+        role?.description || "岗位定义可以复用到不同范围；修改定义不自动扩大已有权限。"
+      ),
+      chips((role?.duty_ids || []).map((id) => labelOf("duties", id))),
+      actions(
+        button("编辑岗位职责", () => openRole(role)),
+        button("新增岗位定义", () => openRole()),
+        button("维护职责定义", () => openDuties()),
+        button("维护工作范围", () => openScopes())
+      )
     );
-  });
-  $("scopeForm").addEventListener("submit", (event) => {
-    event.preventDefault();
-    const change = editingScope
-      ? { kind: "update_scope", id: editingScope.id, label: $("scopeName").value }
-      : {
-          kind: "create_scope",
-          parent: $("parent").value,
-          label: $("scopeName").value,
-          scope_kind: $("scopeKind").value,
-        };
-    preview(
-      change,
-      editingScope
-        ? `范围更名：${editingScope.label} → ${change.label}\n已有连接和群聊归属保持不变。`
-        : `新增范围：${change.label}\n归属：${labelOf("scopes", change.parent)}`
+    panel.append(definitions);
+  }
+  if (ledgerKind === "group")
+    panel.append(
+      details(
+        "群与范围的关联",
+        ...state.bindings
+          .filter((b) => b.conversation === item.object_ref)
+          .map((b) => sub(labelOf("scopes", b.scope))),
+        button("维护范围绑定", () => openBindings(item))
+      )
     );
+  host.append(panel);
+}
+function catalogForm(title) {
+  discardPreview();
+  $("catalog-editor").replaceChildren();
+  const panel = box(title),
+    form = el("form");
+  form.id = "catalog-form";
+  panel.append(form);
+  $("catalog-editor").append(panel);
+  return form;
+}
+function formSubmit(form, fn) {
+  const submit = el("button", "预览变更", "qo-primary");
+  submit.type = "submit";
+  form.append(
+    actions(
+      submit,
+      button("取消", () => {
+        $("catalog-editor").replaceChildren();
+        discardPreview();
+      })
+    )
+  );
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    fn();
   });
-  $("groupBinding").addEventListener("submit", (event) => {
-    event.preventDefault();
+  form.querySelector("input,select")?.focus();
+}
+function openLedger(item) {
+  const kind = ledgerKind,
+    form = catalogForm((item ? "编辑" : "新增") + kindNames[kind]);
+  const sourceItems =
+    kind === "person"
+      ? personOptions()
+      : kind === "agent"
+        ? state.agents.map((id) => ({ id, label: agentName(id) }))
+        : state.groups;
+  if (item && !sourceItems.some((x) => x.id === item.object_ref))
+    sourceItems.push({
+      id: item.object_ref,
+      label: item.label + " · 已有登记，待接入 / 核验",
+    });
+  const reference = selectField(
+    form,
+    "record-reference",
+    kind === "person"
+      ? "先查找已有人员"
+      : kind === "group"
+        ? "从已接入群清单选择"
+        : "已登记的运行能力",
+    sourceItems,
+    item?.object_ref || "",
+    kind === "person"
+      ? "没有匹配，登记新的待核验人员"
+      : kind === "agent"
+        ? "登记新智能体（能力尚未接入）"
+        : "请选择群"
+  );
+  reference.required = kind === "group";
+  reference.disabled = !!item && !item.derived;
+  const name = inputField(
+    form,
+    "record-label",
+    kind === "person" ? "姓名或常用称呼" : "名称",
+    item?.label || "",
+    "text",
+    true
+  );
+  const nickname = inputField(
+    form,
+    "record-nickname",
+    "昵称（可选）",
+    item?.nickname || ""
+  );
+  const description = inputField(
+    form,
+    "record-description",
+    "说明 / 同名消歧依据",
+    item?.description || "",
+    "textarea",
+    true
+  );
+  selectField(
+    form,
+    "record-scope",
+    "归属范围（可选）",
+    state.scopes.filter(active),
+    item?.scope_id || "",
+    "尚未指定"
+  );
+  selectField(
+    form,
+    "record-owner",
+    "维护负责人（可选）",
+    personOptions(),
+    item?.owner_id || "",
+    "尚未指定"
+  );
+  const status = selectField(
+    form,
+    "record-status",
+    "登记状态",
+    [
+      { id: "active", label: "登记在册（不授予权限）" },
+      { id: "draft", label: "仅保存草稿" },
+    ],
+    item?.status === "draft" ? "draft" : "active"
+  );
+  reference.addEventListener("change", () => {
+    if (!name.value)
+      name.value = sourceItems.find((x) => x.id === reference.value)?.label || "";
+  });
+  form.append(
+    el(
+      "div",
+      kind === "person"
+        ? "新增人员保持待核验，不能直接任命；同名不会自动合并。已有人员须从清单明确选择。"
+        : kind === "agent"
+          ? "登记不创建 runtime；接入能力与业务授权分别处理。"
+          : "仅登记当前可访问群，不更改外部群成员。",
+      "qo-note"
+    )
+  );
+  formSubmit(form, () =>
+    preview(
+      {
+        kind: "save_ledger",
+        id: item && !item.derived ? item.id : null,
+        object: kind,
+        reference: reference.value || null,
+        label: name.value,
+        nickname: nickname.value,
+        description: description.value,
+        scope: $("record-scope").value || null,
+        owner: $("record-owner").value || null,
+        draft: status.value === "draft",
+      },
+      [
+        ["台账", kindNames[kind]],
+        ["名称", name.value],
+        ["来源", reference.selectedOptions[0]?.textContent || "待接入"],
+        ["登记状态", status.selectedOptions[0].textContent],
+        ["生效边界", "登记不授予权限；停用后的旧任职不会恢复。"],
+      ],
+      form
+    )
+  );
+}
+function openPosition(item) {
+  if (page !== "ledger") {
+    ledgerKind = "role";
+    navigate("ledger");
+  }
+  const form = catalogForm(item ? "编辑组织岗位" : "新增组织岗位");
+  inputField(
+    form,
+    "position-label",
+    "组织中显示的岗位名称",
+    item?.label || "",
+    "text",
+    true
+  );
+  selectField(
+    form,
+    "position-role",
+    "岗位职责定义",
+    state.roles.filter(active),
+    item?.role_id || "",
+    "请选择岗位定义"
+  ).required = true;
+  selectField(
+    form,
+    "position-scope",
+    "岗位工作范围",
+    state.scopes.filter(active),
+    item?.scope_id || "",
+    "请选择范围"
+  ).required = true;
+  selectField(
+    form,
+    "position-parent",
+    "上级岗位",
+    state.organization.positions.filter((x) => active(x) && x.id !== item?.id),
+    item?.parent_id || "",
+    "无上级岗位"
+  );
+  inputField(
+    form,
+    "position-description",
+    "责任说明",
+    item?.description || "",
+    "textarea",
+    true
+  );
+  selectField(
+    form,
+    "position-status",
+    "保存方式",
+    [
+      { id: "active", label: "启用岗位定义（不授予权限）" },
+      { id: "draft", label: "仅保存草稿" },
+    ],
+    item?.status === "draft" ? "draft" : "active"
+  );
+  form.append(
+    sub("有任职历史的岗位不可替换职责定义和范围；仍可修改名称、说明与上级归属。")
+  );
+  formSubmit(form, () =>
+    preview(
+      {
+        kind: "save_position",
+        id: item?.id || null,
+        role: $("position-role").value,
+        scope: $("position-scope").value,
+        parent: $("position-parent").value || null,
+        label: $("position-label").value,
+        description: $("position-description").value,
+        draft: $("position-status").value === "draft",
+      },
+      [
+        ["岗位", $("position-label").value],
+        ["上级", $("position-parent").selectedOptions[0].textContent],
+        ["范围", $("position-scope").selectedOptions[0].textContent],
+        ["权限", "上级关系与岗位登记不自动赋权。"],
+      ],
+      form
+    )
+  );
+}
+function openRole(role) {
+  const form = catalogForm(role ? "编辑岗位职责定义" : "新增岗位职责定义");
+  inputField(form, "role-label", "岗位定义名称", role?.label || "", "text", true);
+  inputField(
+    form,
+    "role-description",
+    "职责说明",
+    role?.description || "",
+    "textarea",
+    true
+  );
+  checkList(form, "role-duties", state.duties.filter(active), role?.duty_ids);
+  form.append(sub("移除正在使用的职责会被拒绝；新增职责不自动增加已有人员权限。"));
+  formSubmit(form, () =>
+    preview(
+      {
+        kind: "save_role",
+        id: role?.id || null,
+        label: $("role-label").value,
+        description: $("role-description").value,
+        duty_ids: selected("role-duties"),
+      },
+      [
+        ["岗位定义", $("role-label").value],
+        [
+          "职责",
+          selected("role-duties")
+            .map((id) => labelOf("duties", id))
+            .join("、") || "无",
+        ],
+      ],
+      form
+    )
+  );
+}
+function openDuties(duty) {
+  const form = catalogForm("维护职责定义");
+  const choose = selectField(
+    form,
+    "duty-choice",
+    "选择职责",
+    state.duties,
+    duty?.id || "",
+    "新增职责"
+  );
+  choose.addEventListener("change", () =>
+    openDuties(state.duties.find((d) => d.id === choose.value))
+  );
+  inputField(form, "duty-label", "职责名称", duty?.label || "", "text", true);
+  inputField(
+    form,
+    "duty-description",
+    "职责说明",
+    duty?.description || "",
+    "textarea",
+    true
+  );
+  selectField(
+    form,
+    "duty-domain",
+    "工作领域",
+    state.domains.map((id) => ({ id, label: text(id) })),
+    duty?.domain || state.domains[0]
+  );
+  checkList(
+    form,
+    "duty-actions",
+    state.actions.map((id) => ({ id, label: text(id) })),
+    duty?.available_actions
+  );
+  formSubmit(form, () =>
+    preview(
+      {
+        kind: "save_duty",
+        id: duty?.id || null,
+        label: $("duty-label").value,
+        description: $("duty-description").value,
+        domain: $("duty-domain").value,
+        available_actions: selected("duty-actions"),
+      },
+      [
+        ["职责", $("duty-label").value],
+        ["权限类别", selected("duty-actions").map(text).join("、")],
+        ["边界", "定义可用类别，不自动授予权限。"],
+      ],
+      form
+    )
+  );
+  if (duty)
+    form.append(
+      actions(
+        button(active(duty) ? "停用职责" : "恢复职责", () =>
+          preview(
+            {
+              kind: active(duty) ? "retire_catalog" : "restore_catalog",
+              object: "duty",
+              id: duty.id,
+            },
+            [
+              ["职责", duty.label],
+              ["影响", "有使用中的关联时拒绝停用。恢复定义不恢复旧权限。"],
+            ],
+            form
+          )
+        )
+      )
+    );
+}
+function openScopes(scope) {
+  const form = catalogForm("维护工作范围");
+  const choose = selectField(
+    form,
+    "scope-choice",
+    "选择范围",
+    state.scopes,
+    scope?.id || "",
+    "新增范围"
+  );
+  choose.addEventListener("change", () =>
+    openScopes(state.scopes.find((s) => s.id === choose.value))
+  );
+  inputField(form, "scope-label", "范围名称", scope?.label || "", "text", true);
+  if (!scope) {
+    selectField(
+      form,
+      "scope-parent",
+      "上级范围",
+      state.scopes.filter(active),
+      state.scopes.find((x) => !x.parent)?.id
+    );
+    selectField(
+      form,
+      "scope-kind",
+      "范围类别",
+      [
+        { id: "building", label: "楼栋" },
+        { id: "business", label: "业务范围" },
+      ],
+      "building"
+    );
+  }
+  formSubmit(form, () =>
+    preview(
+      scope
+        ? { kind: "update_scope", id: scope.id, label: $("scope-label").value }
+        : {
+            kind: "create_scope",
+            parent: $("scope-parent").value,
+            label: $("scope-label").value,
+            scope_kind: $("scope-kind").value,
+          },
+      [
+        ["工作范围", $("scope-label").value],
+        ["边界", "范围定义不自动授予权限。"],
+      ],
+      form
+    )
+  );
+  if (scope?.parent)
+    form.append(
+      actions(
+        button(active(scope) ? "停用范围" : "恢复范围", () =>
+          preview(
+            {
+              kind: active(scope) ? "retire_catalog" : "restore_catalog",
+              object: "scope",
+              id: scope.id,
+            },
+            [
+              ["范围", scope.label],
+              ["影响", "有任职、下级或群绑定时拒绝停用。"],
+            ],
+            form
+          )
+        )
+      )
+    );
+}
+function openBindings(item) {
+  const form = catalogForm("维护群与范围绑定");
+  const scope = selectField(
+    form,
+    "binding-scope",
+    "工作范围",
+    state.scopes.filter(active),
+    state.bindings.find((b) => b.conversation === item.object_ref)?.scope ||
+      state.scopes[0]?.id
+  );
+  const host = el("div");
+  form.append(host);
+  const draw = () => {
+    host.replaceChildren();
+    checkList(
+      host,
+      "binding-groups",
+      state.groups,
+      state.bindings.filter((b) => b.scope === scope.value).map((b) => b.conversation)
+    );
+  };
+  scope.addEventListener("change", draw);
+  draw();
+  form.append(
+    sub("这里维护该范围全部群绑定。移除绑定后，依赖它的触达在执行查询时立即失效。")
+  );
+  formSubmit(form, () =>
     preview(
       {
         kind: "set_groups",
-        scope: $("groupScope").value,
-        conversations: selected("groups"),
+        scope: scope.value,
+        conversations: selected("binding-groups"),
       },
-      `调整 ${labelOf("scopes", $("groupScope").value)} 对应的群聊：\n${
-        selected("groups")
-          .map((id) => labelOf("groups", id))
-          .join("\n") || "清空绑定"
-      }\n这会改变该范围对应的群，不会自动改变任何人的职责与权限。`
-    );
-  });
+      [
+        ["范围", labelOf("scopes", scope.value)],
+        [
+          "绑定的群",
+          selected("binding-groups")
+            .map((x) => labelOf("groups", x))
+            .join("、") || "无",
+        ],
+        ["影响", "仅更新此范围的群绑定；不解散外部群。"],
+      ],
+      form
+    )
+  );
 }
