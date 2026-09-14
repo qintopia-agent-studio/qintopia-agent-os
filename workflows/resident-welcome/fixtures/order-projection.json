@@ -1,0 +1,58 @@
+{
+  "schema_version": "pms.projections.v1",
+  "source_instance": "synthetic-pms",
+  "property_id": "fixture-property",
+  "projection_hash": "b46f00b6121e9f6bda068dcbef5b7219c4f35dee0b07d82b21d46c6a1cc79399",
+  "observed_at": "2026-09-09T04:00:00Z",
+  "order_id": "fixture-order",
+  "order_revision": "9007199254740993",
+  "stay_id": "fixture-stay",
+  "stay_status": "IN_HOUSE",
+  "fulfillment_state": "IN_HOUSE",
+  "checked_in_at": null,
+  "effective_arrangement": {
+    "presentation": "CURRENT",
+    "arrival_date": "2026-09-08",
+    "departure_date": "2026-09-12",
+    "intervals": [
+      {
+        "segment_id": "fixture-segment",
+        "inventory_unit_id": "fixture-room",
+        "arrival_date": "2026-09-08",
+        "departure_date": "2026-09-12",
+        "inventory_kind": "ROOM",
+        "room_id": "fixture-room",
+        "bed_id": null,
+        "building_code": "A",
+        "inventory_active": true
+      }
+    ]
+  },
+  "occupants": [
+    { "occupant_id": "occupant-A", "role": "PRIMARY", "registration_state": "active" },
+    {
+      "occupant_id": "occupant-B",
+      "role": "ADDITIONAL",
+      "registration_state": "active"
+    }
+  ],
+  "member_ref": null,
+  "related_revisions": [
+    {
+      "aggregate_type": "inventory_unit",
+      "aggregate_id": "fixture-room",
+      "aggregate_revision": "1"
+    }
+  ],
+  "read_context": {
+    "property_timezone": "Asia/Shanghai",
+    "business_date": "2026-09-09",
+    "temporal_state": "IN_HOUSE_TODAY",
+    "current_interval": {
+      "segment_id": "fixture-segment",
+      "inventory_unit_id": "fixture-room",
+      "arrival_date": "2026-09-08",
+      "departure_date": "2026-09-12"
+    }
+  }
+}

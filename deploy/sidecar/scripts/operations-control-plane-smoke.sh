@@ -78,7 +78,8 @@ run_expect_failure() {
 
 capabilities="$(run_json capabilities operations-capability-list)"
 assert_json "$capabilities" "data['success'] is True"
-assert_json "$capabilities" "data['capability_count'] == 8"
+assert_json "$capabilities" "data['capability_count'] == 9"
+assert_json "$capabilities" "any(item['capability_key'] == 'resident_welcome.coordinate' and item['allowed_callers'] == [] for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.create_visual_asset' for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'huabaosi.generate_image_asset' and item['risk_level'] == 'high' for item in data['capabilities'])"
 assert_json "$capabilities" "any(item['capability_key'] == 'xiaoman.notify_direct_conversation' and item['review_policy'] == 'origin_conversation_only' for item in data['capabilities'])"

@@ -1,5 +1,67 @@
 # Data Design Changelog
 
+## `2026-09-11.001`
+
+Migration: `migrations/202609110001_organization_person_workbench.sql`.
+Design note: `docs/data-design/2026-09-11-organization-person-workbench.md`.
+
+Adds scoped organizational positions, local metadata ledgers referencing existing identities and conversations,
+and connection-specific contact settings. Parent links and registration grant no authority. Retirement ends affected
+connections; restoration never reopens previous grants. No production seed or activation.
+
+## `2026-09-10.003`
+
+Migration: `migrations/202609100003_collaboration_duties_permissions.sql` Design note:
+`docs/data-design/2026-09-10-person-agent-collaboration-v1.md`
+
+Adds reusable duties and role associations, complete connection history, and explicit
+autonomous/confirmation/denied permission settings. Reviewer eligibility is evaluated
+against current authority. Catalog edits never issue execution grants; legacy connections
+require an explicit duty selection. Only synthetic fixture definitions are seeded.
+
+## `2026-09-10.002`
+
+Migration: `migrations/202609100002_collaboration_role_actions.sql` Design note:
+`docs/data-design/2026-09-10-person-agent-collaboration-v1.md`
+
+Adds explicit available duties to positions. New assignments must fit both the position
+and the operator's authority. Only the named synthetic UI fixture receives initial
+choices; no execution grants are created or changed.
+
+## `2026-09-10.001`
+
+Migration: `migrations/202609100001_person_agent_collaboration.sql` Design note:
+`docs/data-design/2026-09-10-person-agent-collaboration-v1.md`
+
+Adds tenant-scoped appointments, person/Agent collaborations, management envelopes,
+versioned grants, group bindings and idempotent configuration commands. Reuses Person,
+source identities, conversations and audit. No administrator seed or production
+activation is included in the migration.
+
+## `2026-09-09.003`
+
+Migration: `migrations/202609090003_resident_welcome_conflict_quarantine.sql` Design note:
+`docs/data-design/2026-09-09-resident-welcome-v1.md`
+
+Keeps same-vector source conflicts quarantined across repeated readbacks.
+
+## `2026-09-09.002`
+
+Migration: `migrations/202609090002_resident_welcome_recovery.sql` Design note:
+`docs/data-design/2026-09-09-resident-welcome-v1.md`
+
+Adds durable scan generations, page checkpoints and resumable baseline projections.
+Scan completion does not enable publishing or promote historical cases.
+
+## `2026-09-09.001`
+
+Migration: `migrations/202609090001_resident_welcome_v1.sql` Design note:
+`docs/data-design/2026-09-09-resident-welcome-v1.md`
+
+Adds scoped source identity links, application/stay cases, durable Inbox/checkpoints,
+grants, approvals and delivery/upload intents. Reuses Person, WorkItem and Artifact;
+no production admission, permission grants or external execution is enabled.
+
 ## `2026-08-08.001`
 
 Migration: `migrations/202608080001_xiaoman_daily_case_report_auto_publish.sql` Design note:

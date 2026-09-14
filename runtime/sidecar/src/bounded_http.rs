@@ -143,6 +143,14 @@ impl std::fmt::Display for HttpRequestError {
 }
 
 impl HttpClient {
+    #[cfg(feature = "welcome-synthetic-driver")]
+    pub(crate) fn synthetic_loopback() -> Self {
+        Self {
+            tls_config: Arc::new(tls_config()),
+            allow_insecure_http: true,
+            socket_timeout: Duration::from_secs(10),
+        }
+    }
     pub(crate) fn production() -> Self {
         Self::production_with_timeout(DEFAULT_SOCKET_TIMEOUT)
     }
@@ -235,6 +243,11 @@ impl HttpClient {
                 read_response_limited(&mut stream, max_response_body_bytes)?
             }
             "http" if self.allow_insecure_http => {
+                if !cfg!(test) && !matches!(host, "127.0.0.1" | "[::1]") {
+                    return Err(HttpRequestError::terminal(anyhow!(
+                        "literal loopback required"
+                    )));
+                }
                 let mut socket = TcpStream::connect((host, port))
                     .context("connect test adapter endpoint")
                     .map_err(HttpRequestError::transport)?;

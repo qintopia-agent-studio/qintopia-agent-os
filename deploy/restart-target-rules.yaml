@@ -128,6 +128,7 @@ rules:
     reason:
       Shared sidecar, database, MCP, deploy, QiWe, context, and operations runtime.
     paths:
+      - "workflows/resident-welcome/**"
       - "runtime/sidecar/**"
       - "runtime/postgres/**"
       - "runtime/systemd/**"

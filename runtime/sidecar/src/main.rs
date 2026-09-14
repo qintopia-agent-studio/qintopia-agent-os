@@ -58,6 +58,7 @@ mod identity_bootstrap;
 )]
 mod image_generation;
 mod knowledge;
+mod local_http;
 mod mcp_server;
 mod media_identity;
 mod media_upload;
@@ -65,6 +66,7 @@ mod member_profile;
 mod message_search;
 mod operations;
 mod operations_intake;
+pub mod person_collaboration;
 #[cfg_attr(not(feature = "xiaoman-feishu-poster-adapter"), allow(dead_code))]
 mod poster_delivery;
 #[cfg_attr(
@@ -77,6 +79,7 @@ mod qiwe_image_send;
 pub mod qiwe_image_send_state;
 mod qiwe_text_send;
 mod raw_archive;
+pub mod resident_welcome;
 mod smoke;
 mod url_policy;
 mod workbench;
@@ -97,6 +100,12 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let command = cli.command.clone();
     match command {
+        #[cfg(feature = "welcome-synthetic-driver")]
+        Command::WelcomeSynthetic { step } => resident_welcome::local_driver::run(step).await,
+        Command::RunCollaborationLocal { port, init_fixture } => {
+            person_collaboration::local_server::run(port, init_fixture).await
+        }
+        Command::RunWelcomeLocal { port } => resident_welcome::local_server::run(port).await,
         Command::Check => health::check(&cli).await,
         Command::Migrate => migrate(&cli).await,
         Command::Run => consumer::run(cli).await,

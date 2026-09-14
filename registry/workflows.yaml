@@ -1,6 +1,11 @@
 registry_version: 1
 domain: workflows
 entries:
+  - id: workflows/resident-welcome
+    path: workflows/resident-welcome
+    manifest: workflows/resident-welcome/workflow.yaml
+    status: draft
+    notes: Local-only unified person and governed resident welcome development.
   - id: workflows/activity-promotion
     path: workflows/activity-promotion
     manifest: workflows/activity-promotion/workflow.yaml

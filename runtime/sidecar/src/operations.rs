@@ -64,6 +64,7 @@ const ALLOWED_SOURCE_TYPES: &[&str] = &[
 const DRY_RUN_ALLOWED_GROUP_ALIASES: &[&str] = &["community_activity_group"];
 const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
 const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
+    "resident_welcome.coordinate",
     "huabaosi.create_visual_asset",
     "huabaosi.generate_image_asset",
     "erhua.send_group_message",
@@ -10131,6 +10132,22 @@ fn recommended_command_for_workbench_event(
 
 fn builtin_capability(capability_key: &str) -> Option<Capability> {
     match capability_key {
+        "resident_welcome.coordinate" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "silaoshi".to_string(),
+            display_name: "住宿欢迎受控流程".to_string(),
+            description: "专用身份与欢迎控制面；通用入口不授权创建或发送".to_string(),
+            allowed_callers: vec![],
+            allowed_work_item_types: vec![
+                "welcome_event".into(),
+                "welcome_review".into(),
+                "welcome_delivery".into(),
+                "welcome_card".into(),
+            ],
+            risk_level: "high".into(),
+            review_policy: "human_final_confirmation".into(),
+            enabled: false,
+        }),
         "huabaosi.create_visual_asset" => Some(Capability {
             capability_key: capability_key.to_string(),
             provider_agent: "huabaosi".to_string(),
@@ -11224,7 +11241,7 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 8);
+        assert_eq!(report.capability_count, 9);
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "huabaosi.create_visual_asset"
                 && item.provider_agent == "huabaosi"

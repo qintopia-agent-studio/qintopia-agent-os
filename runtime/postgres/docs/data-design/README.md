@@ -15,6 +15,19 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-11.001`:
+  [Organization and person workbench A](2026-09-11-organization-person-workbench.md)
+
+- `2026-09-10.003`:
+  [Duties and permission modes](2026-09-10-person-agent-collaboration-v1.md)
+
+- `2026-09-10.002`: [Role duty choices](2026-09-10-person-agent-collaboration-v1.md)
+
+- `2026-09-10.001`:
+  [Person–Agent Collaboration V1](2026-09-10-person-agent-collaboration-v1.md) (F1 local
+  implementation)
+- `2026-09-09.001`: `2026-09-09-resident-welcome-v1.md`
+
 - Change history: `CHANGELOG.md`
 - `2026-06-18.001`: `2026-06-18-message-capture-v1.md`
 - `2026-06-24.002`: `2026-06-24-agent-os-data-layer-v2.md`
