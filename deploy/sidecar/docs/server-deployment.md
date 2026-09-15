@@ -37,13 +37,17 @@ local NATS JetStream into the Postgres tunnel exposed on the server.
 
 The server checkout should use a dedicated deploy key for this repository:
 
+Contact the administrator for the current authorized deploy key and known-hosts file
+before configuring Git. Do not infer, hard-code, or commit either path.
+
 ```text
 Host github-qintopia-msg-sidecar
   HostName github.com
   User git
-  IdentityFile ~/.ssh/qintopia_msg_sidecar
+  IdentityFile <administrator-provided-key-path>
   IdentitiesOnly yes
-  StrictHostKeyChecking accept-new
+  UserKnownHostsFile <administrator-provided-known-hosts-path>
+  StrictHostKeyChecking yes
 ```
 
 The remote URL should be:
@@ -52,9 +56,8 @@ The remote URL should be:
 git remote set-url origin github-qintopia-msg-sidecar:PatrickLiveCool/qintopia-msg-sidecar.git
 ```
 
-If `git fetch origin` fails with `Permission denied (publickey)`, add
-`~/.ssh/qintopia_msg_sidecar.pub` on the server as a read-only deploy key for
-`PatrickLiveCool/qintopia-msg-sidecar`.
+If `git fetch origin` fails with `Permission denied (publickey)`, ask the administrator
+to verify the authorized public key for `PatrickLiveCool/qintopia-msg-sidecar`.
 
 Current server deploy public key:
 

@@ -111,3 +111,8 @@ outputs/
 # Test artifacts that may leak when tests fail before cleanup
 runtime/hermes/tests/.test-hermes-python
 runtime/hermes/tests/.test-hermes-python.called
+
+# Local business testing environment and reports
+.local-testing/
+
+.playwright-cli/

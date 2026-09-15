@@ -44,5 +44,5 @@ CREATE TABLE qintopia_agent_os.collaboration_audiences (
 INSERT INTO qintopia_agent_os.schema_change_log(schema_version,migration_name,summary,design_doc_path,metadata)
 VALUES('2026-09-11.001','202609110001_organization_person_workbench.sql',
  'Add organization positions, local ledgers and contact audience policies without granting authority.',
- 'docs/plans/active/organization-workbench-a-increment.md','{"external_effects":false}')
+ 'docs/data-design/2026-09-11-organization-person-workbench.md','{"external_effects":false}')
 ON CONFLICT(schema_version) DO NOTHING;

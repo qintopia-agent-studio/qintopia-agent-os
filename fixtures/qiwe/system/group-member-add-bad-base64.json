@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "cmd": 15500,
+      "newMsgType": "GROUP_MEMBER_ADD",
+      "msgUniqueIdentifier": "fixture-event-bad-base64",
+      "fromRoomId": "fixture-room-a",
+      "senderId": "fixture-operator-must-not-be-used",
+      "timestamp": 1786669200,
+      "msgData": { "changedMemberList": "%%%invalid%%%" }
+    }
+  ]
+}

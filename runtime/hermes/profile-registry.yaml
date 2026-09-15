@@ -1,0 +1,72 @@
+schema_version: 1
+profiles:
+  - id: default
+    agent_manifest: agents/default/agent.yaml
+    systemd_user_service: hermes-gateway.service
+    wecom:
+      expected_enabled: true
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: false
+  - id: erhua
+    agent_manifest: agents/erhua/agent.yaml
+    systemd_user_service: hermes-gateway-erhua.service
+    wecom:
+      expected_enabled: false
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: true
+  - id: guanerye
+    agent_manifest: agents/guanerye/agent.yaml
+    systemd_user_service: hermes-gateway-guanerye.service
+    wecom:
+      expected_enabled: true
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: false
+  - id: huabaosi
+    agent_manifest: agents/huabaosi/agent.yaml
+    systemd_user_service: hermes-gateway-huabaosi.service
+    wecom:
+      expected_enabled: true
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: false
+  - id: silaoshi
+    agent_manifest: agents/silaoshi/agent.yaml
+    systemd_user_service: hermes-gateway-silaoshi.service
+    wecom:
+      expected_enabled: true
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: false
+  - id: wenyuange
+    agent_manifest: agents/wenyuange/agent.yaml
+    systemd_user_service: hermes-gateway-wenyuange.service
+    wecom:
+      expected_enabled: false
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: false
+  - id: xiaoman
+    agent_manifest: agents/xiaoman/agent.yaml
+    systemd_user_service: hermes-gateway-xiaoman.service
+    wecom:
+      expected_enabled: true
+      required_bindings:
+        - bot_id
+        - secret
+    qiwe_platform:
+      preserve: false

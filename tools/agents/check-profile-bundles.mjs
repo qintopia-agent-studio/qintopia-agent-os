@@ -33,11 +33,6 @@ if (exists("agents/erhua/config.template.yaml")) {
         provider: "custom:livecool.net",
         base_url: "",
       },
-      channel: {
-        wecom: {
-          enabled: true,
-        },
-      },
       custom_provider: {
         name: "Livecool.net",
         base_url: "https://livecool.net/v1",
@@ -341,6 +336,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "runtime/hermes/profile_transaction.py",
     "runtime/hermes/verify_runtime_provider.py",
     "runtime/hermes/validate_hermes_python.py",
+    "runtime/hermes/profile-registry.yaml",
+    "tools/deploy/hermes-profile-registry.mjs",
   ]) {
     if (!deployBundle.includes(required)) {
       addError(

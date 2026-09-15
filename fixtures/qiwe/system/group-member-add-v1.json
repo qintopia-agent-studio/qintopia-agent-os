@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "cmd": 15000,
+      "msgType": 1002,
+      "msgUniqueIdentifier": "fixture-event-v1",
+      "fromRoomId": "fixture-room-a",
+      "senderId": "fixture-operator",
+      "timestamp": 1786669200,
+      "msgData": { "changedMemberList": "bWVtYmVyLWE7bWVtYmVyLWI=" }
+    }
+  ]
+}

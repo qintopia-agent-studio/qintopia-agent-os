@@ -15,6 +15,8 @@ const tmpRoot = fs.mkdtempSync(
 const signingKey = "test-signing-key";
 const keyId = "production";
 const sha = "113ce49141b06fc44edcee42026aee0a614ac027";
+const createdAt = new Date().toISOString();
+const expiresAt = new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString();
 const creativeProfilePayloadSha256 =
   "9c2b0ff0d2a29d00f817cad596804e460ffb48eaf4a440604e5f81ef92b59b7a";
 
@@ -52,8 +54,8 @@ const buildRequest = (requestId, runtimeOneShot) => {
     environment: "production",
     repository: "qintopia-agent-studio/qintopia-agent-os",
     requested_by: "codex",
-    created_at: "2026-08-10T00:00:00Z",
-    expires_at: "2099-08-10T01:00:00Z",
+    created_at: createdAt,
+    expires_at: expiresAt,
     commit_sha: sha,
     runtime_sha: sha,
     runtime_artifact_profile: "huabaosi-production",
@@ -76,7 +78,7 @@ const buildRequest = (requestId, runtimeOneShot) => {
     algorithm: "hmac-sha256",
     issuer: "github-actions",
     key_id: keyId,
-    signed_at: "2026-08-10T00:00:00Z",
+    signed_at: request.created_at,
   };
   request.signature = {
     ...signatureMetadata,
@@ -384,6 +386,40 @@ printf 'run-creative-profile-apply:%s\\n' "\${QINTOPIA_XIAOMAN_CREATIVE_PROFILE_
       oneShotLog
     )}
 echo "person_id=must-not-leak"
+`
+  );
+  writeExecutable(
+    path.relative(tmpRoot, path.join(scriptsDir, "qiwe-webhook-ingress-production.sh")),
+    `#!/usr/bin/env bash
+set -euo pipefail
+case "\${1:-}" in
+  --apply)
+    [[ "\${QINTOPIA_QIWE_WEBHOOK_INGRESS_APPROVAL:-}" == "approved-production-qiwe-webhook-ingress-apply" ]]
+    ;;
+  --rollback)
+    [[ "\${QINTOPIA_QIWE_WEBHOOK_INGRESS_APPROVAL:-}" == "approved-production-qiwe-webhook-ingress-rollback" ]]
+    ;;
+  *)
+    exit 91
+    ;;
+esac
+[[ "\${QINTOPIA_QIWE_WEBHOOK_INGRESS_RELEASE_SHA:-}" == ${JSON.stringify(sha)} ]]
+printf 'run-qiwe-webhook-ingress:%s\n' "\${1#--}" >> ${JSON.stringify(oneShotLog)}
+echo "QIWE_WEBHOOK_AUTH_TOKEN=must-not-leak"
+`
+  );
+  writeExecutable(
+    path.relative(
+      tmpRoot,
+      path.join(scriptsDir, "rollback-space-automation-runtime-production.sh")
+    ),
+    `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\${QINTOPIA_SPACE_AUTOMATION_RUNTIME_ROLLBACK:-}" != "approved-production-space-automation-runtime-rollback" ]]; then
+  exit 92
+fi
+printf 'run-space-automation-runtime-rollback\n' >> ${JSON.stringify(oneShotLog)}
+echo "QINTOPIA_SIDECAR_DATABASE_URL=must-not-leak"
 `
   );
   writeExecutable(
@@ -772,6 +808,95 @@ exit 72
     throw new Error("creative-profile apply evidence leaked raw script output");
   }
 
+  const ingressApplyRequestId = "deploy-20260810T000007Z-abcdef123456";
+  result = runRequest(ingressApplyRequestId, {
+    targets: ["qiwe-webhook-ingress-apply"],
+    approval: "approved-production-qiwe-webhook-ingress-apply",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `Qiwe webhook ingress apply one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${ingressApplyRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "qiwe-webhook-ingress-apply" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !== "qiwe_webhook_ingress=enabled" ||
+    oneShotCheck.detail.includes("must-not-leak")
+  ) {
+    throw new Error(`unexpected Qiwe ingress apply evidence ${oneShotCheck.detail}`);
+  }
+
+  const ingressRollbackRequestId = "deploy-20260810T000008Z-abcdef123456";
+  result = runRequest(ingressRollbackRequestId, {
+    targets: ["qiwe-webhook-ingress-rollback"],
+    approval: "approved-production-qiwe-webhook-ingress-rollback",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `Qiwe webhook ingress rollback one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${ingressRollbackRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "qiwe-webhook-ingress-rollback" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !== "qiwe_webhook_ingress=restored" ||
+    oneShotCheck.detail.includes("must-not-leak")
+  ) {
+    throw new Error(`unexpected Qiwe ingress rollback evidence ${oneShotCheck.detail}`);
+  }
+
+  const spaceRuntimeRollbackRequestId = "deploy-20260810T000009Z-abcdef123456";
+  result = runRequest(spaceRuntimeRollbackRequestId, {
+    targets: ["space-automation-runtime-rollback"],
+    approval: "approved-production-space-automation-runtime-rollback",
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `Space runtime rollback one-shot failed\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+    );
+  }
+  deployResult = JSON.parse(
+    fs.readFileSync(
+      path.join(stateDir, "results", `${spaceRuntimeRollbackRequestId}.json`),
+      "utf8"
+    )
+  );
+  oneShotCheck = deployResult.checks.find(
+    (check) => check.name === "production-runtime-one-shot"
+  );
+  detail = JSON.parse(oneShotCheck.detail);
+  if (
+    detail.targets[0].target !== "space-automation-runtime-rollback" ||
+    detail.targets[0].status !== "passed" ||
+    detail.targets[0].detail !== "space_automation_runtime=disabled" ||
+    oneShotCheck.detail.includes("must-not-leak")
+  ) {
+    throw new Error(
+      `unexpected Space runtime rollback evidence ${oneShotCheck.detail}`
+    );
+  }
+
   fs.copyFileSync(
     path.join(scriptsDir, "fail-runtime-one-shot-for-test.sh"),
     path.join(scriptsDir, "install-hermes-cron-snapshot-timer.sh")
@@ -817,6 +942,9 @@ exit 72
     "run-daily-read-through-repair",
     "run-daily-chat-id-repair",
     "run-qiwe-intro-text-enable",
+    "run-qiwe-webhook-ingress:apply",
+    "run-qiwe-webhook-ingress:rollback",
+    "run-space-automation-runtime-rollback",
   ]) {
     if (!commandLog.includes(expected)) {
       throw new Error(`missing one-shot command log entry: ${expected}`);

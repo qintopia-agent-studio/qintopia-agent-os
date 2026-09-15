@@ -11,6 +11,10 @@ SYSTEMCTL="/usr/bin/systemctl"
 PYTHON_BIN="/usr/bin/python3"
 ENV_FILE="/etc/qintopia/message-sidecar.env"
 RELEASE_CURRENT_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
+EXPECTED_RELEASE_SHA="${QINTOPIA_ERHUA_MORNING_BRIEF_RELEASE_SHA:-}"
+EXPECTED_COMMIT_SHA="${QINTOPIA_ERHUA_MORNING_BRIEF_COMMIT_SHA:-}"
+EXPECTED_RUNTIME_SHA="${QINTOPIA_ERHUA_MORNING_BRIEF_RUNTIME_SHA:-}"
+EXPECTED_DEPLOY_BUNDLE_SHA="${QINTOPIA_ERHUA_MORNING_BRIEF_DEPLOY_BUNDLE_SHA:-}"
 HERMES_PYTHON="/home/ubuntu/.hermes/hermes-agent/venv/bin/python"
 HERMES_VENV="/home/ubuntu/.hermes/hermes-agent/venv"
 SERVICE_NAME="qintopia-agentos-erhua-morning-brief.service"
@@ -31,25 +35,84 @@ fi
 if [[ ! -f "$ENV_FILE" ]]; then
   fail "persistent sidecar env file is required"
 fi
+if ! "$PYTHON_BIN" - "$ENV_FILE" <<'PY'
+import os
+import stat
+import sys
+
+path = sys.argv[1]
+try:
+    file_stat = os.lstat(path)
+except OSError:
+    raise SystemExit(1)
+if (
+    not stat.S_ISREG(file_stat.st_mode)
+    or stat.S_IMODE(file_stat.st_mode) != 0o600
+    or file_stat.st_uid != os.geteuid()
+):
+    raise SystemExit(1)
+PY
+then
+  fail "persistent sidecar env file must be an owner-only regular file"
+fi
+for expected_sha in \
+  "$EXPECTED_RELEASE_SHA" \
+  "$EXPECTED_COMMIT_SHA" \
+  "$EXPECTED_RUNTIME_SHA" \
+  "$EXPECTED_DEPLOY_BUNDLE_SHA"; do
+  if [[ ! "$expected_sha" =~ ^[0-9a-f]{40}$ ]]; then
+    fail "complete release identity is required"
+  fi
+done
 for script in "$OBSERVATION_SCRIPT" "$ERHUA_CRON_OBSERVATION_SCRIPT" "$XIAOMAN_CRON_OBSERVATION_SCRIPT"; do
   if [[ ! -x "$script" ]]; then
     fail "release-local observation script is missing"
   fi
 done
 
-release_dir="$("$PYTHON_BIN" - "$RELEASE_CURRENT_DIR" <<'PY'
+release_dir="$("$PYTHON_BIN" - "$RELEASE_CURRENT_DIR" "$EXPECTED_RELEASE_SHA" <<'PY'
 from pathlib import Path
 import sys
 
 path = Path(sys.argv[1])
+expected_release_sha = sys.argv[2]
 if not path.exists() and not path.is_symlink():
     raise SystemExit(1)
 resolved = path.resolve()
 if not resolved.is_dir():
     raise SystemExit(1)
+if resolved.name != expected_release_sha:
+    raise SystemExit(1)
 print(resolved)
 PY
 )" || fail "release/current is not a valid release directory"
+
+if ! "$PYTHON_BIN" - "$release_dir/manifest.json" "$EXPECTED_RELEASE_SHA" "$EXPECTED_COMMIT_SHA" "$EXPECTED_RUNTIME_SHA" "$EXPECTED_DEPLOY_BUNDLE_SHA" <<'PY'
+import json
+import os
+import re
+import stat
+import sys
+
+manifest_path, expected_release, expected_commit, expected_runtime, expected_bundle = sys.argv[1:]
+if os.path.islink(manifest_path) or not os.path.isfile(manifest_path):
+    raise SystemExit(1)
+if os.stat(manifest_path).st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+    raise SystemExit(1)
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+for key, expected in (
+    ("release_sha", expected_release),
+    ("commit_sha", expected_commit),
+    ("runtime_sha", expected_runtime),
+    ("deploy_bundle_sha", expected_bundle),
+):
+    if manifest.get(key) != expected or not re.fullmatch(r"[0-9a-f]{40}", manifest.get(key, "")):
+        raise SystemExit(1)
+PY
+then
+  fail "release manifest does not match the requested release identity"
+fi
 
 python_validator="${release_dir}/runtime/hermes/validate_hermes_python.py"
 if [[ ! -f "$python_validator" ]]; then

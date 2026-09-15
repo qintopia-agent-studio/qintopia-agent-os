@@ -11,3 +11,8 @@ CHANGELOG.md
 *.webp
 *.pdf
 runtime/sidecar/fixtures/daily_case_report_render_preview_*
+
+# Local business testing environment and reports
+.local-testing/
+
+.playwright-cli/

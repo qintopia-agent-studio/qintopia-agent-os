@@ -2,9 +2,9 @@
 
 ## SSH
 
-```bash
-ssh -i /Users/evans/qintopia/server_ssh.pem -o StrictHostKeyChecking=no ubuntu@122.51.77.220
-```
+Contact the administrator for the current authorized SSH host, user, key, and
+known-hosts details. Do not infer, hard-code, or commit SSH key paths or server aliases
+in this repository.
 
 ## Hermes
 

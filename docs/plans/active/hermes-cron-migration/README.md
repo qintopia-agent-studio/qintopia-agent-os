@@ -18,8 +18,8 @@ merged.
 ## Verified Server Contracts (read-only diagnostics, 2026-08-10)
 
 Every executor must read this section before writing code. These facts come from live
-inspection of `paxon-server` (`/home/ubuntu/.hermes/hermes-agent/cron/`) and supersede
-any older assumptions in cutover runbooks.
+inspection of the production host (`/home/ubuntu/.hermes/hermes-agent/cron/`) and
+supersede any older assumptions in cutover runbooks.
 
 1. `jobs.json` lives at `/home/ubuntu/.hermes/profiles/<profile>/cron/jobs.json`, mode
    `0600 ubuntu:ubuntu`. Envelope: `{"schema_version": 1, "jobs": [...], ...}`. The
@@ -51,9 +51,10 @@ any older assumptions in cutover runbooks.
    Declaration templates use `{{QINTOPIA_XIAOMAN_TECHNICAL_HOME_CHANNEL}}`-style
    placeholders. The server-local snapshot git repo holds real content, has no remote,
    and stays mode `0700`.
-7. Server access: only through the reviewed `paxon-server` SSH alias (see AGENTS.md).
-   The server is a deployment target, not an editing workspace; all changes go through
-   reviewed apply scripts with explicit owner approval env values.
+7. Server access: obtain the current reviewed SSH host, user, and key from the
+   administrator before connecting. Do not use undocumented aliases or guessed key
+   paths. The server is a deployment target, not an editing workspace; all changes go
+   through reviewed apply scripts with explicit owner approval env values.
 8. Behavior parity: migration never changes what a task does (what it produces, whether
    it sends to a group). Enhancements such as "poster goes straight to the group" are
    separate tasks after the migration settles.
@@ -105,8 +106,8 @@ PR phase (repo only, no server writes):
 
 Server phase (after merge, release, and owner approval):
 
-1. Run the apply script on `paxon-server` with the approval env value; it writes the
-   wrapper and inserts the job with `enabled: false`.
+1. Run the apply script on the production host with the approval env value; it writes
+   the wrapper and inserts the job with `enabled: false`.
 2. Manually run the wrapper once; compare output artifacts with the last systemd run.
 3. Run the existing `rollback-<name>-production.sh` to disable the systemd timer.
 4. Re-run the apply script with `--enable` to flip the Hermes job to `enabled: true`.

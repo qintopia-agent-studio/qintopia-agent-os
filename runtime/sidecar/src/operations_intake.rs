@@ -23,10 +23,19 @@ use crate::{
     conversation_policy::{POSTER_PRODUCTION_CAPABILITY, POSTER_STATUS_CAPABILITY},
     db,
     operations::{self, OperationsPolicy, WorkItemCreateRequest, WorkflowStartRequest},
+    space_configuration::{self, ProgrammingExtensionRequest, TrustedSpaceSession},
+    space_programming_extension::{
+        self, BrokerRequest as ProgrammingExtensionBrokerRequest,
+        DispatchConfig as ProgrammingExtensionDispatchConfig,
+    },
+    space_turn_policy,
 };
 
 const LEGACY_PROTOCOL_VERSION: u8 = 2;
 const PROTOCOL_VERSION: u8 = 3;
+const SPACE_CHANGE_PROTOCOL_VERSION: u8 = 1;
+const SPACE_SESSION_RECEIPT_MAX_AGE_MINUTES: i64 = 10;
+const SPACE_SESSION_RECEIPT_LOOKUP_ATTEMPTS: usize = 6;
 const MAX_MESSAGE_BYTES: u64 = 64 * 1024;
 const READ_TIMEOUT: Duration = Duration::from_millis(750);
 const HANDLE_TIMEOUT: Duration = Duration::from_millis(3_500);
@@ -107,6 +116,47 @@ pub(crate) struct PosterReviewActor {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 enum IntakeRequest {
+    SpaceChangePrepare {
+        schema_version: u8,
+        intent: Value,
+        session: TrustedSession,
+    },
+    SpaceProgrammingExtensionPrepare {
+        schema_version: u8,
+        request: ProgrammingExtensionRequest,
+        session: TrustedSession,
+    },
+    SpaceProgrammingExtensionContinuationIntent {
+        schema_version: u8,
+        request_id: Uuid,
+        session: TrustedSession,
+    },
+    SpaceProgrammingExtensionShadowPrepare {
+        schema_version: u8,
+        request_id: Uuid,
+        intent: Value,
+        session: TrustedSession,
+    },
+    SpaceChangeConfirm {
+        schema_version: u8,
+        proposal_id: Uuid,
+        confirmation_code: String,
+        session: TrustedSession,
+    },
+    SpaceChangeStatus {
+        schema_version: u8,
+        request_id: Uuid,
+        session: TrustedSession,
+    },
+    SpaceTurnPolicyContext {
+        schema_version: u8,
+        session: TrustedSession,
+    },
+    SpaceTurnCapabilityAuthorize {
+        schema_version: u8,
+        capability_key: String,
+        session: TrustedSession,
+    },
     PosterProductionRequest {
         schema_version: u8,
         request: String,
@@ -140,6 +190,7 @@ enum IntakeRequest {
 enum WireRequest {
     Legacy(Box<IntakeRequest>),
     FeishuMessage(SignedIngressEnvelope),
+    SpaceProgrammingExtension(ProgrammingExtensionBrokerRequest),
 }
 
 #[derive(Debug, Serialize)]
@@ -162,6 +213,7 @@ impl Drop for SocketGuard {
 }
 
 pub async fn run(cli: &Cli, socket_path: PathBuf) -> Result<()> {
+    let programming_extension_dispatch = ProgrammingExtensionDispatchConfig::from_env()?;
     prepare_socket(&socket_path)?;
     let ingress_config =
         conversation_ingress::IngressConfig::from_env_optional()?.map(std::sync::Arc::new);
@@ -183,9 +235,15 @@ pub async fn run(cli: &Cli, socket_path: PathBuf) -> Result<()> {
         let policy = policy.clone();
         let ingress_config = ingress_config.clone();
         tokio::spawn(async move {
-            if handle_connection(stream, &pool, &policy, ingress_config.as_deref())
-                .await
-                .is_err()
+            if handle_connection(
+                stream,
+                &pool,
+                &policy,
+                ingress_config.as_deref(),
+                programming_extension_dispatch,
+            )
+            .await
+            .is_err()
             {
                 tracing::warn!(
                     error_code = "intake_connection_failed",
@@ -201,6 +259,7 @@ async fn handle_connection(
     pool: &PgPool,
     policy: &OperationsPolicy,
     ingress_config: Option<&conversation_ingress::IngressConfig>,
+    programming_extension_dispatch: ProgrammingExtensionDispatchConfig,
 ) -> Result<()> {
     let request = match read_request(&mut stream).await {
         Ok(request) => request,
@@ -235,6 +294,10 @@ async fn handle_connection(
             }
             WireRequest::FeishuMessage(envelope) => {
                 conversation_ingress::handle(pool, ingress_config, envelope).await
+            }
+            WireRequest::SpaceProgrammingExtension(request) => {
+                space_programming_extension::handle(pool, programming_extension_dispatch, request)
+                    .await
             }
         }
     };
@@ -271,10 +334,22 @@ async fn read_request(stream: &mut UnixStream) -> Result<WireRequest> {
         bytes.pop();
     }
     let value: Value = serde_json::from_slice(&bytes).context("parse intake request")?;
+    parse_wire_request(value)
+}
+
+fn parse_wire_request(value: Value) -> Result<WireRequest> {
     if value.get("body_base64").is_some() {
         return serde_json::from_value(value)
             .map(WireRequest::FeishuMessage)
             .context("parse signed Feishu message ingress envelope");
+    }
+    if matches!(
+        value.get("operation").and_then(Value::as_str),
+        Some("space_programming_extension_claim" | "space_programming_extension_finish")
+    ) {
+        return serde_json::from_value(value)
+            .map(WireRequest::SpaceProgrammingExtension)
+            .context("parse Space programming extension broker request");
     }
     serde_json::from_value(value)
         .map(Box::new)
@@ -299,6 +374,85 @@ async fn handle_request(
     internal_group_enabled: bool,
 ) -> Result<Value> {
     match request {
+        IntakeRequest::SpaceChangePrepare {
+            schema_version,
+            intent,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_configuration::prepare(pool, session, intent).await
+        }
+        IntakeRequest::SpaceProgrammingExtensionPrepare {
+            schema_version,
+            request,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_configuration::prepare_programming_extension(pool, session, request).await
+        }
+        IntakeRequest::SpaceProgrammingExtensionContinuationIntent {
+            schema_version,
+            request_id,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_configuration::programming_extension_continuation_intent(
+                pool, session, request_id,
+            )
+            .await
+        }
+        IntakeRequest::SpaceProgrammingExtensionShadowPrepare {
+            schema_version,
+            request_id,
+            intent,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_configuration::prepare_programming_extension_shadow(
+                pool, session, request_id, intent,
+            )
+            .await
+        }
+        IntakeRequest::SpaceChangeConfirm {
+            schema_version,
+            proposal_id,
+            confirmation_code,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_configuration::confirm(pool, session, proposal_id, confirmation_code).await
+        }
+        IntakeRequest::SpaceChangeStatus {
+            schema_version,
+            request_id,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_configuration::status(pool, session, request_id).await
+        }
+        IntakeRequest::SpaceTurnPolicyContext {
+            schema_version,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_turn_policy::context(pool, &session).await
+        }
+        IntakeRequest::SpaceTurnCapabilityAuthorize {
+            schema_version,
+            capability_key,
+            session,
+        } => {
+            validate_space_change_protocol(schema_version)?;
+            let session = resolve_trusted_space_session(pool, session).await?;
+            space_turn_policy::authorize(pool, &session, &capability_key).await
+        }
         IntakeRequest::PosterProductionRequest {
             schema_version,
             request,
@@ -460,6 +614,96 @@ async fn handle_request(
             .await
         }
     }
+}
+
+fn validate_space_change_protocol(schema_version: u8) -> Result<()> {
+    if schema_version != SPACE_CHANGE_PROTOCOL_VERSION {
+        bail!("unsupported Space configuration intake schema version");
+    }
+    Ok(())
+}
+
+fn trusted_space_session(session: TrustedSession) -> TrustedSpaceSession {
+    TrustedSpaceSession {
+        platform: session.platform,
+        conversation_type: session.conversation_type,
+        conversation_id: session.conversation_id,
+        requester_user_id: session.requester_user_id,
+        source_message_id: session.source_message_id,
+        source_message_text: None,
+    }
+}
+
+async fn resolve_trusted_space_session(
+    pool: &PgPool,
+    session: TrustedSession,
+) -> Result<TrustedSpaceSession> {
+    let mut session = trusted_space_session(session);
+    if session.platform.trim() != "qiwe"
+        || session.conversation_type.trim() != "group"
+        || [
+            (session.conversation_id.as_str(), 200usize),
+            (session.requester_user_id.as_str(), 200usize),
+            (session.source_message_id.as_str(), 240usize),
+        ]
+        .iter()
+        .any(|(value, max_len)| {
+            value.is_empty()
+                || value.len() > *max_len
+                || value.chars().any(char::is_whitespace)
+                || value.chars().any(char::is_control)
+        })
+    {
+        bail!("trusted current QiWe group session is required");
+    }
+
+    for attempt in 0..SPACE_SESSION_RECEIPT_LOOKUP_ATTEMPTS {
+        let source_message_text: Option<String> = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT message.text
+            FROM qintopia_messages.messages message
+            JOIN qintopia_messages.conversations conversation
+              ON conversation.id = message.conversation_id
+             AND conversation.tenant_id = 'qintopia'
+             AND conversation.platform = 'qiwe'
+             AND conversation.chat_id = $1
+             AND conversation.chat_type = 'group'
+             AND conversation.status = 'active'
+            JOIN qintopia_messages.raw_events raw_event
+              ON raw_event.id = message.raw_event_id
+             AND raw_event.source = 'qiwe'
+             AND raw_event.space_id = conversation.id
+             AND raw_event.ingress_auth_verified
+            WHERE message.platform = 'qiwe'
+              AND message.chat_type = 'group'
+              AND message.chat_id = $1
+              AND message.sender_id = $2
+              AND message.message_id = $3
+              AND message.should_trigger
+              AND NULLIF(btrim(message.text), '') IS NOT NULL
+              AND message.received_at >= now()
+                  - make_interval(mins => $4)
+              AND message.received_at <= now() + interval '1 minute'
+            LIMIT 1
+            "#,
+        )
+        .bind(&session.conversation_id)
+        .bind(&session.requester_user_id)
+        .bind(&session.source_message_id)
+        .bind(SPACE_SESSION_RECEIPT_MAX_AGE_MINUTES as i32)
+        .fetch_optional(pool)
+        .await
+        .context("verify trusted QiWe Space session receipt")?;
+        if let Some(source_message_text) = source_message_text {
+            session.source_message_text = Some(source_message_text);
+            return Ok(session);
+        }
+        if attempt + 1 < SPACE_SESSION_RECEIPT_LOOKUP_ATTEMPTS {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    bail!("trusted QiWe source message receipt was not found")
 }
 
 async fn poster_user_status(pool: &PgPool, workflow_root_id: Uuid) -> Result<&'static str> {
@@ -1789,6 +2033,158 @@ mod tests {
     use super::*;
     #[cfg(feature = "postgres-integration-tests")]
     use crate::poster_notification::ReviewCallbackIntegrationInput;
+
+    #[test]
+    fn shared_intake_socket_rejects_agent_turn_broker_operations() {
+        for operation in [
+            "space_agent_turn_claim",
+            "space_agent_turn_finish",
+            "space_agent_turn_status",
+        ] {
+            let error = parse_wire_request(json!({
+                "operation": operation,
+                "schema_version": 1
+            }))
+            .expect_err("shared intake must not expose Agent-turn runner operations");
+            assert!(error
+                .to_string()
+                .contains("legacy operations intake request"));
+        }
+    }
+
+    #[test]
+    fn ordinary_space_turn_policy_wire_contract_uses_only_trusted_session_scope() {
+        let context = serde_json::from_value::<IntakeRequest>(json!({
+            "operation": "space_turn_policy_context",
+            "schema_version": 1,
+            "session": {
+                "platform": "qiwe",
+                "conversation_type": "group",
+                "conversation_id": "trusted-room",
+                "requester_user_id": "trusted-user",
+                "source_message_id": "trusted-message"
+            }
+        }))
+        .expect("parse Space turn policy context");
+        assert!(matches!(
+            context,
+            IntakeRequest::SpaceTurnPolicyContext {
+                schema_version: 1,
+                ..
+            }
+        ));
+
+        let authorization = serde_json::from_value::<IntakeRequest>(json!({
+            "operation": "space_turn_capability_authorize",
+            "schema_version": 1,
+            "capability_key": "erhua.qiwe_send_location_card",
+            "session": {
+                "platform": "qiwe",
+                "conversation_type": "group",
+                "conversation_id": "trusted-room",
+                "requester_user_id": "trusted-user",
+                "source_message_id": "trusted-message"
+            }
+        }))
+        .expect("parse Space turn capability authorization");
+        let IntakeRequest::SpaceTurnCapabilityAuthorize { capability_key, .. } = authorization
+        else {
+            panic!("expected Space turn capability authorization");
+        };
+        assert_eq!(capability_key, "erhua.qiwe_send_location_card");
+    }
+
+    #[test]
+    fn programming_extension_wire_contract_is_bounded() {
+        let request: IntakeRequest = serde_json::from_value(json!({
+            "operation": "space_programming_extension_prepare",
+            "schema_version": 1,
+            "request": {
+                "intent": "Handle one unknown QiWe provider event.",
+                "provider": "qiwe",
+                "research_query": "unknown QiWe event",
+                "official_sources": ["https://doc.qiweapi.com/doc-7331304"],
+                "research_digest": "a".repeat(64)
+            },
+            "session": {
+                "platform": "qiwe",
+                "conversation_type": "group",
+                "conversation_id": "trusted-room",
+                "requester_user_id": "trusted-user",
+                "source_message_id": "trusted-message"
+            }
+        }))
+        .expect("bounded programming extension intake request");
+        let IntakeRequest::SpaceProgrammingExtensionPrepare { request, .. } = request else {
+            panic!("expected programming extension request");
+        };
+        assert_eq!(request.provider, "qiwe");
+
+        let forged = serde_json::from_value::<IntakeRequest>(json!({
+            "operation": "space_programming_extension_prepare",
+            "schema_version": 1,
+            "request": {
+                "intent": "Handle one unknown QiWe provider event.",
+                "provider": "qiwe",
+                "research_query": "unknown QiWe event",
+                "official_sources": ["https://doc.qiweapi.com/doc-7331304"],
+                "research_digest": "a".repeat(64),
+                "target_group_id": "forged-room"
+            },
+            "session": {
+                "platform": "qiwe",
+                "conversation_type": "group",
+                "conversation_id": "trusted-room",
+                "requester_user_id": "trusted-user",
+                "source_message_id": "trusted-message"
+            }
+        }));
+        assert!(forged.is_err());
+    }
+
+    #[test]
+    fn programming_extension_shadow_continuation_wire_contract_is_internal_and_scoped() {
+        let request_id = Uuid::new_v4();
+        let session = json!({
+            "platform": "qiwe",
+            "conversation_type": "group",
+            "conversation_id": "trusted-room",
+            "requester_user_id": "trusted-user",
+            "source_message_id": "trusted-message"
+        });
+        let continuation = serde_json::from_value::<IntakeRequest>(json!({
+            "operation": "space_programming_extension_continuation_intent",
+            "schema_version": 1,
+            "request_id": request_id,
+            "session": session.clone()
+        }))
+        .expect("parse internal continuation intent request");
+        assert!(matches!(
+            continuation,
+            IntakeRequest::SpaceProgrammingExtensionContinuationIntent {
+                schema_version: 1,
+                request_id: parsed_id,
+                ..
+            } if parsed_id == request_id
+        ));
+
+        let shadow = serde_json::from_value::<IntakeRequest>(json!({
+            "operation": "space_programming_extension_shadow_prepare",
+            "schema_version": 1,
+            "request_id": request_id,
+            "intent": {"summary": "shadow", "changes": []},
+            "session": session
+        }))
+        .expect("parse internal shadow prepare request");
+        assert!(matches!(
+            shadow,
+            IntakeRequest::SpaceProgrammingExtensionShadowPrepare {
+                schema_version: 1,
+                request_id: parsed_id,
+                ..
+            } if parsed_id == request_id
+        ));
+    }
 
     #[cfg(feature = "postgres-integration-tests")]
     fn postgres_integration_database_url() -> String {
@@ -3866,5 +4262,147 @@ mod tests {
         assert_eq!(final_counts.2, 0);
         assert!(final_counts.3 >= 1);
         assert!(final_counts.4 >= 2);
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable PostgreSQL qintopia_test"]
+    async fn qiwe_space_session_requires_an_authenticated_persisted_message_receipt() {
+        let database_url = postgres_integration_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect Space receipt integration database");
+        db::run_migrations(&pool)
+            .await
+            .expect("migrate Space receipt integration database");
+
+        let suffix = Uuid::new_v4().simple().to_string();
+        let chat_id = format!("space-receipt-chat-{suffix}");
+        let sender_id = format!("space-receipt-sender-{suffix}");
+        let message_id = format!("space-receipt-message-{suffix}");
+        let conversation_id: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO qintopia_messages.conversations
+                (tenant_id, platform, chat_id, chat_type, status)
+            VALUES ('qintopia', 'qiwe', $1, 'group', 'active')
+            RETURNING id
+            "#,
+        )
+        .bind(&chat_id)
+        .fetch_one(&pool)
+        .await
+        .expect("seed Space receipt conversation");
+        let raw_event_id: Uuid = sqlx::query_scalar(
+            r#"
+            INSERT INTO qintopia_messages.raw_events
+                (event_id, source, subject, received_at, payload, space_id,
+                 ingress_auth_verified)
+            VALUES ($1, 'qiwe', 'integration.space.receipt', now(), '{}'::jsonb, $2, false)
+            RETURNING id
+            "#,
+        )
+        .bind(&message_id)
+        .bind(conversation_id)
+        .fetch_one(&pool)
+        .await
+        .expect("seed unauthenticated Space receipt raw event");
+        sqlx::query(
+            r#"
+            INSERT INTO qintopia_messages.messages
+                (platform, message_id, event_id, chat_id, chat_type, sender_id,
+                 message_kind, text, should_trigger, received_at, raw_event_id,
+                 conversation_id)
+            VALUES ('qiwe', $1, $1, $2, 'group', $3, 'text',
+                    '确认 A1B2C3D4', true, now(), $4, $5)
+            "#,
+        )
+        .bind(&message_id)
+        .bind(&chat_id)
+        .bind(&sender_id)
+        .bind(raw_event_id)
+        .bind(conversation_id)
+        .execute(&pool)
+        .await
+        .expect("seed Space receipt message");
+
+        let session = TrustedSession {
+            platform: "qiwe".to_string(),
+            conversation_type: "group".to_string(),
+            conversation_id: chat_id.clone(),
+            requester_user_id: sender_id.clone(),
+            source_message_id: message_id.clone(),
+            policy_version: 0,
+            binding: None,
+        };
+        assert!(resolve_trusted_space_session(&pool, session.clone())
+            .await
+            .is_err());
+        assert!(
+            handle_request(
+                &pool,
+                &OperationsPolicy::dry_run(),
+                IntakeRequest::SpaceTurnPolicyContext {
+                    schema_version: 1,
+                    session: session.clone(),
+                },
+                false,
+                false,
+            )
+            .await
+            .is_err(),
+            "ordinary Space context must reject an unauthenticated receipt"
+        );
+
+        sqlx::query(
+            "UPDATE qintopia_messages.raw_events SET ingress_auth_verified = true WHERE id = $1",
+        )
+        .bind(raw_event_id)
+        .execute(&pool)
+        .await
+        .expect("authenticate Space receipt raw event");
+        let resolved = resolve_trusted_space_session(&pool, session.clone())
+            .await
+            .expect("resolve authenticated Space receipt");
+        assert_eq!(resolved.conversation_id, chat_id);
+        assert_eq!(resolved.requester_user_id, sender_id);
+        assert_eq!(
+            resolved.source_message_text.as_deref(),
+            Some("确认 A1B2C3D4")
+        );
+        let context = handle_request(
+            &pool,
+            &OperationsPolicy::dry_run(),
+            IntakeRequest::SpaceTurnPolicyContext {
+                schema_version: 1,
+                session: session.clone(),
+            },
+            false,
+            false,
+        )
+        .await
+        .expect("load ordinary Space context from authenticated receipt");
+        assert_eq!(context["policy_found"], false);
+        assert_eq!(context["effective_capabilities"], json!([]));
+
+        let mut forged = session;
+        forged.requester_user_id = format!("forged-{suffix}");
+        assert!(resolve_trusted_space_session(&pool, forged.clone())
+            .await
+            .is_err());
+        assert!(
+            handle_request(
+                &pool,
+                &OperationsPolicy::dry_run(),
+                IntakeRequest::SpaceTurnPolicyContext {
+                    schema_version: 1,
+                    session: forged,
+                },
+                false,
+                false,
+            )
+            .await
+            .is_err(),
+            "ordinary Space context must reject a forged operator"
+        );
     }
 }

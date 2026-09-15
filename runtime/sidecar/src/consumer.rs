@@ -11,9 +11,11 @@ use sqlx::postgres::PgPool;
 use tracing::{debug, error, info, warn};
 
 use crate::{
+    channel_event_mapping,
     config::Cli,
     db,
     event::{dead_letter_payload_summary, NormalizedMessageEvent, RawQiweEvent},
+    nats_connection,
 };
 
 pub async fn run(cli: Cli) -> Result<()> {
@@ -21,9 +23,8 @@ pub async fn run(cli: Cli) -> Result<()> {
     let pool = db::connect(&database_url, cli.db_max_connections).await?;
     db::run_migrations(&pool).await?;
 
-    let client = async_nats::connect(&cli.nats_url)
-        .await
-        .with_context(|| format!("connect NATS at {}", cli.nats_url))?;
+    nats_connection::validate_connection_config(&cli)?;
+    let client = nats_connection::connect(&cli).await?;
     let jetstream = jetstream::new(client);
     let mut stream = jetstream
         .get_stream(&cli.nats_stream)
@@ -37,6 +38,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         "connected to NATS stream"
     );
 
+    let mut filter_subjects = vec![cli.raw_subject.clone(), cli.message_subject.clone()];
+    if cli.trust_authenticated_raw_subject {
+        filter_subjects.push(cli.authenticated_raw_subject.clone());
+    }
     let consumer: PullConsumer = stream
         .get_or_create_consumer(
             &cli.consumer,
@@ -47,7 +52,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                 ack_policy: consumer::AckPolicy::Explicit,
                 ack_wait: Duration::from_secs(60),
                 max_deliver: 20,
-                filter_subjects: vec![cli.raw_subject.clone(), cli.message_subject.clone()],
+                filter_subjects,
                 ..Default::default()
             },
         )
@@ -57,6 +62,8 @@ pub async fn run(cli: Cli) -> Result<()> {
     info!(
         consumer = %cli.consumer,
         raw_subject = %cli.raw_subject,
+        authenticated_raw_subject = %cli.authenticated_raw_subject,
+        trusted_raw_enabled = cli.trust_authenticated_raw_subject,
         message_subject = %cli.message_subject,
         "sidecar consumer started"
     );
@@ -162,13 +169,25 @@ async fn process_payload(
     _stream_sequence: Option<u64>,
     payload: &[u8],
 ) -> std::result::Result<(), ProcessError> {
-    if subject == cli.raw_subject {
-        let event =
+    if let Some(ingress_auth_verified) = raw_subject_authentication(
+        &cli.raw_subject,
+        &cli.authenticated_raw_subject,
+        cli.trust_authenticated_raw_subject,
+        subject,
+    ) {
+        let mut event =
             RawQiweEvent::from_slice(payload).map_err(|error| ProcessError::InvalidPayload {
                 kind: "raw_parse_failed".to_string(),
                 error: error.to_string(),
             })?;
-        db::persist_raw_event(pool, subject, &event)
+        event.set_ingress_auth_verified(ingress_auth_verified);
+        let raw_event_id = db::persist_raw_event(pool, subject, &event)
+            .await
+            .map_err(ProcessError::Retryable)?;
+        let persisted_event = db::load_raw_event(pool, raw_event_id)
+            .await
+            .map_err(ProcessError::Retryable)?;
+        channel_event_mapping::process_persisted_raw_event(pool, raw_event_id, &persisted_event)
             .await
             .map_err(ProcessError::Retryable)?;
         return Ok(());
@@ -193,8 +212,60 @@ async fn process_payload(
     })
 }
 
+fn raw_subject_authentication(
+    raw_subject: &str,
+    authenticated_raw_subject: &str,
+    trust_authenticated_raw_subject: bool,
+    subject: &str,
+) -> Option<bool> {
+    if subject == raw_subject {
+        return Some(false);
+    }
+    (trust_authenticated_raw_subject && subject == authenticated_raw_subject).then_some(true)
+}
+
 #[derive(Debug)]
 enum ProcessError {
     InvalidPayload { kind: String, error: String },
     Retryable(anyhow::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::raw_subject_authentication;
+
+    #[test]
+    fn legacy_raw_subject_can_never_assert_authenticated_ingress() {
+        assert_eq!(
+            raw_subject_authentication(
+                "qintopia.qiwe.raw",
+                "qintopia.qiwe.raw.authenticated",
+                true,
+                "qintopia.qiwe.raw",
+            ),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn authenticated_subject_requires_explicit_consumer_trust() {
+        assert_eq!(
+            raw_subject_authentication(
+                "qintopia.qiwe.raw",
+                "qintopia.qiwe.raw.authenticated",
+                false,
+                "qintopia.qiwe.raw.authenticated",
+            ),
+            None
+        );
+        assert_eq!(
+            raw_subject_authentication(
+                "qintopia.qiwe.raw",
+                "qintopia.qiwe.raw.authenticated",
+                true,
+                "qintopia.qiwe.raw.authenticated",
+            ),
+            Some(true)
+        );
+    }
 }

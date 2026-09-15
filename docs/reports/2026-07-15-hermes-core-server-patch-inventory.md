@@ -40,8 +40,18 @@ worktree is stored at
 Its SHA-256 is:
 
 ```text
-4a7f3d3c221cd85cb91318673fb30a52ea711a2b0b7ceb1ca0c7c39a932c9b06
+bf60db1218d1a5690f93a999fb0e81bc6be1547c2f4da3f5b2397ed09658f572
 ```
+
+## 2026-09-09 Integrity Correction
+
+A fresh SHA-256 calculation of the retained patch produced
+`bf60db1218d1a5690f93a999fb0e81bc6be1547c2f4da3f5b2397ed09658f572`, matching the
+review-pool manifest and README. The previously recorded value
+`4a7f3d3c221cd85cb91318673fb30a52ea711a2b0b7ceb1ca0c7c39a932c9b06` did not match the
+retained artifact and must not be used for migration or deletion approval. The
+historical mismatch is recorded explicitly rather than silently replacing its audit
+meaning; the available evidence does not establish why the earlier value differed.
 
 The patch is intentionally review-only. It includes useful WeCom reliability ideas but
 cannot be deployed as-is:

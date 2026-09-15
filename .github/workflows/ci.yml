@@ -161,7 +161,8 @@ jobs:
           printf 'changed files:\n'
           printf '  %s\n' "${changed[@]}"
 
-  check:
+  check-light:
+    name: Light check
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: changes
@@ -247,27 +248,116 @@ jobs:
             node tools/ci/check-release-please-pr.mjs
           fi
 
+  runtime-check:
+    name: Runtime check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: changes
+    if: ${{ needs.changes.outputs.full-check == 'true' }}
+
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Setup Python
-        if: ${{ needs.changes.outputs.full-check == 'true' }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Setup Rust
-        if: ${{ needs.changes.outputs.full-check == 'true' }}
         uses: dtolnay/rust-toolchain@1.96.0
         with:
           components: rustfmt
 
       - name: Runtime check
-        if: ${{ needs.changes.outputs.full-check == 'true' }}
         run: pnpm check:runtime
 
-      - name: Report docs-only check
-        if: ${{ needs.changes.outputs.full-check != 'true' }}
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs:
+      - changes
+      - check-light
+      - runtime-check
+      - rust-quality-baseline
+      - postgres-integration
+    if: ${{ always() }}
+
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Verify parallel check results
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          LIGHT_RESULT: ${{ needs.check-light.result }}
+          RUNTIME_RESULT: ${{ needs.runtime-check.result }}
+          RUST_QUALITY_RESULT: ${{ needs.rust-quality-baseline.result }}
+          POSTGRES_RESULT: ${{ needs.postgres-integration.result }}
+          FULL_CHECK: ${{ needs.changes.outputs.full-check }}
+          RUST_QUALITY_CHECK: ${{ needs.changes.outputs.rust-quality-check }}
+          POSTGRES_INTEGRATION_CHECK:
+            ${{ needs.changes.outputs.postgres-integration-check }}
         run: |
-          echo "Docs-only or Markdown-only change detected."
-          echo "Skipped Python/Rust runtime checks and artifact builds."
+          set -euo pipefail
+
+          if [[ "$CHANGES_RESULT" != "success" ]]; then
+            echo "changes job did not succeed: $CHANGES_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$LIGHT_RESULT" != "success" ]]; then
+            echo "light check did not succeed: $LIGHT_RESULT" >&2
+            exit 1
+          fi
+
+          validate_gated_result() {
+            local label="$1"
+            local required="$2"
+            local result="$3"
+            case "$required:$result" in
+              true:success)
+                ;;
+              false:skipped)
+                ;;
+              *)
+                echo "unexpected $label result: required=$required result=$result" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          validate_gated_result "runtime check" "$FULL_CHECK" "$RUNTIME_RESULT"
+          validate_gated_result "Rust quality" "$RUST_QUALITY_CHECK" "$RUST_QUALITY_RESULT"
+          validate_gated_result "PostgreSQL integration" "$POSTGRES_INTEGRATION_CHECK" "$POSTGRES_RESULT"
+
+          if [[ "$FULL_CHECK" == "false" ]]; then
+            echo "Docs-only or Markdown-only change detected."
+            echo "Skipped Python/Rust runtime checks and artifact builds."
+          fi
+
+          echo "Parallel light and runtime checks passed."
 
   rust-quality-baseline:
     name: Rust quality baseline
@@ -325,6 +415,20 @@ jobs:
           cargo nextest run --manifest-path runtime/sidecar/Cargo.toml --all-features
           --no-fail-fast
 
+      - name: Space automation staging-only compile boundary
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --no-default-features
+          --features qiwe-staging-adapter
+          space_automation_execution::tests::apply_compile_boundary_rejects_non_production_only_qiwe_builds
+          -- --exact
+
+      - name: Space automation production-only compile boundary
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --no-default-features
+          --features qiwe-production-adapter
+          space_automation_execution::tests::apply_compile_boundary_accepts_only_the_production_qiwe_adapter
+          -- --exact
+
       - name: Clippy baseline
         run: |
           set -o pipefail
@@ -340,8 +444,8 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  xiaoman-postgres-integration:
-    name: Xiaoman PostgreSQL integration
+  postgres-integration:
+    name: PostgreSQL integration
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: changes
@@ -376,6 +480,14 @@ jobs:
 
       - name: Verify temporary PostgreSQL client
         run: psql --version
+
+      - name: Person collaboration and resident welcome PostgreSQL integration
+        env:
+          QINTOPIA_TEST_MODE: "1"
+          RUST_MIN_STACK: "33554432"
+        run: |
+          cargo test --locked --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests person_collaboration -- --include-ignored --test-threads=1
+          cargo test --locked --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests resident_welcome -- --include-ignored --test-threads=1
 
       - name: Rust group send-ready PostgreSQL integration
         run: >-
@@ -417,6 +529,48 @@ jobs:
           cargo test --manifest-path runtime/sidecar/Cargo.toml --features
           postgres-integration-tests
           conversation_policy::tests::postgres_policy_apply_is_versioned_and_idempotent
+          -- --ignored --exact
+
+      - name: Erhua Space control-plane PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          space_configuration_integration_tests::postgres_space_control_plane_is_versioned_authorized_and_isolated
+          -- --ignored --exact
+
+      - name: Erhua Space event automation PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          space_configuration_integration_tests::postgres_event_automation_requires_same_space_shadow_before_activation
+          -- --ignored --exact
+
+      - name: Erhua Space direct mapping freshness PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_mapping_promotion
+          -- --ignored --exact
+
+      - name: Erhua Space direct automation freshness PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          space_configuration_integration_tests::postgres_historical_observation_cannot_authorize_direct_active_automation
+          -- --ignored --exact
+
+      - name: Erhua Space approval-policy PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          space_configuration_integration_tests::postgres_unsupported_approval_policies_cannot_create_active_automations
+          -- --ignored --exact
+
+      - name: Erhua Space agent-turn expiry PostgreSQL integration
+        run: >-
+          cargo test --manifest-path runtime/sidecar/Cargo.toml --features
+          postgres-integration-tests
+          space_agent_turn_broker::tests::postgres_claim_expiry_and_reconciliation_contract
           -- --ignored --exact
 
       - name: Xiaoman material followup PostgreSQL integration
@@ -538,7 +692,7 @@ jobs:
       - changes
       - check
       - rust-quality-baseline
-      - xiaoman-postgres-integration
+      - postgres-integration
     if: >-
       ${{ always() && github.event_name == 'workflow_dispatch' &&
       needs.changes.outputs.release-please-pr == 'true' }}
@@ -570,7 +724,7 @@ jobs:
             -f target_url="$RUN_URL"
           if [[ "${{ needs.check.result }}" == "success" && \
             "${{ needs.rust-quality-baseline.result }}" == "success" && \
-            "${{ needs.xiaoman-postgres-integration.result }}" == "success" ]]; then
+            "${{ needs.postgres-integration.result }}" == "success" ]]; then
             state=success
             description="Full Release Please validation passed"
           fi

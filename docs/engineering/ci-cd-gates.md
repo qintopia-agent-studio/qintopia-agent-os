@@ -34,8 +34,8 @@ The runtime gate adds:
 - sidecar Rust tests
 - no-credential sidecar smoke checks
 - a Rust coverage baseline artifact and blocking strict Clippy gate
-- a Xiaoman downstream apply smoke against a disposable GitHub Actions PostgreSQL
-  service
+- a guarded PostgreSQL integration and downstream apply smoke against a disposable
+  GitHub Actions PostgreSQL service
 
 ## Secret And Runtime-State Gate
 
@@ -73,15 +73,15 @@ deployment script, package, workflow, or configuration changes run `pnpm check:r
 after the light gate.
 
 Heavy checks are risk-tiered separately. Sidecar, Postgres, deploy sidecar script, or CI
-workflow changes run `rust-quality-baseline` with Rust 1.96 and
-`xiaoman-postgres-integration`; explicit non-Release manual dispatches also force the
-heavy tier. Authenticated Release Please dispatches also force light, runtime, Rust, and
-PostgreSQL validation on the exact release head. The Rust job stores LCOV, setup logs,
-and a text summary as a short-retention artifact. Strict Clippy runs with
-`cargo clippy --all-targets -- -D warnings` and blocks the heavy tier. The PostgreSQL
-integration uses only a disposable `qintopia_test` service and runs the guarded
-control-plane apply smoke with no production database URL, secrets, Feishu, QiWe, or
-external adapters.
+workflow changes run `rust-quality-baseline` with Rust 1.96 and the
+`postgres-integration` job displayed as `PostgreSQL integration`; explicit non-Release
+manual dispatches also force the heavy tier. Authenticated Release Please dispatches
+also force light, runtime, Rust, and PostgreSQL validation on the exact release head.
+The Rust job stores LCOV, setup logs, and a text summary as a short-retention artifact.
+Strict Clippy runs with `cargo clippy --all-targets -- -D warnings` and blocks the heavy
+tier. The PostgreSQL integration uses only a disposable `qintopia_test` service and runs
+the guarded control-plane apply smoke with no production database URL, secrets, Feishu,
+QiWe, or external adapters.
 
 ## Local Pre-PR Mirror
 
@@ -140,6 +140,9 @@ The workflow authenticates the open bot-owned PR and exact checkout SHA, then sk
 external PR-Agent action because generated Release Please metadata is not an AI review
 target. A successful no-review job provides the required check without changing the PR.
 
+Low-risk classification does not authorize merge or publication. Generated mapping PRs,
+Release Please PRs, and draft Releases all require explicit owner review and action.
+
 Do not use workflow-level `paths-ignore` for required checks. A skipped workflow can
 leave branch protection checks pending. Keep the workflow running and skip only the
 heavy steps inside the workflow.
@@ -176,11 +179,10 @@ Artifact publication is opt-in and lives in the `Artifacts` workflow. Use
 - `build_deploy_bundle`
 - `upload_cos`
 
-As an explicit automation shortcut, a push to `master` whose head commit message
-contains `[publish-artifacts]` publishes only the ordinary Huabaosi production sidecar
-artifact plus the deploy bundle, then uploads them to COS. It does not auto-build the
-independent QiWe production artifact. Normal docs, planning, and repository maintenance
-commits do not build or upload artifacts.
+Artifacts have no `master` push publication path. Normal docs, planning, and repository
+maintenance commits do not build or upload artifacts. Every Artifacts workflow
+publication is initiated through an explicit `workflow_dispatch` with the desired build
+and upload inputs.
 
 The artifact families are distinct:
 

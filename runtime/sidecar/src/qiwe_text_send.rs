@@ -282,90 +282,104 @@ async fn run_apply(cli: &Cli, work_item_id: Option<Uuid>) -> Result<QiweTextSend
         }
         let database_url = cli.database_url_required()?;
         let pool = db::connect(database_url, cli.db_max_connections).await?;
-        let mut tx = pool
-            .begin()
-            .await
-            .context("begin QiWe text-send transaction")?;
-        let Some(work_item) = lock_work_item(&mut tx, work_item_id).await? else {
-            tx.commit().await.context("commit empty text-send claim")?;
-            return Ok(empty_report(
-                false,
-                true,
-                "no_claimable_text_group_message_request",
-            ));
-        };
-        let plan = match validate_work_item(&work_item, &config) {
-            Ok(plan) => plan,
-            Err(err) => {
-                record_failed(&mut tx, &work_item, "policy_denied", Some(&err.to_string())).await?;
-                tx.commit()
-                    .await
-                    .context("commit text-send policy denial")?;
-                return Ok(empty_report(false, true, "policy_denied"));
-            }
-        };
-        tx.commit()
-            .await
-            .context("commit QiWe text-send claim before external call")?;
-
-        let outcome = request_send_text_with(&config, &plan, &HttpClient::production());
-        let mut tx = pool
-            .begin()
-            .await
-            .context("begin QiWe text-send outcome transaction")?;
-        let report = match outcome {
-            SendOutcome::Sent { response_summary } => {
-                record_sent(&mut tx, &work_item, &plan, response_summary).await?;
-                report_from_plan(
-                    ReportStatus {
-                        dry_run: false,
-                        apply_requested: true,
-                        fixture_mode: false,
-                        action_status: "text_send_executed",
-                        work_item_id: Some(work_item.id),
-                        current_status: "completed",
-                        external_send_executed: Some(true),
-                    },
-                    &plan,
-                )
-            }
-            SendOutcome::FailedBeforeSend { reason } => {
-                record_failed(&mut tx, &work_item, reason, None).await?;
-                report_from_plan(
-                    ReportStatus {
-                        dry_run: false,
-                        apply_requested: true,
-                        fixture_mode: false,
-                        action_status: "text_send_failed_before_external_send",
-                        work_item_id: Some(work_item.id),
-                        current_status: "failed",
-                        external_send_executed: Some(false),
-                    },
-                    &plan,
-                )
-            }
-            SendOutcome::Ambiguous {
-                reason,
-                response_summary,
-            } => {
-                record_ambiguous(&mut tx, &work_item, reason, response_summary).await?;
-                report_from_plan(
-                    ReportStatus {
-                        dry_run: false,
-                        apply_requested: true,
-                        fixture_mode: false,
-                        action_status: "text_send_outcome_ambiguous",
-                        work_item_id: Some(work_item.id),
-                        current_status: "failed",
-                        external_send_executed: None,
-                    },
-                    &plan,
-                )
-            }
-        };
-        tx.commit().await.context("commit QiWe text-send outcome")?;
-        Ok(report)
+        run_apply_core(&pool, &config, work_item_id, &HttpClient::production()).await
     }
+}
+
+#[cfg(any(
+    test,
+    feature = "qiwe-staging-adapter",
+    feature = "qiwe-production-adapter"
+))]
+async fn run_apply_core(
+    pool: &PgPool,
+    config: &AdapterConfig,
+    work_item_id: Option<Uuid>,
+    client: &HttpClient,
+) -> Result<QiweTextSendWorkerReport> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe text-send transaction")?;
+    let Some(work_item) = lock_work_item(&mut tx, work_item_id).await? else {
+        tx.commit().await.context("commit empty text-send claim")?;
+        return Ok(empty_report(
+            false,
+            true,
+            "no_claimable_text_group_message_request",
+        ));
+    };
+    let plan = match validate_work_item(&work_item, config) {
+        Ok(plan) => plan,
+        Err(err) => {
+            record_failed(&mut tx, &work_item, "policy_denied", Some(&err.to_string())).await?;
+            tx.commit()
+                .await
+                .context("commit text-send policy denial")?;
+            return Ok(empty_report(false, true, "policy_denied"));
+        }
+    };
+    tx.commit()
+        .await
+        .context("commit QiWe text-send claim before external call")?;
+
+    let outcome = request_send_text_with(config, &plan, client);
+    let mut tx = pool
+        .begin()
+        .await
+        .context("begin QiWe text-send outcome transaction")?;
+    let report = match outcome {
+        SendOutcome::Sent { response_summary } => {
+            record_sent(&mut tx, &work_item, &plan, response_summary).await?;
+            report_from_plan(
+                ReportStatus {
+                    dry_run: false,
+                    apply_requested: true,
+                    fixture_mode: false,
+                    action_status: "text_send_executed",
+                    work_item_id: Some(work_item.id),
+                    current_status: "completed",
+                    external_send_executed: Some(true),
+                },
+                &plan,
+            )
+        }
+        SendOutcome::FailedBeforeSend { reason } => {
+            record_failed(&mut tx, &work_item, reason, None).await?;
+            report_from_plan(
+                ReportStatus {
+                    dry_run: false,
+                    apply_requested: true,
+                    fixture_mode: false,
+                    action_status: "text_send_failed_before_external_send",
+                    work_item_id: Some(work_item.id),
+                    current_status: "failed",
+                    external_send_executed: Some(false),
+                },
+                &plan,
+            )
+        }
+        SendOutcome::Ambiguous {
+            reason,
+            response_summary,
+        } => {
+            record_ambiguous(&mut tx, &work_item, reason, response_summary).await?;
+            report_from_plan(
+                ReportStatus {
+                    dry_run: false,
+                    apply_requested: true,
+                    fixture_mode: false,
+                    action_status: "text_send_outcome_ambiguous",
+                    work_item_id: Some(work_item.id),
+                    current_status: "failed",
+                    external_send_executed: None,
+                },
+                &plan,
+            )
+        }
+    };
+    tx.commit().await.context("commit QiWe text-send outcome")?;
+    Ok(report)
 }
 
 async fn peek_work_item(pool: &PgPool, work_item_id: Option<Uuid>) -> Result<Option<TextWorkItem>> {
@@ -1132,6 +1146,191 @@ fn validate_header_value(value: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "postgres-integration-tests")]
+    #[derive(Debug, Deserialize)]
+    struct TextSendBridgeInput {
+        work_item_id: Uuid,
+        api_url: String,
+        target_group_id: String,
+        expected_action_status: String,
+        expected_current_status: String,
+        output_path: String,
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn guarded_bridge_path(
+        value: &str,
+        run_dir: &std::path::Path,
+        label: &str,
+    ) -> std::path::PathBuf {
+        let path = std::path::PathBuf::from(value);
+        assert!(path.is_absolute(), "{label} must be an absolute path");
+        let resolved = if path.exists() {
+            path.canonicalize().expect("resolve bridge file")
+        } else {
+            path.parent()
+                .expect("bridge parent")
+                .canonicalize()
+                .expect("resolve bridge parent")
+                .join(path.file_name().expect("bridge file name"))
+        };
+        assert!(
+            resolved.starts_with(run_dir),
+            "{label} must stay inside QINTOPIA_TEST_RUN_DIR"
+        );
+        resolved
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    fn bridge_database_url() -> String {
+        assert_eq!(
+            std::env::var("QINTOPIA_TEST_MODE").as_deref(),
+            Ok("1"),
+            "text bridge requires QINTOPIA_TEST_MODE=1"
+        );
+        assert_eq!(
+            std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE").as_deref(),
+            Ok("1"),
+            "text bridge requires the explicit apply-smoke guard"
+        );
+        let database_url = std::env::var("QINTOPIA_SIDECAR_DATABASE_URL")
+            .expect("text bridge requires QINTOPIA_SIDECAR_DATABASE_URL");
+        let parsed = Url::parse(&database_url).expect("text bridge database URL must parse");
+        assert!(
+            matches!(parsed.scheme(), "postgres" | "postgresql"),
+            "text bridge requires a postgres URL"
+        );
+        assert!(
+            matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1")),
+            "text bridge may only use a loopback database"
+        );
+        assert_eq!(
+            parsed.path().trim_start_matches('/'),
+            "qintopia_test",
+            "text bridge may only use qintopia_test"
+        );
+        database_url
+    }
+
+    #[cfg(feature = "postgres-integration-tests")]
+    #[tokio::test]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL and a loopback fake QiWe server"]
+    async fn postgres_erhua_morning_brief_text_bridge() {
+        let run_dir = std::env::var("QINTOPIA_TEST_RUN_DIR")
+            .expect("text bridge requires QINTOPIA_TEST_RUN_DIR");
+        let run_dir = std::path::PathBuf::from(run_dir)
+            .canonicalize()
+            .expect("QINTOPIA_TEST_RUN_DIR must exist");
+        let input_path = std::env::var("QINTOPIA_TEST_BRIDGE_INPUT")
+            .expect("text bridge requires QINTOPIA_TEST_BRIDGE_INPUT");
+        let input_path = guarded_bridge_path(&input_path, &run_dir, "bridge input");
+        let input: TextSendBridgeInput =
+            serde_json::from_slice(&std::fs::read(&input_path).expect("read text bridge input"))
+                .expect("parse text bridge input");
+        assert!(!input.target_group_id.trim().is_empty());
+        assert!(!input.expected_action_status.trim().is_empty());
+        assert!(!input.expected_current_status.trim().is_empty());
+
+        let api_url = Url::parse(&input.api_url).expect("text bridge API URL must parse");
+        assert_eq!(
+            api_url.scheme(),
+            "http",
+            "text bridge API must use loopback HTTP"
+        );
+        assert!(
+            matches!(api_url.host_str(), Some("127.0.0.1" | "localhost" | "::1")),
+            "text bridge API may only use a loopback host"
+        );
+        assert!(api_url.username().is_empty() && api_url.password().is_none());
+        assert!(api_url.query().is_none() && api_url.fragment().is_none());
+        assert_eq!(api_url.path(), "/qiwe/api/qw/doApi");
+
+        assert_eq!(
+            std::env::var("QINTOPIA_QIWE_TEXT_SEND_TEST_BRIDGE_ENABLE").as_deref(),
+            Ok("1"),
+            "text bridge requires its explicit enable flag"
+        );
+        let database_url = bridge_database_url();
+        let pool = db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        let run_id = std::env::var("QINTOPIA_TEST_RUN_ID").expect("test run identity");
+        let marker: String = sqlx::query_scalar("SELECT run_id FROM public.harness_run")
+            .fetch_one(&pool)
+            .await
+            .expect("read test database owner");
+        assert_eq!(marker, run_id, "database must belong to this run");
+        let config = AdapterConfig {
+            api_url,
+            token: "test-only-token".to_string(),
+            guid: "test-only-guid".to_string(),
+            allowed_groups: BTreeSet::from([input.target_group_id.clone()]),
+        };
+        let report = run_apply_core(
+            &pool,
+            &config,
+            Some(input.work_item_id),
+            &HttpClient::test_only(),
+        )
+        .await
+        .expect("text bridge worker should complete");
+        assert_eq!(
+            report.action_status, input.expected_action_status,
+            "text bridge action status"
+        );
+        assert_eq!(
+            report.current_status, input.expected_current_status,
+            "text bridge current status"
+        );
+
+        let output_path = guarded_bridge_path(&input.output_path, &run_dir, "bridge output");
+        let state: (String, Value) =
+            sqlx::query_as("SELECT status, payload FROM qintopia_agent_os.work_items WHERE id=$1")
+                .bind(input.work_item_id)
+                .fetch_one(&pool)
+                .await
+                .expect("read persisted work item");
+        let events: Vec<String> = sqlx::query_scalar("SELECT event_type FROM qintopia_agent_os.work_item_events WHERE work_item_id=$1 ORDER BY created_at, id")
+            .bind(input.work_item_id).fetch_all(&pool).await.expect("read persisted audit events");
+        let send_events: Vec<Value> = sqlx::query_scalar("SELECT data FROM qintopia_agent_os.work_item_events WHERE work_item_id=$1 AND event_type LIKE 'qiwe_text_send_%' ORDER BY created_at, id")
+            .bind(input.work_item_id).fetch_all(&pool).await.expect("read persisted send outcomes");
+        let artifact_hash: String = sqlx::query_scalar("SELECT content_hash FROM qintopia_agent_os.artifacts WHERE id=($1::jsonb->>'approved_artifact_id')::uuid")
+            .bind(&state.1).fetch_one(&pool).await.expect("read approved artifact hash");
+        assert_eq!(
+            state.1["approved_artifact_content_hash"].as_str(),
+            Some(artifact_hash.as_str())
+        );
+        assert_eq!(
+            state.1["message_text"].as_str().map(content_hash_for_text),
+            Some(artifact_hash.clone())
+        );
+        let evidence = json!({
+            "schema": "erhua-morning-brief-qiwe-text-bridge-v1",
+            "persisted_status": state.0,
+            "events": events,
+            "send_events": send_events,
+            "approved_artifact_content_hash": artifact_hash,
+            "work_item_id": report.work_item_id,
+            "action_status": report.action_status,
+            "current_status": report.current_status,
+            "external_send_executed": report.external_send_executed,
+            "approved_artifact_id": report.approved_artifact_id,
+            "artifact_bound": report.approved_artifact_id.is_some(),
+            "target_group_id_sha256": sha256_hex(&input.target_group_id),
+            "message_preview": report.message_preview,
+            "expected_action_status": input.expected_action_status,
+        });
+        std::fs::write(
+            &output_path,
+            serde_json::to_vec_pretty(&evidence).expect("serialize text bridge evidence"),
+        )
+        .expect("write text bridge evidence");
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&evidence).expect("serialize text bridge output")
+        );
+    }
 
     #[test]
     fn build_send_text_request_uses_hypertext_group_shape() {

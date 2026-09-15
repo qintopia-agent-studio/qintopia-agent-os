@@ -15,7 +15,7 @@ auto-publish gates are enabled.
 - On Sunday morning, if there are still no publishable activities after the Saturday
   collection reminder, generate a second gentle collection prompt.
 - Run QunMind in `daily-report --public-only` mode when configured; otherwise fetch up
-  to five public RSS/Atom items from the built-in AI news feeds.
+  to eight public RSS/Atom items from the built-in AI news feeds.
 - Keep English AI news bilingual: an English item must include a Chinese title and
   summary translation before it can appear in the morning brief.
 - Produce a single Erhua-style morning text draft and an operator-review envelope.
@@ -41,9 +41,10 @@ using a small public RSS fallback.
    runtime or a sanitized fixture in tests.
 2. It asks QunMind to generate a public-only daily report into a temporary markdown file
    if QunMind is configured or available on `PATH`.
-3. If QunMind is unavailable, it fetches the configured public RSS/Atom feeds, strips
-   URLs and internal markers, rejects English-only items without Chinese translations,
-   and composes the final morning brief.
+3. If QunMind is unavailable, or if it returns fewer than the configured news limit, it
+   fetches the configured public RSS/Atom feeds, keeps safe public source links, strips
+   internal markers, rejects English-only items without Chinese translations, and
+   composes the final morning brief.
 4. It fetches today's weather through the canonical `qintopia_weather` capability
    (`skills/qintopia-weather`): QWeather is the primary source with an Open-Meteo
    fallback, pinned to the Qintopia location. Any failure degrades to a "天气稍后补充"
@@ -76,9 +77,17 @@ RSS fallback English items are translated through the optional news LLM endpoint
 configured (`QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LLM_BASE_URL` / `_API_KEY` / `_MODEL`,
 falling back to the shared `QINTOPIA_LLM_BASE_URL` / `_API_KEY` / `_MODEL` when the
 brief-specific vars are unset); without any endpoint, English-only RSS items are skipped
-so the community group never receives untranslated English. Operators may use
+so the community group never receives untranslated English. QunMind items are never
+inflated by reusing body labels such as summaries or source links as fake extra news.
+Safe public `https` source links without embedded credentials are preserved as
+`来源：...` lines so residents can inspect the original article. Operators may use
 `--allow-news-unavailable` for an explicit degraded preview, but production scheduling
 should not silently send a "news missing" fallback.
+
+RSS dedup history is written only after the brief artifact is successfully committed.
+For pure RSS fallback, the selected RSS titles are recorded. For QunMind + RSS top-up,
+only the RSS additions are recorded, so the history file suppresses repeated fallback
+items without becoming an owner of QunMind's public report freshness.
 
 ## Running it
 
@@ -113,11 +122,14 @@ Optional RSS override:
 
 ```bash
 export QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_FEED_URLS="https://openai.com/news/rss.xml,https://blog.google/technology/ai/rss/"
+export QINTOPIA_ERHUA_MORNING_BRIEF_NEWS_LIMIT=8
 ```
 
 The RSS fallback accepts only `https` URLs on the reviewed public hosts `openai.com`,
-`blog.google`, and `deepmind.google`. It does not follow feed redirects, and it
-revalidates the final response URL before reading the feed body.
+`blog.google`, `deepmind.google`, `huggingface.co`, `arxiv.org`, and `export.arxiv.org`.
+It follows a bounded number of redirects only when every redirected host is still
+allowlisted. The built-in defaults intentionally avoid generic tech/news feeds; a
+shorter high-signal brief is better than filling the card with weakly related items.
 
 ### Prepare a reviewed send request
 
@@ -212,8 +224,10 @@ The brief can also render a card-style poster. By default no image is produced; 
 `--render-image <path>` to write a PNG or JPEG to disk. The render path builds a styled
 HTML card and screenshots it with Playwright; when Playwright is unavailable (e.g. a
 host without a browser runtime) it falls back to a self-contained Pillow drawing. The
-Pillow fallback sizes the canvas to the real content height, so long activity copy or
-several wrapped bilingual news items are never silently truncated.
+poster uses an editorial brief layout: clean paper background, strong title, two-digit
+numbered news rows, thin dividers, source lines, and a one-sentence summary. The Pillow
+fallback sizes the canvas to the real content height, so long activity copy or several
+wrapped bilingual news items are never silently truncated.
 
 ```bash
 python workflows/erhua-morning-brief/morning_brief.py \
@@ -232,7 +246,7 @@ send worker before it can ship.
 ## Acceptance Scenarios
 
 - With confirmed same-day activities, the brief includes the activity announcement and
-  up to five AI news items.
+  up to eight AI news items.
 - English AI news appears with both the English original and a Chinese title/summary
   translation; English-only QunMind items fail closed.
 - With no confirmed activity, the brief says there is no confirmed activity today and
@@ -240,7 +254,9 @@ send worker before it can ship.
 - On Sunday morning, with no publishable activity yet, the brief explicitly says the
   Saturday collection reminder still has no publishable activities and asks once more
   for activity ideas.
-- QunMind markdown URLs and raw source links are not copied into the chat-facing brief.
+- Safe public QunMind/RSS `https` source links are copied into the chat-facing brief as
+  `来源：...` lines; local paths, tokens, credential-bearing URLs, and internal markers
+  remain blocked.
 - Missing QunMind news fails closed unless `--allow-news-unavailable` is explicitly set.
 - `--prepare-artifact` builds a pending `text_announcement` artifact-create request and
   does not approve or send it.

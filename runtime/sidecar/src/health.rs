@@ -2,13 +2,10 @@ use anyhow::{Context, Result};
 use serde_json::json;
 use tracing::info;
 
-use crate::config::Cli;
-use crate::db;
+use crate::{config::Cli, db, nats_connection};
 
 pub async fn check(cli: &Cli) -> Result<()> {
-    let client = async_nats::connect(&cli.nats_url)
-        .await
-        .with_context(|| format!("connect NATS at {}", cli.nats_url))?;
+    let client = nats_connection::connect(cli).await?;
     let jetstream = async_nats::jetstream::new(client);
     let mut stream = jetstream
         .get_stream(&cli.nats_stream)
@@ -45,7 +42,6 @@ pub async fn check(cli: &Cli) -> Result<()> {
         "{}",
         serde_json::to_string_pretty(&json!({
             "ok": true,
-            "nats_url": cli.nats_url,
             "stream": cli.nats_stream,
             "postgres_checked": cli.database_url.is_some()
         }))?

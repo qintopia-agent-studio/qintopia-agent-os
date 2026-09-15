@@ -12,11 +12,6 @@
     "requested_by",
     "created_at",
     "expires_at",
-    "commit_sha",
-    "runtime_sha",
-    "runtime_artifact_profile",
-    "deploy_bundle_sha",
-    "release_sha",
     "release_scope",
     "restart_targets",
     "rollback_on_smoke_failure",
@@ -33,8 +28,16 @@
     "environment": { "enum": ["production"] },
     "repository": { "const": "qintopia-agent-studio/qintopia-agent-os" },
     "requested_by": { "type": "string", "minLength": 1 },
-    "created_at": { "type": "string", "format": "date-time" },
-    "expires_at": { "type": "string", "format": "date-time" },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "$comment": "Runner enforces no more than 5 minutes future clock skew and 15 minutes request age."
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "$comment": "Runner enforces expires_at > created_at and a maximum 60 minute request TTL."
+    },
     "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "runtime_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "runtime_artifact_profile": {
@@ -42,6 +45,55 @@
     },
     "deploy_bundle_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "release_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "hermes_core_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "tag",
+        "commit_sha",
+        "source_archive_sha256",
+        "artifact_identity_sha256",
+        "artifact_manifest_sha256",
+        "previous_version",
+        "previous_commit_sha",
+        "archive_sha256"
+      ],
+      "properties": {
+        "repository": {
+          "const": "https://github.com/NousResearch/hermes-agent.git"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "source_archive_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "artifact_identity_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "artifact_manifest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "previous_version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$"
+        },
+        "previous_commit_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "archive_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
     "release_scope": {
       "type": "array",
       "minItems": 1,
@@ -51,6 +103,7 @@
           "sidecar-runtime",
           "deploy-bundle",
           "hermes-plugins",
+          "hermes-core-release",
           "hermes-profile-erhua",
           "production-activation",
           "production-observation",
@@ -72,12 +125,28 @@
           "hermes-xiaoman",
           "hermes-silaoshi",
           "hermes-huabaosi",
-          "hermes-guanerye"
+          "hermes-guanerye",
+          "hermes-core"
         ]
       }
     },
     "rollback_on_smoke_failure": { "type": "boolean" },
     "dry_run": { "type": "boolean" },
+    "release_rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_current_sha", "expected_previous_sha"],
+      "properties": {
+        "expected_current_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "expected_previous_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
     "profile_dry_run_request_id": {
       "type": "string",
       "pattern": "^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$"
@@ -108,7 +177,11 @@
         "algorithm": { "const": "hmac-sha256" },
         "issuer": { "const": "github-actions" },
         "key_id": { "type": "string", "minLength": 1 },
-        "signed_at": { "type": "string", "format": "date-time" },
+        "signed_at": {
+          "type": "string",
+          "format": "date-time",
+          "$comment": "Runner requires signed_at within 5 minutes of created_at and applies the same freshness/future-skew bounds."
+        },
         "value": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
@@ -136,14 +209,38 @@
           "items": {
             "enum": [
               "erhua-morning-brief",
+              "space-automation-runtime",
               "xiaoman-weekly-recruitment",
               "xiaoman-weekly-plan-confirmation",
               "xiaoman-weekly-preview",
               "xiaoman-daily-case-report-auto-publish"
             ]
           }
+        },
+        "approval": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": { "const": "space-automation-runtime" }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "required": ["approval"],
+            "properties": {
+              "targets": { "const": ["space-automation-runtime"] },
+              "approval": {
+                "const": "approved-production-space-automation-runtime"
+              }
+            }
+          }
         }
-      }
+      ]
     },
     "observation": {
       "type": "object",
@@ -157,6 +254,7 @@
           "items": {
             "enum": [
               "qiwe-image-send",
+              "space-automation-runtime",
               "xiaoman-daily-case-report-auto-publish",
               "hermes-cron-snapshot",
               "hermes-cron-live-parity",
@@ -223,6 +321,9 @@
               "erhua-morning-brief",
               "hermes-cron-snapshot-install",
               "qiwe-image-send-intro-text-enable",
+              "qiwe-webhook-ingress-apply",
+              "qiwe-webhook-ingress-rollback",
+              "space-automation-runtime-rollback",
               "xiaoman-daily-case-report-auto-publish-backfill",
               "xiaoman-daily-case-report-approval-repair",
               "xiaoman-daily-case-report-read-through-repair",
@@ -246,6 +347,9 @@
             "approved-production-hermes-cron-snapshot",
             "approved-production-erhua-morning-brief-one-shot",
             "approved-production-qiwe-image-send-intro-text-v1",
+            "approved-production-qiwe-webhook-ingress-apply",
+            "approved-production-qiwe-webhook-ingress-rollback",
+            "approved-production-space-automation-runtime-rollback",
             "approved-production-xiaoman-daily-case-report-auto-publish-backfill",
             "approved-production-xiaoman-daily-case-report-config-v1",
             "approved-production-xiaoman-creative-profile-candidates"
@@ -253,6 +357,78 @@
         }
       },
       "allOf": [
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": { "const": "qiwe-webhook-ingress-apply" }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "properties": {
+              "approval": {
+                "const": "approved-production-qiwe-webhook-ingress-apply"
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["backfill_date"] },
+                { "required": ["payload_sha256"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": { "const": "qiwe-webhook-ingress-rollback" }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "properties": {
+              "approval": {
+                "const": "approved-production-qiwe-webhook-ingress-rollback"
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["backfill_date"] },
+                { "required": ["payload_sha256"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "targets": {
+                "type": "array",
+                "contains": { "const": "space-automation-runtime-rollback" }
+              }
+            },
+            "required": ["targets"]
+          },
+          "then": {
+            "properties": {
+              "approval": {
+                "const": "approved-production-space-automation-runtime-rollback"
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["backfill_date"] },
+                { "required": ["payload_sha256"] }
+              ]
+            }
+          }
+        },
         {
           "if": {
             "properties": {
@@ -453,6 +629,82 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "release_scope": { "const": ["hermes-core-release"] }
+        },
+        "required": ["release_scope"]
+      },
+      "then": {
+        "required": ["hermes_core_release"],
+        "properties": {
+          "restart_targets": { "const": ["hermes-core"] },
+          "rollback_on_smoke_failure": { "const": true }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["commit_sha"] },
+            { "required": ["runtime_sha"] },
+            { "required": ["runtime_artifact_profile"] },
+            { "required": ["deploy_bundle_sha"] },
+            { "required": ["release_sha"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "not": { "const": ["hermes-core-release"] }
+          }
+        },
+        "required": ["release_scope"]
+      },
+      "then": {
+        "required": [
+          "commit_sha",
+          "runtime_sha",
+          "runtime_artifact_profile",
+          "deploy_bundle_sha",
+          "release_sha"
+        ],
+        "not": { "required": ["hermes_core_release"] }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "contains": {
+              "enum": ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
+            }
+          }
+        },
+        "required": ["release_scope"]
+      },
+      "then": {
+        "properties": {
+          "rollback_on_smoke_failure": { "const": true }
+        }
+      }
+    },
+    {
+      "if": { "required": ["release_rollback"] },
+      "then": {
+        "properties": {
+          "release_scope": {
+            "type": "array",
+            "items": {
+              "enum": ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
+            }
+          },
+          "rollback_on_smoke_failure": { "const": true }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

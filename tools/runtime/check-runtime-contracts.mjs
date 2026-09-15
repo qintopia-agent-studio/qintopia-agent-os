@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from "node:crypto";
+import childProcess from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -64,10 +65,38 @@ for (const [packagePath, requiredFragments] of Object.entries(packages)) {
   }
 }
 
+const nginxTemplateCheck = childProcess.spawnSync(
+  process.execPath,
+  ["runtime/nginx/tests/test-qiwe-webhook-template.mjs"],
+  { cwd: repoRoot, encoding: "utf8" }
+);
+if (nginxTemplateCheck.status !== 0) {
+  const details =
+    `${nginxTemplateCheck.stdout || ""}${nginxTemplateCheck.stderr || ""}`.trim();
+  addError(
+    `runtime/nginx: QiWe review-only template check failed${details ? `\n${details}` : ""}`
+  );
+}
+
+const nginxActivationCheck = childProcess.spawnSync(
+  process.execPath,
+  ["runtime/nginx/tests/test-qiwe-webhook-ingress-activation.mjs"],
+  { cwd: repoRoot, encoding: "utf8" }
+);
+if (nginxActivationCheck.status !== 0) {
+  const details =
+    `${nginxActivationCheck.stdout || ""}${nginxActivationCheck.stderr || ""}`.trim();
+  addError(
+    `runtime/nginx: QiWe ingress activation check failed${details ? `\n${details}` : ""}`
+  );
+}
+
 const hermesPatchPackage =
   "docs/operations/review-pool/hermes/2026-07-15-huabaosi-wecom-server-patch";
 const hermesPatchManifestPath = `${hermesPatchPackage}/manifest.yaml`;
 const hermesPatchReadmePath = `${hermesPatchPackage}/README.md`;
+const hermesPatchInventoryPath =
+  "docs/reports/2026-07-15-hermes-core-server-patch-inventory.md";
 
 if (!exists(hermesPatchManifestPath) || !exists(hermesPatchReadmePath)) {
   addError(`${hermesPatchPackage}: missing review-pool package contract`);
@@ -115,6 +144,12 @@ if (!exists(hermesPatchManifestPath) || !exists(hermesPatchReadmePath)) {
     if (!readme.includes(fragment)) {
       addError(`${hermesPatchReadmePath}: must mention ${fragment}`);
     }
+  }
+
+  if (!exists(hermesPatchInventoryPath)) {
+    addError(`${hermesPatchInventoryPath}: patch inventory is missing`);
+  } else if (!readText(hermesPatchInventoryPath).includes(manifest.patch.sha256)) {
+    addError(`${hermesPatchInventoryPath}: patch SHA-256 does not match manifest`);
   }
 }
 

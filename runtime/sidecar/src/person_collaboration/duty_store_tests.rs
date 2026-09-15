@@ -2,21 +2,13 @@
 #![cfg(feature = "postgres-integration-tests")]
 
 use super::{model::*, store::Actor, Store};
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 async fn fixture() -> Result<(Store, Actor, Value)> {
-    ensure!(
-        std::env::var("QINTOPIA_COLLABORATION_TEST_ENABLE").as_deref() == Ok("1"),
-        "explicit_test_enable_required"
-    );
-    let database = std::env::var("QINTOPIA_COLLABORATION_TEST_DATABASE_URL")?;
-    ensure!(
-        database == "postgres://postgres@127.0.0.1:55439/qintopia_test",
-        "task_isolated_database_required"
-    );
+    let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
     let store = Store::local(
         &database,
         &format!("synthetic-collaboration-duty-{}", Uuid::new_v4()),
@@ -31,6 +23,118 @@ async fn fixture() -> Result<(Store, Actor, Value)> {
 
 fn id(value: &Value) -> Uuid {
     serde_json::from_value(value.clone()).unwrap()
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn group_retirement_preserves_work_but_agent_retirement_revokes_it() -> Result<()> {
+    let (store, owner, state) = fixture().await?;
+    let assignment = assignment(&state, "人员甲 · 合成样例 A");
+    let group = find(&state, "groups", "一栋居民群（合成）");
+    let work = save(
+        &store,
+        &owner,
+        Change::ConfigureWork {
+            assignment: Box::new(assignment.clone()),
+            audience: Audience {
+                open_reception: false,
+                groups: vec![group],
+                people: vec![],
+                residents: "none".into(),
+                reply: PermissionMode::Autonomous,
+                proactive: PermissionMode::Denied,
+                reviewer: None,
+                topics: "合成居民服务".into(),
+                visibility: "general".into(),
+            },
+        },
+    )
+    .await?;
+    let relation = id(&work["change"]["collaboration"]);
+    assert_eq!(
+        store
+            .contact_decision(&owner, relation, "group", group, false)
+            .await?["status"],
+        "autonomous"
+    );
+    for (kind, reference, expected_ended) in [
+        ("group", group.to_string(), 0),
+        ("agent", assignment.agent.clone(), 1),
+    ] {
+        let ledger = save(
+            &store,
+            &owner,
+            Change::SaveLedger {
+                id: None,
+                object: kind.into(),
+                reference: Some(reference),
+                label: format!("合成{kind}"),
+                nickname: String::new(),
+                description: "生命周期回归案例".into(),
+                scope: Some(assignment.scope),
+                owner: None,
+                draft: false,
+            },
+        )
+        .await?;
+        let ledger_id = id(&ledger["change"]["id"]);
+        let retire = command(
+            &store,
+            &owner,
+            Change::Lifecycle {
+                object: "ledger".into(),
+                id: ledger_id,
+                operation: "retire".into(),
+            },
+        )
+        .await?;
+        let before = store.state(&owner).await?;
+        let preview = store.command(&owner, &retire, false).await?;
+        assert_eq!(preview["change"]["ended_connections"], expected_ended);
+        assert_eq!(
+            store.state(&owner).await?,
+            before,
+            "preview must not mutate state"
+        );
+        store.command(&owner, &retire, true).await?;
+        let expected_train = if kind == "group" {
+            "autonomous"
+        } else {
+            "denied"
+        };
+        assert_eq!(
+            store.decision(&owner, relation, "train").await?["status"],
+            expected_train
+        );
+        assert_eq!(
+            store
+                .contact_decision(&owner, relation, "group", group, false)
+                .await?["status"],
+            "denied"
+        );
+        save(
+            &store,
+            &owner,
+            Change::Lifecycle {
+                object: "ledger".into(),
+                id: ledger_id,
+                operation: "restore".into(),
+            },
+        )
+        .await?;
+        assert_eq!(
+            store.decision(&owner, relation, "train").await?["status"],
+            expected_train
+        );
+        assert_eq!(
+            store
+                .contact_decision(&owner, relation, "group", group, false)
+                .await?["status"],
+            "denied",
+            "restoring a ledger must not restore contact authority"
+        );
+    }
+    Ok(())
 }
 
 #[tokio::test]
@@ -128,7 +232,7 @@ async fn confirmed_workbench_saves_assignment_and_contact_atomically() -> Result
         "autonomous"
     );
     let reopened = Store::local(
-        &std::env::var("QINTOPIA_COLLABORATION_TEST_DATABASE_URL")?,
+        &crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?,
         &store.tenant,
     )
     .await?;

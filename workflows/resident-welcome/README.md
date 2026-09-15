@@ -67,6 +67,16 @@ PMS 事务回滚/晚提交、真实名单身份转换、卡片视觉验收与真
 
 ## Validation
 
+推荐使用仓库框架自动创建和清理独立随机端口数据库：
+
+```bash
+pnpm test:setup
+RUSTUP_TOOLCHAIN=1.96.0 pnpm test:business -- --feature resident-welcome
+```
+
+两项 PostgreSQL 场景同时接入 CI 和
+`pnpm check:pr:postgres`，不是默认忽略后的普通单元测试结果。测试框架适配仅在 test 编译中启用；本地工作台仍使用显式合成配置，不回退到生产数据库。
+
 ```bash
 RUST_MIN_STACK=33554432 cargo test --manifest-path runtime/sidecar/Cargo.toml resident_welcome
 QINTOPIA_WELCOME_TEST_ENABLE=1 RUST_MIN_STACK=33554432 \

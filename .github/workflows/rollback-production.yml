@@ -3,13 +3,14 @@ name: Rollback Production
 on:
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: Published Release tag to roll production back to.
+      expected_current_release_tag:
+        description: Published Release tag expected to be production current.
         required: true
-        default: v0.2.0
-        type: choice
-        options:
-          - v0.2.0
+        type: string
+      release_tag:
+        description: Published Release tag expected to be production's exact previous.
+        required: true
+        type: string
       restart_targets:
         description: Restart target set after rollback promotion.
         required: true
@@ -46,7 +47,6 @@ env:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
-  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
 
 jobs:
   request-rollback:
@@ -82,6 +82,7 @@ jobs:
         id: resolve
         shell: bash
         env:
+          INPUT_EXPECTED_CURRENT_RELEASE_TAG: ${{ inputs.expected_current_release_tag }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
           INPUT_RESTART_TARGETS: ${{ inputs.restart_targets }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
@@ -136,43 +137,65 @@ jobs:
             echo "release_tag must be a semver-style vX.Y.Z tag." >&2
             exit 2
           fi
-          if [[ "$INPUT_RELEASE_TAG" != "v0.2.0" ]]; then
-            echo "Rollback target must be v0.2.0 (verified candidate after v0.2.3 audit)." >&2
+          require_single_line "expected_current_release_tag" "$INPUT_EXPECTED_CURRENT_RELEASE_TAG"
+          if [[ ! "$INPUT_EXPECTED_CURRENT_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "expected_current_release_tag must be a semver-style vX.Y.Z tag." >&2
+            exit 2
+          fi
+          if [[ "$INPUT_EXPECTED_CURRENT_RELEASE_TAG" == "$INPUT_RELEASE_TAG" ]]; then
+            echo "Expected current and previous Release tags must differ." >&2
             exit 2
           fi
 
-          echo "Rollback target v0.2.0 is a legacy single-runtime release and cannot satisfy the required Huabaosi primary plus QiWe companion contract." >&2
-          echo "No owner-triggered dual-runtime rollback target is currently verified; no deploy request was created." >&2
-          exit 2
-
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}")"
+          release_tag_name="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(release.tag_name || "");')"
           release_draft="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.draft));')"
           release_prerelease="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.prerelease));')"
           release_url="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(release.html_url || "");')"
-          if [[ "$release_draft" == "true" || "$release_prerelease" == "true" ]]; then
+          if [[ "$release_tag_name" != "$INPUT_RELEASE_TAG" || "$release_draft" != "false" || "$release_prerelease" != "false" ]]; then
             echo "Rollback target must be a published non-prerelease GitHub Release." >&2
+            exit 2
+          fi
+
+          current_release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_EXPECTED_CURRENT_RELEASE_TAG}")"
+          current_release_tag_name="$(printf '%s' "$current_release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(release.tag_name || "");')"
+          current_release_draft="$(printf '%s' "$current_release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.draft));')"
+          current_release_prerelease="$(printf '%s' "$current_release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.prerelease));')"
+          if [[ "$current_release_tag_name" != "$INPUT_EXPECTED_CURRENT_RELEASE_TAG" || "$current_release_draft" != "false" || "$current_release_prerelease" != "false" ]]; then
+            echo "Expected current must be a published non-prerelease GitHub Release." >&2
             exit 2
           fi
 
           git fetch --no-tags origin master
           git fetch --tags --force origin "refs/tags/${INPUT_RELEASE_TAG}:refs/tags/${INPUT_RELEASE_TAG}"
+          git fetch --tags --force origin "refs/tags/${INPUT_EXPECTED_CURRENT_RELEASE_TAG}:refs/tags/${INPUT_EXPECTED_CURRENT_RELEASE_TAG}"
           target_sha="$(git rev-list -n 1 "${INPUT_RELEASE_TAG}^{commit}")"
+          expected_current_sha="$(git rev-list -n 1 "${INPUT_EXPECTED_CURRENT_RELEASE_TAG}^{commit}")"
           git cat-file -e "${target_sha}^{commit}"
-          git merge-base --is-ancestor "$target_sha" origin/master
-          if [[ "$target_sha" != "b24c3f714b19962c5a7b57a486f7aa18c4ae3e86" ]]; then
-            echo "Rollback target SHA must match the audited v0.2.0 release commit." >&2
+          git cat-file -e "${expected_current_sha}^{commit}"
+          if ! git merge-base --is-ancestor "$target_sha" origin/master; then
+            echo "Rollback target must be reachable from origin/master." >&2
+            exit 2
+          fi
+          if ! git merge-base --is-ancestor "$expected_current_sha" origin/master; then
+            echo "Expected current must be reachable from origin/master." >&2
+            exit 2
+          fi
+          if [[ "$target_sha" == "$expected_current_sha" ]]; then
+            echo "Expected current and previous SHAs must differ." >&2
             exit 2
           fi
 
           restart_targets="$(normalize_restart_targets "$INPUT_RESTART_TARGETS")"
           runtime_artifact_profile="huabaosi-production"
           dry_run="$(normalize_boolean "dry_run" "$INPUT_DRY_RUN")"
-          notes="Rollback Production to ${INPUT_RELEASE_TAG} (${release_url}). ${INPUT_NOTES}"
+          notes="Rollback Production from ${INPUT_EXPECTED_CURRENT_RELEASE_TAG} to its exact previous ${INPUT_RELEASE_TAG} (${release_url}). ${INPUT_NOTES}"
 
           notes_delimiter="rollback_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {
             echo "release-tag=${INPUT_RELEASE_TAG}"
             echo "target-sha=${target_sha}"
+            echo "expected-current-sha=${expected_current_sha}"
             echo "restart-targets=${restart_targets}"
             echo "dry-run=${dry_run}"
             echo "runtime-artifact-profile=${runtime_artifact_profile}"
@@ -186,6 +209,8 @@ jobs:
             echo
             echo "- Release tag: ${INPUT_RELEASE_TAG}"
             echo "- Target SHA: ${target_sha}"
+            echo "- Expected current tag: ${INPUT_EXPECTED_CURRENT_RELEASE_TAG}"
+            echo "- Expected current SHA: ${expected_current_sha}"
             echo "- Primary runtime artifact profile: ${runtime_artifact_profile}"
             echo "- Restart targets: ${restart_targets}"
             echo "- Dry run: ${dry_run}"
@@ -249,7 +274,10 @@ jobs:
           DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins
           DEPLOY_RESTART_TARGETS: ${{ steps.resolve.outputs.restart-targets }}
           DEPLOY_DRY_RUN: ${{ steps.resolve.outputs.dry-run }}
-          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: false
+          DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: true
+          DEPLOY_ROLLBACK_EXPECTED_CURRENT_SHA:
+            ${{ steps.resolve.outputs.expected-current-sha }}
+          DEPLOY_ROLLBACK_EXPECTED_PREVIOUS_SHA: ${{ steps.resolve.outputs.target-sha }}
           DEPLOY_NOTES: ${{ steps.resolve.outputs.notes }}
           GITHUB_ACTOR: ${{ github.actor }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
@@ -269,7 +297,6 @@ jobs:
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
       - name: Wait for server rollback result
-        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
         run:
           deploy/runner/wait-deploy-result.sh --request-file
           dist/deploy-requests/request.json
@@ -279,6 +306,8 @@ jobs:
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
           DEPLOY_RESULT_TIMEOUT_SECONDS:
             ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
           DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}

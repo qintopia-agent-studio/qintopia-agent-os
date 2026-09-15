@@ -747,6 +747,8 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "deploy/sidecar/scripts/qiwe-image-send-staging-readiness-smoke.sh",
     "deploy/sidecar/scripts/render-systemd-units.sh",
     "runtime/postgres/migrations",
+    "fixtures/qiwe/event-mappings",
+    "fixtures/qiwe/system",
     "skills/qintopia-tools/variants",
     "skills/qintopia-tools/manifest.yaml",
     "skills/qintopia-weather/__init__.py",
@@ -766,12 +768,14 @@ if (exists("tools/deploy/build-deploy-bundle.mjs")) {
     "skills/qiwe/image_callback_bridge.py",
     "skills/qiwe/plugin.yaml",
     "skills/qiwe/solitaire",
+    "skills/qiwe/space_change_tools.py",
     "skills/feishu-base/__init__.py",
     "skills/feishu-base/plugin.yaml",
     "skills/feishu-base/docs",
     "artifact-manifest.json",
     "SHA256SUMS",
-    'run("tar", ["-C", bundleDir, "-czf", archivePath, "payload"])',
+    'run("tar", ["--no-xattrs", "-C", bundleDir, "-czf", archivePath, "payload"], {',
+    'COPYFILE_DISABLE: "1"',
   ]) {
     if (!buildDeployBundleScript.includes(requiredFragment)) {
       addError(
@@ -1031,7 +1035,7 @@ for (const phrase of [
   "build_sidecar:",
   "build_deploy_bundle:",
   "upload_cos:",
-  "[publish-artifacts]",
+  "Artifact publication is manual.",
   "sidecar-artifact",
   "deploy-bundle-artifact",
   "actions/upload-artifact@v7",

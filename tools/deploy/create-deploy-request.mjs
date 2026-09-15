@@ -99,40 +99,130 @@ const ajv = new Ajv2020({ allErrors: true });
 ajv.addFormat("date-time", true);
 const validate = ajv.compile(schema);
 
-const commitSha = requireSha(
-  "--commit-sha",
-  argValue(
-    "--commit-sha",
-    process.env.DEPLOY_COMMIT_SHA || process.env.GITHUB_SHA || ""
-  )
-);
-const runtimeSha = requireSha(
-  "--runtime-sha",
-  argValue("--runtime-sha", process.env.DEPLOY_RUNTIME_SHA || commitSha)
-);
-const runtimeArtifactProfile = requireRuntimeArtifactProfile(
-  "--runtime-artifact-profile",
-  argValue(
-    "--runtime-artifact-profile",
-    process.env.DEPLOY_RUNTIME_ARTIFACT_PROFILE || "huabaosi-production"
-  )
-);
-const deployBundleSha = requireSha(
-  "--deploy-bundle-sha",
-  argValue("--deploy-bundle-sha", process.env.DEPLOY_BUNDLE_SHA || commitSha)
-);
-const releaseSha = requireSha(
-  "--release-sha",
-  argValue("--release-sha", process.env.DEPLOY_RELEASE_SHA || deployBundleSha)
-);
 const releaseScope = splitList(
   argValue(
     "--release-scope",
     process.env.DEPLOY_RELEASE_SCOPE || "deploy-bundle,hermes-plugins"
   )
 );
+const isHermesCoreRelease =
+  releaseScope.length === 1 && releaseScope[0] === "hermes-core-release";
+const coreSha256 = (name, value) => {
+  const normalized = requireValue(name, value);
+  if (!/^[0-9a-f]{64}$/.test(normalized)) {
+    console.error(`${name} must be a lowercase 64-character SHA-256`);
+    process.exit(2);
+  }
+  return normalized;
+};
+const coreVersion = (name, value) => {
+  const normalized = requireValue(name, value);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(normalized)) {
+    console.error(`${name} must be a valid Hermes version`);
+    process.exit(2);
+  }
+  return normalized;
+};
+const hermesCore = isHermesCoreRelease
+  ? {
+      repository: "https://github.com/NousResearch/hermes-agent.git",
+      tag: requireValue(
+        "--hermes-core-tag",
+        argValue("--hermes-core-tag", process.env.HERMES_CORE_TAG || "")
+      ),
+      commit_sha: requireSha(
+        "--hermes-core-commit-sha",
+        argValue("--hermes-core-commit-sha", process.env.HERMES_CORE_COMMIT_SHA || "")
+      ),
+      source_archive_sha256: coreSha256(
+        "--hermes-core-source-archive-sha256",
+        argValue(
+          "--hermes-core-source-archive-sha256",
+          process.env.HERMES_CORE_SOURCE_ARCHIVE_SHA256 || ""
+        )
+      ),
+      artifact_identity_sha256: coreSha256(
+        "--hermes-core-artifact-identity-sha256",
+        argValue(
+          "--hermes-core-artifact-identity-sha256",
+          process.env.HERMES_CORE_ARTIFACT_IDENTITY_SHA256 || ""
+        )
+      ),
+      artifact_manifest_sha256: coreSha256(
+        "--hermes-core-artifact-manifest-sha256",
+        argValue(
+          "--hermes-core-artifact-manifest-sha256",
+          process.env.HERMES_CORE_ARTIFACT_MANIFEST_SHA256 || ""
+        )
+      ),
+      previous_version: coreVersion(
+        "--hermes-core-previous-version",
+        argValue(
+          "--hermes-core-previous-version",
+          process.env.HERMES_CORE_PREVIOUS_VERSION || ""
+        )
+      ),
+      previous_commit_sha: requireSha(
+        "--hermes-core-previous-commit-sha",
+        argValue(
+          "--hermes-core-previous-commit-sha",
+          process.env.HERMES_CORE_PREVIOUS_COMMIT_SHA || ""
+        )
+      ),
+      archive_sha256: coreSha256(
+        "--hermes-core-archive-sha256",
+        argValue(
+          "--hermes-core-archive-sha256",
+          process.env.HERMES_CORE_ARCHIVE_SHA256 || ""
+        )
+      ),
+    }
+  : null;
+if (hermesCore && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(hermesCore.tag)) {
+  console.error("--hermes-core-tag must be a valid Hermes release tag");
+  process.exit(2);
+}
+const commitSha = isHermesCoreRelease
+  ? ""
+  : requireSha(
+      "--commit-sha",
+      argValue(
+        "--commit-sha",
+        process.env.DEPLOY_COMMIT_SHA || process.env.GITHUB_SHA || ""
+      )
+    );
+const runtimeSha = isHermesCoreRelease
+  ? ""
+  : requireSha(
+      "--runtime-sha",
+      argValue("--runtime-sha", process.env.DEPLOY_RUNTIME_SHA || commitSha)
+    );
+const runtimeArtifactProfile = isHermesCoreRelease
+  ? ""
+  : requireRuntimeArtifactProfile(
+      "--runtime-artifact-profile",
+      argValue(
+        "--runtime-artifact-profile",
+        process.env.DEPLOY_RUNTIME_ARTIFACT_PROFILE || "huabaosi-production"
+      )
+    );
+const deployBundleSha = isHermesCoreRelease
+  ? ""
+  : requireSha(
+      "--deploy-bundle-sha",
+      argValue("--deploy-bundle-sha", process.env.DEPLOY_BUNDLE_SHA || commitSha)
+    );
+const releaseSha = isHermesCoreRelease
+  ? ""
+  : requireSha(
+      "--release-sha",
+      argValue("--release-sha", process.env.DEPLOY_RELEASE_SHA || deployBundleSha)
+    );
 const restartTargets = splitList(
-  argValue("--restart-targets", process.env.DEPLOY_RESTART_TARGETS || "")
+  argValue(
+    "--restart-targets",
+    process.env.DEPLOY_RESTART_TARGETS || (isHermesCoreRelease ? "hermes-core" : "")
+  )
 );
 const bucket = requireValue(
   "TENCENT_COS_BUCKET",
@@ -154,6 +244,37 @@ const rollbackOnSmokeFailure =
     "--rollback-on-smoke-failure",
     process.env.DEPLOY_ROLLBACK_ON_SMOKE_FAILURE || "true"
   ) === "true";
+const rollbackExpectedCurrentInput = argValue(
+  "--rollback-expected-current-sha",
+  process.env.DEPLOY_ROLLBACK_EXPECTED_CURRENT_SHA || ""
+);
+const rollbackExpectedPreviousInput = argValue(
+  "--rollback-expected-previous-sha",
+  process.env.DEPLOY_ROLLBACK_EXPECTED_PREVIOUS_SHA || ""
+);
+if (Boolean(rollbackExpectedCurrentInput) !== Boolean(rollbackExpectedPreviousInput)) {
+  console.error(
+    "rollback expected current and previous SHAs must be supplied together"
+  );
+  process.exit(2);
+}
+const rollbackExpectedCurrentSha = rollbackExpectedCurrentInput
+  ? requireSha("--rollback-expected-current-sha", rollbackExpectedCurrentInput)
+  : "";
+const rollbackExpectedPreviousSha = rollbackExpectedPreviousInput
+  ? requireSha("--rollback-expected-previous-sha", rollbackExpectedPreviousInput)
+  : "";
+if (rollbackExpectedPreviousSha && rollbackExpectedPreviousSha !== releaseSha) {
+  console.error("rollback expected previous SHA must equal the requested release SHA");
+  process.exit(2);
+}
+if (
+  rollbackExpectedCurrentSha &&
+  rollbackExpectedCurrentSha === rollbackExpectedPreviousSha
+) {
+  console.error("rollback expected current and previous SHAs must differ");
+  process.exit(2);
+}
 const requestedBy = requireValue(
   "requested_by",
   argValue("--requested-by", process.env.GITHUB_ACTOR || os.userInfo().username)
@@ -165,6 +286,10 @@ const profileDryRunRequestId = argValue(
 );
 const activationTargets = splitList(
   argValue("--activation-targets", process.env.DEPLOY_ACTIVATION_TARGETS || "")
+);
+const spaceAutomationRuntimeApproval = argValue(
+  "--space-automation-runtime-approval",
+  process.env.DEPLOY_SPACE_AUTOMATION_RUNTIME_APPROVAL || ""
 );
 const observationTargets = splitList(
   argValue("--observation-targets", process.env.DEPLOY_OBSERVATION_TARGETS || "")
@@ -209,7 +334,8 @@ const signingKey = requireValue(
 );
 const createdAt = isoNow();
 const timestamp = createdAt.replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-const requestId = `deploy-${timestamp}-${commitSha.slice(0, 12)}`;
+const requestIdentitySha = isHermesCoreRelease ? hermesCore.commit_sha : commitSha;
+const requestId = `deploy-${timestamp}-${requestIdentitySha.slice(0, 12)}`;
 const requestKey = `${prefix}/deploy-requests/production/requests/${requestId}.json`;
 const resultKey = `${prefix}/deploy-results/production/${requestId}.json`;
 const outputPath = path.resolve(
@@ -227,11 +353,6 @@ const request = {
   requested_by: requestedBy,
   created_at: createdAt,
   expires_at: expiresAt(ttlMinutes),
-  commit_sha: commitSha,
-  runtime_sha: runtimeSha,
-  runtime_artifact_profile: runtimeArtifactProfile,
-  deploy_bundle_sha: deployBundleSha,
-  release_sha: releaseSha,
   release_scope: releaseScope,
   restart_targets: restartTargets,
   rollback_on_smoke_failure: rollbackOnSmokeFailure,
@@ -252,11 +373,31 @@ const request = {
   },
   notes,
 };
+if (isHermesCoreRelease) {
+  request.hermes_core_release = hermesCore;
+} else {
+  Object.assign(request, {
+    commit_sha: commitSha,
+    runtime_sha: runtimeSha,
+    runtime_artifact_profile: runtimeArtifactProfile,
+    deploy_bundle_sha: deployBundleSha,
+    release_sha: releaseSha,
+  });
+}
+if (rollbackExpectedCurrentSha) {
+  request.release_rollback = {
+    expected_current_sha: rollbackExpectedCurrentSha,
+    expected_previous_sha: rollbackExpectedPreviousSha,
+  };
+}
 if (profileDryRunRequestId) {
   request.profile_dry_run_request_id = profileDryRunRequestId;
 }
 if (activationTargets.length > 0) {
   request.activation = { targets: activationTargets };
+  if (activationTargets.includes("space-automation-runtime")) {
+    request.activation.approval = spaceAutomationRuntimeApproval;
+  }
 }
 if (observationTargets.length > 0) {
   request.observation = { targets: observationTargets };

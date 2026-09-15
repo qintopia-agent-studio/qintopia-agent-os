@@ -78,6 +78,20 @@ A 独立体验实例使用端口 `18873`，tenant 为 `synthetic-collaboration-a
 
 ## 验证
 
+推荐通过仓库业务测试框架启动独立、随机端口的 Docker PostgreSQL：
+
+```bash
+pnpm test:setup
+RUSTUP_TOOLCHAIN=1.96.0 pnpm test:business -- --feature person-collaboration
+```
+
+清单逐项执行数据库事务与 HTTP 场景，保留报告并清理本次数据库；不复用业务库。CI
+PostgreSQL job 和 `pnpm check:pr:postgres`
+也显式运行本模块的 ignored 数据库测试。测试专用适配器接受运行器注入的连接及唯一
+`sslmode=disable`
+参数，生产和本地工作台的数据库门禁不变。以下原生入口仍可用于手动建立的隔离
+`qintopia_test`；端口可调整，不再绑定原作者机器。
+
 ```bash
 RUST_MIN_STACK=33554432 cargo test --manifest-path runtime/sidecar/Cargo.toml person_collaboration
 
@@ -110,3 +124,10 @@ F2 实现引导和知识确认；F3 让实际工具入口在最终执行事务�
 设计：[通用数据与入口衔接](../../../postgres/docs/data-design/2026-09-10-person-agent-collaboration-v1.md)。
 
 PMS 只沿用[唯一共同契约](../../../../docs/plans/active/unified-person-welcome-v1-contract.md)，F1 未改接口。
+
+## 未发布迁移的校正
+
+PR #704 集成时将 `202609110001_organization_person_workbench.sql` 中的设计文档路径修正为
+`docs/data-design/2026-09-11-organization-person-workbench.md`，以符合迁移登记规则。这会改变该未发布迁移的 SQLx
+checksum。先前运行原始 PR 的合成测试数据库应新建隔离实例，不要修改 `_sqlx_migrations`
+来绕过校验；本次没有在生产应用迁移。

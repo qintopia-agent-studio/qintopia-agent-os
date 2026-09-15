@@ -72,11 +72,11 @@ be fetched or promoted by production deployment scripts.
 
 ## CI Requirements
 
-The `sidecar-artifact` job runs on `master` pushes. It runs in parallel with the `check`
-job to keep CI wall-clock time low. The deployment gate is the successful workflow run
-for the approved commit SHA: `fetch-ci-artifact.sh` queries only successful workflow
-runs, so the paired `check` job must have passed for the same commit before the artifact
-can be downloaded by the runbook.
+The `sidecar-artifact` job is part of the manually dispatched `Artifacts` workflow. It
+does not publish on `master` pushes. The deployment gate is the successful CI workflow
+run for the approved commit SHA: `fetch-ci-artifact.sh` queries only successful workflow
+runs, so the paired required `check` status must have passed for the same commit before
+the artifact can be downloaded by the runbook.
 
 This means the approved commit has passed:
 
@@ -99,18 +99,13 @@ GitHub Actions keeps at most two non-expired artifacts with this exact name:
 - the current `master` build
 - the previous `master` build for rollback
 
-The `Artifacts` workflow publishes release artifacts. It is opt-in:
+The `Artifacts` workflow publishes release artifacts only after an explicit
+`workflow_dispatch`. There is no `master` push trigger and no `[publish-artifacts]`
+commit-message shortcut. Select the required sidecar, deploy bundle, and COS upload
+inputs in the manual dispatch.
 
-- run it manually through `workflow_dispatch`, or
-- include `[publish-artifacts]` in the `master` commit message when an automatic
-  publication is intentional.
-
-That commit-message shortcut publishes only the ordinary Huabaosi production sidecar
-artifact plus the deploy bundle. It does not auto-build or auto-upload the independent
-QiWe production artifact.
-
-The staging-only artifact is stricter: it is never built from the push path and can be
-published only by a manual `workflow_dispatch` with `build_staging_sidecar=true`.
+The staging-only artifact is stricter: it can be published only by a manual
+`workflow_dispatch` with `build_staging_sidecar=true`.
 
 The `sidecar-artifact` job uploads the new artifact first, then runs
 `pnpm artifact:prune:sidecar` with `actions: write` permission to delete older same-name

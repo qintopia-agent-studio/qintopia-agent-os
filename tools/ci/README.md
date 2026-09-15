@@ -7,6 +7,8 @@ CI helpers must:
 
 - treat docs-only changes differently from runtime/artifact builds where safe;
 - keep required checks explicit for skills, workflows, MCP, runtime, deploy, and agents;
+- keep the required `check` status stable when CI heavy tiers are split into separate
+  jobs;
 - fail closed when production-adjacent files change;
 - enforce Conventional Commits commit message types for local and CI validation;
 - validate pull request bodies so agents cannot submit empty templates;
@@ -15,6 +17,7 @@ CI helpers must:
 ## Validation
 
 ```bash
+pnpm ci:low-risk:test
 pnpm check:pr:auto
 pnpm check:pr:quick
 pnpm check:pr:heavy
@@ -25,6 +28,53 @@ pnpm pr:check-body
 pnpm release-please:check
 pnpm pr:tools:check
 ```
+
+## Low-Risk Classification
+
+`pnpm ci:low-risk:classify -- --base-ref <base> --head-ref <head>` reads the two
+explicit Git commits and emits deterministic JSON eligibility evidence. The base must be
+an ancestor of the head. This command only classifies a committed diff: it does not
+merge a pull request, publish a Release, deploy, send a message, or inspect uncommitted
+working-tree files.
+
+Version 3 allows only these dedicated file roles:
+
+- mappings: `fixtures/qiwe/event-mappings/**/*.mapping.json`;
+- sanitized synthetic inputs: `fixtures/qiwe/system/**/*.fixture.json`;
+- corresponding canonical outputs: `fixtures/qiwe/event-mappings/**/*.expected.json`;
+- optionally, one restricted parser recipe:
+  `fixtures/qiwe/event-mappings/_primitives/**/*.primitive.json`;
+- optionally, one fixed-format mapping summary:
+  `fixtures/qiwe/event-mappings/**/*.mapping.md`.
+
+One candidate is exactly one commit with three required JSON files, optionally one
+primitive and optionally one mapping summary, for a maximum of five files. The files are
+append-only and must form one cross-referenced bundle. Each fixture declares
+`sanitized=true` and `synthetic=true`, and must contain more input records than the
+expectation emits so at least one adjacent selector non-match is exercised. Each
+expectation binds the exact fixture and mapping and contains only canonical event output
+fields. Strict JSON parsing rejects duplicate keys, including escaped duplicate
+spellings.
+
+Mappings use the bounded selector/extractor DSL and may cite only HTTPS pages on
+`doc.qiweapi.com`. An optional primitive must be referenced by that same mapping and may
+compose only the fixed `base64_utf8`, `json_parse`, `json_pointer`, `split`,
+`string_trim`, and `array_flatten` kernel. Recipes cannot call other recipes or add
+runtime code. The only accepted Markdown is the fixed mapping summary, which may name
+only the same mapping, fixture, expectation, definition key, and declarative scope in
+that bundle. Every other file type is outside this class. Exact details are in
+`docs/engineering/qiwe-restricted-parser-primitives.md`.
+
+The classifier fails closed for every path outside that list, deletes, renames,
+mutations of mapping or replay JSON, executable files, symlinks, invalid or duplicate
+JSON, unsafe integer identifiers, privileged fields, unbounded transforms, and
+non-official URLs. Python, Rust, shell, SQL migrations, workflows, authentication,
+dependencies, deployment, and send-path code therefore cannot receive low-risk
+eligibility.
+
+Low-risk eligibility evidence is advisory input to manual review. It does not authorize
+merge, Release Please advancement, publication, deployment, or activation; every such
+action remains a manual owner decision.
 
 ## Local Pre-PR Tiers
 
@@ -62,11 +112,12 @@ Rust quality and disposable PostgreSQL integration jobs are risk-tiered separate
 ordinary Hermes, deploy-runner, documentation, or metadata changes do not pay the full
 sidecar/PostgreSQL cost unless they touch the sidecar, Postgres, deploy sidecar scripts,
 or the CI workflow itself. Manual workflow dispatches and authenticated Release Please
-validation always force the full heavy tier. The PR-attached `check` and release
-statuses are published after their corresponding jobs finish; the manual PR-Agent
-dispatch publishes its existing required status after the authenticated no-review job
-succeeds. This keeps workflow-dispatch validation visible to the master ruleset without
-adding another check tier.
+validation always force the full heavy tier. The CI heavy jobs may run independently,
+but the final required `check` status remains the stable aggregation gate. The
+PR-attached `check` and release statuses are published after their corresponding jobs
+finish; the manual PR-Agent dispatch publishes its existing required status after the
+authenticated no-review job succeeds. This keeps workflow-dispatch validation visible to
+the master ruleset without adding another check tier.
 
 The matching local path is `pnpm check:pr:auto` for day-to-day work and
 `pnpm check:pr:heavy` when you want the full local Rust/PostgreSQL mirror before pushing
@@ -78,13 +129,26 @@ workflow authenticates the Release Please PR and skips the external PR-Agent act
 successful job satisfies the required check without reviewing or editing generated
 release metadata.
 
-## Rust Quality And Xiaoman Integration
+## Rust Quality And PostgreSQL Integration
 
 Sidecar, Postgres, deploy sidecar scripts, or CI workflow changes run a Rust 1.96
 quality baseline. It uploads LCOV and a coverage summary, then executes the non-ignored
 sidecar suite with all features so staging-only adapter tests run before strict
 default/all-feature Clippy. The all-feature test is not a production build and must not
-execute ignored PostgreSQL tests. The Xiaoman downstream integration job owns those
-ignored tests and the guarded apply smoke against a disposable GitHub Actions PostgreSQL
-service. It must not accept production database URLs, secrets, Feishu credentials, QiWe
-credentials, or external adapters.
+execute ignored PostgreSQL tests. The `postgres-integration` job, displayed as
+`PostgreSQL integration`, owns those ignored tests and the guarded apply smoke against a
+disposable GitHub Actions PostgreSQL service. It must not accept production database
+URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.
+
+### 本地 PostgreSQL 检查隔离
+
+`pnpm check:pr:heavy` / `pnpm check:pr:postgres` 的数据库专项可通过
+`QINTOPIA_SIDECAR_DATABASE_URL` 选择自建的临时实例；必须为 literal loopback 上的
+`qintopia_test`，仅允许可选的
+`sslmode=disable`，就绪探测使用所配置的端口。普通 Rust 单测不会继承该连接或 apply
+smoke 开关，避免 fixture 测试误连数据库。日常业务测试优先使用
+`pnpm test:business`，由框架创建随机端口和独立卷。
+
+注意：末尾的 `operations-control-plane-apply-smoke.sh` 还受 Huabaosi
+staging 数据库 URL 哈希白名单约束；随机端口不代表该 apply
+smoke 已获授权。完整 smoke 使用标准 CI 隔离数据库验证，不得为本地测试放宽适配器白名单或占用已有业务数据库。

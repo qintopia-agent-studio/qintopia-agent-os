@@ -23,6 +23,9 @@ on:
           - erhua-morning-brief
           - hermes-cron-snapshot-install
           - qiwe-image-send-intro-text-enable
+          - qiwe-webhook-ingress-apply
+          - qiwe-webhook-ingress-rollback
+          - space-automation-runtime-rollback
       backfill_date:
         description: YYYY-MM-DD, required only for Xiaoman daily report backfill.
         required: false
@@ -53,7 +56,6 @@ env:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
-  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
 
 jobs:
   request-runtime-one-shot:
@@ -139,7 +141,7 @@ jobs:
           runtime_one_shot_target="$(require_allowed_value \
             runtime_one_shot_target \
             "$INPUT_RUNTIME_ONE_SHOT_TARGET" \
-            "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install,qiwe-image-send-intro-text-enable")"
+            "xiaoman-daily-case-report-auto-publish-backfill,xiaoman-daily-case-report-approval-repair,xiaoman-daily-case-report-read-through-repair,xiaoman-daily-case-report-chat-id-repair,xiaoman-daily-case-report-target-group-id-repair,xiaoman-daily-case-report-storage-backend-repair,xiaoman-creative-profile-candidates-apply,erhua-morning-brief,hermes-cron-snapshot-install,qiwe-image-send-intro-text-enable,qiwe-webhook-ingress-apply,qiwe-webhook-ingress-rollback,space-automation-runtime-rollback")"
 
           require_single_line backfill_date "$INPUT_BACKFILL_DATE"
           require_single_line payload_sha256 "$INPUT_PAYLOAD_SHA256"
@@ -286,6 +288,36 @@ jobs:
                 exit 2
               fi
               ;;
+            qiwe-webhook-ingress-apply)
+              if [[ -n "$INPUT_BACKFILL_DATE" || -n "$INPUT_PAYLOAD_SHA256" ]]; then
+                echo "backfill_date and payload_sha256 must be empty for Qiwe webhook ingress apply." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-qiwe-webhook-ingress-apply" ]]; then
+                echo "approval does not match Qiwe webhook ingress apply." >&2
+                exit 2
+              fi
+              ;;
+            qiwe-webhook-ingress-rollback)
+              if [[ -n "$INPUT_BACKFILL_DATE" || -n "$INPUT_PAYLOAD_SHA256" ]]; then
+                echo "backfill_date and payload_sha256 must be empty for Qiwe webhook ingress rollback." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-qiwe-webhook-ingress-rollback" ]]; then
+                echo "approval does not match Qiwe webhook ingress rollback." >&2
+                exit 2
+              fi
+              ;;
+            space-automation-runtime-rollback)
+              if [[ -n "$INPUT_BACKFILL_DATE" || -n "$INPUT_PAYLOAD_SHA256" ]]; then
+                echo "backfill_date and payload_sha256 must be empty for Space automation runtime rollback." >&2
+                exit 2
+              fi
+              if [[ "$INPUT_APPROVAL" != "approved-production-space-automation-runtime-rollback" ]]; then
+                echo "approval does not match Space automation runtime rollback." >&2
+                exit 2
+              fi
+              ;;
           esac
 
           notes_delimiter="runtime_one_shot_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
@@ -356,7 +388,6 @@ jobs:
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
       - name: Wait for server runtime one-shot result
-        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
         run:
           deploy/runner/wait-deploy-result.sh --request-file
           dist/deploy-requests/request.json
@@ -366,6 +397,8 @@ jobs:
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
           DEPLOY_RESULT_TIMEOUT_SECONDS:
             ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
           DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}

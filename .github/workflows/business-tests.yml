@@ -1,0 +1,65 @@
+name: Local business tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "tools/testing/**"
+      - "workflows/**"
+      - "skills/**"
+      - "mcp/**"
+      - "runtime/**"
+      - "tools/agents/**"
+      - "tools/deploy/**"
+      - "deploy/sidecar/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/business-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: business-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  business:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUST_MIN_STACK: "33554432"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: "10.29.2"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prepare local testing environment
+        run: pnpm test:setup
+      - name: Test harness contracts
+        run: pnpm test:harness
+      - name: Run all registered business tests
+        run: pnpm test:business
+      - name: Retain business test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: business-test-results
+          path: .local-testing/runs/
+          include-hidden-files: true
+          retention-days: 14
+          if-no-files-found: warn

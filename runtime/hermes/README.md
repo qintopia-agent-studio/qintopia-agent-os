@@ -42,6 +42,52 @@ Whole-profile bundles should render into immutable release directories under
 Do not replace a live Hermes profile `SOUL.md` or `config.yaml` directly from a feature
 branch.
 
+## Profile Registry
+
+`profile-registry.yaml` is the single machine-readable inventory for the seven Hermes
+profiles involved in core updates. It binds each profile id to its fixed user service,
+reviewed WeCom enabled state, required credential binding names, and whether a separate
+`qiwe-platform` integration must be preserved. The registry contains no credential
+values, target ids, account ids, or message data.
+
+Core readiness, WeCom readiness, staging parity, service switching, and rollback tools
+must read this registry rather than carry independent profile arrays. For the current
+baseline, WeCom stays enabled for `default`, `guanerye`, `huabaosi`, `silaoshi`, and
+`xiaoman`; it stays disabled for `erhua` and `wenyuange`. Erhua's independent
+`qiwe-platform` declaration remains preserved and is outside Hermes core promotion.
+
+The registry is a release input. A change to profile membership, service mapping, WeCom
+state, or QiWe preservation requires an owner-reviewed migration update and the same
+staging parity and rollback evidence as a core change.
+
+## Core Release Contracts
+
+`core-release-contracts/` defines the strict HC-1 JSON contracts for a clean Hermes core
+artifact manifest, build receipt, upstream-update receipt, and sanitized validation
+summary. `tools/deploy/verify-hermes-core-artifact.mjs` validates those documents and
+the complete immutable `core/` file inventory against caller-pinned public identities
+and digests. The contracts contain no profile configuration values, credentials, message
+data, prompts, or target identifiers.
+
+These contracts are validation inputs only. HC-2 fixes the independent root at
+`/var/lib/qintopia-hermes-core` and models the active
+`(current, previous, rollback-reserve)` tuple as one immutable generation selected by
+`lineage/active`. The HC-2 stager verifies and atomically installs a fixed-ingress
+artifact into `incoming/<commit>` without changing pointers or services; the dry-run
+planner then validates that candidate and the active lineage. The HC-2 repository
+implementation also includes fixed-key ingress download, bounded streaming extraction,
+two-clean-release bootstrap, immutable generation commit, and crash-recovery fault
+injection. These have not downloaded a real artifact or run against production. Signed
+request binding, the seven-service transaction and reverse rollback, replay, systemd
+integration, and production cutover remain later work; the current server checkout,
+local WeCom patches, all WeCom configuration and enabled states, and Erhua's separate
+`qiwe-platform` stay unchanged.
+
+Any lineage consumer must resolve `lineage/active` exactly once, retain that resolved
+generation path, and read `current`, `previous`, and `rollback-reserve` from it. Reading
+the three top-level compatibility links independently can mix roles across an atomic
+generation switch and is not a valid release snapshot.
+
 ## Server Patch Review Pool
 
 Server-local Hermes patches are extracted under `docs/operations/review-pool/hermes/`
@@ -73,14 +119,15 @@ profile cutover.
 
 `render_profile_overlay.py` applies the reviewed Erhua Livecool provider overlay to a
 sanitized or runtime-local base config while preserving `model.default`. It also keeps
-the Erhua WeCom channel enabled by managing only `channel.wecom.enabled=true`; existing
-runtime-local channel fields remain in place and never enter reports. It rejects
-aliases, duplicate keys/providers, forbidden overlay fields, and path aliasing. Reports
-contain changed field paths and file hashes, not values. `migrate_erhua_livecool_env.py`
-creates or checks the server-local `LIVECOOL_API_KEY` binding without printing
-credential material. `verify_runtime_provider.py` runs inside the installed Hermes
-interpreter during both dry-run and activation smoke. It requires Hermes's own provider
-resolver to return the approved named provider and base URL.
+the current production Erhua WeCom state disabled by managing only
+`channel.wecom.enabled=false`; existing runtime-local channel fields remain in place and
+never enter reports. It rejects aliases, duplicate keys/providers, forbidden overlay
+fields, and path aliasing. Reports contain changed field paths and file hashes, not
+values. `migrate_erhua_livecool_env.py` creates or checks the server-local
+`LIVECOOL_API_KEY` binding without printing credential material.
+`verify_runtime_provider.py` runs inside the installed Hermes interpreter during both
+dry-run and activation smoke. It requires Hermes's own provider resolver to return the
+approved named provider and base URL.
 
 `validate_hermes_python.py` binds that resolver to the fixed Hermes venv or an immutable
 release-local interpreter. The venv base home must be unaliased except for uv's stable
@@ -112,3 +159,16 @@ pnpm agents:profile-bundles:check
 pnpm runtime:hermes:check
 pnpm check:light
 ```
+
+## 真实核心兼容验证
+
+使用已安装 messaging、wecom extras 的目标 Hermes Python 执行：
+
+```sh
+<candidate-python> -B runtime/hermes/check_core_plugin_compatibility.py --core-dir <candidate-core>
+```
+
+该检查使用临时 home、禁止网络连接，并验证 QiWe 没有落入本地测试替身、QiWe 和官方 WeCom 能通过真实 Hermes 插件注册。它不发送消息，也不替代生产配置 parity 或消息回放。发布构建器仅接受 Linux
+x86_64 和 Python
+3.11–3.13 的 uv 可迁移 Python 分发包；artifact 携带完整标准库，不依赖构建机或服务器的系统 Python 路径。依赖安装启用哈希验证，并在最终 runtime 中实际执行隔离 CLI
+smoke 后才生成通过回执。

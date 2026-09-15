@@ -12,6 +12,9 @@ description: >
   general-purpose contact tools for the agent.
 author: Qintopia
 provides_tools:
+  - qintopia_space_change_prepare
+  - qintopia_space_change_confirm
+  - qintopia_space_change_status
   - qiwe_send_location_card
   - qiwe_send_direct_message
   - qiwe_send_rich_message
@@ -29,6 +32,64 @@ requires_env:
     prompt: "Bot names"
     password: false
 optional_env:
+  - name: QIWE_SPACE_AGENT_COMPLETION_ENABLED
+    description:
+      "Expose the Hermes-owned model only through the bounded local Space agent-turn
+      completion socket; accepts only 0/1 and defaults to 0"
+    prompt: "Enable bounded Space agent completion? (0/1)"
+    password: false
+  - name: QIWE_SPACE_AGENT_COMPLETION_APPROVAL
+    description:
+      "Exact owner-reviewed enablement phrase for the bounded completion socket"
+    prompt: "Space agent completion owner approval"
+    password: true
+  - name: QIWE_SPACE_AGENT_COMPLETION_TOKEN_SHA256
+    description:
+      "SHA-256 of the dedicated runner bearer; the plaintext bearer is never provided to
+      Hermes configuration"
+    prompt: "Space agent runner bearer SHA-256"
+    password: true
+  - name: QIWE_SPACE_AGENT_COMPLETION_RUNNER_UID
+    description: "Dedicated non-root runner UID accepted by Unix peer authentication"
+    prompt: "Space agent runner UID"
+    password: false
+  - name: QIWE_SPACE_AGENT_COMPLETION_RUNNER_GID
+    description: "Dedicated non-root runner GID accepted by Unix peer authentication"
+    prompt: "Space agent runner GID"
+    password: false
+  - name: QIWE_SPACE_AGENT_COMPLETION_SOCKET
+    description:
+      "Absolute local Unix socket path; defaults to the release-managed agent-turn path"
+    prompt: "Space agent completion socket"
+    password: false
+  - name: QIWE_SPACE_AGENT_COMPLETION_TIMEOUT_SECONDS
+    description: "Bounded Hermes model completion timeout between 1 and 60 seconds"
+    prompt: "Space agent completion timeout seconds"
+    password: false
+  - name: QINTOPIA_OPERATIONS_INTAKE_SOCKET
+    description:
+      "Absolute path to the mode-0600 trusted AgentOS intake socket; defaults to the
+      release-managed path"
+    prompt: "AgentOS operations intake socket"
+    password: false
+  - name: QINTOPIA_SPACE_EVENT_RESEARCH_ENABLED
+    description:
+      "Allow Space prepare to launch the isolated worker for only the fixed registered
+      Qiwe official documentation entry pages; accepts only 0/1 and defaults to 0"
+    prompt: "Enable bounded official Qiwe event research? (0/1)"
+    password: false
+  - name: QIWE_SPACE_TURN_POLICY_ENFORCEMENT_ENABLED
+    description:
+      "Require active current-Space policy context and per-call authorization for
+      ordinary QiWe group turns; accepts only 0/1 and defaults to 0"
+    prompt: "Enable ordinary group-turn Space policy enforcement? (0/1)"
+    password: false
+  - name: QIWE_SPACE_TURN_POLICY_TIMEOUT_SECONDS
+    description:
+      "Bound each current-Space policy lookup and capability authorization; defaults to
+      0.4 seconds and fails the governed operation closed on timeout"
+    prompt: "Space policy lookup timeout seconds"
+    password: false
   - name: QIWE_API_URL
     description: "QiWe doApi URL"
     prompt: "QiWe API URL"
@@ -54,6 +115,16 @@ optional_env:
     description: "Webhook path, defaults to /qiwe/webhook"
     prompt: "Webhook path"
     password: false
+  - name: QIWE_WEBHOOK_AUTH_REQUIRED
+    description:
+      "Require the fixed ingress authentication header before reading a webhook body;
+      defaults to false for local compatibility"
+    prompt: "Require webhook ingress authentication? (true/false)"
+    password: false
+  - name: QIWE_WEBHOOK_AUTH_TOKEN
+    description: "Server-local secret injected by the reviewed loopback nginx ingress"
+    prompt: "Webhook ingress authentication token"
+    password: true
   - name: QIWE_DEDUPE_TTL_SECONDS
     description: "Webhook message-id dedupe TTL in seconds"
     prompt: "Dedupe TTL seconds"
@@ -283,13 +354,32 @@ optional_env:
     description: "Enable best-effort NATS sidecar capture; defaults to false"
     prompt: "Enable NATS capture? (true/false)"
     password: false
+  - name: QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED
+    description:
+      "Require authenticated system-event envelopes to receive raw JetStream PubAck
+      before HTTP 200; accepts only 0/1 and defaults to 0"
+    prompt: "Require durable system-event capture? (0/1)"
+    password: false
   - name: QIWE_NATS_URL
-    description: "NATS URL for sidecar capture; defaults to nats://127.0.0.1:4222"
+    description:
+      "NATS URL for sidecar capture; userinfo is forbidden and credentials must come
+      from QIWE_NATS_AUTH_FILE"
     prompt: "NATS URL"
+    password: false
+  - name: QIWE_NATS_AUTH_FILE
+    description:
+      "Path to the bounded producer-only NATS auth JSON; required for durable system
+      events and must not be shared with the sidecar consumer"
+    prompt: "NATS producer auth file path"
     password: false
   - name: QIWE_NATS_RAW_SUBJECT
     description: "NATS subject for raw QiWe webhook payloads"
     prompt: "Raw capture subject"
+    password: false
+  - name: QIWE_NATS_AUTHENTICATED_RAW_SUBJECT
+    description:
+      "ACL-protected NATS subject used only for ingress-authenticated durable raw events"
+    prompt: "Authenticated raw capture subject"
     password: false
   - name: QIWE_NATS_MESSAGE_SUBJECT
     description: "NATS subject for normalized QiWe message events"

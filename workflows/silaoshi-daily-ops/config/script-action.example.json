@@ -1,0 +1,18 @@
+{
+  "socket_path": "/run/qintopia-agentos/silaoshi-script-action.sock",
+  "database_path": "/var/lib/qintopia-agentos/silaoshi-script-action/jobs.sqlite3",
+  "secret_file": "/etc/qintopia/silaoshi-script-action.key",
+  "action": {
+    "name": "silaoshi-base-notify",
+    "command": [
+      "/usr/bin/python3",
+      "/server-local/path/to/silaoshi_resident_webhook_action.py"
+    ],
+    "script_sha256": "replace-with-reviewed-server-local-script-sha256",
+    "timeout_seconds": 900,
+    "max_retries": 2,
+    "notification_command": [],
+    "success_template": "",
+    "failure_template": ""
+  }
+}

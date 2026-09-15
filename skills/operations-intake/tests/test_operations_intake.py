@@ -93,8 +93,12 @@ class OperationsIntakeTest(unittest.TestCase):
         self.assertEqual(private_action["idempotency_key"], f"{captured['key']}:direct:intake")
 
     def test_complaint_update_and_followup_are_private_and_append_only(self):
+        comments = []
         self.module.configure_runtime(
-            kanban_add_complaint_comment=lambda task_id, body: (12, "comment_added")
+            kanban_add_complaint_comment=lambda task_id, body: comments.append(
+                (task_id, body)
+            )
+            or (12, "comment_added")
         )
 
         update = json.loads(
@@ -121,10 +125,17 @@ class OperationsIntakeTest(unittest.TestCase):
             )
         )
         self.assertTrue(followup["success"])
+        self.assertEqual(followup["mode"], "prepared")
+        self.assertIsNone(followup["comment_id"])
+        self.assertEqual(len(comments), 1)
         action = followup["actions"][0]
         self.assertEqual(action["conversation_scope"], "private")
         self.assertTrue(action["requires_approved_resolution"])
         self.assertIn("已安排工作人员检查", action["message"])
+        self.assertIn(
+            "record delivery only after the direct-message sender confirms success",
+            followup["guardrails"],
+        )
 
     def test_product_and_case_search_use_injected_public_kb(self):
         def fake_kb_search(args):

@@ -1913,6 +1913,10 @@ class DailyCaseReportTest(unittest.TestCase):
         # Regression: the old fixed 7600px canvas silently dropped any report
         # taller than that. The renderer must measure the true content height and
         # size the canvas to fit, so the footer (last element) is never clipped.
+        try:
+            from PIL import Image
+        except ModuleNotFoundError:
+            self.skipTest("Pillow not installed")
         char = daily_case_report.CharacterCard(
             rank=1,
             name="成员",
@@ -1961,8 +1965,6 @@ class DailyCaseReportTest(unittest.TestCase):
             character_count=60,
             characters=[char] * 60,
         )
-        from PIL import Image
-
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "preview.jpg"
             renderer._render_image_with_pillow(report, output_path, 750, "jpeg")

@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+try:
+    from .nats_capture import StrictJsonError, parse_strict_bounded_json
+except ImportError:  # pragma: no cover - local tests import modules directly
+    from nats_capture import StrictJsonError, parse_strict_bounded_json
+
 
 ASYNC_CALLBACK_COMMAND = 20_000
 MAX_CALLBACK_BYTES = 64 * 1024
@@ -354,20 +359,32 @@ async def _exchange_bounded(
                 task.cancel()
 
 
-def is_async_image_callback(raw_body: bytes) -> bool:
-    try:
-        value = json.loads(raw_body)
-    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
-        return False
+def classify_async_image_callback(raw_body: bytes | dict[str, Any]) -> str:
+    if isinstance(raw_body, dict):
+        value = raw_body
+    else:
+        try:
+            value = parse_strict_bounded_json(raw_body)
+        except StrictJsonError:
+            return "none"
     if not isinstance(value, dict):
-        return False
+        return "none"
     code = _case_insensitive_value(value, "code")
     events = _case_insensitive_value(value, "data")
     if type(code) is not int or code != 0 or not isinstance(events, list):
-        return False
+        return "none"
     if not events or len(events) > MAX_CALLBACK_EVENTS:
-        return False
-    return any(_is_async_image_callback_event(event) for event in events)
+        return "none"
+    callback_flags = [_is_async_image_callback_event(event) for event in events]
+    if all(callback_flags):
+        return "all"
+    if any(callback_flags):
+        return "mixed"
+    return "none"
+
+
+def is_async_image_callback(raw_body: bytes) -> bool:
+    return classify_async_image_callback(raw_body) == "all"
 
 
 def _is_async_image_callback_event(value: Any) -> bool:

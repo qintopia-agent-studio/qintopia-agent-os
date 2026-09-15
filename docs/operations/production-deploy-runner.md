@@ -364,7 +364,10 @@ deploy state directory, run `systemd-analyze verify` before installation, then r
 If verification fails, restore the backed-up unit and reload systemd. Do not edit the
 installed unit in place and do not source it from an unverified working tree.
 
-Keep `ProtectHome=read-only`. Xiaoman legacy cron retirement requires only the fixed
+Keep `ProtectSystem=strict` and `ProtectHome=read-only`, and inspect both effective
+properties after every runner-unit upgrade. The release installer requires the exact
+`/etc/systemd/system` write path for its allowlisted root-unit manifest; never broaden
+that exception to `/etc`. Xiaoman legacy cron retirement requires only the fixed
 `/home/ubuntu/.hermes/profiles/xiaoman/cron` directory in `ReadWritePaths`; reviewed
 Hermes cron apply additionally needs the fixed profile-local wrapper directories
 `/home/ubuntu/.hermes/profiles/xiaoman/scripts` and

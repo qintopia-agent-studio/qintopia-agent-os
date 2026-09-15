@@ -1,0 +1,9 @@
+name: qintopia-tools
+label: Qintopia Huabaosi Policy
+kind: standalone
+version: 0.1.0
+description: Enforces Huabaosi design-output evidence before Kanban completion.
+author: Qintopia
+hooks:
+  - pre_tool_call
+provides_tools: []

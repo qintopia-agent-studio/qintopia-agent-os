@@ -234,7 +234,10 @@ printf '%s  -\\n' "${databaseHash}"
     !wrongArtifact.stderr.includes("requires the reviewed QiWe companion artifact")
   ) {
     throw new Error(
-      "activation must fail before preflight when release/current is not the reviewed QiWe production artifact"
+      "activation must fail before preflight when release/current is not the reviewed QiWe production artifact" +
+        `\nstatus=${String(wrongArtifact.status)}` +
+        `\nsystemctl_log=${JSON.stringify(fs.readFileSync(logPath, "utf8"))}` +
+        `\nstderr=${JSON.stringify(wrongArtifact.stderr)}`
     );
   }
 

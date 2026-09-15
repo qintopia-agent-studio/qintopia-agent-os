@@ -40,8 +40,21 @@ case "\${QINTOPIA_FAKE_COS_MODE:-}" in
     echo "NoSuchKey: object not found" >&2
     exit 1
     ;;
-  processed|failed|remote-result|active|invalid-request)
+  processed|failed|remote-result|active|invalid-request|hermes-early-failure)
     if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/current.json" ]]; then
+      if [[ "\${QINTOPIA_FAKE_COS_MODE:-}" == "hermes-early-failure" ]]; then
+        cat >"$dest_path" <<'JSON'
+{
+  "schema_version": 1,
+  "environment": "production",
+  "repository": "qintopia-agent-studio/qintopia-agent-os",
+  "request_id": "deploy-20260706T000000Z-0123456789ab",
+  "request_key": "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json",
+  "result_key": "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json"
+}
+JSON
+        exit 0
+      fi
       cat >"$dest_path" <<'JSON'
 {
   "schema_version": 1,
@@ -55,6 +68,49 @@ JSON
       exit 0
     fi
     if [[ "$source_path" == *"/qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json" ]]; then
+      if [[ "\${QINTOPIA_FAKE_COS_MODE:-}" == "hermes-early-failure" ]]; then
+        cat >"$dest_path" <<'JSON'
+{
+  "schema_version": 1,
+  "request_id": "deploy-20260706T000000Z-0123456789ab",
+  "environment": "production",
+  "repository": "qintopia-agent-studio/qintopia-agent-os",
+  "requested_by": "fixture",
+  "created_at": "2026-07-06T00:00:00Z",
+  "expires_at": "2026-07-06T00:30:00Z",
+  "release_scope": ["hermes-core-release"],
+  "restart_targets": ["hermes-core"],
+  "rollback_on_smoke_failure": true,
+  "dry_run": false,
+  "hermes_core_release": {
+    "repository": "https://github.com/NousResearch/hermes-agent.git",
+    "tag": "v0.1.0",
+    "commit_sha": "abcdef0123456789abcdef0123456789abcdef01",
+    "source_archive_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "artifact_identity_sha256": "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0",
+    "artifact_manifest_sha256": "23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01",
+    "previous_version": "0.0.9",
+    "previous_commit_sha": "fedcba9876543210fedcba9876543210fedcba98",
+    "archive_sha256": "3456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef012"
+  },
+  "cos": {
+    "bucket": "fixture",
+    "region": "fixture",
+    "prefix": "qintopia-agent-os",
+    "request_key": "qintopia-agent-os/deploy-requests/production/requests/deploy-20260706T000000Z-0123456789ab.json",
+    "result_key": "qintopia-agent-os/deploy-results/production/deploy-20260706T000000Z-0123456789ab.json"
+  },
+  "signature": {
+    "algorithm": "hmac-sha256",
+    "issuer": "github-actions",
+    "key_id": "fixture",
+    "signed_at": "2026-07-06T00:00:00Z",
+    "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}
+JSON
+        exit 0
+      fi
       if [[ "\${QINTOPIA_FAKE_COS_MODE:-}" == "invalid-request" ]]; then
         cat >"$dest_path" <<'JSON'
 {
@@ -139,6 +195,10 @@ set -euo pipefail
 if [[ "\${QINTOPIA_FAKE_RUNNER_EXPECTED:-idle}" == "idle" ]]; then
   echo "runner should not execute for idle poller states" >&2
   exit 67
+fi
+if [[ "\${QINTOPIA_FAKE_RUNNER_EXPECTED:-idle}" == "early-fail" ]]; then
+  echo "simulated runner failure before result creation" >&2
+  exit 75
 fi
 request_file=""
 while [[ $# -gt 0 ]]; do
@@ -357,10 +417,85 @@ try {
     invalidUploadedResultJson.status !== "failed" ||
     invalidUploadedResultJson.runtime_artifact_profile !== "qiwe-production" ||
     invalidUploadedResultJson.deploy_bundle_sha !==
-      "89abcdef0123456789abcdef0123456789abcdef"
+      "89abcdef0123456789abcdef0123456789abcdef" ||
+    invalidUploadedResultJson.signature?.algorithm !== "hmac-sha256" ||
+    invalidUploadedResultJson.signature?.issuer !== "qintopia-deploy-runner" ||
+    invalidUploadedResultJson.signature?.key_id !== "production" ||
+    !/^[0-9a-f]{64}$/.test(invalidUploadedResultJson.signature?.value ?? "")
   ) {
     throw new Error(
-      "invalid-request: fallback deploy result did not retain request identity"
+      "invalid-request: fallback deploy result did not retain identity and signature"
+    );
+  }
+
+  const hermesEarlyFailureStateDir = path.join(tmpRoot, "hermes-early-failure");
+  const hermesEarlyFailureUploadDir = path.join(
+    tmpRoot,
+    "hermes-early-failure-uploads"
+  );
+  fs.mkdirSync(path.join(hermesEarlyFailureStateDir, "requests", "pending"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(hermesEarlyFailureStateDir, "requests", "processed"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(hermesEarlyFailureStateDir, "requests", "failed"), {
+    recursive: true,
+  });
+  fs.mkdirSync(path.join(hermesEarlyFailureStateDir, "results"), { recursive: true });
+  fs.mkdirSync(hermesEarlyFailureUploadDir, { recursive: true });
+  const hermesEarlyFailure = spawnSync("bash", [poller], {
+    cwd: repoRoot,
+    env: {
+      ...baseEnv,
+      QINTOPIA_DEPLOY_RUNNER_STATE_DIR: hermesEarlyFailureStateDir,
+      QINTOPIA_FAKE_COS_MODE: "hermes-early-failure",
+      QINTOPIA_FAKE_COS_UPLOAD_DIR: hermesEarlyFailureUploadDir,
+      QINTOPIA_FAKE_RUNNER_EXPECTED: "early-fail",
+    },
+    encoding: "utf8",
+  });
+  if (hermesEarlyFailure.status === 0) {
+    throw new Error("hermes-early-failure: expected runner failure");
+  }
+  const hermesFallbackPath = path.join(
+    hermesEarlyFailureUploadDir,
+    "deploy-results",
+    requestName
+  );
+  if (!fs.existsSync(hermesFallbackPath)) {
+    throw new Error(
+      `hermes-early-failure: fallback deploy result was not uploaded\nstdout:\n${hermesEarlyFailure.stdout}\nstderr:\n${hermesEarlyFailure.stderr}`
+    );
+  }
+  const hermesFallback = JSON.parse(fs.readFileSync(hermesFallbackPath, "utf8"));
+  if (
+    hermesFallback.status !== "failed" ||
+    JSON.stringify(hermesFallback.release_scope) !==
+      JSON.stringify(["hermes-core-release"]) ||
+    JSON.stringify(hermesFallback.restart_targets) !==
+      JSON.stringify(["hermes-core"]) ||
+    !hermesFallback.hermes_core ||
+    hermesFallback.release_sha !== undefined ||
+    hermesFallback.runtime_artifact_profile !== undefined ||
+    hermesFallback.hermes_core.transaction_status !== "failed" ||
+    hermesFallback.hermes_core.tag !== "v0.1.0" ||
+    hermesFallback.hermes_core.commit_sha !==
+      "abcdef0123456789abcdef0123456789abcdef01" ||
+    hermesFallback.hermes_core.source_archive_sha256 !==
+      "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" ||
+    hermesFallback.hermes_core.artifact_identity_sha256 !==
+      "123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0" ||
+    hermesFallback.hermes_core.artifact_manifest_sha256 !==
+      "23456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef01" ||
+    hermesFallback.hermes_core.previous_commit_sha !==
+      "fedcba9876543210fedcba9876543210fedcba98" ||
+    hermesFallback.hermes_core.new_version !== null ||
+    /unknown|^0+$/.test(JSON.stringify(hermesFallback)) ||
+    hermesFallback.signature?.issuer !== "qintopia-deploy-runner"
+  ) {
+    throw new Error(
+      "hermes-early-failure: fallback deploy result was not Hermes-specific"
     );
   }
 } finally {

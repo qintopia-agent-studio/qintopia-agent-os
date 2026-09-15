@@ -1,5 +1,12 @@
 # Reports
 
+- [PR #704 主线集成与验证](2026-09-15-pr704-integration.md)
+
+- [2026-09-15 PR #704 根规则删减评估](2026-09-15-pr704-agents-review.md)
+
+- [2026-09-13 本地业务测试接入与验收](2026-09-13-local-business-testing.md)
+
+- [2026-09-11 Hermes 真实核心迁移验证](2026-09-11-hermes-real-core-validation.md)
 - [2026-08-14 Qintopia root TLS renewal](2026-08-14-qintopia-root-tls-renewal.md)
 - [2026-08-11 Xiaoman character-universe daily report PR body](2026-08-11-xiaoman-character-universe-daily-report-pr-body.md)
 - [2026-08-13 Hermes live parity legacy envelope PR body](2026-08-13-hermes-live-parity-legacy-envelope-pr-body.md)

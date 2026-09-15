@@ -46,8 +46,23 @@ From the monorepo root, prefer:
 
 ## Rules
 
-- Keep the sidecar independent from 二花's reply path; NATS, sidecar, or Postgres
-  failures must not be able to block Hermes webhook ACK or replies.
+- Keep the sidecar independent from 二花's ordinary reply path; NATS, sidecar, or
+  Postgres failures must not delay ordinary Hermes webhook ACKs or replies. The sole
+  exception is the default-disabled authenticated system-event boundary: when
+  `QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED=1`, the adapter may spend at most 1.5
+  seconds for the complete envelope waiting for every raw JetStream PubAck and must
+  return a bounded 503 on any missing or failed acknowledgement so QiWe can retry.
+- Derive authenticated ingress only from the actual NATS subject received by the
+  consumer while `QINTOPIA_SIDECAR_TRUST_AUTHENTICATED_RAW_SUBJECT=true`; never trust an
+  `ingress_auth_verified` value carried in publisher JSON. Keep the authenticated raw
+  subject distinct from legacy raw and normalized-message subjects.
+- Do not place NATS credentials in `QINTOPIA_SIDECAR_NATS_URL`. Use the fixed private
+  consumer auth file and keep it distinct from the QiWe producer auth file. Before
+  production Space automation activation, the release-local preflight must prove
+  anonymous denial, producer-only authenticated publication, consumer-only durable
+  consumption/ack permissions, and the expected stream/consumer filters. This proves ACL
+  configuration, not end-to-end JetStream delivery; retain one real authenticated shadow
+  callback as consumption evidence before event automation activation.
 - Keep compatibility with the supported Rust toolchain: `rustc/cargo 1.96.0`.
 - Manage this project through the monorepo root git repository.
 - Treat `deploy/sidecar/docs/server-deployment.md` as historical rollback evidence, not
@@ -230,6 +245,10 @@ From the monorepo root, prefer:
 - External adapter modules must use `bounded_http`; do not add another raw socket HTTP
   implementation. Test-only loopback HTTP is allowed, while production clients require
   HTTPS and the reviewed endpoint/host allowlists.
+- `space_agent_turn_result` artifacts are inert data. A future consumer must derive
+  destinations and capability arguments from the exact work item's trusted `space_id`
+  and the live capability registry; never interpret result property names or values as a
+  room, target, URL, HTTP request, executable input, or tool invocation.
 - Do not adopt files from the server Huabaosi shadow branch until owner review
   explicitly approves them.
 - `xiaoman-profile-bundle-observation-smoke.sh` may only verify reviewed source hashes

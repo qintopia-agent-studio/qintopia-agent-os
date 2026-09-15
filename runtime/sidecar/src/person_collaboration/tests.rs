@@ -386,11 +386,7 @@ mod postgres {
     use serde_json::{json, Value};
 
     async fn fixture() -> Result<(Store, Actor)> {
-        anyhow::ensure!(
-            std::env::var("QINTOPIA_COLLABORATION_TEST_ENABLE").as_deref() == Ok("1"),
-            "explicit_test_enable_required"
-        );
-        let db = std::env::var("QINTOPIA_COLLABORATION_TEST_DATABASE_URL")?;
+        let db = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
         let store =
             Store::local(&db, &format!("synthetic-collaboration-{}", Uuid::new_v4())).await?;
         crate::db::run_migrations(&store.pool).await?;
@@ -596,7 +592,7 @@ mod postgres {
         );
         assert_ne!(r1.is_ok(), r2.is_ok());
         let reconnected = Store::local(
-            &std::env::var("QINTOPIA_COLLABORATION_TEST_DATABASE_URL")?,
+            &crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?,
             &store.tenant,
         )
         .await?;

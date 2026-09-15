@@ -3,20 +3,29 @@ use chrono::{DateTime, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
+
+use crate::strict_json::{
+    parse_strict_bounded_slice, parse_strict_bounded_str, QIWE_STRING_DATA_LIMITS,
+    RAW_EVENT_ENVELOPE_LIMITS,
+};
 
 const QIWE_ASYNC_CALLBACK_COMMAND: i64 = 20_000;
+const MAX_CONVERSATION_DISPLAY_NAME_CHARS: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawQiweEvent {
     pub event_id: String,
     pub received_at: DateTime<Utc>,
     pub source: String,
+    #[serde(default)]
+    pub ingress_auth_verified: bool,
     pub payload: Value,
 }
 
 impl RawQiweEvent {
     pub fn from_slice(bytes: &[u8]) -> Result<Self> {
-        let value: Value = serde_json::from_slice(bytes)?;
+        let value = parse_strict_bounded_slice(bytes, RAW_EVENT_ENVELOPE_LIMITS)?;
         Self::from_value(value)
     }
 
@@ -34,6 +43,9 @@ impl RawQiweEvent {
             event_id,
             received_at,
             source,
+            // Publisher JSON is untrusted. The NATS consumer overwrites this fact
+            // from the protected subject after parsing.
+            ingress_auth_verified: false,
             payload,
         }
         .sanitized_for_storage())
@@ -54,8 +66,50 @@ impl RawQiweEvent {
             } else {
                 self.source.clone()
             },
+            ingress_auth_verified: self.ingress_auth_verified,
             payload,
         }
+    }
+
+    pub(crate) fn set_ingress_auth_verified(&mut self, verified: bool) {
+        self.ingress_auth_verified = verified;
+    }
+
+    pub(crate) fn unique_group_chat_id(&self) -> Option<String> {
+        let mut room_ids = BTreeSet::new();
+        collect_qiwe_room_ids(&self.payload, 0, &mut room_ids);
+        (room_ids.len() == 1)
+            .then(|| room_ids.into_iter().next())
+            .flatten()
+    }
+}
+
+fn collect_qiwe_room_ids(value: &Value, depth: usize, room_ids: &mut BTreeSet<String>) {
+    if depth > 4 || room_ids.len() > 1 {
+        return;
+    }
+    match value {
+        Value::Object(object) => {
+            if let Some(room_id) = object.get("fromRoomId").and_then(value_to_string) {
+                if room_id != "0" {
+                    room_ids.insert(room_id);
+                }
+            }
+            if let Some(data) = object.get("data") {
+                collect_qiwe_room_ids(data, depth + 1, room_ids);
+            }
+        }
+        Value::Array(items) => {
+            for item in items.iter().take(64) {
+                collect_qiwe_room_ids(item, depth + 1, room_ids);
+            }
+        }
+        Value::String(text) => {
+            if let Ok(parsed) = parse_strict_bounded_str(text, QIWE_STRING_DATA_LIMITS) {
+                collect_qiwe_room_ids(&parsed, depth + 1, room_ids);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -321,6 +375,8 @@ pub struct NormalizedMessageEvent {
     pub platform: String,
     pub chat_id: String,
     pub chat_type: String,
+    #[serde(default)]
+    pub conversation_display_name: Option<String>,
     pub sender_id: String,
     pub sender_name: Option<String>,
     pub text: Option<String>,
@@ -407,6 +463,18 @@ impl NormalizedMessageEvent {
                 .or_else(|| nested_array_field(&value, &["raw_event_ref", "msgData", "atList"]))
                 .unwrap_or_default()
         };
+        let message_kind = if callback_sanitized {
+            "system".to_string()
+        } else {
+            string_field(&value, "message_kind").unwrap_or_else(|| "unsupported".to_string())
+        };
+        let conversation_display_name = trusted_qiwe_conversation_display_name(
+            &value,
+            &platform,
+            &chat_type,
+            &message_kind,
+            callback_sanitized,
+        );
 
         Ok(Self {
             event_id,
@@ -414,6 +482,7 @@ impl NormalizedMessageEvent {
             platform,
             chat_id,
             chat_type,
+            conversation_display_name,
             sender_id,
             sender_name: (!callback_sanitized)
                 .then(|| string_field(&value, "sender_name"))
@@ -421,11 +490,7 @@ impl NormalizedMessageEvent {
             text: (!callback_sanitized)
                 .then(|| string_field(&value, "text"))
                 .flatten(),
-            message_kind: if callback_sanitized {
-                "system".to_string()
-            } else {
-                string_field(&value, "message_kind").unwrap_or_else(|| "unsupported".to_string())
-            },
+            message_kind,
             is_mention_bot: !callback_sanitized
                 && bool_field(&value, "is_mention_bot")
                     .or_else(|| bool_field(&value, "is_mentioned"))
@@ -447,6 +512,28 @@ impl NormalizedMessageEvent {
                 .flatten(),
         })
     }
+}
+
+fn trusted_qiwe_conversation_display_name(
+    value: &Value,
+    platform: &str,
+    chat_type: &str,
+    message_kind: &str,
+    callback_sanitized: bool,
+) -> Option<String> {
+    if callback_sanitized
+        || platform != "qiwe"
+        || chat_type != "group"
+        || message_kind == "system"
+        || string_field(value, "conversation_display_name_source").as_deref()
+            != Some("qiwe_room_detail")
+    {
+        return None;
+    }
+    let display_name = string_field(value, "conversation_display_name")?;
+    (display_name.chars().count() <= MAX_CONVERSATION_DISPLAY_NAME_CHARS
+        && !display_name.chars().any(char::is_control))
+    .then_some(display_name)
 }
 
 impl SenderIdentityEvent {
@@ -705,6 +792,21 @@ mod tests {
 
         assert_eq!(event.event_id, "ordinary-event");
         assert_eq!(event.payload, payload);
+        assert!(!event.ingress_auth_verified);
+    }
+
+    #[test]
+    fn raw_event_ignores_publisher_verified_ingress_marker() {
+        let event = RawQiweEvent::from_value(json!({
+            "event_id": "authenticated-event",
+            "source": "qiwe",
+            "ingress_auth_verified": true,
+            "payload": {"data": {"fromRoomId": "room-1"}}
+        }))
+        .expect("authenticated raw event parses");
+
+        assert!(!event.ingress_auth_verified);
+        assert!(!event.sanitized_for_storage().ingress_auth_verified);
     }
 
     #[test]
@@ -952,6 +1054,101 @@ mod tests {
     #[tokio::test]
     #[cfg(feature = "postgres-integration-tests")]
     #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_raw_event_auth_promotion_is_monotonic() {
+        let database_url = postgres_integration_database_url();
+        let pool = crate::db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        crate::db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let suffix = uuid::Uuid::new_v4();
+        let event_id = format!("raw-auth-promotion-{suffix}");
+        let initial_room = format!("raw-initial-room-{suffix}");
+        let trusted_room = format!("raw-trusted-room-{suffix}");
+        let forged_room = format!("raw-forged-room-{suffix}");
+
+        let initial = RawQiweEvent {
+            event_id: event_id.clone(),
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: false,
+            payload: json!({"fromRoomId": initial_room, "marker": "initial"}),
+        };
+        let row_id = crate::db::persist_raw_event(&pool, "qintopia.qiwe.raw", &initial)
+            .await
+            .expect("persist initial unauthenticated event");
+        let unauthenticated_conversation_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM qintopia_messages.conversations WHERE chat_id = $1",
+        )
+        .bind(&initial_room)
+        .fetch_one(&pool)
+        .await
+        .expect("count unauthenticated event conversations");
+        assert_eq!(unauthenticated_conversation_count, 0);
+
+        let authenticated = RawQiweEvent {
+            event_id: event_id.clone(),
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: true,
+            payload: json!({"fromRoomId": trusted_room, "marker": "trusted"}),
+        };
+        assert_eq!(
+            crate::db::persist_raw_event(&pool, "qintopia.qiwe.raw", &authenticated)
+                .await
+                .expect("promote authenticated event"),
+            row_id
+        );
+
+        let forged_duplicate = RawQiweEvent {
+            event_id,
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: false,
+            payload: json!({"fromRoomId": forged_room, "marker": "forged"}),
+        };
+        assert_eq!(
+            crate::db::persist_raw_event(&pool, "qintopia.qiwe.untrusted", &forged_duplicate,)
+                .await
+                .expect("persist forged duplicate without replacing trusted event"),
+            row_id
+        );
+
+        let persisted = crate::db::load_raw_event(&pool, row_id)
+            .await
+            .expect("load authoritative persisted event");
+        assert!(persisted.ingress_auth_verified);
+        assert_eq!(persisted.payload["marker"], json!("trusted"));
+        assert_eq!(
+            persisted.unique_group_chat_id().as_deref(),
+            Some(trusted_room.as_str())
+        );
+        let stored_space_chat_id: String = sqlx::query_scalar(
+            r#"
+            SELECT conversation.chat_id
+            FROM qintopia_messages.raw_events raw_event
+            JOIN qintopia_messages.conversations conversation
+              ON conversation.id = raw_event.space_id
+            WHERE raw_event.id = $1
+            "#,
+        )
+        .bind(row_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load authoritative persisted Space");
+        assert_eq!(stored_space_chat_id, trusted_room);
+
+        sqlx::query("DELETE FROM qintopia_messages.raw_events WHERE id = $1")
+            .bind(row_id)
+            .execute(&pool)
+            .await
+            .expect("delete raw-event auth promotion fixture");
+    }
+
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
     async fn postgres_callback_storage_redacts_credentials() {
         let database_url = postgres_integration_database_url();
         let pool = crate::db::connect(&database_url, 2)
@@ -969,6 +1166,7 @@ mod tests {
             event_id: request_id.clone(),
             received_at: Utc::now(),
             source: "qiwe".to_string(),
+            ingress_auth_verified: true,
             payload: json!({
                 "code": 0,
                 "data": [{
@@ -1078,6 +1276,96 @@ mod tests {
             .expect("delete callback integration fixture");
     }
 
+    #[tokio::test]
+    #[cfg(feature = "postgres-integration-tests")]
+    #[ignore = "requires guarded disposable qintopia_test PostgreSQL"]
+    async fn postgres_normalized_qiwe_room_name_updates_only_exact_group_conversation() {
+        let database_url = postgres_integration_database_url();
+        let pool = crate::db::connect(&database_url, 2)
+            .await
+            .expect("connect disposable PostgreSQL");
+        crate::db::run_migrations(&pool)
+            .await
+            .expect("migrate disposable PostgreSQL");
+        let suffix = uuid::Uuid::new_v4();
+        let room_id = format!("room-name-{suffix}");
+
+        let trusted = NormalizedMessageEvent::from_value(json!({
+            "event_id": format!("room-name-trusted-{suffix}"),
+            "message_id": format!("room-name-trusted-{suffix}"),
+            "platform": "qiwe",
+            "chat_id": room_id,
+            "chat_type": "group",
+            "conversation_display_name": "一栋住户群",
+            "conversation_display_name_source": "qiwe_room_detail",
+            "sender_id": "integration-user",
+            "text": "hello",
+            "message_kind": "text",
+            "received_at": Utc::now(),
+            "raw": {}
+        }))
+        .expect("parse trusted room-name event");
+        crate::db::persist_message(&pool, "qintopia.qiwe.message", &trusted)
+            .await
+            .expect("persist trusted room-name event");
+
+        let stored_name: Option<String> = sqlx::query_scalar(
+            "SELECT display_name FROM qintopia_messages.conversations WHERE tenant_id = 'qintopia' AND platform = 'qiwe' AND chat_id = $1",
+        )
+        .bind(&room_id)
+        .fetch_one(&pool)
+        .await
+        .expect("load trusted room display name");
+        assert_eq!(stored_name.as_deref(), Some("一栋住户群"));
+
+        let untrusted = NormalizedMessageEvent::from_value(json!({
+            "event_id": format!("room-name-untrusted-{suffix}"),
+            "message_id": format!("room-name-untrusted-{suffix}"),
+            "platform": "qiwe",
+            "chat_id": room_id,
+            "chat_type": "group",
+            "conversation_display_name": "伪造群名",
+            "conversation_display_name_source": "webhook_payload",
+            "sender_id": "integration-user",
+            "text": "hello again",
+            "message_kind": "text",
+            "received_at": Utc::now(),
+            "raw": {}
+        }))
+        .expect("parse untrusted room-name event");
+        crate::db::persist_message(&pool, "qintopia.qiwe.message", &untrusted)
+            .await
+            .expect("persist event without trusted room name");
+
+        let unchanged_name: Option<String> = sqlx::query_scalar(
+            "SELECT display_name FROM qintopia_messages.conversations WHERE tenant_id = 'qintopia' AND platform = 'qiwe' AND chat_id = $1",
+        )
+        .bind(&room_id)
+        .fetch_one(&pool)
+        .await
+        .expect("reload room display name");
+        assert_eq!(unchanged_name.as_deref(), Some("一栋住户群"));
+
+        sqlx::query("DELETE FROM qintopia_messages.messages WHERE chat_id = $1")
+            .bind(&room_id)
+            .execute(&pool)
+            .await
+            .expect("delete room-name messages");
+        sqlx::query("DELETE FROM qintopia_messages.raw_events WHERE event_id IN ($1, $2)")
+            .bind(&trusted.event_id)
+            .bind(&untrusted.event_id)
+            .execute(&pool)
+            .await
+            .expect("delete room-name raw placeholders");
+        sqlx::query(
+            "DELETE FROM qintopia_messages.conversations WHERE tenant_id = 'qintopia' AND platform = 'qiwe' AND chat_id = $1",
+        )
+        .bind(&room_id)
+        .execute(&pool)
+        .await
+        .expect("delete room-name conversation");
+    }
+
     #[test]
     fn parses_plan_message_payload() {
         let event = NormalizedMessageEvent::from_value(json!({
@@ -1103,6 +1391,66 @@ mod tests {
         assert_eq!(event.chat_id, "group-1");
         assert!(event.is_mention_bot);
         assert_eq!(event.mentions.len(), 1);
+    }
+
+    #[test]
+    fn accepts_only_bounded_qiwe_room_detail_display_names() {
+        let trusted = NormalizedMessageEvent::from_value(json!({
+            "event_id": "room-name-trusted",
+            "platform": "qiwe",
+            "chat_id": "room-1",
+            "chat_type": "group",
+            "conversation_display_name": "一栋住户群",
+            "conversation_display_name_source": "qiwe_room_detail",
+            "sender_id": "user-1",
+            "message_kind": "text",
+            "received_at": "2026-06-18T10:00:01Z"
+        }))
+        .expect("trusted room detail parses");
+        let wrong_source = NormalizedMessageEvent::from_value(json!({
+            "event_id": "room-name-wrong-source",
+            "platform": "qiwe",
+            "chat_id": "room-1",
+            "chat_type": "group",
+            "conversation_display_name": "伪造群名",
+            "conversation_display_name_source": "webhook_payload",
+            "sender_id": "user-1",
+            "message_kind": "text",
+            "received_at": "2026-06-18T10:00:01Z"
+        }))
+        .expect("wrong-source event still parses");
+        let direct = NormalizedMessageEvent::from_value(json!({
+            "event_id": "room-name-direct",
+            "platform": "qiwe",
+            "chat_id": "user-1",
+            "chat_type": "direct",
+            "conversation_display_name": "不应写入",
+            "conversation_display_name_source": "qiwe_room_detail",
+            "sender_id": "user-1",
+            "message_kind": "text",
+            "received_at": "2026-06-18T10:00:01Z"
+        }))
+        .expect("direct event still parses");
+        let invalid = NormalizedMessageEvent::from_value(json!({
+            "event_id": "room-name-invalid",
+            "platform": "qiwe",
+            "chat_id": "room-1",
+            "chat_type": "group",
+            "conversation_display_name": "坏\n群名",
+            "conversation_display_name_source": "qiwe_room_detail",
+            "sender_id": "user-1",
+            "message_kind": "text",
+            "received_at": "2026-06-18T10:00:01Z"
+        }))
+        .expect("invalid display-only field does not reject the message");
+
+        assert_eq!(
+            trusted.conversation_display_name.as_deref(),
+            Some("一栋住户群")
+        );
+        assert!(wrong_source.conversation_display_name.is_none());
+        assert!(direct.conversation_display_name.is_none());
+        assert!(invalid.conversation_display_name.is_none());
     }
 
     #[test]
@@ -1183,5 +1531,106 @@ mod tests {
         .unwrap();
 
         assert!(event.sender_identity.is_none());
+    }
+
+    #[test]
+    fn raw_event_resolves_one_room_across_all_data_items() {
+        let event = RawQiweEvent {
+            event_id: "evt-batch".to_string(),
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: true,
+            payload: json!({
+                "data": [
+                    {"fromRoomId": "1234567890123456"},
+                    {"fromRoomId": "1234567890123456"}
+                ]
+            }),
+        };
+
+        assert_eq!(
+            event.unique_group_chat_id().as_deref(),
+            Some("1234567890123456")
+        );
+    }
+
+    #[test]
+    fn raw_event_does_not_guess_space_for_mixed_rooms() {
+        let event = RawQiweEvent {
+            event_id: "evt-mixed".to_string(),
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: true,
+            payload: json!({
+                "data": "[{\"fromRoomId\":\"room-a\"},{\"fromRoomId\":\"room-b\"}]"
+            }),
+        };
+
+        assert_eq!(event.unique_group_chat_id(), None);
+    }
+
+    #[test]
+    fn raw_event_never_uses_outer_group_as_space() {
+        let event = RawQiweEvent {
+            event_id: "evt-mismatch".to_string(),
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: true,
+            payload: json!({
+                "fromGroup": "untrusted-outer-room",
+                "data": [{"fromRoomId": "trusted-inner-room"}]
+            }),
+        };
+
+        assert_eq!(
+            event.unique_group_chat_id().as_deref(),
+            Some("trusted-inner-room")
+        );
+    }
+
+    #[test]
+    fn raw_event_from_slice_rejects_nested_duplicate_keys() {
+        let error = RawQiweEvent::from_slice(
+            br#"{"event_id":"duplicate","payload":{"nested":{"id":"first","id":"second"}}}"#,
+        )
+        .expect_err("nested duplicate keys must fail closed");
+
+        assert!(format!("{error:#}").contains("duplicate"));
+    }
+
+    #[test]
+    fn raw_event_from_slice_enforces_depth_node_and_string_limits() {
+        let envelope =
+            |payload: &str| format!(r#"{{"event_id":"bounded","payload":{payload}}}"#).into_bytes();
+
+        let deep = format!("{}null{}", "[".repeat(65), "]".repeat(65));
+        let depth_error = RawQiweEvent::from_slice(&envelope(&deep))
+            .expect_err("raw event depth limit must fail closed");
+        assert!(format!("{depth_error:#}").contains("depth limit"));
+
+        let many_nodes = format!("[{}]", vec!["null"; 65_536].join(","));
+        let node_error = RawQiweEvent::from_slice(&envelope(&many_nodes))
+            .expect_err("raw event node limit must fail closed");
+        assert!(format!("{node_error:#}").contains("node limit"));
+
+        let oversized_string = serde_json::to_string(&"a".repeat(1024 * 1024 + 1)).unwrap();
+        let string_error = RawQiweEvent::from_slice(&envelope(&oversized_string))
+            .expect_err("raw event string limit must fail closed");
+        assert!(format!("{string_error:#}").contains("string limit"));
+    }
+
+    #[test]
+    fn raw_event_rejects_duplicate_keys_in_string_encoded_data() {
+        let event = RawQiweEvent {
+            event_id: "evt-ambiguous-string-data".to_string(),
+            received_at: Utc::now(),
+            source: "qiwe".to_string(),
+            ingress_auth_verified: true,
+            payload: json!({
+                "data": "{\"fromRoomId\":\"room-a\",\"fromRoomId\":\"room-b\"}"
+            }),
+        };
+
+        assert_eq!(event.unique_group_chat_id(), None);
     }
 }

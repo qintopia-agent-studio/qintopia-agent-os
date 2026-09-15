@@ -7,11 +7,13 @@ messages, calls the release-managed worker to render a JPEG poster, and publishe
 automatically to the reviewed target group through the governed QiWe image-send
 boundary.
 
-The current script generates the report image locally and emits artifact identity. The
-sidecar has the reviewed binding command that turns a durable JPEG URI into an approved
-`generated_image` artifact plus one automatic QiWe send-ready work item. Production
-recurrence is installed through the Hermes cron apply path, while render/upload,
-observation, rollback, and send boundaries still run from the immutable release.
+The current production worker renders through the Rust sidecar pipeline, delegates only
+HTML-to-JPEG rasterization to the Python Playwright helper, and emits artifact identity.
+The sidecar has the reviewed binding command that turns a durable JPEG URI into an
+approved `generated_image` artifact plus one automatic QiWe send-ready work item.
+Production recurrence is installed through the Hermes cron apply path, while
+render/upload, observation, rollback, and send boundaries still run from the immutable
+release.
 
 ## Responsibility
 
@@ -84,7 +86,20 @@ mattered—without requiring anyone to scroll through hundreds of messages.
 
 ## How it works
 
-`daily_case_report.py` runs in three modes:
+The production path runs in the Rust sidecar:
+
+```text
+run-daily-case-report-auto-publish-worker
+  -> collect/analyze/narrate/render HTML in Rust
+  -> rasterize HTML to JPEG through workflows/xiaoman-daily-case-report/rasterize.py
+  -> upload and create the reviewed QiWe send-ready work item
+```
+
+The legacy Python pipeline remains available only as a reviewed rollback fallback via
+`QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_USE_PYTHON_PIPELINE=1` until the scheduled-run
+observation window closes.
+
+`daily_case_report.py` remains for rollback and local comparison in three modes:
 
 1. **Database mode** (production): reads from Postgres when
    `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1` and a database URL is
@@ -95,8 +110,8 @@ mattered—without requiring anyone to scroll through hundreds of messages.
    and rendering pipeline.
 
 Automatic publication is not implemented inside `daily_case_report.py` directly. The
-release worker renders the JPEG, calls `operations-daily-case-report-media-upload` to
-obtain a durable HTTPS URI, then calls
+release worker renders the JPEG through the Rust default path, calls
+`operations-daily-case-report-media-upload` to obtain a durable HTTPS URI, then calls
 `operations-daily-case-report-auto-publish-create` so retries, allowlists, storage
 identity, callback correlation, and send evidence stay in Postgres.
 
@@ -363,6 +378,9 @@ candidate text.
 - `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
   validates the character-universe generation, private-output boundary, worker metadata,
   production observation allowlist, and runbook coverage needed before release.
+- `cargo llvm-cov nextest --manifest-path runtime/sidecar/Cargo.toml --summary-only`
+  records the Rust sidecar coverage baseline that now owns the deterministic daily
+  report pipeline.
 - Creative-profile apply boundary test:
 
   ```bash

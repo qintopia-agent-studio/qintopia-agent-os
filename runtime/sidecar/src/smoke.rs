@@ -9,7 +9,7 @@ use sqlx::postgres::PgPool;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{config::Cli, db};
+use crate::{config::Cli, db, nats_connection};
 
 pub async fn run(cli: &Cli, timeout_seconds: u64, poll_interval_ms: u64) -> Result<()> {
     let database_url = cli.database_url_required()?;
@@ -21,9 +21,7 @@ pub async fn run(cli: &Cli, timeout_seconds: u64, poll_interval_ms: u64) -> Resu
         ));
     }
 
-    let client = async_nats::connect(&cli.nats_url)
-        .await
-        .with_context(|| format!("connect NATS at {}", cli.nats_url))?;
+    let client = nats_connection::connect(cli).await?;
     let jetstream = jetstream::new(client);
     let _stream = jetstream
         .get_stream(&cli.nats_stream)

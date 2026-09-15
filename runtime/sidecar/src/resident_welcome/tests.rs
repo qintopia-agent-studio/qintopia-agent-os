@@ -222,11 +222,8 @@ fn scan_rejects_wrong_scope_reordering_and_empty_progress() {
 async fn resident_welcome_postgres_scan_resume_and_scoped_worker() -> anyhow::Result<()> {
     use sqlx::Row;
     use std::sync::Arc;
-    anyhow::ensure!(
-        std::env::var("QINTOPIA_WELCOME_TEST_ENABLE").as_deref() == Ok("1"),
-        "explicit enable required"
-    );
-    let store = store::Store::local(&std::env::var("QINTOPIA_WELCOME_TEST_DATABASE_URL")?).await?;
+    let database = crate::foundation_test_support::database_url("QINTOPIA_WELCOME_TEST")?;
+    let store = store::Store::local(&database).await?;
     crate::db::run_migrations(&store.pool).await?;
     let source = format!("synthetic-scan-{}", Uuid::new_v4());
     let property = "fixture-property";
@@ -261,8 +258,7 @@ async fn resident_welcome_postgres_scan_resume_and_scoped_worker() -> anyhow::Re
         .await
         .is_err());
     // A new Store represents a crashed/restarted consumer, retaining durable page.
-    let restarted =
-        store::Store::local(&std::env::var("QINTOPIA_WELCOME_TEST_DATABASE_URL")?).await?;
+    let restarted = store::Store::local(&database).await?;
     assert!(restarted.drain_scan_one(&source, property).await?);
     assert!(!restarted.drain_scan_one(&source, property).await?);
     restarted.finish_scan(&source, property, generation).await?;
@@ -455,11 +451,7 @@ fn pms_projection_hash_and_business_day_converge_without_false_version_conflict(
 #[ignore = "requires explicitly isolated local qintopia_test"]
 async fn resident_welcome_postgres_identity_inbox_and_delivery_recovery() -> anyhow::Result<()> {
     use sqlx::Row;
-    anyhow::ensure!(
-        std::env::var("QINTOPIA_WELCOME_TEST_ENABLE").as_deref() == Ok("1"),
-        "explicit welcome test enable required"
-    );
-    let url = std::env::var("QINTOPIA_WELCOME_TEST_DATABASE_URL")?;
+    let url = crate::foundation_test_support::database_url("QINTOPIA_WELCOME_TEST")?;
     let store = store::Store::local(&url).await?;
     crate::db::run_migrations(&store.pool).await?;
     // Reapply the additive migration to prove idempotent installation.

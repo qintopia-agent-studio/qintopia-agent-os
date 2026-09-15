@@ -21,7 +21,7 @@ fail() {
   exit 1
 }
 
-if [[ -v QINTOPIA_XIAOMAN_WRAPPER_PATH ]]; then
+if [[ "${QINTOPIA_XIAOMAN_WRAPPER_PATH+x}" == "x" ]]; then
   fail "refuses Xiaoman wrapper path override"
 fi
 
@@ -171,6 +171,7 @@ PYTHONDONTWRITEBYTECODE=1 "$PYTHON_BIN" "$WORKFLOW_PY" \
   --apply-artifact-create \
   --publish-plan \
   --allow-news-unavailable \
+  --news-limit 8 \
   --news-recency-days 14 \
   --news-dedup-days 7 \
   --news-history-path "$WORK_DIR/news-history.json" \

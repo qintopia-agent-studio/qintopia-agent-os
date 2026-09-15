@@ -1,0 +1,44 @@
+{
+  "fixture_metadata": {
+    "sanitized": true,
+    "synthetic": true,
+    "mapping_ref": "fixtures/qiwe/event-mappings/group-member-add/v1-v2.mapping.json"
+  },
+  "event": {
+    "data": [
+      {
+        "cmd": 15000,
+        "msgType": 1002,
+        "msgUniqueIdentifier": "fixture-event-v1",
+        "fromRoomId": "fixture-room-a",
+        "timestamp": 1786669200,
+        "msgData": { "changedMemberList": "bWVtYmVyLWE7bWVtYmVyLWI=" }
+      },
+      {
+        "cmd": 15500,
+        "newMsgType": "GROUP_MEMBER_ADD",
+        "msgUniqueIdentifier": "fixture-event-v2",
+        "fromRoomId": "fixture-room-a",
+        "timestamp": 1786669260,
+        "msgData": { "changedMemberList": "bWVtYmVyLWM=" }
+      },
+      {
+        "cmd": 15500,
+        "newMsgType": "GROUP_MEMBER_REMOVE",
+        "msgUniqueIdentifier": "fixture-event-remove",
+        "fromRoomId": "fixture-room-a",
+        "timestamp": 1786669320,
+        "msgData": { "changedMemberList": "bWVtYmVyLWQ=" }
+      },
+      {
+        "cmd": 15500,
+        "msgType": 1002,
+        "newMsgType": "GROUP_MEMBER_REMOVE",
+        "msgUniqueIdentifier": "fixture-v2-remove-with-v1-code",
+        "fromRoomId": "fixture-room-a",
+        "timestamp": 1786669380,
+        "msgData": { "changedMemberList": "bWVtYmVyLWU=" }
+      }
+    ]
+  }
+}

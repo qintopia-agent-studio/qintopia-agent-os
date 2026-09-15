@@ -39,8 +39,14 @@ deployment docs.
   systemd cutover direction. Forward recurring-task changes now use the reviewed Hermes
   cron allowlist and apply scripts.
 - [production-runtime-one-shot-runbook.md](production-runtime-one-shot-runbook.md):
-  signed, owner-approved immediate production worker/backfill requests for fixed targets
-  after the corresponding reviewed recurrence is already enabled.
+  signed, owner-approved fixed production actions, including the default-disabled Qiwe
+  ingress apply/rollback boundary.
+- [qiwe-webhook-ingress-production-runbook.md](qiwe-webhook-ingress-production-runbook.md):
+  one-time disabled include bootstrap, authenticated exact-route apply/rollback, local
+  smokes, and the separate owner-reviewed provider callback command boundary.
+- [space-automation-runtime-production-runbook.md](space-automation-runtime-production-runbook.md):
+  default-disabled fixed activation, read-only observation, and fail-closed rollback for
+  the generic Space scheduler and capability-constrained execution worker.
 - [xiaoman-production-evidence-runbook.md](xiaoman-production-evidence-runbook.md):
   owner-operated Huabaosi canary, QiWe companion verification, real-activity retention,
   and final completion-manifest sequence. The same runbook also includes the reviewed

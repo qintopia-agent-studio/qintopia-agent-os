@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -8,6 +9,9 @@ import { spawnSync } from "node:child_process";
 const repoRoot = process.cwd();
 const script = path.join(repoRoot, "deploy/runner/wait-deploy-result.sh");
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-wait-result-test-"));
+const signingKey = "test-signing-key";
+const signingKeyId = "production";
+const createdAt = new Date().toISOString();
 
 const request = {
   schema_version: 1,
@@ -15,8 +19,8 @@ const request = {
   environment: "production",
   repository: "qintopia-agent-studio/qintopia-agent-os",
   requested_by: "codex",
-  created_at: "2026-07-24T01:02:03Z",
-  expires_at: "2099-07-24T02:02:03Z",
+  created_at: createdAt,
+  expires_at: new Date(Date.parse(createdAt) + 60 * 60 * 1000).toISOString(),
   commit_sha: "0123456789abcdef0123456789abcdef01234567",
   runtime_sha: "0123456789abcdef0123456789abcdef01234567",
   runtime_artifact_profile: "qiwe-production",
@@ -39,7 +43,7 @@ const request = {
     algorithm: "hmac-sha256",
     issuer: "github-actions",
     key_id: "production",
-    signed_at: "2026-07-24T01:02:03Z",
+    signed_at: createdAt,
     value: "0".repeat(64),
   },
 };
@@ -47,7 +51,41 @@ const request = {
 const requestFile = path.join(tmpRoot, "request.json");
 fs.writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, "utf8");
 
-const goodResult = {
+const canonicalJson = (value) => {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const signResult = (value) => {
+  const result = { ...value };
+  delete result.signature;
+  const signatureMetadata = {
+    algorithm: "hmac-sha256",
+    issuer: "qintopia-deploy-runner",
+    key_id: signingKeyId,
+    signed_at: result.finished_at,
+  };
+  return {
+    ...result,
+    signature: {
+      ...signatureMetadata,
+      value: crypto
+        .createHmac("sha256", signingKey)
+        .update(canonicalJson({ result, signature: signatureMetadata }))
+        .digest("hex"),
+    },
+  };
+};
+
+const goodResult = signResult({
   schema_version: 1,
   request_id: request.request_id,
   environment: "production",
@@ -65,11 +103,16 @@ const goodResult = {
   restart_targets: request.restart_targets,
   checks: [{ name: "deploy-runner", status: "passed" }],
   rollback: { attempted: false, status: "not_needed" },
-};
+});
 
-const badResult = {
+const badResult = signResult({
   ...goodResult,
   runtime_artifact_profile: "huabaosi-production",
+});
+
+const tamperedResult = {
+  ...goodResult,
+  status: "failed",
 };
 
 const invalidRequest = {
@@ -90,7 +133,7 @@ fs.writeFileSync(
   "utf8"
 );
 
-const normalizedValidationFailureResult = {
+const normalizedValidationFailureResult = signResult({
   schema_version: 1,
   request_id: invalidRequest.request_id,
   environment: "production",
@@ -109,12 +152,12 @@ const normalizedValidationFailureResult = {
   checks: [{ name: "deploy-request-validation", status: "failed" }],
   rollback: { attempted: false, status: "not_needed" },
   error: "deploy request key or identity is invalid",
-};
+});
 
-const badNormalizedValidationFailureResult = {
+const badNormalizedValidationFailureResult = signResult({
   ...normalizedValidationFailureResult,
   runtime_artifact_profile: "qiwe-production",
-};
+});
 
 const writeJson = (name, value) => {
   const filePath = path.join(tmpRoot, name);
@@ -124,6 +167,7 @@ const writeJson = (name, value) => {
 
 const goodResultFile = writeJson("good-result.json", goodResult);
 const badResultFile = writeJson("bad-result.json", badResult);
+const tamperedResultFile = writeJson("tampered-result.json", tamperedResult);
 const normalizedValidationFailureResultFile = writeJson(
   "normalized-validation-failure-result.json",
   normalizedValidationFailureResult
@@ -168,6 +212,8 @@ const run = (resultPath, runRequestFile = requestFile) =>
       TENCENT_COS_REGION: "ap-shanghai",
       TENCENT_COS_SECRET_ID: "test-secret-id",
       TENCENT_COS_SECRET_KEY: "test-secret-key",
+      DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+      DEPLOY_REQUEST_SIGNING_KEY_ID: signingKeyId,
       DEPLOY_RESULT_TIMEOUT_SECONDS: "5",
       DEPLOY_RESULT_POLL_SECONDS: "1",
     },
@@ -182,6 +228,16 @@ try {
   }
   if (!success.stdout.includes("Deploy result succeeded: succeeded")) {
     throw new Error("success path did not report succeeded status");
+  }
+
+  const tampered = run(tamperedResultFile);
+  if (
+    tampered.status === 0 ||
+    !tampered.stderr.includes("deploy result signature verification failed")
+  ) {
+    throw new Error(
+      `tampered result was not rejected by signature verification\n${tampered.stderr}`
+    );
   }
 
   const mismatch = run(badResultFile);

@@ -71,8 +71,47 @@ try {
     `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >>"${systemctlLog}"
+unit="\${@: -1}"
 case "$1" in
-  daemon-reload|enable|is-active) exit 0 ;;
+  daemon-reload|enable|disable|stop|reset-failed) exit 0 ;;
+  is-enabled) exit 1 ;;
+  is-active)
+    if [[ "$unit" == "qintopia-agentos-automation-dispatcher.timer" ]]; then
+      [[ "\${FAKE_SPACE_DISPATCHER_ACTIVE:-0}" == "1" ]]
+      exit
+    fi
+    if [[ "$unit" == "qintopia-agentos-automation-dispatcher.service" ]]; then
+      [[ "\${FAKE_SPACE_DISPATCHER_SERVICE_ACTIVE:-0}" == "1" ]]
+      exit
+    fi
+    if [[ "$unit" == "qintopia-agentos-space-automation-execution-worker.service" ]]; then
+      [[ "\${FAKE_SPACE_WORKER_ACTIVE:-0}" == "1" ]]
+      exit
+    fi
+    exit 0
+    ;;
+  show)
+    case "$2" in
+      --property=LoadState) printf 'loaded\\n' ;;
+      --property=UnitFileState) printf 'disabled\\n' ;;
+      --property=ActiveState)
+        state="inactive"
+        case "$unit" in
+          qintopia-agentos-automation-dispatcher.timer)
+            if [[ "\${FAKE_SPACE_DISPATCHER_ACTIVE:-0}" == "1" ]]; then state="active"; fi
+            ;;
+          qintopia-agentos-automation-dispatcher.service)
+            if [[ "\${FAKE_SPACE_DISPATCHER_SERVICE_ACTIVE:-0}" == "1" ]]; then state="active"; fi
+            ;;
+          qintopia-agentos-space-automation-execution-worker.service)
+            if [[ "\${FAKE_SPACE_WORKER_ACTIVE:-0}" == "1" ]]; then state="active"; fi
+            ;;
+        esac
+        printf '%s\\n' "$state"
+        ;;
+      *) exit 64 ;;
+    esac
+    ;;
   *) echo "unexpected systemctl command: $*" >&2; exit 64 ;;
 esac
 `
@@ -84,7 +123,19 @@ set -euo pipefail
 printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
 `
   );
-  fs.writeFileSync(envFile, "QINTOPIA_SIDECAR_DATABASE_URL=postgres://example\n");
+  writeExecutable(
+    path.join(tmpRoot, "bin", "install"),
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'install %s\\n' "$*" >>"${systemctlLog}"
+if [[ "\${FAKE_INSTALL_FAIL:-0}" == "1" ]]; then exit 76; fi
+exec /usr/bin/install "$@"
+`
+  );
+  fs.writeFileSync(
+    envFile,
+    "QINTOPIA_SIDECAR_DATABASE_URL=postgres://example\nQINTOPIA_SIDECAR_MIGRATIONS_DIR=/tmp/stale-checkout/migrations\n"
+  );
   fs.chmodSync(envFile, 0o600);
 
   const result = spawnSync(
@@ -134,7 +185,8 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
     path.join(unitDir, "qintopia-message-sidecar.service"),
     "utf8"
   );
-  const releaseExecPrefix = `/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha}`;
+  const migrationsBinding = `QINTOPIA_SIDECAR_MIGRATIONS_DIR=${resolvedReleaseDir}/runtime/postgres/migrations`;
+  const releaseExecPrefix = `/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha} ${migrationsBinding}`;
   for (const required of [
     `WorkingDirectory=${resolvedReleaseDir}`,
     `ExecStart=${releaseExecPrefix} QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA=${releaseSha} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run`,
@@ -143,10 +195,51 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       throw new Error(`sidecar unit is missing ${required}`);
     }
   }
+  const spaceAutomationExecutionUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-space-automation-execution-worker.service"),
+    "utf8"
+  );
+  const qiweCompanionBin = `${resolvedReleaseDir}/sidecar-profiles/qiwe-production/qintopia-message-sidecar`;
+  if (
+    !spaceAutomationExecutionUnit.includes(
+      `ExecStart=${releaseExecPrefix} ${qiweCompanionBin} run-space-automation-execution-worker --apply`
+    )
+  ) {
+    throw new Error(
+      "Space automation execution worker must use the release-bound QiWe companion"
+    );
+  }
   if (sidecarUnit.includes("Environment=QINTOPIA_DEPLOYED_COMMIT_SHA=")) {
     throw new Error(
       "sidecar unit must bind deployed commit SHA after EnvironmentFile at the exec boundary"
     );
+  }
+  const automationDispatcherUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-automation-dispatcher.service"),
+    "utf8"
+  );
+  if (
+    !automationDispatcherUnit.includes(
+      `ExecStart=${releaseExecPrefix} ${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run-automation-dispatcher --once --apply`
+    )
+  ) {
+    throw new Error(
+      "automation dispatcher unit must execute the release-bound generic dispatcher"
+    );
+  }
+  const automationDispatcherTimer = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-automation-dispatcher.timer"),
+    "utf8"
+  );
+  for (const required of [
+    "OnBootSec=1min",
+    "OnUnitActiveSec=1min",
+    "Persistent=true",
+    "Unit=qintopia-agentos-automation-dispatcher.service",
+  ]) {
+    if (!automationDispatcherTimer.includes(required)) {
+      throw new Error(`automation dispatcher timer is missing ${required}`);
+    }
   }
   const erhuaMorningBriefUnit = fs.readFileSync(
     path.join(unitDir, "qintopia-agentos-erhua-morning-brief.service"),
@@ -177,7 +270,49 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
     }
   }
   const systemctlLogText = fs.readFileSync(systemctlLog, "utf8");
-  if (systemctlLogText.includes("qintopia-agentos-erhua-morning-brief.timer")) {
+  const enabledUnit = (unitName) =>
+    systemctlLogText
+      .split("\n")
+      .some((line) => line.startsWith("enable ") && line.endsWith(unitName));
+  const firstShutdownIndex = systemctlLogText.indexOf(
+    "disable --now qintopia-agentos-automation-dispatcher.timer"
+  );
+  const firstInstallIndex = systemctlLogText.indexOf("install -m 0644");
+  const daemonReloadIndex = systemctlLogText.indexOf("daemon-reload");
+  if (
+    firstShutdownIndex < 0 ||
+    firstInstallIndex < 0 ||
+    daemonReloadIndex < 0 ||
+    firstShutdownIndex > firstInstallIndex ||
+    firstShutdownIndex > daemonReloadIndex
+  ) {
+    throw new Error(
+      "release installer must quiesce Space runtime before unit mutation"
+    );
+  }
+  for (const required of [
+    "disable --now qintopia-agentos-automation-dispatcher.timer",
+    "disable --now qintopia-agentos-space-automation-execution-worker.service",
+    "stop qintopia-agentos-automation-dispatcher.service",
+    "stop qintopia-agentos-space-automation-execution-worker.service",
+    "is-enabled --quiet qintopia-agentos-automation-dispatcher.timer",
+    "is-active --quiet qintopia-agentos-space-automation-execution-worker.service",
+  ]) {
+    if (!systemctlLogText.includes(required)) {
+      throw new Error(`release installer Space shutdown is missing ${required}`);
+    }
+  }
+  for (const forbidden of [
+    "enable qintopia-agentos-automation-dispatcher.timer",
+    "enable --now qintopia-agentos-automation-dispatcher.timer",
+    "enable qintopia-agentos-space-automation-execution-worker.service",
+    "enable --now qintopia-agentos-space-automation-execution-worker.service",
+  ]) {
+    if (systemctlLogText.includes(forbidden)) {
+      throw new Error(`release installer must not execute ${forbidden}`);
+    }
+  }
+  if (enabledUnit("qintopia-agentos-erhua-morning-brief.timer")) {
     throw new Error(
       "release installer must install but not enable Erhua morning brief"
     );
@@ -207,7 +342,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       throw new Error(`Xiaoman weekly recruitment timer is missing ${required}`);
     }
   }
-  if (systemctlLogText.includes("qintopia-agentos-xiaoman-weekly-recruitment.timer")) {
+  if (enabledUnit("qintopia-agentos-xiaoman-weekly-recruitment.timer")) {
     throw new Error(
       "release installer must install but not enable Xiaoman weekly recruitment"
     );
@@ -237,9 +372,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       throw new Error(`Xiaoman weekly plan confirmation timer is missing ${required}`);
     }
   }
-  if (
-    systemctlLogText.includes("qintopia-agentos-xiaoman-weekly-plan-confirmation.timer")
-  ) {
+  if (enabledUnit("qintopia-agentos-xiaoman-weekly-plan-confirmation.timer")) {
     throw new Error(
       "release installer must install but not enable Xiaoman weekly plan confirmation"
     );
@@ -269,7 +402,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       throw new Error(`Xiaoman weekly preview timer is missing ${required}`);
     }
   }
-  if (systemctlLogText.includes("qintopia-agentos-xiaoman-weekly-preview.timer")) {
+  if (enabledUnit("qintopia-agentos-xiaoman-weekly-preview.timer")) {
     throw new Error(
       "release installer must install but not enable Xiaoman weekly preview"
     );
@@ -395,11 +528,7 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       throw new Error(`daily case report timer is missing ${required}`);
     }
   }
-  if (
-    systemctlLogText.includes(
-      "qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer"
-    )
-  ) {
+  if (enabledUnit("qintopia-agentos-xiaoman-daily-case-report-auto-publish.timer")) {
     throw new Error("release installer must install but not enable daily case report");
   }
   for (const forbidden of [
@@ -525,6 +654,92 @@ printf 'chown %s\\n' "$*" >>"${envMetadataLog}"
       throw new Error(
         `release installer must not automatically enable Xiaoman poster unit ${unitName}`
       );
+    }
+  }
+
+  fs.writeFileSync(systemctlLog, "", "utf8");
+  const failedInstallResult = spawnSync(
+    "bash",
+    [
+      path.join(repoRoot, "deploy", "runner", "install-release-systemd-units.sh"),
+      "--release-root",
+      releaseRoot,
+      "--release-sha",
+      releaseSha,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}:${process.env.PATH}`,
+        SYSTEMCTL: systemctl,
+        QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+        QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE: envFile,
+        FAKE_INSTALL_FAIL: "1",
+      },
+      encoding: "utf8",
+    }
+  );
+  const failedInstallLog = fs.readFileSync(systemctlLog, "utf8");
+  if (
+    failedInstallResult.status === 0 ||
+    !failedInstallLog.includes("install -m 0644")
+  ) {
+    throw new Error("release installer fixture did not fail during unit installation");
+  }
+  const failedInstallShutdownIndex = failedInstallLog.indexOf(
+    "disable --now qintopia-agentos-automation-dispatcher.timer"
+  );
+  const failedInstallMutationIndex = failedInstallLog.indexOf("install -m 0644");
+  if (
+    failedInstallShutdownIndex < 0 ||
+    failedInstallMutationIndex < 0 ||
+    failedInstallShutdownIndex > failedInstallMutationIndex ||
+    failedInstallLog.includes("daemon-reload")
+  ) {
+    throw new Error("unit installation failure occurred before Space runtime quiesce");
+  }
+
+  fs.writeFileSync(systemctlLog, "", "utf8");
+  const stuckWorkerResult = spawnSync(
+    "bash",
+    [
+      path.join(repoRoot, "deploy", "runner", "install-release-systemd-units.sh"),
+      "--release-root",
+      releaseRoot,
+      "--release-sha",
+      releaseSha,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}:${process.env.PATH}`,
+        SYSTEMCTL: systemctl,
+        QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+        QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE: envFile,
+        FAKE_SPACE_WORKER_ACTIVE: "1",
+      },
+      encoding: "utf8",
+    }
+  );
+  const stuckWorkerLog = fs.readFileSync(systemctlLog, "utf8");
+  if (
+    stuckWorkerResult.status === 0 ||
+    !stuckWorkerResult.stderr.includes(
+      "could not prove the Space automation runtime is disabled"
+    )
+  ) {
+    throw new Error("release installer accepted a still-active Space execution worker");
+  }
+  for (const attempted of [
+    "disable --now qintopia-agentos-automation-dispatcher.timer",
+    "disable --now qintopia-agentos-space-automation-execution-worker.service",
+    "stop qintopia-agentos-automation-dispatcher.service",
+    "stop qintopia-agentos-space-automation-execution-worker.service",
+  ]) {
+    if (!stuckWorkerLog.includes(attempted)) {
+      throw new Error(`failed release shutdown did not attempt ${attempted}`);
     }
   }
 } finally {

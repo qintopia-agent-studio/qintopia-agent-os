@@ -11,12 +11,18 @@ on:
         description: >-
           Comma-separated fixed targets: erhua-morning-brief,xiaoman-weekly-recruitment,
           xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,
-          xiaoman-daily-case-report-auto-publish.
+          xiaoman-daily-case-report-auto-publish,space-automation-runtime.
         required: true
         default: erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview
         type: string
       notes:
         description: Operator notes for the activation request.
+        required: false
+        type: string
+      space_automation_runtime_approval:
+        description:
+          Required request-bound owner approval phrase for Space automation runtime
+          activation.
         required: false
         type: string
 
@@ -31,7 +37,6 @@ env:
     ${{ vars.TENCENT_COS_BUCKET || 'qintopia-agent-os-artifacts-1305166808' }}
   TENCENT_COS_REGION: ${{ vars.TENCENT_COS_REGION || 'ap-shanghai' }}
   TENCENT_COS_ENDPOINT: ${{ vars.TENCENT_COS_ENDPOINT || '' }}
-  WAIT_FOR_SERVER_DEPLOY_RESULT: ${{ vars.WAIT_FOR_SERVER_DEPLOY_RESULT || 'false' }}
 
 jobs:
   request-activation:
@@ -70,6 +75,8 @@ jobs:
           INPUT_RELEASE_SHA: ${{ github.event.inputs.release_sha || '' }}
           INPUT_ACTIVATION_TARGETS: ${{ github.event.inputs.activation_targets || '' }}
           INPUT_NOTES: ${{ github.event.inputs.notes || '' }}
+          INPUT_SPACE_AUTOMATION_RUNTIME_APPROVAL:
+            ${{ github.event.inputs.space_automation_runtime_approval || '' }}
         run: |
           set -euo pipefail
 
@@ -155,12 +162,25 @@ jobs:
           activation_targets="$(normalize_csv_allowlist \
             activation_targets \
             "$INPUT_ACTIVATION_TARGETS" \
-            "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish")"
+            "erhua-morning-brief,xiaoman-weekly-recruitment,xiaoman-weekly-plan-confirmation,xiaoman-weekly-preview,xiaoman-daily-case-report-auto-publish,space-automation-runtime")"
+          if [[ "$activation_targets" == *"space-automation-runtime"* && "$activation_targets" != "space-automation-runtime" ]]; then
+            echo "space-automation-runtime must be the sole activation target when selected." >&2
+            exit 2
+          fi
+          if [[ "$activation_targets" == "space-automation-runtime" && "$INPUT_SPACE_AUTOMATION_RUNTIME_APPROVAL" != "approved-production-space-automation-runtime" ]]; then
+            echo "space_automation_runtime_approval must be the exact request-bound owner approval phrase when Space automation runtime is selected." >&2
+            exit 2
+          fi
+          if [[ "$activation_targets" != "space-automation-runtime" && -n "$INPUT_SPACE_AUTOMATION_RUNTIME_APPROVAL" ]]; then
+            echo "space_automation_runtime_approval is only valid for Space automation runtime." >&2
+            exit 2
+          fi
 
           notes_delimiter="activation_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {
             echo "release-sha=${release_sha}"
             echo "activation-targets=${activation_targets}"
+            echo "space-automation-runtime-approval=${INPUT_SPACE_AUTOMATION_RUNTIME_APPROVAL}"
             echo "notes<<${notes_delimiter}"
             echo "$INPUT_NOTES"
             echo "${notes_delimiter}"
@@ -197,6 +217,8 @@ jobs:
           DEPLOY_DRY_RUN: "false"
           DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: "false"
           DEPLOY_ACTIVATION_TARGETS: ${{ steps.resolve.outputs.activation-targets }}
+          DEPLOY_SPACE_AUTOMATION_RUNTIME_APPROVAL:
+            ${{ steps.resolve.outputs.space-automation-runtime-approval }}
           DEPLOY_NOTES: ${{ steps.resolve.outputs.notes }}
           GITHUB_ACTOR: ${{ github.actor }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
@@ -216,7 +238,6 @@ jobs:
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
 
       - name: Wait for server activation result
-        if: ${{ env.WAIT_FOR_SERVER_DEPLOY_RESULT == 'true' }}
         run:
           deploy/runner/wait-deploy-result.sh --request-file
           dist/deploy-requests/request.json
@@ -226,6 +247,8 @@ jobs:
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
           TENCENT_COS_SECRET_KEY: ${{ secrets.TENCENT_COS_SECRET_KEY }}
           TENCENT_COS_ENDPOINT: ${{ env.TENCENT_COS_ENDPOINT }}
+          DEPLOY_REQUEST_SIGNING_KEY: ${{ secrets.DEPLOY_REQUEST_SIGNING_KEY }}
+          DEPLOY_REQUEST_SIGNING_KEY_ID: production
           DEPLOY_RESULT_TIMEOUT_SECONDS:
             ${{ vars.DEPLOY_RESULT_TIMEOUT_SECONDS || '900' }}
           DEPLOY_RESULT_POLL_SECONDS: ${{ vars.DEPLOY_RESULT_POLL_SECONDS || '15' }}
