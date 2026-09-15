@@ -36,6 +36,32 @@
 - Historical POC material: `deprecated/`
 - Local business testing guide: `docs/testing/README.md`
 
+## Worktree Lifecycle
+
+- Reuse the project root or an existing suitable worktree by default, developing on a
+  feature branch. A new task, branch, or PR alone does not justify another worktree.
+- Create one only for explicit user-requested isolation, parallel work requiring
+  independent file states, uncommitted work that blocks safe progress, or simultaneous
+  execution of different versions. Inspect `git worktree list`, branches, and local
+  changes first; unrelated dirty files alone do not require isolation.
+- Before creating one, state the concrete reason, path, branch, and cleanup condition.
+  Proceed within existing task authorization without adding a step-by-step approval
+  gate. Put manually managed worktrees in the target repository's ignored
+  `.worktrees/<task>/`, not long-lived `/tmp` or `/private/tmp` directories. Preserve
+  user-specified or app-managed directory conventions.
+- At handoff, check actual PR merge status (including squash merges), local changes,
+  untracked and ignored configuration/evidence, and running previews. Retire only this
+  task's completed, recoverable worktrees; retain pending acceptance work with its
+  purpose recorded. Archive local material under ignored `.local-workspace/`; never
+  commit credentials or business snapshots with source changes.
+- PR merge, task archival, and worktree cleanup are separate actions. Preserve all local
+  work before restoring the ordinary project entrypoint to current `master` without
+  disrupting another task. Never force-overwrite work or delete historical branches as
+  an implicit side effect.
+- For cross-repository work, resolve the target Git root and read its `AGENTS.md`. Codex
+  project grouping does not change filesystem ancestry or Git boundaries. When operating
+  on Green PMS, follow its worktree policy and `main`/PR requirements too.
+
 ## Commands
 
 - Install dependencies: `pnpm install`
