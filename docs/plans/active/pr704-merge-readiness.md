@@ -44,3 +44,14 @@ do not reverse applied production schema or delete identity history.
 Current evidence: [integration report](../../reports/2026-09-15-pr704-integration.md).
 Browser acceptance is blocked by the Chrome plugin authentication error; retain draft
 until this acceptance and remote checks are complete.
+
+## Reviewer follow-up
+
+- Fix admission of an existing baseline/readback case when a later eligible live event
+  arrives; cover negative admission gates, stable case identity, and replay behavior.
+- Move the two study documents into `docs/architecture/study-notes/`, label their
+  historical scope, repair links, and connect the architecture index.
+- Fix PostgreSQL CI's expiry fixture to expire the current reassigned appointment,
+  rather than a previous appointment that may have been replaced.
+- Run targeted PostgreSQL suites and repository checks, then push and re-read CI and the
+  reviewer guide for the updated head. Update the description with actual results.

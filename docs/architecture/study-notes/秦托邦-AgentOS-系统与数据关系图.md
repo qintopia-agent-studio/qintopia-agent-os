@@ -473,13 +473,13 @@ flowchart TB
 
 以下是本次核对的本地来源。较早设计文档中的上线进度描述只作历史背景；表名和结构优先对照迁移与现有代码。
 
-- [整体架构](</Users/feather/Documents/Codex project/qintopia-agent-os/docs/architecture/agent-os-overview.md>)
-- [Agent OS 数据分区与身份设计](</Users/feather/Documents/Codex project/qintopia-agent-os/runtime/postgres/docs/data-design/2026-06-24-agent-os-data-layer-v2.md>)
-- [人员与知识等结构迁移](</Users/feather/Documents/Codex project/qintopia-agent-os/runtime/postgres/migrations/202606240002_agent_os_data_layer.sql>)
-- [消息结构迁移](</Users/feather/Documents/Codex project/qintopia-agent-os/runtime/postgres/migrations/202606180001_init.sql>)
-- [活动线索结构迁移](</Users/feather/Documents/Codex project/qintopia-agent-os/runtime/postgres/migrations/202606270005_event_signals_v2.sql>)
-- [多智能体协作表结构](</Users/feather/Documents/Codex project/qintopia-agent-os/runtime/postgres/migrations/202606300007_operations_control_plane.sql>)
-- [小满活动能力](</Users/feather/Documents/Codex project/qintopia-agent-os/skills/xiaoman-activity/README.md>)
-- [入住智能体集成方案，作为讨论输入](</Users/feather/Documents/Codex project/Green PMS/待开发项/入住智能体-集成方案结论.md>)
+- [整体架构](../../../docs/architecture/agent-os-overview.md)
+- [Agent OS 数据分区与身份设计](../../../runtime/postgres/docs/data-design/2026-06-24-agent-os-data-layer-v2.md)
+- [人员与知识等结构迁移](../../../runtime/postgres/migrations/202606240002_agent_os_data_layer.sql)
+- [消息结构迁移](../../../runtime/postgres/migrations/202606180001_init.sql)
+- [活动线索结构迁移](../../../runtime/postgres/migrations/202606270005_event_signals_v2.sql)
+- [多智能体协作表结构](../../../runtime/postgres/migrations/202606300007_operations_control_plane.sql)
+- [小满活动能力](../../../skills/xiaoman-activity/README.md)
+- 入住智能体集成方案：外部 Green PMS 讨论材料，未收录于本仓库。
 
 本文包含 10 张 Mermaid 图。在支持 Mermaid 的 Markdown 阅读器中可以直接显示；不支持时会看到对应的图形源码。

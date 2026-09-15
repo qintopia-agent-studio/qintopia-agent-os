@@ -313,7 +313,9 @@ impl Store {
             // not turn a booking member or a display name into a confirmed Person.
             sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref) VALUES ($1,'pms_occupant',$2) ON CONFLICT DO NOTHING")
                 .bind(&namespace).bind(&occupant.id).execute(&mut *tx).await?;
-            let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.welcome_cases(source_instance,property_id,order_id,stay_id,occupant_id,admitted,manual_hold) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (source_instance,property_id,stay_id,occupant_id) DO UPDATE SET order_id=EXCLUDED.order_id,manual_hold=qintopia_agent_os.welcome_cases.manual_hold OR EXCLUDED.manual_hold RETURNING id")
+            // A later eligible live event can admit an existing baseline case.
+            // Readbacks cannot grant admission or erase an earlier admission/hold.
+            let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.welcome_cases(source_instance,property_id,order_id,stay_id,occupant_id,admitted,manual_hold) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (source_instance,property_id,stay_id,occupant_id) DO UPDATE SET order_id=EXCLUDED.order_id,admitted=qintopia_agent_os.welcome_cases.admitted OR EXCLUDED.admitted,manual_hold=qintopia_agent_os.welcome_cases.manual_hold OR EXCLUDED.manual_hold RETURNING id")
                 .bind(&snapshot.source).bind(&snapshot.property).bind(&snapshot.order).bind(&snapshot.stay).bind(&occupant.id).bind(admitted)
                 .bind(!occupant.active || e.as_ref().is_some_and(|e| matches!(e.event_type.as_str(),"pms.stay.check_in_revoked"|"pms.stay.check_out_revoked"|"pms.order.occupants_changed")))
                 .fetch_one(&mut *tx).await?;

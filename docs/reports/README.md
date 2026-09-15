@@ -1,5 +1,7 @@
 # Reports
 
+- [PR #704 Reviewer 建议处理](2026-09-15-pr704-review-followup.md)
+
 - [PR #704 主线集成与验证](2026-09-15-pr704-integration.md)
 
 - [2026-09-15 PR #704 根规则删减评估](2026-09-15-pr704-agents-review.md)

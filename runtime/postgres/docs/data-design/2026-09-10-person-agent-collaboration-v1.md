@@ -246,7 +246,7 @@ profile、Base、Workflow、PMS 或渠道配置，不发外部消息。旧生产
 - 五份本轮文档的 Prettier 定向检查通过；20 个本地文档链接及标题锚点检查通过；`git diff --check`
   通过。
 - `pnpm check:pr:quick` 在全仓格式检查阶段失败：既有
-  `xiaoman-minimal-activity-reminder-workflow.md` 和 `研究学习/`
+  `xiaoman-minimal-activity-reminder-workflow.md` 和 `docs/architecture/study-notes/`
   下两份笔记有格式问题。本轮保留这些无关文件，其后的 quick 检查未执行。
 - 定向 Markdown lint 未能启动：Node 报 markdownlint 依赖
   `ERR_INVALID_PACKAGE_CONFIG`；其 package 文件可读不等于 lint 已运行通过。本轮未修改依赖环境。

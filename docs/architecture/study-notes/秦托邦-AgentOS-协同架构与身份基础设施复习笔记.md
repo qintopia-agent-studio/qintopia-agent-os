@@ -50,9 +50,9 @@ OS 的统一人员身份、Agent 协作、WorkItem、MCP/Tool 与 Hermes 边界�
 核心证据：
 
 - [项目 README](../README.md)
-- [Agent OS Architecture Overview](../docs/architecture/agent-os-overview.md)
-- [Agent Contracts](../docs/agent-os/agent-contracts.md)
-- [Operations control plane migration](../runtime/postgres/migrations/202606300007_operations_control_plane.sql)
+- [Agent OS Architecture Overview](../../architecture/agent-os-overview.md)
+- [Agent Contracts](../../agent-os/agent-contracts.md)
+- [Operations control plane migration](../../../runtime/postgres/migrations/202606300007_operations_control_plane.sql)
 
 ## 三、为什么 Agent OS 适合做“合作智能总线”
 
@@ -420,10 +420,10 @@ OS。不要把业务状态只保存在 cron 文件、prompt 或本地缓存中�
 ## 十二、推荐阅读顺序
 
 1. [秦托邦 AgentOS 系统与数据关系图](秦托邦-AgentOS-系统与数据关系图.md)
-2. [Agent OS Architecture Overview](../docs/architecture/agent-os-overview.md)
-3. [Agent Contracts](../docs/agent-os/agent-contracts.md)
-4. [Operations control plane migration](../runtime/postgres/migrations/202606300007_operations_control_plane.sql)
-5. [QiWe architecture](../skills/qiwe/docs/architecture.md)
-6. [QiWe Hermes platform plugin plan](../skills/qiwe/docs/plans/active/qiwe-hermes-platform-plugin.md)
-7. [Activity promotion control plane](../workflows/activity-promotion/docs/agentos-operations-control-plane.md)
-8. [Unified person identity foundation assessment](../docs/plans/active/unified-person-identity-foundation-assessment.md)
+2. [Agent OS Architecture Overview](../../architecture/agent-os-overview.md)
+3. [Agent Contracts](../../agent-os/agent-contracts.md)
+4. [Operations control plane migration](../../../runtime/postgres/migrations/202606300007_operations_control_plane.sql)
+5. [QiWe architecture](../../../skills/qiwe/docs/architecture.md)
+6. [QiWe Hermes platform plugin plan](../../../skills/qiwe/docs/plans/active/qiwe-hermes-platform-plugin.md)
+7. [Activity promotion control plane](../../../workflows/activity-promotion/docs/agentos-operations-control-plane.md)
+8. [Unified person identity foundation assessment](../../plans/active/unified-person-identity-foundation-assessment.md)

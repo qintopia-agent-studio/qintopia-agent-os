@@ -219,6 +219,129 @@ fn scan_rejects_wrong_scope_reordering_and_empty_progress() {
 #[cfg(feature = "postgres-integration-tests")]
 #[tokio::test]
 #[ignore = "requires explicitly isolated local qintopia_test"]
+async fn resident_welcome_postgres_existing_case_live_admission() -> anyhow::Result<()> {
+    use sqlx::Row;
+    let database = crate::foundation_test_support::database_url("QINTOPIA_WELCOME_TEST")?;
+    let store = store::Store::local(&database).await?;
+    crate::db::run_migrations(&store.pool).await?;
+    let source = format!("synthetic-admission-{}", Uuid::new_v4());
+    let property = "fixture-property";
+    sqlx::query("INSERT INTO qintopia_agent_os.welcome_sources(source_instance,property_id,mode,rebuilding,enabled,admission_after) VALUES ($1,$2,'synthetic',false,true,now()-interval '1 day')")
+        .bind(&source).bind(property).execute(&store.pool).await?;
+    let mut snapshot = projection::normalize(&order_fixture(&source))?;
+    snapshot.source_hash = None;
+    snapshot.revision = "1".into();
+    let cases = store.apply_snapshot(None, &snapshot).await?;
+    assert!(!cases.is_empty());
+    for case in &cases {
+        assert!(store
+            .evaluate(*case)
+            .await?
+            .reasons
+            .contains(&"not_admitted".into()));
+    }
+    // Admission is independent of a retained manual hold and must never clear it.
+    sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET manual_hold=true WHERE id=ANY($1)")
+        .bind(&cases)
+        .execute(&store.pool)
+        .await?;
+    for (index, (origin, event_type, enabled, rebuilding, old, expected)) in [
+        ("baseline", "pms.order.created", true, false, false, false),
+        (
+            "historical_correction",
+            "pms.order.created",
+            true,
+            false,
+            false,
+            false,
+        ),
+        (
+            "live",
+            "pms.order.context_changed",
+            true,
+            false,
+            false,
+            false,
+        ),
+        ("live", "pms.order.created", false, false, false, false),
+        ("live", "pms.order.created", true, true, false, false),
+        ("live", "pms.order.created", true, false, true, false),
+        ("live", "pms.order.created", true, false, false, true),
+        (
+            "historical_correction",
+            "pms.order.context_changed",
+            true,
+            false,
+            false,
+            true,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        sqlx::query("UPDATE qintopia_agent_os.welcome_sources SET enabled=$2,rebuilding=$3 WHERE source_instance=$1")
+            .bind(&source).bind(enabled).bind(rebuilding).execute(&store.pool).await?;
+        let revision = (index + 10).to_string();
+        let mut raw: Value = serde_json::from_slice(&raw_event(
+            &source,
+            &format!("admission-{index}"),
+            &revision,
+            event_type,
+        ))?;
+        raw["origin"] = json!(origin);
+        if old {
+            raw["recorded_at"] = json!(Utc::now() - chrono::Duration::days(2));
+        }
+        let event =
+            protocol::VerifiedEvent::from_feed(&serde_json::to_vec(&raw)?, &source, property)?;
+        store.accept(&event).await?;
+        let claim = store
+            .claim(&source, property, Uuid::new_v4())
+            .await?
+            .unwrap();
+        snapshot.revision = revision;
+        snapshot.observed_at = Utc::now();
+        assert_eq!(store.consume_snapshot(&claim, &snapshot).await?, cases);
+        // Replay cannot queue new work; a readback cannot remove admission.
+        store.accept(&event).await?;
+        assert!(store
+            .claim(&source, property, Uuid::new_v4())
+            .await?
+            .is_none());
+        assert_eq!(store.apply_snapshot(None, &snapshot).await?, cases);
+        for case in &cases {
+            let row = sqlx::query(
+                "SELECT admitted,manual_hold FROM qintopia_agent_os.welcome_cases WHERE id=$1",
+            )
+            .bind(case)
+            .fetch_one(&store.pool)
+            .await?;
+            assert_eq!(row.get::<bool, _>("admitted"), expected, "scenario {index}");
+            assert!(row.get::<bool, _>("manual_hold"));
+            let readiness = store.evaluate(*case).await?;
+            assert_eq!(
+                readiness.reasons.contains(&"not_admitted".into()),
+                !expected
+            );
+            assert!(
+                !readiness.card_ready,
+                "admission must not bypass identity/hold gates"
+            );
+        }
+    }
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM qintopia_agent_os.welcome_cases WHERE source_instance=$1",
+    )
+    .bind(&source)
+    .fetch_one(&store.pool)
+    .await?;
+    assert_eq!(count as usize, cases.len());
+    Ok(())
+}
+
+#[cfg(feature = "postgres-integration-tests")]
+#[tokio::test]
+#[ignore = "requires explicitly isolated local qintopia_test"]
 async fn resident_welcome_postgres_scan_resume_and_scoped_worker() -> anyhow::Result<()> {
     use sqlx::Row;
     use std::sync::Arc;

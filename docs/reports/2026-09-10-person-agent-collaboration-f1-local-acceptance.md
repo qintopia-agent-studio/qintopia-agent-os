@@ -51,8 +51,8 @@ import 指向隔离副本，源码、检查规则和工作目录不变。未改�
 `pnpm check:pr:quick` 仍停在全仓格式检查，原因是本轮之前已存在的三份文件：
 
 - `docs/plans/active/xiaoman-minimal-activity-reminder-workflow.md`
-- `研究学习/秦托邦-AgentOS-协同架构与身份基础设施复习笔记.md`
-- `研究学习/秦托邦-AgentOS-系统与数据关系图.md`
+- `docs/architecture/study-notes/秦托邦-AgentOS-协同架构与身份基础设施复习笔记.md`
+- `docs/architecture/study-notes/秦托邦-AgentOS-系统与数据关系图.md`
 
 保留这些无关改动，不能将整个项目聚合检查记为通过。相关 Rust、隔离数据库和专项检查分别执行，上表不是全部生产验收。
 

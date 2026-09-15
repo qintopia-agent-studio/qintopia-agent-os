@@ -775,14 +775,17 @@ async fn permission_modes_persist_and_reviewer_loss_never_becomes_autonomy() -> 
         "autonomous"
     );
     reviewer.collaboration = Some(id(&reviewer_saved["change"]["collaboration"]));
-    save(&store, &owner, Change::Assign(Box::new(reviewer))).await?;
+    // Renewing a term can replace the appointment. Expire the returned current
+    // appointment, never the earlier fixture (timestamp precision differs by host).
+    reviewer.valid_until = Some(Utc::now() + Duration::hours(2));
+    let renewed = save(&store, &owner, Change::Assign(Box::new(reviewer))).await?;
     assert_eq!(
         store.decision(&owner, relation, "train").await?["status"],
         "confirmation_required"
     );
     // Synthetic time fixture: expiry is read at decision time, without relying on a new UI save.
     sqlx::query("UPDATE qintopia_agent_os.collaboration_appointments SET valid_from=clock_timestamp()-interval '2 hours',valid_until=clock_timestamp()-interval '1 hour' WHERE tenant_key=$1 AND id=$2")
-        .bind(&store.tenant).bind(id(&reviewer_saved["change"]["appointment"])).execute(&store.pool).await?;
+        .bind(&store.tenant).bind(id(&renewed["change"]["appointment"])).execute(&store.pool).await?;
     assert_eq!(
         store.decision(&owner, relation, "train").await?["status"],
         "denied"

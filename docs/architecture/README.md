@@ -18,6 +18,10 @@ review and source classification.
 - [../operations/runtime-baseline.md](../operations/runtime-baseline.md): production
   runtime baseline and migration implications.
 
+## Study Notes
+
+- [Agent OS 架构学习笔记](study-notes/README.md)：人员与系统数据关系的研究背景，不替代当前架构和生产状态。
+
 ## Adoption Notes
 
 - Local architecture documents are the default canonical input when they conflict with

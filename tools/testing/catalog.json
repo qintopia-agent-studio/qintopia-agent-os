@@ -691,6 +691,29 @@
               "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
             ]
           }
+        },
+        {
+          "id": "resident-welcome/resident-welcome-postgres-existing-case-live-admission",
+          "name": "已有案例的实时准入与回放边界",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::tests::resident_welcome_postgres_existing_case_live_admission",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["住宿欢迎流程的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
         }
       ]
     }
