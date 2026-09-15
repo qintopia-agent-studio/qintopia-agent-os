@@ -9,6 +9,7 @@ const repoRoot = process.cwd();
 const errors = [];
 
 const workflows = [
+  "workflows/resident-welcome",
   "workflows/activity-promotion",
   "workflows/erhua-consultation",
   "workflows/erhua-morning-brief",

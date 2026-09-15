@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>秦托邦 · 组织与智能体</title>
+    <link rel="stylesheet" href="/workbench.css" />
+    <script src="/workbench-view.js" defer></script>
+    <script src="/workbench-organization.js" defer></script>
+    <script src="/workbench-catalog.js" defer></script>
+    <script src="/workbench.js" defer></script>
+  </head>
+  <body>
+    <div id="qt-org-scope">
+      <header class="qo-top">
+        <div class="qo-brand">秦托邦 · 组织与智能体</div>
+        <span class="qo-caption">本地合成资料 · 配置持久保存 · 真实智能体未接入</span>
+      </header>
+      <nav class="qo-tabs" role="tablist" aria-label="组织管理">
+        <button
+          id="tab-overview"
+          role="tab"
+          aria-controls="overview"
+          aria-selected="true"
+          data-page="overview"
+        >
+          组织关系</button
+        ><button
+          id="tab-settings"
+          role="tab"
+          aria-controls="settings"
+          aria-selected="false"
+          tabindex="-1"
+          data-page="settings"
+        >
+          配置任职与范围</button
+        ><button
+          id="tab-ledger"
+          role="tab"
+          aria-controls="ledger"
+          aria-selected="false"
+          tabindex="-1"
+          data-page="ledger"
+        >
+          基础台账
+        </button>
+      </nav>
+      <div id="notice" role="status" aria-live="polite">正在读取本地配置……</div>
+      <div id="recovery" class="qo-actions" hidden>
+        <button id="reload-state">重新读取配置</button
+        ><span class="qo-sub">未保存的输入保留；读取后须重新预览。</span>
+      </div>
+      <main id="workspace" aria-busy="true">
+        <section
+          id="overview"
+          class="qo-page"
+          role="tabpanel"
+          aria-labelledby="tab-overview"
+        ></section>
+        <section
+          id="settings"
+          class="qo-page"
+          role="tabpanel"
+          aria-labelledby="tab-settings"
+          hidden
+        ></section>
+        <section
+          id="ledger"
+          class="qo-page"
+          role="tabpanel"
+          aria-labelledby="tab-ledger"
+          hidden
+        ></section>
+      </main>
+      <footer class="qo-foot">
+        <span>登记不自动授予权限；解除关联不删除对象。</span
+        ><span id="result">尚未读取配置</span>
+      </footer>
+    </div>
+  </body>
+</html>

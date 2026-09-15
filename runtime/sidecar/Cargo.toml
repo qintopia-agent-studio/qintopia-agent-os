@@ -10,6 +10,7 @@ serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 
 [features]
+welcome-synthetic-driver = []
 huabaosi-wecom-canary-gateway = []
 postgres-integration-tests = []
 huabaosi-production-adapter = []
@@ -34,7 +35,7 @@ image = { version = "=0.25.10", default-features = false, features = ["jpeg", "p
 md-5 = "=0.10.6"
 rustls = { version = "=0.23.41", default-features = false, features = ["logging", "ring", "std", "tls12"] }
 serde = { version = "=1.0.228", features = ["derive"] }
-serde_json = "=1.0.150"
+serde_json = { version = "=1.0.150", features = ["raw_value"] }
 sha2 = "=0.10.8"
 sqlx = { version = "=0.8.6", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "chrono", "uuid", "migrate"] }
 tempfile = "=3.10.1"

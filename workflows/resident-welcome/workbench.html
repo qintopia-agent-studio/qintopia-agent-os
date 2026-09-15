@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>入住欢迎 · 人工工作台</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #f4f6f2;
+      color: #233b32;
+      font:
+        16px/1.6 system-ui,
+        sans-serif;
+    }
+    main {
+      max-width: 980px;
+      margin: 32px auto;
+      padding: 24px;
+    }
+    header {
+      margin-bottom: 24px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+    }
+    p {
+      margin: 6px 0;
+    }
+    section {
+      margin-top: 20px;
+      padding: 24px;
+      background: white;
+      border: 1px solid #dce3dc;
+      border-radius: 16px;
+    }
+    label {
+      display: block;
+      margin-top: 16px;
+    }
+    select,
+    input,
+    button {
+      width: 100%;
+      max-width: 100%;
+      min-height: 44px;
+      font: inherit;
+      padding: 10px;
+      margin-top: 5px;
+      border: 1px solid #a7b7ad;
+      border-radius: 8px;
+    }
+    button {
+      color: white;
+      background: #285f48;
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .secondary {
+      background: white;
+      color: #285f48;
+    }
+    .status {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .muted {
+      color: #627269;
+      font-size: 14px;
+    }
+    @media (max-width: 600px) {
+      main {
+        padding: 12px;
+        margin: 12px auto;
+      }
+      section {
+        padding: 16px;
+      }
+    }
+  </style>
+  <main>
+    <header>
+      <h1>入住欢迎 · 人工工作台</h1>
+      <p>核对本次入住人、申请与授权，分别查看各群的准备状态。</p>
+      <p class="muted">本地合成验收环境</p>
+    </header>
+    <section>
+      <h2>人员与本次住宿</h2>
+      <label>本次住宿<select id="cases" aria-label="本次住宿"></select></label>
+      <p id="readiness" class="status" role="status"></p>
+      <label
+        >姓名或昵称<input
+          id="query"
+          type="search"
+          placeholder="查找当前范围内的候选人"
+          maxlength="100"
+      /></label>
+      <button id="search" class="secondary">查找候选人</button>
+      <label>候选人员<select id="people" aria-label="候选人员"></select></label>
+      <label
+        >需核对的来源<select id="identities" aria-label="需核对的来源"></select
+      ></label>
+      <button id="identity" class="secondary">确认属于所选候选人</button>
+      <label
+        >未找到已有人员时的称呼<input
+          id="new-person"
+          maxlength="80"
+          placeholder="仅用于新人员显示，不按姓名合并"
+      /></label>
+      <button id="create-person" class="secondary">创建人员并确认所选来源</button>
+      <button id="revoke-identity" class="secondary">撤销所选来源确认</button>
+      <label>已核对的来源身份<select id="links" aria-label="来源身份"></select></label>
+      <label
+        >本次使用的有效申请<select id="applications" aria-label="本次申请"></select
+      ></label>
+      <button id="bind">确认本次关联</button>
+      <p class="muted">姓名只用于查找；确认仅作用于所选入住人和本次住宿。</p>
+    </section>
+    <section>
+      <h2>审核与发布</h2>
+      <label>待审核产物<select id="artifacts" aria-label="待审核产物"></select></label>
+      <p id="preview" class="status"></p>
+      <label>发布目标<select id="targets" aria-label="发布目标"></select></label>
+      <label
+        >阶段<select id="phase">
+          <option value="formal">正式欢迎</option>
+          <option value="preview">入住预告</option>
+          <option value="internal">内部协作</option>
+        </select></label
+      >
+      <button id="approve">批准所选版本与目标</button>
+      <p class="muted">审批会绑定当前版本；缺少范围授权或条件时，服务端保留待处理。</p>
+    </section>
+    <section>
+      <h2>操作结果</h2>
+      <p id="result" class="status" role="status">正在加载…</p>
+    </section>
+  </main>
+  <script>
+    const el = (id) => document.getElementById(id);
+    let state = {};
+    function options(id, rows) {
+      el(id).replaceChildren(
+        ...rows.map((r) => {
+          const option = document.createElement("option");
+          option.value = r.ref;
+          option.textContent = r.label;
+          return option;
+        })
+      );
+    }
+    const pendingOperations = new Map();
+    async function api(path, body) {
+      const key = path + JSON.stringify(body || null);
+      if (body && !pendingOperations.has(key))
+        pendingOperations.set(key, crypto.randomUUID());
+      const response = await fetch("/welcome/local/" + path, {
+        method: body ? "POST" : "GET",
+        headers: { "Content-Type": "application/json" },
+        body: body
+          ? JSON.stringify({ ...body, operation_id: pendingOperations.get(key) })
+          : undefined,
+        credentials: "same-origin",
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.code || "操作未完成");
+      pendingOperations.delete(key);
+      return result;
+    }
+    async function refresh() {
+      state = await api("state");
+      for (const name of [
+        "cases",
+        "people",
+        "identities",
+        "links",
+        "applications",
+        "artifacts",
+        "targets",
+      ])
+        options(name, state[name]);
+      el("result").textContent = "已载入当前授权范围。";
+      for (const id of ["bind", "approve"]) el(id).disabled = !state.cases.length;
+      readiness();
+      preview();
+      identityReadiness();
+    }
+    function readiness() {
+      const row = (state.cases || []).find((r) => r.ref === el("cases").value);
+      el("readiness").textContent = row ? row.readiness : "当前没有待处理住宿。";
+    }
+    el("cases").onchange = readiness;
+    function identityReadiness() {
+      const row = (state.identities || []).find(
+        (r) => r.ref === el("identities").value
+      );
+      el("identity").disabled =
+        !row || !el("people").value || row.status === "confirmed";
+      el("create-person").disabled =
+        !row || row.status !== "pending" || !el("new-person").value.trim();
+      el("revoke-identity").disabled = !row || row.status !== "confirmed";
+    }
+    el("identities").onchange = identityReadiness;
+    el("people").onchange = identityReadiness;
+    el("new-person").oninput = identityReadiness;
+    for (const name of ["identity", "create-person", "revoke-identity"])
+      el(name).onclick = () =>
+        run(async () => {
+          const row = state.identities.find((r) => r.ref === el("identities").value);
+          const result = await api("identity", {
+            link_ref: row.ref,
+            expected_version: row.version,
+            person_ref:
+              name === "create-person"
+                ? null
+                : name === "revoke-identity"
+                  ? row.person_ref
+                  : el("people").value,
+            new_person_label: name === "create-person" ? el("new-person").value : null,
+            revoke: name === "revoke-identity",
+          });
+          el("new-person").value = "";
+          await refresh();
+          el("result").textContent = result.message;
+        });
+    function preview() {
+      const row = (state.artifacts || []).find((r) => r.ref === el("artifacts").value);
+      el("preview").textContent =
+        row?.preview || "当前附件未连接可验证预览，暂不能在此审核。";
+      el("approve").disabled = !row?.preview;
+    }
+    el("artifacts").onchange = preview;
+    el("search").onclick = () =>
+      run(async () =>
+        options(
+          "people",
+          await api("people?query=" + encodeURIComponent(el("query").value))
+        )
+      );
+    el("bind").onclick = () =>
+      run(async () => {
+        const row = state.cases.find((r) => r.ref === el("cases").value);
+        const result = await api("bind", {
+          case_ref: row.ref,
+          expected_version: row.version,
+          person_ref: el("people").value,
+          link_ref: el("links").value,
+          application_ref: el("applications").value,
+        });
+        await refresh();
+        el("result").textContent = result.message;
+      });
+    el("approve").onclick = () =>
+      run(async () => {
+        const artifact = state.artifacts.find((r) => r.ref === el("artifacts").value);
+        const target = state.targets.find((r) => r.ref === el("targets").value);
+        const result = await api("approve", {
+          artifact_ref: artifact.ref,
+          content_hash: artifact.content_hash,
+          target_ref: target.ref,
+          target_version: target.version,
+          phase: el("phase").value,
+        });
+        el("result").textContent = result.message;
+      });
+    async function run(fn) {
+      try {
+        await fn();
+      } catch (error) {
+        el("result").textContent = error.message;
+      }
+    }
+    run(refresh);
+  </script>
+</html>

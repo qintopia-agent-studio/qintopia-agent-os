@@ -1,0 +1,92 @@
+{
+  "kind": "confirmed-workbench-source-recovery",
+  "date": "2026-09-14",
+  "baseline_commit": "41cba2c",
+  "source": "original confirmed-workbench successful source patches; expected SHA256 values verified in decision task on 2026-09-12",
+  "files": [
+    {
+      "path": "runtime/sidecar/src/person_collaboration/README.md",
+      "sha256": "3726092c470d9337d878bcb7afb658e2ee1f1780e4ff5cf2f21266d7fd272232",
+      "restored_sha256": "3726092c470d9337d878bcb7afb658e2ee1f1780e4ff5cf2f21266d7fd272232",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+      "sha256": "2176b5a45caaed86622d4302a3c4327f591720bea82be8ab583a8f119aa3042e",
+      "restored_sha256": "2176b5a45caaed86622d4302a3c4327f591720bea82be8ab583a8f119aa3042e",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/model.rs",
+      "sha256": "0ec729e483f9ac571288ad7ec449055649fa6e896d54193657f577f6007a3f46",
+      "restored_sha256": "0ec729e483f9ac571288ad7ec449055649fa6e896d54193657f577f6007a3f46",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/store.rs",
+      "sha256": "c7789dd6e46e048de6b2b0365f82d6388dd78b37b8339c7ed9d07f834c9a5220",
+      "restored_sha256": "c7789dd6e46e048de6b2b0365f82d6388dd78b37b8339c7ed9d07f834c9a5220",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/store/organization.rs",
+      "sha256": "1e04fd2836572aa1374def016620667383a72eebf57a3acbc46fedfd1c25c12e",
+      "restored_sha256": "1e04fd2836572aa1374def016620667383a72eebf57a3acbc46fedfd1c25c12e",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/workbench-catalog.js",
+      "sha256": "019f67eeb6f41c71252b208afa7762f2efa2f8beb68ee27b61be6860b4e73ac0",
+      "restored_sha256": "019f67eeb6f41c71252b208afa7762f2efa2f8beb68ee27b61be6860b4e73ac0",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/workbench-organization.js",
+      "sha256": "4c4d9f6da826971c068bec84d8b126a85e31b3289fc64bedf4ccd610763003ba",
+      "restored_sha256": "4c4d9f6da826971c068bec84d8b126a85e31b3289fc64bedf4ccd610763003ba",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/workbench-view.js",
+      "sha256": "cff7bed87cda7c9d8b9f195e3aabfcb61eebdbd40b14b4f13cfc9479d16d4965",
+      "restored_sha256": "cff7bed87cda7c9d8b9f195e3aabfcb61eebdbd40b14b4f13cfc9479d16d4965",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/workbench.css",
+      "sha256": "a3fa3963b88d3a6d0608ab8567d720fd5b5bc2ad25ac9f82e642591ff7deddd0",
+      "restored_sha256": "a3fa3963b88d3a6d0608ab8567d720fd5b5bc2ad25ac9f82e642591ff7deddd0",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/workbench.html",
+      "sha256": "ea6f826d80599c25d0d349ccc2c53c9477a25d1643ac8400c1e7dddd394365f7",
+      "restored_sha256": "ea6f826d80599c25d0d349ccc2c53c9477a25d1643ac8400c1e7dddd394365f7",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/workbench.js",
+      "sha256": "2ca22380fa11f5e7522b5264e581907562fdcc50d4549f1b8a48e844180612cb",
+      "restored_sha256": "2ca22380fa11f5e7522b5264e581907562fdcc50d4549f1b8a48e844180612cb",
+      "matches": true
+    },
+    {
+      "path": "runtime/sidecar/src/person_collaboration/run-local.sh",
+      "sha256": "00089a8179dfc22961403f0be6c2d7fbb388616c5f20f823bc64ef8eb7ad63ae",
+      "restored_sha256": "00089a8179dfc22961403f0be6c2d7fbb388616c5f20f823bc64ef8eb7ad63ae",
+      "matches": true
+    },
+    {
+      "path": "docs/plans/active/organization-agent-workbench-confirmed-implementation.md",
+      "sha256": "4f22559d6bb94292020bfc0501de5f12d487a2c82cebf6f822a952d7e84b333e",
+      "restored_sha256": "4f22559d6bb94292020bfc0501de5f12d487a2c82cebf6f822a952d7e84b333e",
+      "matches": true
+    },
+    {
+      "path": "docs/reports/2026-09-11-organization-agent-workbench-confirmed.md",
+      "sha256": "23fb10b422dcb7a2e5155dfeeb406cd6b786814e8226d25f5a772ecaec4dd11c",
+      "restored_sha256": "23fb10b422dcb7a2e5155dfeeb406cd6b786814e8226d25f5a772ecaec4dd11c",
+      "matches": true
+    }
+  ]
+}

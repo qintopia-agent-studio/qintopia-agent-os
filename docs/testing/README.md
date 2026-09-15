@@ -80,6 +80,12 @@ Allure 报告按业务和场景展示状态、步骤、耗时、预期/实际结
 新增场景时必须明确哪些代码真实执行、哪些外部边界被模拟，以及哪些能力仍未覆盖。详细字段和断言规则见
 [测试编写规范](authoring.md)。
 
+新增 `person-collaboration` 的 11 个 PostgreSQL 场景与 `resident-welcome`
+的 3 个场景，覆盖授权生命周期、持久欢迎流程及恢复边界。可通过
+`pnpm test:business -- --feature person-collaboration` 或
+`pnpm test:business -- --feature resident-welcome`
+定向运行；这不证明真实身份接入或真实消息送达。
+
 ## 本地可视化
 
 执行时 Codex/终端显示
@@ -92,7 +98,7 @@ Allure 报告按业务和场景展示状态、步骤、耗时、预期/实际结
 - 场景详情：早报案例展示实际步骤、断言失败和 JSON/请求附件。
 - 旧测试以测试组展示，原生用例数量和原始输出在步骤/附件中；报告组数不等于原生用例数。
 
-`pnpm test:business` 表示清单中全部 16 个场景/测试组，不代表仓库所有业务已有覆盖。
+`pnpm test:business` 表示清单中全部 30 个场景/测试组，不代表仓库所有业务已有覆盖。
 `pnpm test:list` 同时列出缺口。协作方参考
 [早报案例说明](../../workflows/erhua-morning-brief/tests/business/README.md)。
 

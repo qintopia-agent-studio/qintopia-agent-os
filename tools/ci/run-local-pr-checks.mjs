@@ -37,6 +37,10 @@ const sidecarTestEnv = {
   ...process.env,
   RUST_MIN_STACK: process.env.RUST_MIN_STACK ?? "33554432",
 };
+// Ordinary fixture/unit tests must not inherit the PostgreSQL tier's connection.
+// Some CLI tests intentionally assert that no database is configured.
+delete sidecarTestEnv.QINTOPIA_SIDECAR_DATABASE_URL;
+delete sidecarTestEnv.QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE;
 
 const postgresTestEnv = {
   ...postgresEnv,
@@ -106,9 +110,30 @@ function collectChangedPaths() {
 }
 
 function isPostgresReady() {
+  const database = new URL(postgresEnv.QINTOPIA_SIDECAR_DATABASE_URL);
+  if (
+    !["postgres:", "postgresql:"].includes(database.protocol) ||
+    !["127.0.0.1", "[::1]"].includes(database.hostname) ||
+    database.pathname !== "/qintopia_test" ||
+    database.hash ||
+    (database.search && database.search !== "?sslmode=disable")
+  ) {
+    throw new Error(
+      "Local PostgreSQL checks require literal-loopback qintopia_test without connection overrides."
+    );
+  }
   const result = spawnSync(
     "pg_isready",
-    ["-h", "127.0.0.1", "-p", "5432", "-d", "qintopia_test", "-U", "postgres"],
+    [
+      "-h",
+      database.hostname.replace(/^\[|\]$/g, ""),
+      "-p",
+      database.port || "5432",
+      "-d",
+      "qintopia_test",
+      "-U",
+      decodeURIComponent(database.username || "postgres"),
+    ],
     {
       cwd: repoRoot,
       env: postgresEnv,
@@ -123,7 +148,7 @@ function runQuickChecks() {
 }
 
 function runHeavyRustChecks() {
-  run("pnpm", ["check:runtime"]);
+  run("pnpm", ["check:runtime"], { env: sidecarTestEnv });
   run(
     "cargo",
     [
@@ -398,6 +423,26 @@ function runPostgresChecks() {
       env: postgresTestEnv,
     });
   }
+  for (const module of ["person_collaboration", "resident_welcome"]) {
+    run(
+      "cargo",
+      [
+        "test",
+        "--locked",
+        "--manifest-path",
+        "runtime/sidecar/Cargo.toml",
+        "--features",
+        "postgres-integration-tests",
+        module,
+        "--",
+        "--include-ignored",
+        "--test-threads=1",
+      ],
+      {
+        env: { ...postgresTestEnv, QINTOPIA_TEST_MODE: "1" },
+      }
+    );
+  }
   run("deploy/sidecar/scripts/operations-control-plane-apply-smoke.sh", [], {
     env: postgresEnv,
   });
@@ -412,7 +457,7 @@ if (mode === "quick") {
 if (mode === "postgres") {
   if (!isPostgresReady()) {
     process.stderr.write(
-      "Local PostgreSQL tier requires qintopia_test on 127.0.0.1:5432 for postgres/postgres.\n"
+      "Local PostgreSQL tier requires the configured disposable loopback qintopia_test and pg_isready on PATH.\n"
     );
     process.exit(1);
   }
@@ -426,7 +471,7 @@ if (mode === "heavy") {
   runHeavyRustChecks();
   if (!isPostgresReady()) {
     process.stderr.write(
-      "Local PostgreSQL tier requires qintopia_test on 127.0.0.1:5432 for postgres/postgres.\n"
+      "Local PostgreSQL tier requires the configured disposable loopback qintopia_test and pg_isready on PATH.\n"
     );
     process.exit(1);
   }

@@ -139,3 +139,16 @@ execute ignored PostgreSQL tests. The `postgres-integration` job, displayed as
 `PostgreSQL integration`, owns those ignored tests and the guarded apply smoke against a
 disposable GitHub Actions PostgreSQL service. It must not accept production database
 URLs, secrets, Feishu credentials, QiWe credentials, or external adapters.
+
+### 本地 PostgreSQL 检查隔离
+
+`pnpm check:pr:heavy` / `pnpm check:pr:postgres` 的数据库专项可通过
+`QINTOPIA_SIDECAR_DATABASE_URL` 选择自建的临时实例；必须为 literal loopback 上的
+`qintopia_test`，仅允许可选的
+`sslmode=disable`，就绪探测使用所配置的端口。普通 Rust 单测不会继承该连接或 apply
+smoke 开关，避免 fixture 测试误连数据库。日常业务测试优先使用
+`pnpm test:business`，由框架创建随机端口和独立卷。
+
+注意：末尾的 `operations-control-plane-apply-smoke.sh` 还受 Huabaosi
+staging 数据库 URL 哈希白名单约束；随机端口不代表该 apply
+smoke 已获授权。完整 smoke 使用标准 CI 隔离数据库验证，不得为本地测试放宽适配器白名单或占用已有业务数据库。

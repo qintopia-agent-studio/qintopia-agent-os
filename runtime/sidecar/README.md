@@ -5,6 +5,11 @@ existing `qintopia-message-sidecar` Rust service.
 
 ## Current Source
 
+Person/Agent collaboration F1 adds a synthetic-only local settings page, editable role
+and duty catalogs, complete work connections, and explicit permission modes. See
+[module setup and boundaries](src/person_collaboration/README.md). This does not
+activate the existing training or sending tools against the new policy.
+
 - Local source: `../qintopia-message-sidecar`
 - Adopted reference: `eda2652f21999e4f32699463413372accbd3b76e`
 - Server deployment source observed on 2026-07-03: `/home/ubuntu/qintopia-msg-sidecar`
@@ -282,6 +287,12 @@ poster activation. Their release-local entrypoints are documented in
 request, main-timeline fallback, or direct-message fallback.
 
 ## Responsibility
+
+Resident welcome V1 is a local-only domain module under `src/resident_welcome/`. Its
+dedicated Store reuses Person, WorkItem, Artifact and audit tables with an additive
+migration. No production listener or external executor is mounted. See
+[the workflow](../../workflows/resident-welcome/README.md) for validation and
+boundaries.
 
 The sidecar receives QiWe/Hermes message events from NATS JetStream, persists raw and
 normalized records into Postgres, and runs Agent OS background workers. It must stay

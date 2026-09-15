@@ -389,6 +389,25 @@ pub struct Cli {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum Command {
+    /// Isolated synthetic-only single-step receiver/recovery driver.
+    #[cfg(feature = "welcome-synthetic-driver")]
+    WelcomeSynthetic {
+        #[arg(value_enum)]
+        step: crate::resident_welcome::local_driver::Step,
+    },
+    /// Serve isolated synthetic collaboration settings; no runtime activation or external effects.
+    RunCollaborationLocal {
+        #[arg(long, default_value_t = 18871)]
+        port: u16,
+        /// Explicitly install local migrations and initialize a one-shot synthetic fixture.
+        #[arg(long)]
+        init_fixture: bool,
+    },
+    /// Serve the synthetic welcome workbench/receiver on literal loopback only.
+    RunWelcomeLocal {
+        #[arg(long, default_value_t = 18870)]
+        port: u16,
+    },
     /// Check NATS JetStream and optional Postgres connectivity.
     Check,
     /// Run Postgres migrations and exit.

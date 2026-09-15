@@ -380,6 +380,342 @@
           }
         }
       ]
+    },
+    {
+      "id": "person-collaboration",
+      "name": "人员与组织协作",
+      "aliases": ["person_collaboration"],
+      "scenarios": [
+        {
+          "id": "person-collaboration/confirmed-workbench-saves-assignment-and-contact-atomically",
+          "name": "任职与触达保存原子性",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::confirmed_workbench_saves_assignment_and_contact_atomically",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/organization-lifecycle-disambiguates-people-and-never-resurrects-grants",
+          "name": "人员岗位生命周期与同名隔离",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::organization_lifecycle_disambiguates_people_and_never_resurrects_grants",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/contact-scope-and-hierarchy-are-explicit-and-revocable",
+          "name": "触达范围与层级撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::contact_scope_and_hierarchy_are_explicit_and_revocable",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/permission-modes-persist-and-reviewer-loss-never-becomes-autonomy",
+          "name": "三态权限与确认人失权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::permission_modes_persist_and_reviewer_loss_never_becomes_autonomy",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/catalog-edits-do-not-grant-permissions-and-retirement-preserves-history",
+          "name": "职责目录修改不自动赋权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::catalog_edits_do_not_grant_permissions_and_retirement_preserves_history",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/replacing-and-ending-connections-is-atomic-and-leaves-other-work-intact",
+          "name": "替换结束连接不影响其他工作",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::replacing_and_ending_connections_is_atomic_and_leaves_other_work_intact",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/bootstrap-revocation-and-confirmation-management-cannot-bypass-catalog-policy",
+          "name": "初始化管理员保护与管理权限制",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::bootstrap_revocation_and_confirmation_management_cannot_bypass_catalog_policy",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/preview-save-replay-concurrent-commands-and-restart",
+          "name": "预览保存重放并发与重启",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::tests::postgres::preview_save_replay_concurrent_commands_and_restart",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/delegation-handover-proxy-expiry-and-identity-revocation",
+          "name": "委托交接代理到期与身份撤销",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::tests::postgres::delegation_handover_proxy_expiry_and_identity_revocation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/cross-tenant-group-bounds-and-authenticated-http",
+          "name": "跨租户群隔离与可信 HTTP 会话",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::tests::postgres::cross_tenant_group_bounds_and_authenticated_http",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/group-retirement-preserves-work-but-agent-retirement-revokes-it",
+          "name": "群停用保留任职、智能体停用撤权且恢复不复活",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/duty_store_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::duty_store_tests::group_retirement_preserves_work_but_agent_retirement_revokes_it",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "resident-welcome",
+      "name": "住宿欢迎流程",
+      "aliases": ["resident_welcome"],
+      "scenarios": [
+        {
+          "id": "resident-welcome/resident-welcome-postgres-scan-resume-and-scoped-worker",
+          "name": "扫描断点恢复与按范围消费",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::tests::resident_welcome_postgres_scan_resume_and_scoped_worker",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["住宿欢迎流程的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/resident-welcome-postgres-identity-inbox-and-delivery-recovery",
+          "name": "身份事件幂等与交付故障恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::tests::resident_welcome_postgres_identity_inbox_and_delivery_recovery",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["住宿欢迎流程的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/resident-welcome-postgres-existing-case-live-admission",
+          "name": "已有案例的实时准入与回放边界",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::tests::resident_welcome_postgres_existing_case_live_admission",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["住宿欢迎流程的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        }
+      ]
     }
   ],
   "gaps": [
