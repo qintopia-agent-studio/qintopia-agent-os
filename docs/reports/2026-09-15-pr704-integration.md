@@ -66,3 +66,6 @@ CI/审查必须据实完成，未完成时保留 draft，不能宣称已可直�
 负责人需通过 `gh auth refresh -h github.com -s workflow`
 完成 GitHub 授权；之后重新核对远端分支，再正常推送本地 HEAD 到
 `codex/org-person-workbench-a`。无需强推。独立新 PR 同样需要 workflow 权限，拆 PR 不能解除这一阻塞。
+
+授权补齐后，已成功将 `ab513ce`
+推送到原 PR 分支。上述推送阻塞已解除，远端 CI 与 Chrome 验收仍需分别确认。
