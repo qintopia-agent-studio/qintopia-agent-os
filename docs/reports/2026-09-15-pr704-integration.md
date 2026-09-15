@@ -55,3 +55,14 @@ Chrome 插件能列出扩展，但会话命名及标签页操作报
 
 未合并、发布或部署；未访问服务器、发送真实消息或修改真实 PMS。生产欢迎继续默认关闭。必要时撤销集成修复提交；保留原恢复历史，不删除身份历史或反向修改生产 schema。浏览器验收及更新后 GitHub
 CI/审查必须据实完成，未完成时保留 draft，不能宣称已可直接合并。
+
+## 推送阻塞
+
+本地合并修复提交 `241a2ea` 保留原 PR 和 master 两个父提交，工作区检查与完整
+`.husky/pre-commit` 脚本通过。GitHub 拒绝 HTTPS 推送，原因是当前 OAuth App 缺少修改
+`.github/workflows/ci.yml` 所需的 `workflow` scope。远端仍为
+`6e6250ee`，不能宣称冲突已在远端解决，也没有新提交的 CI 结果。PR 描述已明确标注本地待推送状态。
+
+负责人需通过 `gh auth refresh -h github.com -s workflow`
+完成 GitHub 授权；之后重新核对远端分支，再正常推送本地 HEAD 到
+`codex/org-person-workbench-a`。无需强推。独立新 PR 同样需要 workflow 权限，拆 PR 不能解除这一阻塞。
