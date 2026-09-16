@@ -471,6 +471,20 @@ for (const [workflowName, workflowText, expectedEvent] of [
         `.github/workflows/${workflowName}: must retain ${expectedEvent} trigger`
       );
     }
+    if (workflowName === "artifacts.yml") {
+      const steps = parsed?.jobs?.["deploy-bundle-artifact"]?.steps ?? [];
+      const install = steps.findIndex(
+        (step) => step.run === "pnpm install --frozen-lockfile"
+      );
+      const build = steps.findIndex(
+        (step) => step.run === "node tools/deploy/build-deploy-bundle.mjs"
+      );
+      if (install < 0 || build < 0 || install >= build) {
+        errors.push(
+          ".github/workflows/artifacts.yml: deploy bundle must install locked repository dependencies before building"
+        );
+      }
+    }
     if (workflowName === "artifacts.yml" && events.includes("push")) {
       errors.push(
         ".github/workflows/artifacts.yml: Artifacts must not publish automatically on push"
