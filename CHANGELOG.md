@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.2.177](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.176...v0.2.177) (2026-09-16)
+
+
+### Features
+
+* **foundation:** 集成人员组织工作台与本地欢迎流程 ([#704](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/704)) ([171e227](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/171e227222393a9e97112e6e5462b08161122867))
+* **testing:** add local business tests and Allure reference workflow ([#702](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/702)) ([adb2920](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/adb29207b4e40739119c44a629a393e813192b7e))
+
+
+### Bug Fixes
+
+* **deploy:** deliver Hermes dashboard through versioned bundles ([#707](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/707)) ([20e5839](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/20e583904d880df62431489fa128dfa35e2bee1f))
+* **hermes:** restore packaged runtime dependencies and prepare isolated recovery ([#706](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/706)) ([672199b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/672199b3171ba639ebc84919259e788c4e7c1ae4))
+
+
+### Documentation
+
+* define worktree creation and cleanup rules ([#705](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/705)) ([2dc2320](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2dc23202616fecabe426fd2b43a3e88561b9f8c2))
+
 ## [0.2.176](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.175...v0.2.176) (2026-09-11)
 
 
