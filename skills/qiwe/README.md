@@ -449,15 +449,20 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 - The dedicated QiWe production sidecar artifact is separate and compile-reviewed. Its
   manifest profile is `qiwe-production`, its artifact name is
   `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and it must compile
-  exactly `qiwe-production-adapter`. Production deploy requests must record
+  exactly `qiwe-production-adapter` and `huabaosi-feishu-mirror-adapter`, in that
+  manifest order. The mirror feature is required for Feishu-backed media delivery;
+  `huabaosi-production-adapter`, staging features and other additional features are
+  excluded from this companion. Production deploy requests must record
   `runtime_artifact_profile`, and QiWe enabled-state observations must accept only this
-  reviewed artifact profile, never a mixed Huabaosi/QiWe binary.
+  reviewed profile and exact feature pair. See the existing
+  [artifact contract](../../docs/operations/sidecar-ci-artifacts.md#artifact-retention)
+  and [builder](../../tools/deploy/build-qiwe-production-sidecar-artifact.mjs).
 - `xiaoman-real-activity-production-evidence` must read the adjacent
   `artifact-manifest.json`, require `commit_sha` to match
   `QINTOPIA_DEPLOYED_COMMIT_SHA`, require `validation.artifact_profile=qiwe-production`,
-  and require exactly `validation.cargo_features=["qiwe-production-adapter"]` before
-  exporting sanitized evidence. Final completion evidence must also keep the Huabaosi
-  canary profile as `huabaosi-production`.
+  and require `validation.cargo_features` to equal the same ordered two-feature list
+  above before exporting sanitized evidence. Final completion evidence must also keep
+  the Huabaosi canary profile as `huabaosi-production`.
 
 ### Media delivery
 
