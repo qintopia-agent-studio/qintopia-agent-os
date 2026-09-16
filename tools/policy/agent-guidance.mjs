@@ -95,24 +95,43 @@ export function validateAgentGuidance(root, { scopes = GUIDANCE_SCOPES } = {}) {
   const migration = readJson(`${inventoryDirectory}/migration.json`);
   const originals = new Map();
   if (
-    baseline?.schemaVersion !== 1 ||
+    baseline?.schemaVersion !== 2 ||
+    JSON.stringify(baseline?.entryColumns) !==
+      JSON.stringify(["id", "start", "end", "sha256"]) ||
     !/^[a-f0-9]{40}$/.test(baseline?.baseline ?? "") ||
     !Array.isArray(baseline?.files)
   ) {
     fail("baseline-schema", inventoryDirectory);
   } else {
     for (const file of baseline.files) {
-      if (!Array.isArray(file.entries) || !/^[a-f0-9]{64}$/.test(file.sha256 ?? "")) {
+      if (!Array.isArray(file.sections) || !/^[a-f0-9]{64}$/.test(file.sha256 ?? "")) {
         fail("baseline-file", file.path);
         continue;
       }
       let lastEnd = 0;
-      for (const entry of file.entries) {
+      const entries = [];
+      for (const section of file.sections) {
+        if (
+          typeof section.title !== "string" ||
+          !section.title.trim() ||
+          !Array.isArray(section.entries)
+        ) {
+          fail("baseline-section", file.path);
+          continue;
+        }
+        for (const row of section.entries) {
+          if (!Array.isArray(row) || row.length !== 4) {
+            fail("baseline-row", file.path);
+            continue;
+          }
+          const [id, start, end, sha256] = row;
+          entries.push({ id, start, end, sha256 });
+        }
+      }
+      for (const entry of entries) {
         if (
           !/^(root|sidecar)-\d{3}$/.test(entry.id ?? "") ||
           originals.has(entry.id) ||
-          entry.source !== file.path ||
-          !entry.section ||
           !Number.isInteger(entry.start) ||
           !Number.isInteger(entry.end) ||
           entry.start <= lastEnd ||

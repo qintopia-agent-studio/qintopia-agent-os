@@ -118,3 +118,33 @@ test("an empty package index cannot borrow a root link", () =>
     );
     rejects(root, "missing-package-link");
   }));
+
+test("baseline column order and truncated rows are rejected", () =>
+  withFixture((root) => {
+    rewrite(root, "docs/plans/active/agents-guidance/baseline.json", (s) => {
+      const value = JSON.parse(s);
+      value.entryColumns.reverse();
+      value.files[0].sections[0].entries[0].pop();
+      return JSON.stringify(value);
+    });
+    rejects(root, "baseline-schema");
+  }));
+test("baseline rows must retain their full hash and source range", () =>
+  withFixture((root) => {
+    rewrite(root, "docs/plans/active/agents-guidance/baseline.json", (s) => {
+      const value = JSON.parse(s);
+      value.files[0].sections[0].entries[0][2] = 999;
+      value.files[0].sections[0].entries[0][3] = "abc";
+      return JSON.stringify(value);
+    });
+    rejects(root, "baseline-entry");
+  }));
+test("truncated baseline rows are rejected", () =>
+  withFixture((root) => {
+    rewrite(root, "docs/plans/active/agents-guidance/baseline.json", (s) => {
+      const value = JSON.parse(s);
+      value.files[0].sections[0].entries[0].pop();
+      return JSON.stringify(value);
+    });
+    rejects(root, "baseline-row");
+  }));

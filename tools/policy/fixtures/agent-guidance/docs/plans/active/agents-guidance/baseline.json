@@ -1,21 +1,18 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "files": [
     {
       "path": "AGENTS.md",
       "sha256": "32acaa7717b579c2ac71422d44f8caf3be5f2dbcd9b6467b92b86df42e5f07d6",
       "lineCount": 3,
-      "entries": [
+      "sections": [
         {
-          "id": "root-001",
-          "source": "AGENTS.md",
-          "section": "Rules",
-          "start": 3,
-          "end": 3,
-          "sha256": "32acaa7717b579c2ac71422d44f8caf3be5f2dbcd9b6467b92b86df42e5f07d6"
+          "title": "Rules",
+          "entries": [["root-001", 3, 3, "32acaa7717b579c2ac71422d44f8caf3be5f2dbcd9b6467b92b86df42e5f07d6"]]
         }
       ]
     }
-  ]
+  ],
+  "entryColumns": ["id", "start", "end", "sha256"]
 }

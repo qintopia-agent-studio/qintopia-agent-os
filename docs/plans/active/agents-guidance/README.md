@@ -13,6 +13,22 @@ another instruction manual.
   complete rule is retained; `pending-review` also retains it and does not suspend it.
 - [Pending decisions](pending-review.md): no rule retirement is authorized here.
 
+## Baseline representation
+
+Schema v2 stores the source path once per file and the original section title once per
+consecutive section. Each row follows `entryColumns`: `[id, start, end, sha256]`. Source
+lines are inclusive and hashes retain all 64 hexadecimal characters. This is a lossless
+representation change; the source Git SHA, file hashes, 343 rule identities, sections,
+line ranges and normalized rule hashes remain unchanged.
+
+A baseline-only Prettier override uses 140 columns to keep each short audit row on one
+line; ordinary JSON and AGENTS.md formatting remain unchanged. The file is machine audit
+data, not required reading for ordinary tasks. It shrank from 2,764 lines / 87,113 bytes
+to 416 lines / 37,616 bytes. Expanding v2 back to the original records verified exact
+equality for every field of all 343 entries and both file metadata records. Use the
+entrypoints and topic contracts for instructions, and this inventory when reviewing a
+rule migration.
+
 ## Execution
 
 1. Record source inventory and planned destinations before rewriting guidance.
@@ -72,12 +88,12 @@ state preservation. Historical exceptions remain conditional and pending review.
 
 The shared validator replaces AGENTS-specific English substring assertions in both
 collaboration and deployment checks. Existing behavioral deployment checks remain.
-Eleven fixed-fixture tests cover valid navigation, missing scope files, paths and
+Fourteen fixed-fixture tests cover valid navigation, missing scope files, paths and
 anchors, missing/duplicate migration, removal of a no-retry restriction, harmless
 wrapping, byte budgets, scope/command mistakes, traversal, and missing/empty package
 indexes. Fixture entry files use `.fixture` suffixes and become AGENTS.md only in
 temporary test trees, so the repository has exactly five actual instruction files.
 
-Formatting, Markdown, collaboration (11 tests), and the complete deployment contracts
+Formatting, Markdown, collaboration (14 tests), and the complete deployment contracts
 command passed locally. The automatic PR tier result is recorded in the PR validation
 section after completion. No live browser flow is affected by this documentation change.
