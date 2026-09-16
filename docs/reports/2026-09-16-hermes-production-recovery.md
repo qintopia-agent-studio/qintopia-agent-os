@@ -183,3 +183,16 @@ verification. Browser acceptance remains pending. The fixed snapshot wrapper was
 repaired to root:ubuntu 0750. All 20 backed-up profile config/auth files matched after
 deployment except Erhua's `auth.json` updated_at timestamp; credential content was
 unchanged.
+
+## Request TTL boundary during PR 710 activation
+
+The merged QiWe repair bundle at `16e8d56` built successfully in run 35067243283.
+Deployment runs 35067496543 and 35067946531 failed request validation before promotion:
+independently sampled creation and expiry clocks produced a lifetime of 3600.001
+seconds, exceeding the runner's exact 60-minute limit. The current release remained
+83d694f; QiWe health was unavailable and public webhook returned 502.
+
+Derive expiry from the recorded creation timestamp and test the actual request CLI with
+an advancing clock. Preserve the server limit and signature checks. No business job was
+replayed. Operations must deploy the reviewed fix and recheck QiWe health, public
+webhook and a user-triggered conversation before claiming recovery.

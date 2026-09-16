@@ -90,8 +90,8 @@ const forbidCosPrefixOverride = () => {
 };
 
 const isoNow = () => new Date().toISOString();
-const expiresAt = (minutes) =>
-  new Date(Date.now() + Number(minutes) * 60 * 1000).toISOString();
+const expiresAt = (createdAt, minutes) =>
+  new Date(Date.parse(createdAt) + Number(minutes) * 60 * 1000).toISOString();
 
 const schemaPath = path.join(repoRoot, "deploy/runner/deploy-request.schema.json");
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
@@ -352,7 +352,7 @@ const request = {
   repository: "qintopia-agent-studio/qintopia-agent-os",
   requested_by: requestedBy,
   created_at: createdAt,
-  expires_at: expiresAt(ttlMinutes),
+  expires_at: expiresAt(createdAt, ttlMinutes),
   release_scope: releaseScope,
   restart_targets: restartTargets,
   rollback_on_smoke_failure: rollbackOnSmokeFailure,
