@@ -8,11 +8,11 @@ templates, official-core compatibility and Profile distribution.
 ## Map and required reading
 
 - [Runtime package](README.md).
-- [Complete runtime constraints](docs/runtime-agent-contract.md).
-- [Complete cron constraints](docs/cron-agent-contract.md).
+- [Complete runtime constraints](README.md#operating-rules).
+- [Complete cron constraints](../../docs/operations/hermes-cron-source-of-truth.md#operating-rules).
 - [Production recovery runbook](../../docs/operations/hermes-production-recovery.md).
 - [Runtime baseline](../../docs/operations/runtime-baseline.md).
-- [Historical compatibility](../../docs/operations/agent-guidance-history.md).
+- [Historical compatibility](../../docs/plans/active/agents-guidance/pending-review.md#operating-rules).
 - [Production acceptance](../../docs/operations/release-acceptance-checklist.md).
 
 The root contract and these topic constraints remain binding. Read the applicable cron

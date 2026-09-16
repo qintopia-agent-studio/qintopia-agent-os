@@ -2,16 +2,5 @@
   "printWidth": 88,
   "proseWrap": "always",
   "singleQuote": false,
-  "trailingComma": "es5",
-  "overrides": [
-    {
-      "files": [
-        "docs/plans/active/agents-guidance/baseline.json",
-        "tools/policy/fixtures/agent-guidance/docs/plans/active/agents-guidance/baseline.json"
-      ],
-      "options": {
-        "printWidth": 140
-      }
-    }
-  ]
+  "trailingComma": "es5"
 }

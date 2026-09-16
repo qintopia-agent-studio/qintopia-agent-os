@@ -2,6 +2,6 @@
 
 <!-- guidance-scope: . -->
 
-[Topic](docs/engineering/topic.md#root-001)
+[Topic](docs/engineering/topic.md#rules)
 
 Run `pnpm fixture:check`.

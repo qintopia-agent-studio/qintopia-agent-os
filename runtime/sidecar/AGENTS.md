@@ -8,7 +8,7 @@ consumer, persistence, capability registry and governed workers.
 ## Map and required reading
 
 - [Package guide](README.md) and [source snapshot](docs/source-snapshot.md).
-- [Complete engineering constraints](docs/agent-contract.md).
+- [Complete engineering constraints](README.md#operating-rules).
 - [Database migrations](../postgres/migrations/).
 - [Versioned data design](../postgres/docs/data-design/).
 - [Deployment rules](../../deploy/AGENTS.md).

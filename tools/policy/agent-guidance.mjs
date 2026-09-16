@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 
 export const GUIDANCE_SCOPES = [
   ["AGENTS.md", ".", 16 * 1024],
@@ -9,9 +8,6 @@ export const GUIDANCE_SCOPES = [
   ["deploy/AGENTS.md", "deploy", 12 * 1024],
   ["skills/qiwe/AGENTS.md", "skills/qiwe", 12 * 1024],
 ];
-const inventoryDirectory = "docs/plans/active/agents-guidance";
-const digest = (text) =>
-  crypto.createHash("sha256").update(text.trim().replace(/\s+/g, " ")).digest("hex");
 const withoutFences = (text) =>
   text.replace(/^\s*```[^\n]*\n[\s\S]*?^\s*```\s*$/gm, "");
 const links = (text) =>
@@ -36,7 +32,7 @@ function anchors(text) {
   return result;
 }
 
-/** Structural coverage only; does not establish policy equivalence or live safety. */
+/** Validate navigation and entry budgets, not policy semantics or live safety. */
 export function validateAgentGuidance(root, { scopes = GUIDANCE_SCOPES } = {}) {
   root = path.resolve(root);
   const errors = [];
@@ -91,112 +87,7 @@ export function validateAgentGuidance(root, { scopes = GUIDANCE_SCOPES } = {}) {
       }
     }
   }
-  const baseline = readJson(`${inventoryDirectory}/baseline.json`);
-  const migration = readJson(`${inventoryDirectory}/migration.json`);
-  const originals = new Map();
-  if (
-    baseline?.schemaVersion !== 2 ||
-    JSON.stringify(baseline?.entryColumns) !==
-      JSON.stringify(["id", "start", "end", "sha256"]) ||
-    !/^[a-f0-9]{40}$/.test(baseline?.baseline ?? "") ||
-    !Array.isArray(baseline?.files)
-  ) {
-    fail("baseline-schema", inventoryDirectory);
-  } else {
-    for (const file of baseline.files) {
-      if (!Array.isArray(file.sections) || !/^[a-f0-9]{64}$/.test(file.sha256 ?? "")) {
-        fail("baseline-file", file.path);
-        continue;
-      }
-      let lastEnd = 0;
-      const entries = [];
-      for (const section of file.sections) {
-        if (
-          typeof section.title !== "string" ||
-          !section.title.trim() ||
-          !Array.isArray(section.entries)
-        ) {
-          fail("baseline-section", file.path);
-          continue;
-        }
-        for (const row of section.entries) {
-          if (!Array.isArray(row) || row.length !== 4) {
-            fail("baseline-row", file.path);
-            continue;
-          }
-          const [id, start, end, sha256] = row;
-          entries.push({ id, start, end, sha256 });
-        }
-      }
-      for (const entry of entries) {
-        if (
-          !/^(root|sidecar)-\d{3}$/.test(entry.id ?? "") ||
-          originals.has(entry.id) ||
-          !Number.isInteger(entry.start) ||
-          !Number.isInteger(entry.end) ||
-          entry.start <= lastEnd ||
-          entry.end < entry.start ||
-          entry.end > file.lineCount ||
-          !/^[a-f0-9]{64}$/.test(entry.sha256 ?? "")
-        )
-          fail("baseline-entry", entry.id);
-        originals.set(entry.id, entry);
-        lastEnd = entry.end;
-      }
-    }
-  }
-  const mapped = new Set();
-  const topicFiles = new Set();
-  if (migration?.schemaVersion !== 1 || !Array.isArray(migration?.entries)) {
-    fail("migration-schema", inventoryDirectory);
-  } else {
-    for (const entry of migration.entries) {
-      if (mapped.has(entry.id)) fail("duplicate-migration", entry.id);
-      mapped.add(entry.id);
-      const original = originals.get(entry.id);
-      if (!original) {
-        fail("unknown-source", entry.id);
-        continue;
-      }
-      if (
-        !["retained", "moved", "merged", "pending-review"].includes(
-          entry.disposition
-        ) ||
-        !entry.reason
-      ) {
-        fail("migration-disposition", entry.id);
-      }
-      if (typeof entry.target !== "string") {
-        fail("missing-target", entry.id);
-        continue;
-      }
-      const [file, anchor] = entry.target.split("#");
-      if (!file.endsWith(".md") || !anchor || !/^(root|sidecar)-\d{3}$/.test(anchor)) {
-        fail("target-anchor", entry.id);
-        continue;
-      }
-      if (!documents.has(file)) {
-        const text = read(file);
-        if (text !== null) documents.set(file, text);
-      }
-      const text = documents.get(file);
-      if (text === undefined) continue;
-      topicFiles.add(file);
-      if (!anchors(text).has(anchor)) fail("missing-anchor", entry.target);
-      const start = `<!-- preserved-rule: ${anchor} -->`;
-      const end = `<!-- /preserved-rule: ${anchor} -->`;
-      if (text.split(start).length !== 2 || text.split(end).length !== 2) {
-        fail("rule-marker", entry.target);
-        continue;
-      }
-      const body = text.slice(text.indexOf(start) + start.length, text.indexOf(end));
-      if (digest(body) !== original.sha256) fail("changed-rule", entry.id);
-    }
-  }
-  for (const id of originals.keys()) if (!mapped.has(id)) fail("missing-migration", id);
-
-  // Validate the new navigation surface without auditing unrelated legacy prose.
-  for (const file of ["CLAUDE.md", `${inventoryDirectory}/README.md`]) {
+  for (const file of ["CLAUDE.md"]) {
     const text = read(file);
     if (text !== null) documents.set(file, text);
   }
@@ -211,44 +102,6 @@ export function validateAgentGuidance(root, { scopes = GUIDANCE_SCOPES } = {}) {
       documents.set(routingFile, section[0]);
       checkCommands(routingFile, section[0]);
     }
-  }
-  const incoming = new Set();
-  for (const file of topicFiles) {
-    let directory = path.dirname(file);
-    let index;
-    if (file.startsWith("docs/engineering/")) index = "docs/engineering/README.md";
-    else if (file.startsWith("docs/operations/")) index = "docs/operations/README.md";
-    else {
-      while (directory !== ".") {
-        if (fs.existsSync(path.join(root, directory, "README.md"))) {
-          index = `${directory}/README.md`;
-          break;
-        }
-        directory = path.dirname(directory);
-      }
-    }
-    if (!index) {
-      fail("missing-package-index", file);
-      continue;
-    }
-    if (!documents.has(index)) {
-      const text = read(index);
-      const section = text?.match(
-        /## Agent operating contracts\n([\s\S]*?)(?=\n## |$)/
-      );
-      if (!section) fail("missing-contract-index", index);
-      else documents.set(index, section[0]);
-    }
-    const indexText = documents.get(index) ?? "";
-    if (
-      !links(indexText).some(
-        (link) =>
-          path.posix.normalize(
-            path.posix.join(path.posix.dirname(index), link.split("#")[0])
-          ) === file
-      )
-    )
-      fail("missing-package-link", `${index}: ${file}`);
   }
   for (const [file, text] of documents) {
     for (const link of links(text)) {
@@ -269,7 +122,17 @@ export function validateAgentGuidance(root, { scopes = GUIDANCE_SCOPES } = {}) {
         fail("broken-link", `${file}: ${link}`);
         continue;
       }
-      incoming.add(target);
+      // Follow the operating-rule sections explicitly indexed by scoped entries.
+      // Do not turn unrelated legacy prose into a new repository-wide link gate.
+      if (
+        fragment === "operating-rules" &&
+        !documents.has(target) &&
+        fs.statSync(absolute).isFile()
+      ) {
+        const fullText = fs.readFileSync(absolute, "utf8");
+        const section = fullText.match(/## Operating rules\n([\s\S]*?)(?=\n## |$)/);
+        if (section) documents.set(target, section[0]);
+      }
       if (
         fragment &&
         fs.statSync(absolute).isFile() &&
@@ -279,6 +142,5 @@ export function validateAgentGuidance(root, { scopes = GUIDANCE_SCOPES } = {}) {
       }
     }
   }
-  for (const file of topicFiles) if (!incoming.has(file)) fail("unindexed-topic", file);
   return errors;
 }

@@ -8,11 +8,11 @@ installation, observation and rollback work. They grant no production authority.
 ## Map and required reading
 
 - [Runner and operator guide](runner/README.md).
-- [Complete deployment constraints](runner/docs/agent-contract.md).
+- [Complete deployment constraints](runner/README.md#operating-rules).
 - [Release model](../docs/operations/release-current-model.md).
 - [Release acceptance](../docs/operations/release-acceptance-checklist.md).
 - [Server change policy](../docs/engineering/server-change-policy.md).
-- [Historical compatibility](../docs/operations/agent-guidance-history.md).
+- [Historical compatibility](../docs/plans/active/agents-guidance/pending-review.md#operating-rules).
 - [Rollback guide](rollback/README.md).
 - [Restart routing](restart-target-rules.yaml).
 

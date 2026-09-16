@@ -58,9 +58,91 @@ pnpm registry:check
 pnpm policy:check
 ```
 
-## Agent operating contracts
+## Operating rules
 
-Read the relevant topic when changing this capability. These documents retain the full
-constraints behind the scoped AGENTS.md summaries.
+These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
+exceptions remain binding. Backtick paths from root rules are repository-relative;
+Sidecar rules retain their original `runtime/sidecar/` path base.
 
-- [Erhua identity contract](docs/identity-agent-contract.md)
+### Commands
+
+- Erhua member recognition local release-current readiness check:
+  `node tools/deploy/check-erhua-member-recognition-local.mjs`. This proves the
+  release-current runbook, deploy bundle files, focused Rust tests, fixture checkers,
+  and completion finalizers are present; it does not prove production DB completion.
+
+- Erhua member recognition reviewed production config apply:
+
+  ```bash
+  QINTOPIA_ERHUA_MEMBER_RECOGNITION_PRODUCTION_CONFIG=approved-production-erhua-member-recognition-config \
+    deploy/sidecar/scripts/apply-erhua-member-recognition-production-config.sh --apply
+  ```
+
+  Pass `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CHAT_ID` and
+  `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_CANARY_SENDER_ID` only from reviewed
+  server-local values. Do not print, retain, paste, or commit the real group id or
+  sender id.
+
+- Erhua member recognition production config observation:
+  `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh`.
+  Continue only when it reports `action_status=ready_for_member_recognition_runbook`.
+
+- Erhua member recognition room roster sync evidence:
+  `qintopia-message-sidecar identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --apply`
+  then
+  `node tools/deploy/check-erhua-room-member-sync.mjs <identity-backfill-room-member-sync-output.json>`.
+
+- Erhua member recognition coverage and completion evidence:
+  `node tools/deploy/finalize-erhua-member-recognition-coverage.mjs` and
+  `node tools/deploy/finalize-erhua-member-recognition-completion.mjs`. Retained
+  evidence must keep only sanitized counts, route-level hint coverage, and
+  `scope_fingerprint`; never retain real group ids, QiWe user ids, sender ids, person
+  ids, DB URLs, tokens, raw messages, or raw profile text. Final completion must retain
+  `unsafe_display_unlinked = 0` so numeric or otherwise unsafe current-room display
+  names cannot disappear into `excluded`. It must also retain
+  `qiwe_speaker_identities.platform_identities_missing = 0` and
+  `qiwe_speaker_identities.ambiguous_users = 0`, proving current-room QiWe users are
+  speaker-ready for "我是谁" lookup. Profile repair evidence must also retain
+  `profile_repair.current_room_linked_people = linked_people.total`; linked current-room
+  people without useful profile signals should receive an active no-stable-profile
+  `reply_context` snapshot with `do_not_infer_missing_profile=true`, not remain
+  identity-only.
+
+- Erhua member recognition roster audit evidence:
+  `node tools/deploy/build-erhua-member-recognition-roster-audit.mjs`. It must derive
+  only from sanitized coverage, canary, and completion-summary evidence and may retain
+  safe names, canonical keys, `person_ref` hashes, profile status, required-term
+  matches, and route canary booleans; never rebuild it from raw DB rows, raw group
+  messages, real QiWe ids, person UUIDs, or raw profile text.
+
+### Core Rules
+
+- Erhua member recognition depends on `qintopia_identity.channel_identities.person_id`
+  and active `member_profile_snapshots`, not display-name guessing. The identity worker
+  must not skip QiWe messages that already have `sender_channel_identity_id` and
+  `sender_name` but still have `sender_person_id IS NULL`; otherwise Erhua will call
+  `qintopia_answer_context_prepare` and correctly return `speaker_unresolved` even when
+  the display name uniquely matches an existing person/profile. The member-profile
+  repair must seed active no-stable-profile `reply_context` snapshots for linked
+  current-room people that have no useful profile facts yet, so "known member but no
+  stable profile" is a database-backed state rather than an identity-only fallback.
+  Running profile hints must cover community event language such as `跑步局`, `约跑`,
+  route, pace, or `km` context, while avoiding object-only chatter such as running
+  shoes.
+
+### Sidecar Commands
+
+- Erhua current room roster sync:
+  `cargo run -- identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --dry-run`
+  Retained evidence may keep `scope_fingerprint`; never retain the raw group id or QiWe
+  user ids.
+
+- Erhua scoped member profile refresh:
+  `cargo run -- member-profile --chat-id <reviewed-erhua-qiwe-group-id> --apply --quiet`
+  Retained evidence may keep aggregate counts and `scope_fingerprints`; never retain raw
+  chat ids or candidate facts.
+
+- Erhua speaker self-canary private sender map:
+  `cargo run -- erhua-member-speaker-canary-sender-map --chat-id <reviewed-erhua-qiwe-group-id>`.
+  Its output contains raw QiWe sender ids; keep it as a server-local temporary file only
+  and never retain it as evidence.

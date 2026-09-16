@@ -370,9 +370,114 @@ Use smoke scripts under `deploy/sidecar/scripts/` only with the documented envir
 and owner approval. Guarded apply smokes can write Postgres state when explicitly
 enabled.
 
-## Agent operating contracts
+## Operating rules
 
-Read the relevant topic when changing this capability. These documents retain the full
-constraints behind the scoped AGENTS.md summaries.
+These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
+exceptions remain binding. Backtick paths from root rules are repository-relative;
+Sidecar rules retain their original `runtime/sidecar/` path base.
 
-- [Sidecar engineering contract](docs/agent-contract.md)
+### Commands
+
+- Full Rust sidecar tests and `cargo llvm-cov` use loopback fake servers; run them
+  outside Codex's restricted sandbox with `RUST_MIN_STACK=33554432` when the sandbox
+  reports `bind fake server: Operation not permitted`.
+
+- Sidecar dependency vulnerability audit:
+  `cd runtime/sidecar && cargo deny check advisories bans sources`. A full
+  `cargo deny check` currently fails license checks because the repository has no
+  `deny.toml` license policy; do not treat that as unresolved RustSec advisories.
+  `cargo audit` scans all lockfile entries and may report `rsa` through `sqlx-mysql`
+  even when `cargo tree --target all -i rsa` shows it is unreachable from the current
+  Postgres-only feature set; record that as a lockfile/audit-tooling follow-up, not as a
+  runtime exposure, unless the dependency tree proves it is reachable.
+
+Use `rg` and `rg --files` for search.
+
+### Core Rules
+
+- Organize by Agent OS capability, not by programming language.
+
+- Rust, Python, TypeScript, shell, and SQL are implementation details inside a package.
+
+- Do not create top-level `python/`, `rust/`, `typescript/`, or similar language
+  buckets.
+
+- `operations-work-item-status` must resolve nested work items to the top-level workflow
+  root and report every descendant while preserving each direct `parent_work_item_id`.
+  `operations-workflow-sync` may persist that recursive AgentOS summary, but neither
+  command may execute workers, schedule a general DAG, call external adapters, or send.
+
+### Sidecar Commands
+
+- Format: `cargo fmt`
+
+- Check: `cargo check`
+
+- Test: `RUST_MIN_STACK=33554432 cargo test`
+
+- Local readiness: `cargo run -- check`
+
+- Run consumer: `cargo run -- run`
+
+- Test: `pnpm test:sidecar`
+
+- Full check: `pnpm check`
+
+### Sidecar Rules
+
+- Keep compatibility with the supported Rust toolchain: `rustc/cargo 1.96.0`.
+
+- Manage this project through the monorepo root git repository.
+
+- Do not commit database credentials or server-only env files.
+
+- Use runtime SQLx queries, not compile-time `query!` macros, so builds do not require
+  database access.
+
+- Migrations must be idempotent and safe to run on sidecar startup.
+
+- Every database schema migration must have a matching versioned design note under
+  `../postgres/docs/data-design/` and must record itself in
+  `qintopia_agent_os.schema_change_log` when that table exists.
+
+- Work-item creation events must not mirror full request metadata. If a capability needs
+  metadata in `work_item_events.data`, add an explicit allowlist that emits only stable,
+  non-secret audit fields; `work_items.metadata` may retain broader internal context
+  after normal sensitivity validation.
+
+- The complete suite includes fake provider/media tests that bind ephemeral loopback
+  sockets. In restricted coding sandboxes, run the same `cargo test` command with
+  loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
+  environment failure and must be confirmed by an unsandboxed rerun, not hidden by
+  skipping tests.
+
+- Test helpers used only by a non-default adapter feature must carry the same feature
+  gate on their imports, types, and implementations; default-feature Clippy compiles
+  test targets and rejects otherwise-unused helpers.
+
+- The disposable operations smoke may enter the live retry path only with both the
+  Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
+  literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media
+  configuration.
+
+- v1 only captures raw/normalized messages and creates pending processing jobs;
+  embedding and graph extraction must remain separate workers.
+
+- Callback credential-shape reports may expose only one fixed reviewed schema id and an
+  additional-field count. Reject canonical and alias spellings that appear together;
+  never report request ids, credential values, filenames, MD5 values, unknown field
+  names, or unknown values.
+
+- Persist an `uploading` attempt in the same transaction that claims the work item,
+  before any external socket can open. Expired `uploading` attempts and legacy claims
+  with no attempt row are unknown external outcomes: terminalize them as `ambiguous`
+  with automatic retry disabled. Worker previews must reuse the exact apply-side group
+  and media-host allowlists.
+
+- `space_agent_turn_result` artifacts are inert data. A future consumer must derive
+  destinations and capability arguments from the exact work item's trusted `space_id`
+  and the live capability registry; never interpret result property names or values as a
+  room, target, URL, HTTP request, executable input, or tool invocation.
+
+- Do not adopt files from the server Huabaosi shadow branch until owner review
+  explicitly approves them.

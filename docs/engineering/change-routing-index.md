@@ -24,13 +24,13 @@ Read the root [AGENTS.md](../../AGENTS.md) first. The following dependencies are
 explicit: sibling rules are not automatically inherited. Follow the topic links from
 these entries and the owning package README before changing the behavior.
 
-| Task                                   | Required rules and detailed contracts                                                                                               | Validation from root                                         |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Erhua reply or QiWe callback           | [QiWe](../../skills/qiwe/AGENTS.md), [Erhua](../../agents/erhua/README.md), [Hermes](../../runtime/hermes/AGENTS.md)                | `pnpm test:qiwe`, `pnpm runtime:hermes:check`                |
-| Hermes upgrade or Profile distribution | [Hermes](../../runtime/hermes/AGENTS.md), [deploy](../../deploy/AGENTS.md), [recovery](../operations/hermes-production-recovery.md) | `pnpm runtime:hermes:check`, `pnpm deploy:hermes-core:check` |
-| Sidecar schema or worker               | [Sidecar](../../runtime/sidecar/AGENTS.md), [data design](../../runtime/postgres/docs/data-design/)                                 | `pnpm test:sidecar`, `pnpm check:pr:heavy`                   |
-| Release or rollback                    | [Deploy](../../deploy/AGENTS.md), [runner](../../deploy/runner/README.md), [rollback](../../deploy/rollback/README.md)              | `pnpm deploy:contracts:check`, `pnpm deploy:runner:check`    |
-| Documentation or collaboration         | [Working contract](agent-working-contract.md), [migration inventory](../plans/active/agents-guidance/README.md)                     | `pnpm lint:md`, `pnpm collaboration:check`                   |
+| Task                                   | Required rules and detailed contracts                                                                                                 | Validation from root                                         |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Erhua reply or QiWe callback           | [QiWe](../../skills/qiwe/AGENTS.md), [Erhua](../../agents/erhua/README.md), [Hermes](../../runtime/hermes/AGENTS.md)                  | `pnpm test:qiwe`, `pnpm runtime:hermes:check`                |
+| Hermes upgrade or Profile distribution | [Hermes](../../runtime/hermes/AGENTS.md), [deploy](../../deploy/AGENTS.md), [recovery](../operations/hermes-production-recovery.md)   | `pnpm runtime:hermes:check`, `pnpm deploy:hermes-core:check` |
+| Sidecar schema or worker               | [Sidecar](../../runtime/sidecar/AGENTS.md), [data design](../../runtime/postgres/docs/data-design/)                                   | `pnpm test:sidecar`, `pnpm check:pr:heavy`                   |
+| Release or rollback                    | [Deploy](../../deploy/AGENTS.md), [runner](../../deploy/runner/README.md), [rollback](../../deploy/rollback/README.md)                | `pnpm deploy:contracts:check`, `pnpm deploy:runner:check`    |
+| Documentation or collaboration         | [Working contract](programming-agent-guardrails.md#operating-rules), [reorganization note](../plans/active/agents-guidance/README.md) | `pnpm lint:md`, `pnpm collaboration:check`                   |
 
 Business-specific operator constraints remain in package README topic indexes, not in
 the global instruction entry. See [engineering](README.md) and

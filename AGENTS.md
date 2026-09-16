@@ -48,9 +48,10 @@ Sibling instructions are not inherited automatically. For cross-directory work, 
 every applicable entry and the topic contracts linked from change routing. Keep detailed
 policy in its owning topic; do not copy it into multiple entries.
 
-[Working contract](docs/engineering/agent-working-contract.md) retains the complete
-worktree lifecycle, source maps, validation and collaboration clauses. Read its
-applicable sections before worktree operations or changes to engineering policy.
+[Working contract](docs/engineering/programming-agent-guardrails.md#operating-rules)
+retains the complete worktree lifecycle, source maps, validation and collaboration
+clauses. Read its applicable sections before worktree operations or changes to
+engineering policy.
 
 Use the existing suitable checkout by default. Inspect branches, worktrees and local
 changes before creating isolation. A new task or PR alone does not justify another
@@ -109,8 +110,8 @@ local PostgreSQL setup. Package guides own detailed commands.
 - Follow the [collaboration model](docs/engineering/collaboration-model.md) for PR
   creation and release preparation. A low-risk classification or reviewer result does
   not authorize merge, release publication or deployment.
-- [Historical compatibility rules](docs/operations/agent-guidance-history.md) retain
-  their original conditions until separately reviewed; age is not deprecation.
+- [Historical compatibility rules](docs/plans/active/agents-guidance/pending-review.md#operating-rules)
+  retain their original conditions until separately reviewed; age is not deprecation.
 
 ## Production boundary
 
@@ -159,8 +160,9 @@ report and update the affected runbook or check in the same remediation PR. Keep
 operational facts in status/reports; detailed procedures belong to package or
 operational documents, not this entrypoint.
 
-For instruction changes, maintain the
-[rule migration inventory](docs/plans/active/agents-guidance/README.md). Root guidance
-has a 16 KiB limit and local entries 12 KiB each; do not evade this with long lines.
-Preserve conditions and exceptions when moving rules. The checker establishes coverage
-and navigation, not semantic equivalence or production safety.
+The [reorganization note](docs/plans/active/agents-guidance/README.md) records the
+original source and destination map. Root guidance has a 16 KiB limit and local entries
+12 KiB each; do not evade this with long lines. Preserve conditions and exceptions when
+moving rules. The checker validates navigation and size budgets, not semantic
+equivalence or production safety. Review policy changes through Git history and the PR
+diff.

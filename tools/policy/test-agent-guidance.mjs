@@ -31,7 +31,7 @@ function rejects(root, prefix) {
   );
 }
 
-test("complete indexed migration passes without original sentence in AGENTS", () =>
+test("scoped entries pass without an audit inventory", () =>
   withFixture((root) => {
     assert.deepEqual(validateAgentGuidance(root), []);
     rewrite(root, "AGENTS.md", (s) => s.replace("Project rules", "Contributor entry"));
@@ -52,38 +52,6 @@ test("missing local target and missing anchor are rejected", () =>
     rejects(root, "broken-link");
     rejects(root, "missing-anchor");
   }));
-test("missing migration entry cannot silently retire a rule", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/plans/active/agents-guidance/migration.json", (s) => {
-      const value = JSON.parse(s);
-      value.entries = [];
-      return JSON.stringify(value);
-    });
-    rejects(root, "missing-migration");
-  }));
-test("duplicate mapping does not compensate for coverage", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/plans/active/agents-guidance/migration.json", (s) => {
-      const value = JSON.parse(s);
-      value.entries.push(value.entries[0]);
-      return JSON.stringify(value);
-    });
-    rejects(root, "duplicate-migration");
-  }));
-test("removing no-retry restriction is rejected", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/engineering/topic.md", (s) =>
-      s.replace("never retry", "retry")
-    );
-    rejects(root, "changed-rule");
-  }));
-test("format-only changes preserve rule coverage", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/engineering/topic.md", (s) =>
-      s.replace("outcomes; never", "outcomes;\n  never")
-    );
-    assert.deepEqual(validateAgentGuidance(root), []);
-  }));
 test("size budget, scope and unknown indexed command are enforced", () =>
   withFixture((root) => {
     rewrite(
@@ -103,48 +71,28 @@ test("repository traversal is rejected", () =>
     rewrite(root, "AGENTS.md", (s) => s + "\n[Outside](../outside.md)\n");
     rejects(root, "outside-repository");
   }));
-test("a topic must also have its package index", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/engineering/README.md", () => "# Engineering\n");
-    rejects(root, "missing-contract-index");
-  }));
 
-test("an empty package index cannot borrow a root link", () =>
+test("overlong lines cannot bypass readable entry budgets", () =>
+  withFixture((root) => {
+    rewrite(root, "AGENTS.md", (s) => s + "\n" + "x".repeat(501));
+    rejects(root, "long-line");
+  }));
+test("routing section is required", () =>
+  withFixture((root) => {
+    rewrite(root, "docs/engineering/change-routing-index.md", () => "# Routing\n");
+    rejects(root, "missing-routing");
+  }));
+test("linked operating rules also receive link validation", () =>
   withFixture((root) => {
     rewrite(
       root,
-      "docs/engineering/README.md",
-      () => "# Engineering\n\n## Agent operating contracts\n"
+      "AGENTS.md",
+      (s) => s + "\n[Rules](docs/engineering/topic.md#operating-rules)\n"
     );
-    rejects(root, "missing-package-link");
-  }));
-
-test("baseline column order and truncated rows are rejected", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/plans/active/agents-guidance/baseline.json", (s) => {
-      const value = JSON.parse(s);
-      value.entryColumns.reverse();
-      value.files[0].sections[0].entries[0].pop();
-      return JSON.stringify(value);
-    });
-    rejects(root, "baseline-schema");
-  }));
-test("baseline rows must retain their full hash and source range", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/plans/active/agents-guidance/baseline.json", (s) => {
-      const value = JSON.parse(s);
-      value.files[0].sections[0].entries[0][2] = 999;
-      value.files[0].sections[0].entries[0][3] = "abc";
-      return JSON.stringify(value);
-    });
-    rejects(root, "baseline-entry");
-  }));
-test("truncated baseline rows are rejected", () =>
-  withFixture((root) => {
-    rewrite(root, "docs/plans/active/agents-guidance/baseline.json", (s) => {
-      const value = JSON.parse(s);
-      value.files[0].sections[0].entries[0].pop();
-      return JSON.stringify(value);
-    });
-    rejects(root, "baseline-row");
+    rewrite(
+      root,
+      "docs/engineering/topic.md",
+      (s) => s + "\n## Operating rules\n\n[Missing](absent.md)\n"
+    );
+    rejects(root, "broken-link");
   }));

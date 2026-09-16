@@ -185,10 +185,19 @@ The offline `check_cron_ack_publication.py` reports the known incomplete-ready-f
 as a blocker; it never runs a business job. `check_core_plugin_compatibility.py` accepts
 `--plugin-dir` for the packaged QiWe tree and tests three independent process consumers.
 
-## Agent operating contracts
+## Operating rules
 
-Read the relevant topic when changing this capability. These documents retain the full
-constraints behind the scoped AGENTS.md summaries.
+These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
+exceptions remain binding. Backtick paths from root rules are repository-relative;
+Sidecar rules retain their original `runtime/sidecar/` path base.
 
-- [Cron contract](docs/cron-agent-contract.md)
-- [Hermes runtime contract](docs/runtime-agent-contract.md)
+### Core Rules
+
+- Hermes remains the Agent runtime. It should not become the business database.
+
+- The production Hermes venv is uv-managed. Its `pyvenv.cfg` base home may use uv's
+  stable `cpython-<major>.<minor>-<platform>` alias, which resolves to an exact patch
+  version below `/home/ubuntu/.local/share/uv/python`. Interpreter validation may allow
+  only that single in-root alias with matching version/platform identity; do not require
+  the uv home path to be textually unaliased and do not broaden it to arbitrary
+  symlinks.

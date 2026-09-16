@@ -8,8 +8,8 @@ parsing, webhook ingress, reply handling and callback integration.
 ## Map and required reading
 
 - [Package guide](README.md).
-- [Complete channel constraints](docs/channel-agent-contract.md).
-- [Complete media constraints](docs/media-agent-contract.md).
+- [Complete channel constraints](README.md#operating-rules).
+- [Complete media constraints](README.md#operating-rules).
 - [Sidecar rules](../../runtime/sidecar/AGENTS.md).
 - [Hermes rules](../../runtime/hermes/AGENTS.md).
 - [Deploy rules](../../deploy/AGENTS.md).

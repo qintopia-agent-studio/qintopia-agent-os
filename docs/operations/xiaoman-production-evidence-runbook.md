@@ -238,3 +238,17 @@ checkers and the final completion manifest proves:
 - both artifacts are bound to the same published production release commit;
 - both production sidecar SHA-256 values are retained separately; and
 - the final checker passes against the full sanitized evidence bundle.
+
+## Operating rules
+
+These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
+exceptions remain binding. Backtick paths from root rules are repository-relative;
+Sidecar rules retain their original `runtime/sidecar/` path base.
+
+### Commands
+
+- Xiaoman production evidence chain local repository verification:
+  `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
+
+- Real Xiaoman activity production evidence validation:
+  `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
