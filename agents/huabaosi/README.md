@@ -560,14 +560,6 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   network, database, or send access. It must not change production routing, run image
   generation, upload media, write Feishu/Postgres, or send outside the allowlist.
 
-### Sidecar Commands
-
-- Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
-- Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
-- Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
-
-From the monorepo root, prefer:
-
 - As of 2026-07-15, 阿靓/Huabaosi real image production has not completed final
   activation. Do not treat it as live until the same reviewed release has follow-up
   deploy evidence, the Huabaosi timer is activated, and the first real pending
