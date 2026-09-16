@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import YAML from "yaml";
-import { validateAgentGuidance } from "../policy/agent-guidance.mjs";
 
 const repoRoot = process.cwd();
 const errors = [];
@@ -45,7 +44,71 @@ const requireExecutable = (relativePath) => {
   }
 };
 
-for (const error of validateAgentGuidance(repoRoot)) addError(error);
+const sidecarAgentsPath = "runtime/sidecar/AGENTS.md";
+if (!exists(sidecarAgentsPath)) {
+  addError(`${sidecarAgentsPath}: missing sidecar agent rules`);
+} else {
+  const sidecarAgents = [
+    readText(sidecarAgentsPath),
+    readText("runtime/sidecar/README.md"),
+    readText("skills/qiwe/README.md"),
+    readText("deploy/runner/README.md"),
+    readText("agents/huabaosi/README.md"),
+  ].join("\n");
+  for (const fragment of [
+    "Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the",
+    "guarded `huabaosi-feishu-mirror-adapter`",
+    "`xiaoman-feishu-poster-adapter`",
+    "QiWe live features, staging adapters,",
+    "staging/production builds, and all-features production artifacts remain forbidden",
+    "QiWe",
+    "apply code must still fail before Postgres",
+    "or network access unless",
+    "Feishu delivery config",
+    "QiWe live features must not be",
+    "the explicit owner activation scripts may enable external timers",
+    "The QiWe upload worker and callback processor may compile live helpers only through",
+    "`qiwe-staging-adapter` or `qiwe-production-adapter`",
+  ]) {
+    requireFragment(sidecarAgentsPath, sidecarAgents, fragment);
+  }
+  for (const fragment of [
+    "QiWe live adapters, staging adapters, and",
+    "callback processor may compile live helpers for staging",
+    "Default and production builds must fail apply before",
+  ]) {
+    forbidFragment(sidecarAgentsPath, sidecarAgents, fragment);
+  }
+}
+
+const rootAgentsPath = "AGENTS.md";
+if (!exists(rootAgentsPath)) {
+  addError(`${rootAgentsPath}: missing repository agent rules`);
+} else {
+  const rootAgents = [
+    readText(rootAgentsPath),
+    readText("docs/engineering/programming-agent-guardrails.md"),
+    readText("docs/operations/xiaoman-production-evidence-runbook.md"),
+    readText("deploy/runner/README.md"),
+    readText("skills/qiwe/README.md"),
+    readText("agents/huabaosi/README.md"),
+    readText("docs/operations/xiaoman-weekly-minimum-loop-runbook.md"),
+  ].join("\n");
+  for (const fragment of [
+    "`node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`",
+    "Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`",
+    "Production release requests use `runtime_artifact_profile=huabaosi-production`",
+    "install `qiwe-production` as a companion",
+    "derive that path and SHA-256 from the companion manifest and `SHA256SUMS`",
+    "A same-SHA request for an existing release must reuse the immutable",
+    "manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and",
+    "restart-target fields",
+    "apply-xiaoman-activity-read-through-production-config.py",
+    "sourcing the Xiaoman Hermes profile",
+  ]) {
+    requireFragment(rootAgentsPath, rootAgents.replace(/\s+/g, " "), fragment);
+  }
+}
 
 const qiweImageSendPlanPath = "docs/plans/active/xiaoman-qiwe-image-send.md";
 if (!exists(qiweImageSendPlanPath)) {

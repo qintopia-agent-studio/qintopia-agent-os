@@ -145,9 +145,7 @@ node_modules/.bin/markdownlint-cli2 \
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Commands
 
@@ -169,7 +167,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `canonical_record` aliases), and
   `deploy/sidecar/scripts/xiaoman-activity-production-parity-capture.sh`
   (`canonical_legacy_record`), or production parity reports false drift.
-
 - Xiaoman weekly loop production:
   - Saturday recruitment recurrence lives in Xiaoman Hermes cron, not in a
     release-managed systemd timer.
@@ -259,7 +256,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   providers, write Feishu, approve artifacts, queue QiWe, publish, or send; poster brief
   approval, generated-image review, and final group-send confirmation stay on the
   existing AgentOS human gates.
-
 - Xiaoman activity read-through production config for release-managed Erhua/weekly
   workers must be applied through the reviewed release-local allowlist copier, not by
   sourcing the Xiaoman Hermes profile or hand-editing

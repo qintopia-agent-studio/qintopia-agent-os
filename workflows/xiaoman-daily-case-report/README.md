@@ -396,15 +396,12 @@ candidate text.
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Commands
 
 - Xiaoman daily case-report character-universe local readiness check:
   `node tools/deploy/check-xiaoman-daily-case-report-character-universe-local.mjs`
-
 - Xiaoman daily case-report private review bundle now includes `.draft-bundle.json`. It
   may contain ordinary digest, light-roast, public-draft, storyline timeline, and
   7/14/30-day lookback callback candidates. The ordinary digest should follow the
@@ -412,12 +409,10 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   topics, people notes, local-life notes, open questions, risk items, and public-topic
   candidates. Production evidence may retain only `draft_counts` plus privacy flags,
   never the candidate text.
-
 - Xiaoman daily case-report reference-project attachment/media slots must stay explicit
   empty review fields until a reviewed attachment source exists. Do not read
   `messages.raw`, attachment tokens, filenames, media URLs, or image payloads for daily
   digest/poster content.
-
 - Xiaoman daily case-report production evidence may retain only the fixed
   `public_output_style` schema/boolean contract proving the character-daily layout,
   storyline-first output, image-first group delivery, PDF-non-default delivery, roast
@@ -426,7 +421,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   must preserve negative boundaries as negative booleans: `pdf_default_delivery=false`
   and `public_surface_contains_private_draft=false` are success evidence, not failures
   to coerce to `true`.
-
 - Xiaoman daily case-report JPEG rendering must stay storyline/character-first in both
   HTML screenshot and Pillow fallback paths. Keep `人物出场表`, `今日台词`,
   `梗和回调候选`, `同场关系`, `地点 / 本地生活线索`, `待解决问题`, and `故事线候选`
@@ -436,13 +430,11 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `public_output_style`, private-review counts, artifact identity, and paths. Do not
   parse or forward full `daily_report_markdown`, full `character_universe`, quote-map,
   wiki, draft, run-manifest, or operator-review text in the send chain.
-
 - Xiaoman daily case-report auto-publish uses the Rust renderer as the primary path, but
   the worker may fall back to the reviewed Python/Pillow pipeline only when the Rust
   path fails before upload at `rasterize rendered HTML`. Do not fallback after media
   upload, auto-publish creation, or QiWe send-state errors; those phases are idempotency
   and delivery boundaries, not safe rerender triggers.
-
 - Xiaoman daily case-report creative-profile apply boundary test:
 
   ```bash
@@ -460,7 +452,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   the fixed approval constant to `/etc/qintopia/message-sidecar.env`, must fail closed
   on duplicate/wrong values, and must never accept or expose chat ids, group ids, DB
   hashes, payload JSON, env values, or arbitrary config fields.
-
 - Xiaoman daily case-report production read-through repair is the only reviewed one-shot
   path for restoring a missing
   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_READ_THROUGH_ENABLE=1` after Hermes cutover. Use
@@ -470,7 +461,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   the fixed read-through enable constant to `/etc/qintopia/message-sidecar.env`, must
   fail closed on duplicate/wrong values, and must never accept or expose chat ids, group
   ids, DB hashes, payload JSON, env values, or arbitrary config fields.
-
 - Xiaoman daily case-report production chat-id repair is the only reviewed one-shot path
   for restoring a missing `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_CHAT_ID` after Hermes
   cutover. Use `Run Production Runtime One-Shot` with
@@ -480,7 +470,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `/etc/qintopia/message-sidecar.env`, must fail closed on duplicate/wrong values, and
   must never accept or expose chat ids, group ids, DB hashes, payload JSON, env values,
   or arbitrary config fields.
-
 - Production Hermes cron live apply should use the `Apply Production Hermes Crons`
   GitHub workflow after the reviewed release containing the runner support is deployed.
   It creates a signed `production-hermes-cron-apply` deploy-runner request and accepts
@@ -520,7 +509,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   files may be an object with `jobs` but no `schema_version`; apply scripts should
   normalize that envelope to `schema_version: 1`, while rejecting any explicit
   unsupported schema version.
-
 - Xiaoman daily case-report auto-publish binding after a reviewed render/upload step has
   produced a durable JPEG URI and identity. This creates/updates the approved
   `generated_image` artifact and one automatic `group_message_request`; it does not
@@ -537,14 +525,12 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   Feishu-backed publish idempotency may reuse only an existing artifact whose id matches
   the reviewed upload evidence; reject conflicting random-id artifacts instead of
   writing an `artifact_uri` whose Feishu suffix no longer matches `artifacts.id`.
-
 - The Xiaoman daily case-report worker uploads through the Huabaosi Feishu primary
   storage boundary. Its release SHA binding now lives in the Hermes wrapper: after
   sourcing the persistent env, the wrapper derives the release SHA from
   `release/current` and exports it as both `QINTOPIA_DEPLOYED_COMMIT_SHA` and
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA`; do not rely on stale persistent env
   release keys from `/etc/qintopia/message-sidecar.env`.
-
 - The Xiaoman daily case-report production host does not provide Python `psycopg`,
   Python Playwright, or a Playwright browser binary by default. The reviewed production
   path must keep the fixed `/usr/bin/psql` database fallback and system Pillow renderer
@@ -553,7 +539,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `PATH`, keep the database URL out of process arguments, pass connection fields through
   `PG*` environment variables only, and feed SQL on stdin so `psql` variable
   substitution is applied.
-
 - Build the non-secret Xiaoman production completion manifest after the Huabaosi canary,
   real-activity, and QiWe group-arrival evidence checks pass. Run it where `gh` can
   verify the Release Please PR, QiWe production enablement PR, and published release
@@ -626,23 +611,19 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `profile_fact_text_included=false`); it must not retain raw QiWe callback bodies,
   request ids, file credentials, group ids, message ids, media URLs, database URLs,
   provider responses, raw chat, raw logs, daily-report Markdown, or raw character nodes.
-
 - Xiaoman daily case-report auto-publish must use the reviewed AgentOS artifact plus
   QiWe image-send boundary. Do not treat a local image path, hand-copied systemd unit,
   conversation-created cron, Python QiWe sender, deprecated synchronous upload shortcut,
   caller-provided HTTPS image URL without `media_upload_evidence`, or committed group id
   as an acceptable automatic publication path.
-
 - Xiaoman daily case-report top-line message totals stay raw, but highlights, topic
   cards, and MVP ranking must filter obvious payment prompts, copy-token promotions, and
   external-platform shopping redirects so a long spam-like message cannot become the
   day's featured quote.
-
 - Xiaoman daily case-report colon-based topic markers must be strong labels such as
   topics, recaps, shares, asks, or activity discussions. Ordinary chatty colon sentences
   must break marker carry-over instead of capturing later messages into a fake topic
   card.
-
 - Xiaoman daily case-report backfill must start the reviewed release-local
   `xiaoman-daily-case-report-auto-publish-backfill.sh` entrypoint with the exact owner
   approval, reviewed release SHA, and `YYYY-MM-DD` date. The worker may honor
@@ -651,19 +632,16 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=1` only for that worker
   process; do not send missed reports by local image path, retired timer starts, or
   ad-hoc QiWe calls.
-
 - Xiaoman daily case-report character-universe outputs are private second-pass
   artifacts. Production worker logs and send-ready metadata may retain only safe
   counters and schema flags; never retain Markdown body, raw universe nodes, member
   labels, story labels, or source excerpts.
-
 - Xiaoman daily case-report may reuse active reviewed `creative_profile` snapshots only
   as read-only style memory keyed by stable `person_id`. The read path may use only
   `safe_reply_hints` and `communication_style` fields from
   `profile_version='xiaoman-daily-creative-profile-v1'`; never read or publish snapshot
   `summary`, raw messages, fact text, private profile text, or display-name-guessed
   identities. If this layer fails, keep generating the latest-message daily report.
-
 - Xiaoman daily case-report creative-profile candidates may be applied only through the
   reviewed candidate path. The daily export must keep `person_id` out of
   `creative_profile_candidates`; a separate owner-reviewed payload supplies the exact

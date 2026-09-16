@@ -241,14 +241,14 @@ checkers and the final completion manifest proves:
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Commands
 
 - Xiaoman production evidence chain local repository verification:
   `node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`
-
 - Real Xiaoman activity production evidence validation:
   `node tools/deploy/check-xiaoman-real-activity-production-evidence.mjs <production-evidence-output.txt>`
+- As of 2026-07-15, real end-to-end acceptance is not complete. Do not claim the Xiaoman
+  activity flow is accepted until one real activity is observed from Xiaoman signal
+  intake through image generation, human approval, and QiWe group-send arrival.

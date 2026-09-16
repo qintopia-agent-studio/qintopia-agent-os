@@ -1,7 +1,0 @@
-# Project rules
-
-<!-- guidance-scope: . -->
-
-[Topic](docs/engineering/topic.md#rules)
-
-Run `pnpm fixture:check`.

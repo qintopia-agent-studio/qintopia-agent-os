@@ -60,9 +60,7 @@ pnpm policy:check
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Commands
 
@@ -70,7 +68,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `node tools/deploy/check-erhua-member-recognition-local.mjs`. This proves the
   release-current runbook, deploy bundle files, focused Rust tests, fixture checkers,
   and completion finalizers are present; it does not prove production DB completion.
-
 - Erhua member recognition reviewed production config apply:
 
   ```bash
@@ -86,12 +83,10 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 - Erhua member recognition production config observation:
   `QINTOPIA_ERHUA_MEMBER_RECOGNITION_CONFIG_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-member-recognition-production-config-observation-smoke.sh`.
   Continue only when it reports `action_status=ready_for_member_recognition_runbook`.
-
 - Erhua member recognition room roster sync evidence:
   `qintopia-message-sidecar identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --apply`
   then
   `node tools/deploy/check-erhua-room-member-sync.mjs <identity-backfill-room-member-sync-output.json>`.
-
 - Erhua member recognition coverage and completion evidence:
   `node tools/deploy/finalize-erhua-member-recognition-coverage.mjs` and
   `node tools/deploy/finalize-erhua-member-recognition-completion.mjs`. Retained
@@ -107,7 +102,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   people without useful profile signals should receive an active no-stable-profile
   `reply_context` snapshot with `do_not_infer_missing_profile=true`, not remain
   identity-only.
-
 - Erhua member recognition roster audit evidence:
   `node tools/deploy/build-erhua-member-recognition-roster-audit.mjs`. It must derive
   only from sanitized coverage, canary, and completion-summary evidence and may retain
@@ -136,12 +130,10 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `cargo run -- identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --dry-run`
   Retained evidence may keep `scope_fingerprint`; never retain the raw group id or QiWe
   user ids.
-
 - Erhua scoped member profile refresh:
   `cargo run -- member-profile --chat-id <reviewed-erhua-qiwe-group-id> --apply --quiet`
   Retained evidence may keep aggregate counts and `scope_fingerprints`; never retain raw
   chat ids or candidate facts.
-
 - Erhua speaker self-canary private sender map:
   `cargo run -- erhua-member-speaker-canary-sender-map --chat-id <reviewed-erhua-qiwe-group-id>`.
   Its output contains raw QiWe sender ids; keep it as a server-local temporary file only

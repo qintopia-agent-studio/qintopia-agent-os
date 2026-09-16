@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { validateAgentGuidance } from "./agent-guidance.mjs";
 
 import fs from "node:fs";
 import path from "node:path";
@@ -186,7 +185,20 @@ for (const requiredFragment of [
   }
 }
 
-for (const error of validateAgentGuidance(repoRoot)) addError(error);
+const agentInstructions = exists("AGENTS.md") ? readText("AGENTS.md") : "";
+for (const requiredFragment of [
+  "Do not develop directly on `master`",
+  "Document first",
+  "Do not introduce Java",
+  "Release Please",
+  "Do not manually edit root `CHANGELOG.md`",
+  "docs/plans/active/current-roadmap.md",
+  "docs/engineering/change-routing-index.md",
+]) {
+  if (agentInstructions && !agentInstructions.includes(requiredFragment)) {
+    addError(`AGENTS.md: must mention ${requiredFragment}`);
+  }
+}
 
 const guardrails = exists("docs/engineering/programming-agent-guardrails.md")
   ? readText("docs/engineering/programming-agent-guardrails.md")

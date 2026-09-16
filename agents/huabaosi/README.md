@@ -51,9 +51,7 @@ pnpm policy:check
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Commands
 
@@ -69,7 +67,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 
 - Huabaosi image generation production state observation smoke:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-image-generation-production-observation-smoke.sh`
-
 - Huabaosi image generation one-shot production canary:
 
   ```bash
@@ -84,30 +81,23 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 
 - Huabaosi image generation production canary evidence validation:
   `node tools/deploy/check-huabaosi-image-production-canary-evidence.mjs <production-canary-output.txt>`
-
 - Huabaosi Feishu-backed generated-image read-only revalidation:
   `qintopia-message-sidecar huabaosi-feishu-primary-storage-revalidate --artifact-id <generated-image-uuid>`
-
 - Huabaosi generated-image Feishu mirror production observation smoke:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-feishu-artifact-mirror-production-observation-smoke.sh`
-
 - Huabaosi generated-image Feishu mirror activation is guarded, not automatic. It
   requires the persistent mirror flag to be present exactly once and set to `1`, then
   runs the release-local preflight service through the fixed `/usr/bin/systemctl`
   boundary before enabling the dedicated timer:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ACTIVATION=approved-production-huabaosi-feishu-artifact-mirror deploy/sidecar/scripts/activate-huabaosi-feishu-artifact-mirror-production.sh`
-
 - Huabaosi generated-image Feishu mirror immediate timer rollback:
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_ROLLBACK=approved-production-huabaosi-feishu-artifact-mirror-rollback deploy/sidecar/scripts/rollback-huabaosi-feishu-artifact-mirror-production.sh`
-
 - Huabaosi image generation production activation after manual Release publish. The
   activation and rollback scripts must use a fixed minimal `PATH` and
   `/usr/bin/systemctl`, never a caller-provided `SYSTEMCTL`:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ACTIVATION=approved-production-image-generation deploy/sidecar/scripts/activate-huabaosi-image-generation-production.sh`
-
 - Huabaosi image generation immediate timer rollback:
   `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_ROLLBACK=approved-production-image-generation-rollback deploy/sidecar/scripts/rollback-huabaosi-image-generation-production.sh`
-
 - QiWe image-send production activation after manual Release publish and production env
   approval. The activation script must fail before preflight or timer changes unless the
   persistent `QINTOPIA_SIDECAR_DATABASE_URL` hashes to the approved
@@ -125,29 +115,23 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   command overrides from the caller; use a fixed system PATH and absolute systemctl
   path:
   `QINTOPIA_QIWE_IMAGE_SEND_PRODUCTION_ACTIVATION=approved-production-qiwe-image-send deploy/sidecar/scripts/activate-qiwe-image-send-production.sh`
-
 - Release-local QiWe production observations must inspect only the fixed
   `sidecar-profiles/qiwe-production` companion and require exactly
   `qiwe-production-adapter` plus `huabaosi-feishu-mirror-adapter` in both disabled and
   enabled states. They must reject the primary Huabaosi binary. Never restore QiWe by
   mixing it into or replacing the Huabaosi artifact.
-
 - Huabaosi WeCom gateway read-only observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-gateway-observation-smoke.sh`
   Run it as the `ubuntu` Hermes systemd user, not through `sudo`, because it inspects
   `systemctl --user`. Its journal scan is fixed to the latest 30 minutes and 160 lines;
   production commands, paths, and the journal window must not accept caller-controlled
   overrides. Keep test doubles in the Node fixture only.
-
 - Huabaosi WeCom canary disabled-state observation smoke:
   `QINTOPIA_HUABAOSI_WECOM_CANARY_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/huabaosi-wecom-canary-observation-smoke.sh`
-
 - Huabaosi WeCom shadow capture fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_shadow`
-
 - Huabaosi WeCom policy preview fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_policy`
-
 - Huabaosi WeCom canary gateway fixture replay:
   `cargo test --manifest-path runtime/sidecar/Cargo.toml huabaosi_wecom_canary`
 
@@ -167,7 +151,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   the mirror worker timer by itself. Feishu automation may notify reviewers or mirror
   reviewed status after the row exists, but it must not generate images, approve
   artifacts, become the fact source, call QiWe, or publish.
-
 - Huabaosi generated-image Feishu mirroring must use the fixed
   `huabaosi-generated-image-v1` artifact-version schema and key idempotency by
   `generated_image_artifact_id`. It may mirror only a fully revalidated immutable final
@@ -179,14 +162,12 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   remain forbidden. The ordinary release installer may install the dedicated mirror
   preflight, worker, and timer units, but must not enable the external write timer
   automatically.
-
 - Huabaosi Feishu mirror apply must validate the exact owner phrase, production release
   SHA binding, database URL hash, Base and table exact allowlists, fixed schema version,
   Huabaosi profile path, and media host allowlist before Postgres or external I/O. The
   production observation may run only the non-secret mirror observation preflight; it
   must not run full configuration preflight, preview the queue, upload media, write
   Feishu/Postgres, approve, publish, call QiWe, or send.
-
 - Huabaosi Feishu primary-storage apply must reuse the bounded Rust Feishu client and
   the same exact Base/table allowlists, schema version, profile path, production release
   SHA, and database URL hash gates as the reviewed mirror. Feishu attachment tokens and
@@ -194,12 +175,10 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   CLI arguments, or environment-derived output. A failed or ambiguous Feishu write must
   not create a pending artifact or be retried automatically as if no external write
   occurred.
-
 - Huabaosi image-generation worker reports intentionally omit the generated artifact URI
   even for Feishu-backed storage. Production canary evidence must not depend on a worker
   stdout `artifact_uri`; use the reviewed Feishu primary-storage revalidation step to
   prove the stored JPEG identity.
-
 - A Feishu-backed image canary may cross from `pending` to `approved` only through an
   explicit human apply that first completes authenticated Feishu attachment revalidation
   and then matches the memory-only evidence against the transaction-locked Postgres
@@ -215,7 +194,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   Feishu private attachments by exposing Feishu attachment tokens, storing a private
   media URL, introducing an unreviewed public proxy/upload service, or falling back to
   QiWe synchronous upload APIs marked deprecated in the reviewed protocol plan.
-
 - Huabaosi Feishu production observation must discover the immutable
   `release/current/sidecar/qintopia-message-sidecar` binary, or accept an explicit
   `QINTOPIA_SIDECAR_BIN` only when it resolves to that same release-local binary with
@@ -230,7 +208,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   enable flag is present exactly once and exactly `1`. Rollback must stop the timer
   first and may report completion only after that flag is present exactly once and
   exactly `0` in the reviewed sidecar environment file.
-
 - Huabaosi image-generation production systemd services must bind
   `QINTOPIA_DEPLOYED_COMMIT_SHA`, `QINTOPIA_HUABAOSI_IMAGE_PRODUCTION_RELEASE_SHA`, and
   `QINTOPIA_HUABAOSI_FEISHU_PRODUCTION_RELEASE_SHA` to the immutable release SHA when
@@ -241,7 +218,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   verified `release/current` target and pass the persistent image approval, database
   hash, timeout, and media bound needed by the real production preflight. Do not repair
   release binding by editing `/etc/qintopia/message-sidecar.env` during a deployment.
-
 - Default sidecar builds must fail QiWe upload/callback apply before configuration,
   Postgres claim/mutation, or network access even if runtime enable flags are
   misconfigured; callback apply must also fail before reading stdin. Production artifact
@@ -250,7 +226,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   artifact and server-source build checks must reject `qiwe-staging-adapter`,
   `huabaosi-staging-adapter`, and all-features builds. The Huabaosi production feature
   alone must not make QiWe live helpers available.
-
 - The Hermes QiWe image callback bridge is a memory-only callback ingress, not a
   scheduler or release activation path. Production mode must require
   `QINTOPIA_QIWE_IMAGE_CALLBACK_PROCESSOR_MODE=production`, exact production owner
@@ -269,7 +244,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   credentials, or raw provider values. Callback bytes may flow only through bounded
   stdin, and bridge enablement must never approve artifacts, enable timers, publish a
   Release, write Feishu by itself, or bypass the Rust production apply gate.
-
 - `xiaoman-real-activity-production-evidence` is a read-only retention exporter. It may
   run only from the immutable
   `/home/ubuntu/qintopia-agent-os-releases/current/sidecar-profiles/qiwe-production/qintopia-message-sidecar`
@@ -293,7 +267,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   Huabaosi first-record canary to `runtime_artifact_profile=huabaosi-production` and the
   retained real-activity/QiWe arrival evidence to
   `runtime_artifact_profile=qiwe-production`.
-
 - The Feishu-backed QiWe staging bridge may claim `feishu-base://` generated images only
   when the immutable staging artifact contains both `huabaosi-staging-adapter` and
   `qiwe-staging-adapter`. It must commit the existing `uploading` attempt before Feishu
@@ -304,7 +277,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   Huabaosi-only, and QiWe-only builds must fail closed. Temporary URLs, Feishu tokens,
   multipart bodies, and raw bytes must not enter Postgres, reports, logs, CLI arguments,
   or environment-derived output.
-
 - `qiwe-image-send-staging-smoke.sh` is the only reviewed one-shot staging entrypoint
   for the async upload and callback send exercise. It requires an exact work item UUID
   for upload/callback, owner phrase, staging env path, exact owner-reviewed staging
@@ -332,7 +304,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `artifact_content_hash` for Huabaosi/QiWe hash matching; it must not retain media URI,
   filename, MD5 value, file size, or callback credentials. It must not install a
   listener, service, timer, production feature build, Feishu write, or broad group send.
-
 - A QiWe production-enablement PR must retain Huabaosi staging generated-image evidence
   and QiWe staging send evidence that pass
   `tools/deploy/check-xiaoman-image-send-staging-evidence.mjs`, proving the Huabaosi
@@ -341,7 +312,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   provider output. Record that cross-flow result only in
   `docs/reports/templates/xiaoman-image-send-staging-evidence.md`; staging evidence is a
   prerequisite, not proof that production sending is complete.
-
 - The staging-only sidecar artifact `qintopia-message-sidecar-staging-linux-x86_64-gnu`
   may be built only by manual artifact workflow dispatch or
   `pnpm artifact:sidecar:staging`. It must compile exactly `huabaosi-staging-adapter`
@@ -354,7 +324,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   database hash, Base/table allowlists, schema, and Huabaosi profile gates before
   external I/O. Production deploy, COS upload, Release builds, and production artifact
   fetchers must never fetch or promote it.
-
 - `run-huabaosi-image-generation-worker` defaults to
   `QINTOPIA_HUABAOSI_IMAGE_GENERATION_ENABLED=0`. Production generation may run only
   from a release artifact compiled with the reviewed `huabaosi-production-adapter`
@@ -362,7 +331,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   URL hash, valid provider/media configuration, and the fixed production timer. It may
   create only pending `generated_image` artifacts; it must not approve, publish, write
   Feishu, or send QiWe.
-
 - The Huabaosi production image-generation service and timer may be installed from the
   immutable release but must not be enabled by the ordinary release installer. After the
   owner manually publishes the Release, the reviewed activation command must run the
@@ -370,7 +338,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   generation. Rollback disables the timer first and turns the generation enable flag off
   through reviewed runtime configuration. Do not repurpose this timer for artifact
   approval, Feishu, QiWe, or publishing.
-
 - `operations-artifact-review-decision` may approve a `generated_image` only after its
   Huabaosi worker provenance, stable JPEG HTTPS URI, final JPEG sha256/metadata, source
   PNG sha256, fixed `png_to_jpeg_white_background_q92_v1` transform metadata, source
@@ -378,12 +345,10 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   request. Human approval applies to the exact final JPEG bytes; the transient provider
   PNG is never an approvable artifact. Integrity denial must leave the artifact pending
   and must not complete the work item or unlock downstream send intake.
-
 - Generated-image media URIs used by Huabaosi artifact creation, operations approval,
   and QiWe send intake must reject raw backslashes and percent-encoded path separators
   before URL parsing; parsers or downstream services may normalize them into path
   separators, which can hide unstable or secret-shaped input from later filename checks.
-
 - When the Huabaosi adapter is explicitly enabled in an approved staging boundary, it
   may retry only provider transport failures and HTTP 408, 429, or 5xx responses. It
   must stop after three total attempts, use delayed requeueing, and record only
@@ -396,12 +361,10 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   must reject control characters before socket connection. Each work-item claim must use
   a unique token; artifact or failure writes must lock and match that unexpired token,
   with exactly one affected work-item row.
-
 - An expired or structurally incomplete Huabaosi image-generation `processing` claim is
   an unknown provider/media outcome. Reconciliation must atomically mark it failed,
   release the complete claim tuple, append one sanitized ambiguous-outcome event, and
   disable automatic retry; it must never reclaim the row for another external attempt.
-
 - `huabaosi-image-generation-production-observation-smoke.sh` may verify either the
   disabled pre-activation state or the enabled production timer state, run configuration
   preflight, and run `run-huabaosi-image-generation-worker --once --dry-run` for a
@@ -416,7 +379,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   or falling back to a mutable source tree. It must not use `--apply`, contact
   provider/media endpoints, write Postgres or Feishu, call QiWe, create a generated
   image, or publish.
-
 - `huabaosi-image-generation-production-canary-smoke.sh` is the release-local one-shot
   entrypoint for the first post-deploy image. It must run from the exact immutable
   release with the provider timer disabled and inactive, use a fixed minimal `PATH` and
@@ -437,14 +399,12 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   same-byte readback stayed sanitized. It must not approve the generated image, enable
   timers, run the mirror worker, publish, call QiWe, send, or retry terminal/ambiguous
   outcomes.
-
 - `huabaosi-image-generation-preflight` may only validate and emit a sanitized summary
   of local image-adapter configuration. It must not open network or database
   connections, reveal configuration values, enable generation, write Feishu, send QiWe,
   or publish. Its `missing_configuration` field may contain only fixed public env names
   already documented in `.env.example`; it must never contain values, URLs, hosts, ids,
   or enable flags.
-
 - `huabaosi-image-generation-staging-readiness-smoke.sh` may only inspect staging env
   file metadata, immutable staging release root metadata, the exact owner-reviewed
   release SHA, and packaged sidecar binary SHA-256. It must not read env file contents,
@@ -455,7 +415,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   binary the running user cannot execute; tests for these checks must use
   repository-local temporary roots, not `/tmp`. It is a read-only prerequisite before
   the owner-approved Huabaosi staging generation smoke.
-
 - `huabaosi-image-generation-staging-smoke.sh` may only run one owner-approved staging
   image request after the fail-closed preflight, explicit smoke flag and approval
   phrase, staging-only env file, a repository-reviewed database URL hash allowlist, and
@@ -475,14 +434,12 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   Record the retained result in
   `docs/reports/templates/huabaosi-image-generation-staging-evidence.md` before it is
   used as input to QiWe staging evidence.
-
 - `render-staging-runtime-env.py` must render the same reviewed Huabaosi Feishu Base
   staging key contract consumed by `huabaosi-image-generation-staging-smoke.sh`. It must
   not require or emit the retired HTTP media upload/public URL keys for the Huabaosi
   staging path, and the generation evidence must prove the worker returned a
   `feishu-base://` artifact boundary rather than trusting the env-selected storage
   backend.
-
 - `qiwe-image-send-preflight` may only validate the disabled async URL-upload/send-image
   contract from local configuration. It must report whether a live adapter was compiled
   and fail disabled/default release checks when any QiWe live adapter is present. It
@@ -499,7 +456,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   reject every control character before socket connection. Its `missing_configuration`
   field follows the same public-name-only rule as the image preflight and must never
   include enable flags or configuration values.
-
 - Huabaosi image generation may override the shared 60-second socket timeout only
   through `QINTOPIA_HUABAOSI_IMAGE_HTTP_TIMEOUT_SECONDS`, defaulting to 180 seconds and
   bounded from 60 through 240 seconds. The upper bound must leave room inside the fixed
@@ -513,13 +469,11 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   unprovable upload or Feishu write and become `true` only after confirmed storage. Do
   not change the shared timeout for QiWe, WeCom, Feishu, or other adapters to remediate
   image-provider latency.
-
 - 阿亮画报师生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
   用户可见中断提示来自 live Hermes gateway busy-ack and platform send fallback
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
   not Rust sidecar image generation or QiWe image-send state. Diagnose this path through
   Huabaosi Hermes/WeCom runtime first, and do not hot-edit the server.
-
 - `huabaosi-wecom-gateway-observation-smoke.sh` may only inspect the live Huabaosi
   Hermes WeCom user-service active state through `systemctl --user`, fixed service
   command, fixed
@@ -530,7 +484,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   files. It must not source `.env`, print raw journal lines, print user messages, read
   tokens, restart services, send WeCom messages, run image generation, write Postgres or
   Feishu, call QiWe/provider/media endpoints, or modify live Hermes profile state.
-
 - `huabaosi-wecom-canary-observation-smoke.sh` may only verify that the canary gateway
   remains unscheduled and disabled, then run `huabaosi-wecom-canary-preflight` for a
   sanitized local configuration summary. From release/current it must discover the
@@ -539,14 +492,12 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   endpoint/token/id values, write Postgres or Feishu, call WeCom, QiWe, provider, or
   media endpoints, run image generation, publish messages, install units, or modify the
   live Hermes profile.
-
 - `huabaosi-wecom-shadow-capture` may only preview one supplied WeCom event from bounded
   stdin and emit sanitized metadata, hashes, byte counts, field presence, and fixed
   guardrails. It must not add `--apply`, open Postgres or network connections, write
   artifacts, send WeCom/QiWe messages, call image providers, upload media, write Feishu,
   or emit raw ids, user text, media URLs, filenames, tokens, or callback file
   credentials.
-
 - `huabaosi-wecom-policy-preview` may only preview one supplied WeCom event from bounded
   stdin and emit sanitized policy decisions for message classification, busy-session
   handling, internal-process filtering, formatting fallback, user-safe fallback copy,
@@ -555,7 +506,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   Feishu, or emit raw ids, user text, media URLs, filenames, tokens, or callback file
   credentials. Suppression rules must match narrow complete internal templates; do not
   block ordinary user requests through broad words such as `plain text` or `纯文本`.
-
 - `huabaosi-wecom-canary-preflight` must not read stdin, open network or database
   connections, source env files, reveal configuration values, write Feishu/Postgres, or
   send WeCom/QiWe messages. `huabaosi-wecom-canary-gateway --apply` is allowed only in
@@ -583,19 +533,16 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   the explicit owner activation scripts may enable external timers. Feishu primary
   storage for the first canary is part of the Huabaosi production adapter path and still
   creates only pending AgentOS artifacts.
-
 - Expired or incomplete Huabaosi image-generation `processing` claims must become a
   sanitized terminal ambiguous outcome before new work is selected. Never infer from a
   lost lease that provider generation or media upload stayed local, and never reclaim
   that row for automatic external retry.
-
 - `huabaosi-wecom-shadow-capture` is a preview-only migration command. It may read one
   event from bounded stdin and emit only sanitized hashes, byte counts, field presence,
   classification, and fixed guardrails. It must not gain an apply mode, connect to
   Postgres or external services, send WeCom/QiWe messages, generate or upload media,
   write Feishu, create artifacts, or print raw ids, user text, media URLs, filenames,
   tokens, or callback credentials.
-
 - `huabaosi-wecom-policy-preview` is a preview-only migration command. It may read one
   event from bounded stdin and emit only sanitized policy classifications, fixed
   fallback copy, and hash-based idempotency metadata. It must not gain an apply mode,
@@ -604,7 +551,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   filenames, tokens, or callback credentials. Internal-process suppression must use
   narrow full-template matches with negative fixture coverage for ordinary user text
   containing terms such as `plain text`.
-
 - `huabaosi-wecom-canary-preflight` is a local configuration preflight only. It must not
   read stdin, open network or database connections, source env files, or emit
   endpoint/token/id values. `huabaosi-wecom-canary-gateway --apply` is staging-only,
@@ -617,9 +563,15 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 ### Sidecar Commands
 
 - Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
-
 - Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
-
 - Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
 
 From the monorepo root, prefer:
+
+- As of 2026-07-15, 阿靓/Huabaosi real image production has not completed final
+  activation. Do not treat it as live until the same reviewed release has follow-up
+  deploy evidence, the Huabaosi timer is activated, and the first real pending
+  `generated_image` has review evidence. The `v0.2.10` follow-up deploy and systemd
+  installation evidence now exist, but the no-network preflight remains fail-closed
+  because provider/media configuration is not provisioned; the timer must remain
+  disabled until that gate passes.

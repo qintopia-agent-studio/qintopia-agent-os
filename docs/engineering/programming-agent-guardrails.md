@@ -223,73 +223,36 @@ Stop and ask for owner confirmation before:
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
-### Map
+### References
 
-- Human entrypoint: `README.md`
-- Agent-facing rules: `AGENTS.md`
-- Claude Code rules: `CLAUDE.md`
-- Documentation hub: `docs/README.md`
-- Architecture overview: `docs/architecture/agent-os-overview.md`
-- Product scope: `docs/product/agent-os-prd.md`
-- Agent OS design: `docs/agent-os/README.md`
-- Runtime baseline: `docs/operations/runtime-baseline.md`
-- Production current status: `docs/operations/production-current-status.md`
-- Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`
-- Xiaoman weekly minimum loop runbook:
-  `docs/operations/xiaoman-weekly-minimum-loop-runbook.md`
-- Collaboration model: `docs/engineering/collaboration-model.md`
-- Migration policy: `docs/engineering/migration-policy.md`
-- Server change policy: `docs/engineering/server-change-policy.md`
-- Programming agent guardrails: `docs/engineering/programming-agent-guardrails.md`
-- Change routing index: `docs/engineering/change-routing-index.md`
-- Current roadmap: `docs/plans/active/current-roadmap.md`
-- Xiaoman character-universe daily report migration:
-  `docs/plans/active/xiaoman-character-universe-daily-report.md`
-- Source document inventory: `docs/operations/source-document-inventory.md`
-- Registry indexes: `registry/`
-- Agent packages: `agents/`
-- Skill packages: `skills/`
-- Workflow packages: `workflows/`
-- MCP adapters: `mcp/`
-- Runtime templates: `runtime/`
-- Deployment scripts and manifests: `deploy/`
-- Engineering docs: `docs/engineering/`
-- Operations docs: `docs/operations/`
-- Fixtures and replay data: `fixtures/`
-- Historical POC material: `deprecated/`
-- Local business testing guide: `docs/testing/README.md`
+Use the [documentation hub](../README.md) and [change routing](change-routing-index.md)
+for package and task maps. Production evidence runbook:
+`docs/operations/xiaoman-production-evidence-runbook.md`.
 
 ### Worktree Lifecycle
 
 - Reuse the project root or an existing suitable worktree by default, developing on a
   feature branch. A new task, branch, or PR alone does not justify another worktree.
-
 - Create one only for explicit user-requested isolation, parallel work requiring
   independent file states, uncommitted work that blocks safe progress, or simultaneous
   execution of different versions. Inspect `git worktree list`, branches, and local
   changes first; unrelated dirty files alone do not require isolation.
-
 - Before creating one, state the concrete reason, path, branch, and cleanup condition.
   Proceed within existing task authorization without adding a step-by-step approval
   gate. Put manually managed worktrees in the target repository's ignored
   `.worktrees/<task>/`, not long-lived `/tmp` or `/private/tmp` directories. Preserve
   user-specified or app-managed directory conventions.
-
 - At handoff, check actual PR merge status (including squash merges), local changes,
   untracked and ignored configuration/evidence, and running previews. Retire only this
   task's completed, recoverable worktrees; retain pending acceptance work with its
   purpose recorded. Archive local material under ignored `.local-workspace/`; never
   commit credentials or business snapshots with source changes.
-
 - PR merge, task archival, and worktree cleanup are separate actions. Preserve all local
   work before restoring the ordinary project entrypoint to current `master` without
   disrupting another task. Never force-overwrite work or delete historical branches as
   an implicit side effect.
-
 - For cross-repository work, resolve the target Git root and read its `AGENTS.md`. Codex
   project grouping does not change filesystem ancestry or Git boundaries. When operating
   on Green PMS, follow its worktree policy and `main`/PR requirements too.
@@ -297,31 +260,19 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 ### Commands
 
 - Install dependencies: `pnpm install`
-
 - Format: `pnpm format`
-
 - Pre-commit quick checks: `.husky/pre-commit`
-
 - Repository check: `pnpm check`
-
 - Markdown lint: `pnpm lint:md`
-
 - Local business testing: read `docs/testing/agent-guide.md`; use the `pnpm test:*`
   entries backed by `node tools/testing/run.mjs` for setup, discovery, targeted runs,
   full runs, reports, and harness checks.
-
 - PR readiness: `pnpm pr:doctor`
-
 - PR body validation: `pnpm pr:check-body`
-
 - Local PR quick tier: `pnpm check:pr:quick`
-
 - Local PR heavy tier: `pnpm check:pr:heavy`
-
 - Local PR auto tier: `pnpm check:pr:auto`
-
 - PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
-
 - If the local pnpm version shim cannot verify a registry signature, do not set
   `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
   repository-local Node entrypoint, run that entrypoint directly and record the failed
@@ -335,80 +286,42 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 - A `group_message_send` claim must clear `claimed_by`, `locked_at`, and
   `claim_expires_at` together when it records send-ready or policy-denied state. The
   transition must update exactly the locked work item before appending its audit event.
-
-- Do not develop directly on `master`; create a feature branch first.
-
-- Use Conventional Commits for commit messages. Allowed types are `build`, `chore`,
-  `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`.
-
 - Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
   `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
   missing, run `pnpm pr:bootstrap`.
-
 - In the Codex desktop environment, do not run extra GitHub authentication checks before
   creating a PR. Use `pnpm pr:create` directly after PR readiness checks; only handle
   authentication when the actual push or PR creation command fails.
-
 - In Codex sandboxed command execution, a repo-owned Node PR script can fail when its
   child `gh` process reaches `api.github.com` even though a top-level `gh pr ...`
   command works. Treat that as sandbox network permission, not an auth failure; rerun
   the repo-owned PR entrypoint with network approval instead of re-authenticating `gh`.
-
 - PR-Agent must not automatically edit PR descriptions. The completed repository PR
   template is author-owned because CI validates its required sections.
-
 - Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
   conversation comments, and inline review threads for the latest head SHA. A green
   PR-Agent check is not sufficient. Resolve every security concern and recommended
   review item in code or record an explicit disposition, then wait for replacement CI
   and review results before merge.
-
-- Do not introduce Java, Gradle, Maven, Kotlin, Go, Swift, C#, PHP, Ruby, Elixir, or a
-  new language/toolchain stack without an explicit owner-approved architecture decision.
-
 - Do not copy secrets, live `.env` files, tokens, table ids, private chat logs, raw
   member profiles, or server-only runtime state into git.
-
 - WorkTool is not a Qintopia Agent OS channel for new work. Treat WorkTool and the
   WorkTool Hermes plugin as deprecated or audit-only material.
-
 - Hermes Kanban is not the future task/orchestration backbone. Do not build new
   workflows on Hermes Kanban.
-
 - Evidence and visual worker reports must derive `dry_run` from `apply_requested` so a
   `--dry-run` observation cannot report `dry_run=false`; preflight must fail closed on
   any mismatch rather than weakening that assertion.
-
 - A content-hash conflict may reuse an existing pending `generated_image` only when its
   stable URI, source refs, and complete immutable worker metadata exactly match the new
   final JPEG result. Reviewed, stale, or modified artifacts must fail closed and must
   never be overwritten by retry processing.
 
-### Package Placement
+### Package requirements
 
-- Agent profile, prompt, allowed skills, memory policy, and forbidden actions:
-  `agents/<agent>/`.
-- Reusable channel or business capability: `skills/<capability>/`.
-- Cross-Agent business process: `workflows/<workflow>/`.
-- MCP server or adapter: `mcp/<adapter>/`.
-- Runtime template or render/check logic: `runtime/<runtime-area>/`.
-- Release, smoke, rollback, or server install logic: `deploy/<area>/`.
-- Historical POC or removed direction: `deprecated/<topic>/`.
-
-### Package Contract
-
-Every adopted package should eventually include:
-
-- `README.md`
-- `manifest.yaml`, `agent.yaml`, or `workflow.yaml`
-- `tests/` or `fixtures/`
-- owner and risk level
-- validation command
-- production boundary
-- rollback or decommission notes when relevant
-
-Do not migrate a package as production-ready until these are present or there is a
-documented exception.
+Follow the [package contract](package-contract.md) for placement, required files,
+owner/risk metadata, validation, production boundaries and rollback. Missing
+requirements need a documented exception before a package is called production-ready.
 
 ### Migration Rules
 
@@ -425,34 +338,10 @@ Server runtime directories under `.hermes/profiles/*` must be treated as live ru
 state. They can produce inventory records, templates, or diffs; they must not be copied
 wholesale into this repository.
 
-### Server Change Policy
+### Server changes
 
-The server is a deployment target, not an editing workspace.
-
-Allowed server activity:
-
-- read-only inventory
-- service status checks
-- log inspection
-- smoke checks
-- deploying an approved commit SHA through a runbook
-- emergency rollback with a follow-up patch and owner record
-
-Resolve the production endpoint and identity from the versioned
-`docs/operations/inventory/server-sources.yaml` record and connection details supplied
-by the administrator. SSH hostnames, usernames, aliases, key paths, and known-hosts
-locations are not stored in this repository. When SSH is required, contact the
-administrator for the current authorized connection details; do not infer, hard-code, or
-search for private keys. An authentication failure is not authorization to inspect,
-copy, or change private keys.
-
-Disallowed server activity:
-
-- editing docs directly
-- editing code directly
-- editing `.hermes` runtime files directly
-- scp overwrites of single source files
-- committing unreviewed experiments on the server and treating them as product direction
+Follow the [server change policy](server-change-policy.md), including allowed activity,
+connection identity, prohibited hot edits, deployment evidence and emergency rollback.
 
 ### Validation Expectations
 

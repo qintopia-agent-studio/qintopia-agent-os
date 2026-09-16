@@ -187,17 +187,17 @@ as a blocker; it never runs a business job. `check_core_plugin_compatibility.py`
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Core Rules
 
 - Hermes remains the Agent runtime. It should not become the business database.
-
 - The production Hermes venv is uv-managed. Its `pyvenv.cfg` base home may use uv's
   stable `cpython-<major>.<minor>-<platform>` alias, which resolves to an exact patch
   version below `/home/ubuntu/.local/share/uv/python`. Interpreter validation may allow
   only that single in-root alias with matching version/platform identity; do not require
   the uv home path to be textually unaliased and do not broaden it to arbitrary
   symlinks.
+- PR #140 and PR #141 completed the Xiaoman profile bundle and values migration, but the
+  live profile symlink cutover remains a separate PR. Do not repoint the live Xiaoman
+  profile symlink without that reviewed cutover, smoke evidence, and rollback note.

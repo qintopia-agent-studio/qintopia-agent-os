@@ -331,66 +331,52 @@ direct QiWe sender.
 
 ## Operating rules
 
-These constraints supplement the scoped AGENTS.md summaries. Conditions and historical
-exceptions remain binding. Backtick paths from root rules are repository-relative;
-Sidecar rules retain their original `runtime/sidecar/` path base.
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 ### Commands
 
 - Erhua morning brief fixture test:
   `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s workflows/erhua-morning-brief/tests -v`
-
 - Erhua morning brief systemd timer observation (rollback-to-timer path only):
   `QINTOPIA_ERHUA_MORNING_BRIEF_TIMER_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/erhua-morning-brief-timer-observation-smoke.sh`
-
 - Erhua morning brief reviewed production schedule is `08:10 Asia/Shanghai`, pinned by
   the Hermes cron registry expr `10 8 * * *` in
   `runtime/hermes/cron/reviewed-cron-jobs.json`.
-
 - Erhua morning brief AI news defaults to eight items. English items must carry explicit
   Chinese title and summary translations before they can appear in the brief; do not
   send English-only RSS fallback items as-is.
-
 - Erhua morning brief should top up QunMind public AI news with reviewed RSS fallback
   items when QunMind returns fewer than eight usable items. The QunMind parser must not
   treat body labels such as summaries, source links, or translation notes as additional
   news items just to fill the limit.
-
 - Erhua morning brief RSS dedup history is a publish-success record for selected RSS
   titles. When QunMind is topped up by RSS, record only the RSS additions; do not record
   QunMind's own public report titles in the RSS history file.
-
 - Erhua morning brief Rust RSS parsing reads public XML; keep `quick-xml >= 0.41.0` and
   preserve explicit handling for text, CDATA, and `GeneralRef` entity events. Do not
   downgrade or simplify this path without rerunning RustSec advisories and RSS parser
   regressions.
-
 - Erhua morning brief RSS fallback should prefer fewer high-signal items over filling
   the card with weakly related items. Keep the built-in fallback list to clearly AI
   focused public sources; do not add generic tech/news feeds as defaults unless there is
   a reviewed quality gate proving they cannot dominate the brief with low-signal items.
-
 - Erhua morning brief news presentation should keep safe public article links as
   `来源：...` lines and end the section with a resident-facing discussion prompt. Keep
   only `https` links without embedded credentials; local paths, credentials, internal
   ids, and other internal markers stay blocked.
-
 - Erhua morning brief poster rendering should stay in an editorial brief style: clean
   paper background, strong title, two-digit numbered news rows, thin dividers, source
   lines, and a one-sentence summary. Do not reintroduce cartoon-like heavy borders,
   decorative badges, placeholder logo marks, internal producer labels, or brand marks
   copied from reference images.
-
 - Erhua morning brief chat-facing text must read like a resident-facing group message,
   not an operations ticket. Block internal planning wording such as `需要前置`,
   `可宣发`, `宣发判断`, `计划类活动`, `活动状态`, `宣发状态`, and Feishu status labels
   before artifact creation or QiWe send; the worker should fail closed rather than send
   that wording to the group. Keep activity status and readiness evidence in logs or
   sanitized evidence, not in the group-facing brief.
-
 - Erhua morning brief QiWe text-send fixture:
   `cargo run --quiet --manifest-path runtime/sidecar/Cargo.toml -- run-qiwe-text-send-worker --once --fixture-mode`
-
 - Erhua morning brief reviewed production config apply/disable:
 
   ```bash
@@ -403,10 +389,8 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
 - Erhua morning brief systemd timer activation (rollback-to-timer path only) after
   Release promotion and reviewed persistent env approval:
   `QINTOPIA_ERHUA_MORNING_BRIEF_ACTIVATION=approved-production-erhua-morning-brief deploy/sidecar/scripts/activate-erhua-morning-brief-production.sh`
-
 - Erhua morning brief systemd timer rollback after persistent env disables the timer:
   `QINTOPIA_ERHUA_MORNING_BRIEF_ROLLBACK=approved-production-erhua-morning-brief-rollback deploy/sidecar/scripts/rollback-erhua-morning-brief-production.sh`
-
 - Erhua morning brief text auto-publish must keep external sending in the separate
   `run-qiwe-text-send-worker` path. It may send only the reviewed
   `text_activity_announcement` / `text_announcement` work item after artifact approval,
@@ -415,7 +399,6 @@ Sidecar rules retain their original `runtime/sidecar/` path base.
   `approved-production-qiwe-text-send`. Do not make `run-group-message-send-worker`
   perform a real QiWe send, and do not generalize the text worker into arbitrary group
   messaging.
-
 - Erhua morning brief now uses a Hermes cron job (task 5), not the release-managed daily
   timer. The reviewed declaration is `runtime/hermes/cron/erhua/morning-brief.job.json`,
   the wrapper is `runtime/hermes/scripts/qintopia_erhua_morning_brief.sh`, and the

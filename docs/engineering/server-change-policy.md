@@ -48,3 +48,13 @@ Each record must identify the observed evidence, root cause, resolution, validat
 remaining safety boundary, and next owner action. Update the affected runbook, package
 README, manifest, or automated check in that same PR so the operating contract changes
 with the code.
+
+## Connection identity
+
+Resolve the production endpoint and identity from the versioned
+`docs/operations/inventory/server-sources.yaml` record and connection details supplied
+by the administrator. SSH hostnames, usernames, aliases, key paths, and known-hosts
+locations are not stored in this repository. When SSH is required, contact the
+administrator for the current authorized connection details; do not infer, hard-code, or
+search for private keys. An authentication failure is not authorization to inspect,
+copy, or change private keys.

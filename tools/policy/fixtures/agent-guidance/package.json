@@ -1,5 +1,0 @@
-{
-  "scripts": {
-    "fixture:check": "node -e \"process.exit(0)\""
-  }
-}
