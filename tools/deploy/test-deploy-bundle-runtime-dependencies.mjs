@@ -53,6 +53,9 @@ try {
     "deploy/runner/run-hermes-core-release.sh",
     "deploy/runner/install-hermes-core-systemd-units.sh",
     "deploy/runner/qintopia-hermes-core-launcher",
+    "skills/qiwe/space_agent_completion.py",
+    "runtime/hermes/repair_snapshot_permissions.py",
+    "deploy/runner/install-hermes-dashboard.py",
   ]) {
     assert.ok(
       manifest.files.some((entry) => entry.path === `payload/${relativePath}`),
@@ -66,6 +69,39 @@ try {
     NODE_PATH: "",
     LANG: "C",
   };
+  // Check the packaged Python import graph, not the working tree. This catches
+  // missing eager relative dependencies even when all parser unit tests pass.
+  const pythonImports = spawnSync(
+    "python3",
+    [
+      "-B",
+      "-c",
+      `
+import ast, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+package = root / 'skills/qiwe'
+missing = []
+for source in package.rglob('*.py'):
+    if 'tests' in source.relative_to(package).parts:
+        continue
+    tree = ast.parse(source.read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom) or not node.level or not node.module:
+            continue
+        parent = source.parent
+        for _ in range(node.level - 1):
+            parent = parent.parent
+        target = parent.joinpath(*node.module.split('.'))
+        if not target.with_suffix('.py').is_file() and not (target / '__init__.py').is_file():
+            missing.append(str(target.relative_to(root)))
+assert not missing, 'packaged QiWe dependencies missing: ' + ', '.join(sorted(set(missing)))
+print('packaged_qiwe_import_graph=passed')
+`,
+      payloadRoot,
+    ],
+    { cwd: tmpRoot, encoding: "utf8", env: isolatedEnvironment }
+  );
+  assert.equal(pythonImports.status, 0, pythonImports.stderr);
   const registry = runPayloadTool(
     "tools/deploy/hermes-profile-registry.mjs",
     ["--services"],

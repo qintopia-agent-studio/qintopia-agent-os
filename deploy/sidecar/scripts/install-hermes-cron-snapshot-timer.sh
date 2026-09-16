@@ -15,6 +15,7 @@ RUNUSER="/usr/sbin/runuser"
 STAT="/usr/bin/stat"
 RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/current"
 SYNC_SCRIPT="${RELEASE_DIR}/deploy/sidecar/scripts/sync-hermes-cron-snapshot.sh"
+PERMISSION_REPAIR="${RELEASE_DIR}/runtime/hermes/repair_snapshot_permissions.py"
 UNIT_DIR="/home/ubuntu/.config/systemd/user"
 SERVICE_UNIT="${UNIT_DIR}/hermes-cron-snapshot.service"
 TIMER_UNIT="${UNIT_DIR}/hermes-cron-snapshot.timer"
@@ -30,6 +31,7 @@ fail() {
 [[ -x "$RUNUSER" ]] || fail "fixed runuser is required"
 [[ -x "$STAT" ]] || fail "fixed stat is required"
 [[ -x "$SYNC_SCRIPT" ]] || fail "sync script is missing from release/current"
+[[ -f "$PERMISSION_REPAIR" ]] || fail "reviewed permission repair is missing"
 [[ "$(readlink -f "$RELEASE_DIR")" != "$RELEASE_DIR" ]] || fail "release/current must be a symlink"
 [[ -d "$HOME_DIR" ]] || fail "ubuntu home directory is missing"
 
@@ -46,7 +48,11 @@ systemctl_user() {
 }
 
 run_baseline_sync() {
+  /usr/bin/python3 "$PERMISSION_REPAIR" --release "$(readlink -f "$RELEASE_DIR")" --apply || return 1
   QINTOPIA_HERMES_CRON_SNAPSHOT="approved-production-hermes-cron-snapshot" \
+    "$SYNC_SCRIPT" >/dev/null 2>&1 || return 1
+  # Root initialization can mask unreadable wrappers; exercise the timer user too.
+  "$RUNUSER" -u ubuntu -- /usr/bin/env -i HOME="$HOME_DIR" PATH="/usr/bin:/bin" \
     "$SYNC_SCRIPT" >/dev/null 2>&1
 }
 

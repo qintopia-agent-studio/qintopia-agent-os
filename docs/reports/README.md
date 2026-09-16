@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-16 Hermes production recovery](2026-09-16-hermes-production-recovery.md)
+
 - [PR #704 Reviewer 建议处理](2026-09-15-pr704-review-followup.md)
 
 - [PR #704 主线集成与验证](2026-09-15-pr704-integration.md)
