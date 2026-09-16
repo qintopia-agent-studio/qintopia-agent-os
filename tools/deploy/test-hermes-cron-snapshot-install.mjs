@@ -33,6 +33,11 @@ try {
   const fakeStat = path.join(fakeBin, "stat");
 
   fs.mkdirSync(scriptDir, { recursive: true });
+  fs.mkdirSync(path.join(releaseTarget, "runtime", "hermes"), { recursive: true });
+  fs.writeFileSync(
+    path.join(releaseTarget, "runtime", "hermes", "repair_snapshot_permissions.py"),
+    "# Fixture: the permission repair itself has Python behavior tests.\n"
+  );
   fs.mkdirSync(homeDir, { recursive: true });
   fs.symlinkSync(releaseTarget, releaseCurrent);
 

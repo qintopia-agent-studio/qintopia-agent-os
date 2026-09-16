@@ -110,6 +110,10 @@ try:
     from .solitaire.llm_parser import parser_from_context
     from .solitaire.reminder import ReminderWorker, ReminderWorkerConfig
 except ImportError:  # pragma: no cover - local tests import adapter.py directly
+    if __package__:
+        # A packaged plugin must not hide a missing release dependency behind the
+        # direct-file test fallback (for example a missing space_agent_completion).
+        raise
     from image_callback_bridge import (
         QiWeImageCallbackBridge,
         classify_async_image_callback,

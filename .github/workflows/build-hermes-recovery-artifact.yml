@@ -1,0 +1,82 @@
+name: Build Hermes Recovery Artifact
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "runtime/hermes/dashboard_*.py"
+      - "runtime/hermes/check_*compatibility.py"
+      - "runtime/hermes/check_dashboard_http.py"
+      - "runtime/hermes/tests/test_dashboard*.py"
+      - "runtime/hermes/repair_snapshot_permissions.py"
+      - "runtime/hermes/recovery_backup.py"
+      - "runtime/hermes/tests/test_recovery_backup.py"
+      - "runtime/hermes/tests/test_repair_snapshot_permissions.py"
+      - "tools/deploy/build-hermes-dashboard.py"
+      - "skills/qiwe/**"
+      - "tools/deploy/build-deploy-bundle.mjs"
+      - ".github/workflows/build-hermes-recovery-artifact.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Checkout pinned official core
+        uses: actions/checkout@v7
+        with:
+          repository: NousResearch/hermes-agent
+          ref: 2237be355906fbe6065ce1815711eee52b2d646e
+          path: .local-workspace/official-core
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v6
+        with:
+          version: "10.29.2"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - name: Install repository dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build matching frontend from tracked source
+        run: |
+          git -C .local-workspace/official-core archive --format=tar.gz --output=../official-core.tar.gz 2237be355906fbe6065ce1815711eee52b2d646e
+          python3 tools/deploy/build-hermes-dashboard.py --source-archive .local-workspace/official-core.tar.gz --core-commit 2237be355906fbe6065ce1815711eee52b2d646e --output dist/hermes-dashboard
+      - name: Install locked official Python runtime
+        working-directory: .local-workspace/official-core
+        run: uv sync --frozen --extra messaging --extra wecom --no-dev --python 3.12
+      - name: Validate artifact and activation transaction fixtures
+        run:
+          python3 -m unittest discover -s runtime/hermes/tests -p 'test_dashboard*.py'
+          -v
+      - name: Verify consistent server-local backup fixtures
+        run:
+          python3 -m unittest discover -s runtime/hermes/tests -p
+          test_recovery_backup.py -v
+      - name: Verify root installation and Ubuntu script readability
+        run: |
+          id -u ubuntu >/dev/null 2>&1 || sudo useradd --create-home ubuntu
+          sudo python3 -m unittest discover -s runtime/hermes/tests -p 'test_repair_snapshot_permissions.py' -v
+      - name: Probe real official dashboard with synthetic profile
+        run:
+          .local-workspace/official-core/.venv/bin/python
+          runtime/hermes/check_dashboard_http.py --core-dir
+          .local-workspace/official-core --dist dist/hermes-dashboard/web_dist
+      - name: Build payload and discover packaged QiWe in fresh processes
+        run: |
+          node tools/deploy/test-deploy-bundle-runtime-dependencies.mjs
+          .local-workspace/official-core/.venv/bin/python runtime/hermes/check_core_plugin_compatibility.py --core-dir .local-workspace/official-core --plugin-dir dist/deploy-bundles/qintopia-agent-os-deploy-bundle/payload/skills/qiwe
+      - name: Upload complete candidate (not production activation)
+        uses: actions/upload-artifact@v7
+        with:
+          name: hermes-dashboard-2237be3-${{ github.sha }}
+          path: dist/hermes-dashboard/
+          if-no-files-found: error
+          retention-days: 14

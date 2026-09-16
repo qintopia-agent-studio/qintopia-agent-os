@@ -172,3 +172,15 @@ pnpm check:light
 x86_64 和 Python
 3.11–3.13 的 uv 可迁移 Python 分发包；artifact 携带完整标准库，不依赖构建机或服务器的系统 Python 路径。依赖安装启用哈希验证，并在最终 runtime 中实际执行隔离 CLI
 smoke 后才生成通过回执。
+
+## September 2026 production recovery
+
+See the [recovery runbook](../../docs/operations/hermes-production-recovery.md) and
+[indexed incident report](../../docs/reports/2026-09-16-hermes-production-recovery.md).
+Core upgrade acceptance now requires matching console assets, fresh-process discovery
+against the actual deploy payload, owner-triggered messaging, cron execution/delivery,
+and Ubuntu snapshot readability. Active/readiness alone does not establish recovery.
+
+The offline `check_cron_ack_publication.py` reports the known incomplete-ready-file race
+as a blocker; it never runs a business job. `check_core_plugin_compatibility.py` accepts
+`--plugin-dir` for the packaged QiWe tree and tests three independent process consumers.

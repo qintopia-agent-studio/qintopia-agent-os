@@ -49,6 +49,13 @@ no_restart_paths:
   - "runtime/hermes/cron/**"
   - "runtime/hermes/scripts/**"
   - "runtime/hermes/check_core_plugin_compatibility.py"
+  - "runtime/hermes/recovery_backup.py"
+  - "runtime/hermes/check_cron_ack_publication.py"
+  - "runtime/hermes/check_wecom_uncertain_send.py"
+  - "runtime/hermes/check_dashboard_http.py"
+  - "runtime/hermes/dashboard_artifact.py"
+  - "runtime/hermes/dashboard_launcher.py"
+  - ".github/workflows/build-hermes-recovery-artifact.yml"
 
 production_adjacent_paths:
   - "agents/**"
@@ -152,6 +159,7 @@ rules:
       - "deploy/manifests/**"
       - "workflows/silaoshi-daily-ops/**"
       - "deploy/restart-target-rules.yaml"
+      - "runtime/hermes/repair_snapshot_permissions.py"
       - "tools/deploy/**"
       - "mcp/**"
       - "skills/qiwe/**"

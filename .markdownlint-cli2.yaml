@@ -11,6 +11,8 @@ globs:
   - "**/*.md"
 ignores:
   - ".local-testing"
+  - ".local-workspace"
+  - ".worktrees"
   - "node_modules"
   - ".pnpm-store"
   - ".git"
