@@ -214,3 +214,10 @@ natural-run observation item. No automatic replay of unresolved business jobs.
 
 Update the [incident report](../reports/2026-09-16-hermes-production-recovery.md) with
 artifact SHAs, checks, rollback status, pending owner acceptance and upstream blockers.
+
+## Staging limitation discovered during v0.3.0 preparation
+
+The promotion dry-run validates a temporary assembly and removes it on exit. It does not
+retain a new immutable release. A reviewed staging path that retains a release without
+switching `current` is required before invoking release-owned recovery tools. Do not
+substitute ordinary promotion or a fleet restart for that missing step.

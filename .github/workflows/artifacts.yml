@@ -411,6 +411,9 @@ jobs:
         with:
           version: "10.29.2"
 
+      - name: Install repository dependencies
+        run: pnpm install --frozen-lockfile
+
       - uses: ./.github/actions/build-hermes-dashboard
 
       - name: Build deploy bundle

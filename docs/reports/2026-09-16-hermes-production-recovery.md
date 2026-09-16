@@ -137,3 +137,23 @@ official-source build action in artifact and release workflows. The installer ca
 consume that immutable release directly. Missing generated input, missing assets and
 tampered contents are negative-test cases. No service activation, backup execution or
 business-message acceptance is implied by the merge.
+
+## v0.3.0 publication and artifact delivery failure
+
+The owner published v0.3.0 at 893a4a6 on September 16. Release-triggered deployment
+35061917993 was cancelled during runtime build, before dispatch, because the configured
+`RELEASE_DEPLOY_DRY_RUN=false` would bypass the agreed backup and rolling acceptance
+sequence. The published Release was retained. Server checks still found c3c605ab active,
+the missing QiWe module, webhook 502 and dashboard 500.
+
+Independent artifact run 35062122001 successfully built the dashboard, then failed to
+package the deploy bundle with `Cannot find module 'yaml/package.json'`. Its dedicated
+job lacked the repository dependency install that recovery CI and release builds already
+perform. Add a frozen pnpm install and a CI contract enforcing install-before-build.
+Runtime builds do not themselves switch production. A successful build still requires
+COS verification and the remaining deployment/acceptance gates.
+
+A further runbook correction: the existing promotion dry-run validates a temporary
+assembly and removes it on exit; it does not retain a new immutable release directory. A
+reviewed way to retain a staged release without changing `current` is still required
+before invoking release-owned recovery tools. Do not bypass this by enabling promotion.
