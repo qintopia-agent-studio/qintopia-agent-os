@@ -94,6 +94,13 @@ If the Release Please PR stays open while more feature PRs merge, Release Please
 the same release PR. Avoid editing root `CHANGELOG.md` or
 `.release-please-manifest.json` from ordinary PRs to keep that release PR conflict-free.
 
+The owner published `v0.3.0` at commit `893a4a696acbdb4f9bcdd1f033e6bd37e440afc2` on
+2026-09-16. The release manifest now uses `0.3.0` as its baseline; the next patch
+release is `v0.3.1`. Keep the historical `v0.2.177` tag/draft, but do not continue the
+`v0.2.x` release sequence. This owner-requested baseline reconciliation is an exception
+to the ordinary-PR manifest rule above. Future versions remain managed by Release
+Please; do not pin `release-as` permanently.
+
 ## Language And Toolchain Boundary
 
 The repository currently allows TypeScript or JavaScript, Python, Rust, shell, SQL,
