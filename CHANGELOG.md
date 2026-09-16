@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.1](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.0...v0.3.1) (2026-09-16)
+
+
+### Bug Fixes
+
+* **ci:** install locked dependencies before deploy bundle build ([#708](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/708)) ([83d694f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/83d694f2c3bc21fd78a73d25da3197379e2a14d5))
+* **deploy:** derive request expiry from creation timestamp ([#712](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/712)) ([6b79222](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6b792228b42f9e2a628323dac614caf8a08ef021))
+* **qiwe:** support official gateway reconnect keyword ([#710](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/710)) ([16e8d56](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/16e8d56b98001579c6288ba13199b80d6d3dfc74))
+* **release:** align release baseline with published v0.3.0 ([#711](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/711)) ([789a494](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/789a494554c5bd9d156be72cf94861d2c1f6c24c))
+
+
+### Documentation
+
+* **agents:** simplify existing instructions and reuse project guides ([#713](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/713)) ([c942013](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c942013286718f9d81c0db8f5d200d65eb798116))
+
 ## [0.2.177](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.2.176...v0.2.177) (2026-09-16)
 
 
