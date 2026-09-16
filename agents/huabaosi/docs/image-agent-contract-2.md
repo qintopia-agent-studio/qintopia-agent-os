@@ -11,7 +11,9 @@ to this document.
 [Migration inventory](../../../docs/plans/active/agents-guidance/README.md) records the
 baseline and source locations.
 
-## root-227
+<a id="root-227"></a>
+
+## Core Rules — root-227
 
 <!-- preserved-rule: root-227 -->
 
@@ -26,7 +28,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-227 -->
 
-## root-235
+<a id="root-235"></a>
+
+## Core Rules — root-235
 
 <!-- preserved-rule: root-235 -->
 
@@ -45,7 +49,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-235 -->
 
-## root-241
+<a id="root-241"></a>
+
+## Core Rules — root-241
 
 <!-- preserved-rule: root-241 -->
 
@@ -59,7 +65,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-241 -->
 
-## root-246
+<a id="root-246"></a>
+
+## Core Rules — root-246
 
 <!-- preserved-rule: root-246 -->
 
@@ -73,7 +81,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-246 -->
 
-## root-248
+<a id="root-248"></a>
+
+## Core Rules — root-248
 
 <!-- preserved-rule: root-248 -->
 
@@ -87,7 +97,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-248 -->
 
-## root-249
+<a id="root-249"></a>
+
+## Core Rules — root-249
 
 <!-- preserved-rule: root-249 -->
 
@@ -98,7 +110,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-249 -->
 
-## root-251
+<a id="root-251"></a>
+
+## Core Rules — root-251
 
 <!-- preserved-rule: root-251 -->
 
@@ -117,7 +131,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-251 -->
 
-## root-252
+<a id="root-252"></a>
+
+## Core Rules — root-252
 
 <!-- preserved-rule: root-252 -->
 
@@ -128,7 +144,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-252 -->
 
-## root-253
+<a id="root-253"></a>
+
+## Core Rules — root-253
 
 <!-- preserved-rule: root-253 -->
 
@@ -149,7 +167,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-253 -->
 
-## root-254
+<a id="root-254"></a>
+
+## Core Rules — root-254
 
 <!-- preserved-rule: root-254 -->
 
@@ -176,7 +196,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-254 -->
 
-## root-260
+<a id="root-260"></a>
+
+## Core Rules — root-260
 
 <!-- preserved-rule: root-260 -->
 
@@ -189,7 +211,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-260 -->
 
-## root-261
+<a id="root-261"></a>
+
+## Core Rules — root-261
 
 <!-- preserved-rule: root-261 -->
 
@@ -206,7 +230,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-261 -->
 
-## root-262
+<a id="root-262"></a>
+
+## Core Rules — root-262
 
 <!-- preserved-rule: root-262 -->
 
@@ -232,7 +258,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-262 -->
 
-## root-263
+<a id="root-263"></a>
+
+## Core Rules — root-263
 
 <!-- preserved-rule: root-263 -->
 
@@ -245,7 +273,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-263 -->
 
-## root-265
+<a id="root-265"></a>
+
+## Core Rules — root-265
 
 <!-- preserved-rule: root-265 -->
 
@@ -268,7 +298,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-265 -->
 
-## sidecar-032
+<a id="sidecar-032"></a>
+
+## Rules — sidecar-032
 
 <!-- preserved-rule: sidecar-032 -->
 
@@ -290,7 +322,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: sidecar-032 -->
 
-## sidecar-040
+<a id="sidecar-040"></a>
+
+## Rules — sidecar-040
 
 <!-- preserved-rule: sidecar-040 -->
 

@@ -1,0 +1,7 @@
+# Project rules
+
+<!-- guidance-scope: . -->
+
+[Topic](docs/engineering/topic.md#root-001)
+
+Run `pnpm fixture:check`.

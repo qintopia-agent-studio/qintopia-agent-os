@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import YAML from "yaml";
+import { validateAgentGuidance } from "../policy/agent-guidance.mjs";
 
 const repoRoot = process.cwd();
 const errors = [];
@@ -44,72 +45,7 @@ const requireExecutable = (relativePath) => {
   }
 };
 
-// Transitional reader: retained clauses now live in the migration destinations.
-const guidanceMigrationPath = "docs/plans/active/agents-guidance/migration.json";
-const retainedGuidance = exists(guidanceMigrationPath)
-  ? [
-      ...new Set(
-        JSON.parse(readText(guidanceMigrationPath)).entries.map(
-          (entry) => entry.target.split("#")[0]
-        )
-      ),
-    ]
-      .filter(exists)
-      .map(readText)
-      .join("\n")
-  : "";
-
-const sidecarAgentsPath = "runtime/sidecar/AGENTS.md";
-if (!exists(sidecarAgentsPath)) {
-  addError(`${sidecarAgentsPath}: missing sidecar agent rules`);
-} else {
-  const sidecarAgents = readText(sidecarAgentsPath) + "\n" + retainedGuidance;
-  for (const fragment of [
-    "Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the",
-    "guarded `huabaosi-feishu-mirror-adapter`",
-    "`xiaoman-feishu-poster-adapter`",
-    "QiWe live features, staging adapters,",
-    "staging/production builds, and all-features production artifacts remain forbidden",
-    "QiWe",
-    "apply code must still fail before Postgres",
-    "or network access unless",
-    "Feishu delivery config",
-    "QiWe live features must not be",
-    "the explicit owner activation scripts may enable external timers",
-    "The QiWe upload worker and callback processor may compile live helpers only through",
-    "`qiwe-staging-adapter` or `qiwe-production-adapter`",
-  ]) {
-    requireFragment(sidecarAgentsPath, sidecarAgents, fragment);
-  }
-  for (const fragment of [
-    "QiWe live adapters, staging adapters, and",
-    "callback processor may compile live helpers for staging",
-    "Default and production builds must fail apply before",
-  ]) {
-    forbidFragment(sidecarAgentsPath, sidecarAgents, fragment);
-  }
-}
-
-const rootAgentsPath = "AGENTS.md";
-if (!exists(rootAgentsPath)) {
-  addError(`${rootAgentsPath}: missing repository agent rules`);
-} else {
-  const rootAgents = readText(rootAgentsPath) + "\n" + retainedGuidance;
-  for (const fragment of [
-    "`node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`",
-    "Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`",
-    "Production release requests use `runtime_artifact_profile=huabaosi-production`",
-    "install `qiwe-production` as a companion",
-    "derive that path and SHA-256 from the companion manifest and `SHA256SUMS`",
-    "A same-SHA request for an existing release must reuse the immutable",
-    "manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and",
-    "restart-target fields",
-    "apply-xiaoman-activity-read-through-production-config.py",
-    "sourcing the Xiaoman Hermes profile",
-  ]) {
-    requireFragment(rootAgentsPath, rootAgents, fragment);
-  }
-}
+for (const error of validateAgentGuidance(repoRoot)) addError(error);
 
 const qiweImageSendPlanPath = "docs/plans/active/xiaoman-qiwe-image-send.md";
 if (!exists(qiweImageSendPlanPath)) {

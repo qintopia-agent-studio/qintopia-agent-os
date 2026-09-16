@@ -43,3 +43,41 @@ No production, release, credential or runtime mutations are part of this PR. Do 
 merge or publish automatically. Topic contracts stay authoritative after migration; edit
 their rules only in a separately explicit policy change, updating its baseline mapping
 with a review record rather than silently dropping coverage.
+
+## Implementation evidence (2026-09-16)
+
+The five entrypoints replace two original instruction files. Original non-heading,
+non-blank source lines are all covered by the 343 inventory blocks; both source file
+hashes and each block hash were independently checked against the baseline Git commit.
+All 343 destination blocks pass whitespace-normalized identity verification.
+
+| Entry   | Before lines / bytes | After lines / bytes | Budget |
+| ------- | -------------------- | ------------------- | ------ |
+| Root    | 2,089 / 152,954      | 166 / 9,576         | 16 KiB |
+| Sidecar | 279 / 20,010         | 122 / 5,685         | 12 KiB |
+| Deploy  | absent               | 102 / 4,763         | 12 KiB |
+| Hermes  | absent               | 95 / 4,445          | 12 KiB |
+| QiWe    | absent               | 101 / 4,550         | 12 KiB |
+
+Eighteen focused contract documents are indexed by eleven existing package/engineering/
+operations README files. Rule headings expose their original section and stable source
+ID. The inventory keeps paths and line intervals for source review. Repeated clauses
+with different conditions remain intact; their entrypoint summaries share links instead
+of silently choosing one formulation.
+
+The five acceptance walkthroughs above were completed against the routing table and
+package indexes. Operations review checked credential retention, owner authorization,
+ambiguous delivery outcomes, immutable identity, rollback/data separation and Profile
+state preservation. Historical exceptions remain conditional and pending review.
+
+The shared validator replaces AGENTS-specific English substring assertions in both
+collaboration and deployment checks. Existing behavioral deployment checks remain.
+Eleven fixed-fixture tests cover valid navigation, missing scope files, paths and
+anchors, missing/duplicate migration, removal of a no-retry restriction, harmless
+wrapping, byte budgets, scope/command mistakes, traversal, and missing/empty package
+indexes. Fixture entry files use `.fixture` suffixes and become AGENTS.md only in
+temporary test trees, so the repository has exactly five actual instruction files.
+
+Formatting, Markdown, collaboration (11 tests), and the complete deployment contracts
+command passed locally. The automatic PR tier result is recorded in the PR validation
+section after completion. No live browser flow is affected by this documentation change.

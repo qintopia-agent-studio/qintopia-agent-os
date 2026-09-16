@@ -11,7 +11,9 @@ to this document.
 [Migration inventory](../../../docs/plans/active/agents-guidance/README.md) records the
 baseline and source locations.
 
-## root-015
+<a id="root-015"></a>
+
+## Commands — root-015
 
 <!-- preserved-rule: root-015 -->
 
@@ -20,7 +22,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-015 -->
 
-## root-016
+<a id="root-016"></a>
+
+## Commands — root-016
 
 <!-- preserved-rule: root-016 -->
 
@@ -34,7 +38,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-016 -->
 
-## root-017
+<a id="root-017"></a>
+
+## Commands — root-017
 
 <!-- preserved-rule: root-017 -->
 
@@ -45,7 +51,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-017 -->
 
-## root-018
+<a id="root-018"></a>
+
+## Commands — root-018
 
 <!-- preserved-rule: root-018 -->
 
@@ -60,7 +68,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-018 -->
 
-## root-019
+<a id="root-019"></a>
+
+## Commands — root-019
 
 <!-- preserved-rule: root-019 -->
 
@@ -76,7 +86,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-019 -->
 
-## root-020
+<a id="root-020"></a>
+
+## Commands — root-020
 
 <!-- preserved-rule: root-020 -->
 
@@ -88,7 +100,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-020 -->
 
-## root-021
+<a id="root-021"></a>
+
+## Commands — root-021
 
 <!-- preserved-rule: root-021 -->
 
@@ -102,7 +116,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-021 -->
 
-## root-022
+<a id="root-022"></a>
+
+## Commands — root-022
 
 <!-- preserved-rule: root-022 -->
 
@@ -118,7 +134,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-022 -->
 
-## root-023
+<a id="root-023"></a>
+
+## Commands — root-023
 
 <!-- preserved-rule: root-023 -->
 
@@ -134,7 +152,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-023 -->
 
-## root-024
+<a id="root-024"></a>
+
+## Commands — root-024
 
 <!-- preserved-rule: root-024 -->
 
@@ -150,7 +170,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-024 -->
 
-## root-058
+<a id="root-058"></a>
+
+## Commands — root-058
 
 <!-- preserved-rule: root-058 -->
 
@@ -196,7 +218,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-058 -->
 
-## root-104
+<a id="root-104"></a>
+
+## Commands — root-104
 
 <!-- preserved-rule: root-104 -->
 
@@ -219,7 +243,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-104 -->
 
-## root-105
+<a id="root-105"></a>
+
+## Commands — root-105
 
 <!-- preserved-rule: root-105 -->
 
@@ -256,7 +282,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-105 -->
 
-## root-106
+<a id="root-106"></a>
+
+## Commands — root-106
 
 <!-- preserved-rule: root-106 -->
 
@@ -269,7 +297,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-106 -->
 
-## root-107
+<a id="root-107"></a>
+
+## Commands — root-107
 
 <!-- preserved-rule: root-107 -->
 
@@ -284,7 +314,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-107 -->
 
-## root-108
+<a id="root-108"></a>
+
+## Commands — root-108
 
 <!-- preserved-rule: root-108 -->
 
@@ -311,7 +343,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-108 -->
 
-## root-109
+<a id="root-109"></a>
+
+## Commands — root-109
 
 <!-- preserved-rule: root-109 -->
 

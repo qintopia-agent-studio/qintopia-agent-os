@@ -11,7 +11,9 @@ to this document.
 [Migration inventory](../../../docs/plans/active/agents-guidance/README.md) records the
 baseline and source locations.
 
-## root-044
+<a id="root-044"></a>
+
+## Commands — root-044
 
 <!-- preserved-rule: root-044 -->
 
@@ -21,7 +23,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-044 -->
 
-## root-128
+<a id="root-128"></a>
+
+## Commands — root-128
 
 <!-- preserved-rule: root-128 -->
 
@@ -38,7 +42,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: root-128 -->
 
-## root-129
+<a id="root-129"></a>
+
+## Core Rules — root-129
 
 <!-- preserved-rule: root-129 -->
 
@@ -46,7 +52,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: root-129 -->
 
-## root-130
+<a id="root-130"></a>
+
+## Core Rules — root-130
 
 <!-- preserved-rule: root-130 -->
 
@@ -54,7 +62,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: root-130 -->
 
-## root-131
+<a id="root-131"></a>
+
+## Core Rules — root-131
 
 <!-- preserved-rule: root-131 -->
 
@@ -63,7 +73,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: root-131 -->
 
-## root-268
+<a id="root-268"></a>
+
+## Core Rules — root-268
 
 <!-- preserved-rule: root-268 -->
 
@@ -74,7 +86,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: root-268 -->
 
-## sidecar-002
+<a id="sidecar-002"></a>
+
+## Commands — sidecar-002
 
 <!-- preserved-rule: sidecar-002 -->
 
@@ -82,7 +96,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-002 -->
 
-## sidecar-003
+<a id="sidecar-003"></a>
+
+## Commands — sidecar-003
 
 <!-- preserved-rule: sidecar-003 -->
 
@@ -90,7 +106,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-003 -->
 
-## sidecar-004
+<a id="sidecar-004"></a>
+
+## Commands — sidecar-004
 
 <!-- preserved-rule: sidecar-004 -->
 
@@ -98,7 +116,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-004 -->
 
-## sidecar-005
+<a id="sidecar-005"></a>
+
+## Commands — sidecar-005
 
 <!-- preserved-rule: sidecar-005 -->
 
@@ -106,7 +126,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-005 -->
 
-## sidecar-006
+<a id="sidecar-006"></a>
+
+## Commands — sidecar-006
 
 <!-- preserved-rule: sidecar-006 -->
 
@@ -114,7 +136,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-006 -->
 
-## sidecar-013
+<a id="sidecar-013"></a>
+
+## Commands — sidecar-013
 
 <!-- preserved-rule: sidecar-013 -->
 
@@ -122,7 +146,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-013 -->
 
-## sidecar-014
+<a id="sidecar-014"></a>
+
+## Commands — sidecar-014
 
 <!-- preserved-rule: sidecar-014 -->
 
@@ -130,7 +156,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-014 -->
 
-## sidecar-018
+<a id="sidecar-018"></a>
+
+## Rules — sidecar-018
 
 <!-- preserved-rule: sidecar-018 -->
 
@@ -138,7 +166,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-018 -->
 
-## sidecar-019
+<a id="sidecar-019"></a>
+
+## Rules — sidecar-019
 
 <!-- preserved-rule: sidecar-019 -->
 
@@ -146,7 +176,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-019 -->
 
-## sidecar-021
+<a id="sidecar-021"></a>
+
+## Rules — sidecar-021
 
 <!-- preserved-rule: sidecar-021 -->
 
@@ -154,7 +186,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-021 -->
 
-## sidecar-022
+<a id="sidecar-022"></a>
+
+## Rules — sidecar-022
 
 <!-- preserved-rule: sidecar-022 -->
 
@@ -163,7 +197,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-022 -->
 
-## sidecar-023
+<a id="sidecar-023"></a>
+
+## Rules — sidecar-023
 
 <!-- preserved-rule: sidecar-023 -->
 
@@ -171,7 +207,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-023 -->
 
-## sidecar-024
+<a id="sidecar-024"></a>
+
+## Rules — sidecar-024
 
 <!-- preserved-rule: sidecar-024 -->
 
@@ -181,7 +219,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-024 -->
 
-## sidecar-027
+<a id="sidecar-027"></a>
+
+## Rules — sidecar-027
 
 <!-- preserved-rule: sidecar-027 -->
 
@@ -192,7 +232,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-027 -->
 
-## sidecar-029
+<a id="sidecar-029"></a>
+
+## Rules — sidecar-029
 
 <!-- preserved-rule: sidecar-029 -->
 
@@ -204,7 +246,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-029 -->
 
-## sidecar-030
+<a id="sidecar-030"></a>
+
+## Rules — sidecar-030
 
 <!-- preserved-rule: sidecar-030 -->
 
@@ -214,7 +258,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-030 -->
 
-## sidecar-039
+<a id="sidecar-039"></a>
+
+## Rules — sidecar-039
 
 <!-- preserved-rule: sidecar-039 -->
 
@@ -225,7 +271,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-039 -->
 
-## sidecar-041
+<a id="sidecar-041"></a>
+
+## Rules — sidecar-041
 
 <!-- preserved-rule: sidecar-041 -->
 
@@ -234,7 +282,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-041 -->
 
-## sidecar-043
+<a id="sidecar-043"></a>
+
+## Rules — sidecar-043
 
 <!-- preserved-rule: sidecar-043 -->
 
@@ -245,7 +295,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-043 -->
 
-## sidecar-046
+<a id="sidecar-046"></a>
+
+## Rules — sidecar-046
 
 <!-- preserved-rule: sidecar-046 -->
 
@@ -257,7 +309,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-046 -->
 
-## sidecar-053
+<a id="sidecar-053"></a>
+
+## Rules — sidecar-053
 
 <!-- preserved-rule: sidecar-053 -->
 
@@ -268,7 +322,9 @@ Use `rg` and `rg --files` for search.
 
 <!-- /preserved-rule: sidecar-053 -->
 
-## sidecar-054
+<a id="sidecar-054"></a>
+
+## Rules — sidecar-054
 
 <!-- preserved-rule: sidecar-054 -->
 

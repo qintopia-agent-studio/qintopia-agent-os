@@ -11,7 +11,9 @@ to this document.
 [Migration inventory](../../../docs/plans/active/agents-guidance/README.md) records the
 baseline and source locations.
 
-## root-182
+<a id="root-182"></a>
+
+## Core Rules — root-182
 
 <!-- preserved-rule: root-182 -->
 
@@ -19,7 +21,9 @@ baseline and source locations.
 
 <!-- /preserved-rule: root-182 -->
 
-## root-184
+<a id="root-184"></a>
+
+## Core Rules — root-184
 
 <!-- preserved-rule: root-184 -->
 

@@ -11,7 +11,9 @@ to this document.
 [Migration inventory](../plans/active/agents-guidance/README.md) records the baseline
 and source locations.
 
-## root-001
+<a id="root-001"></a>
+
+## Map — root-001
 
 <!-- preserved-rule: root-001 -->
 
@@ -51,7 +53,9 @@ and source locations.
 
 <!-- /preserved-rule: root-001 -->
 
-## root-002
+<a id="root-002"></a>
+
+## Worktree Lifecycle — root-002
 
 <!-- preserved-rule: root-002 -->
 
@@ -60,7 +64,9 @@ and source locations.
 
 <!-- /preserved-rule: root-002 -->
 
-## root-003
+<a id="root-003"></a>
+
+## Worktree Lifecycle — root-003
 
 <!-- preserved-rule: root-003 -->
 
@@ -71,7 +77,9 @@ and source locations.
 
 <!-- /preserved-rule: root-003 -->
 
-## root-004
+<a id="root-004"></a>
+
+## Worktree Lifecycle — root-004
 
 <!-- preserved-rule: root-004 -->
 
@@ -83,7 +91,9 @@ and source locations.
 
 <!-- /preserved-rule: root-004 -->
 
-## root-005
+<a id="root-005"></a>
+
+## Worktree Lifecycle — root-005
 
 <!-- preserved-rule: root-005 -->
 
@@ -95,7 +105,9 @@ and source locations.
 
 <!-- /preserved-rule: root-005 -->
 
-## root-006
+<a id="root-006"></a>
+
+## Worktree Lifecycle — root-006
 
 <!-- preserved-rule: root-006 -->
 
@@ -106,7 +118,9 @@ and source locations.
 
 <!-- /preserved-rule: root-006 -->
 
-## root-007
+<a id="root-007"></a>
+
+## Worktree Lifecycle — root-007
 
 <!-- preserved-rule: root-007 -->
 
@@ -116,7 +130,9 @@ and source locations.
 
 <!-- /preserved-rule: root-007 -->
 
-## root-008
+<a id="root-008"></a>
+
+## Commands — root-008
 
 <!-- preserved-rule: root-008 -->
 
@@ -124,7 +140,9 @@ and source locations.
 
 <!-- /preserved-rule: root-008 -->
 
-## root-009
+<a id="root-009"></a>
+
+## Commands — root-009
 
 <!-- preserved-rule: root-009 -->
 
@@ -132,7 +150,9 @@ and source locations.
 
 <!-- /preserved-rule: root-009 -->
 
-## root-010
+<a id="root-010"></a>
+
+## Commands — root-010
 
 <!-- preserved-rule: root-010 -->
 
@@ -140,7 +160,9 @@ and source locations.
 
 <!-- /preserved-rule: root-010 -->
 
-## root-011
+<a id="root-011"></a>
+
+## Commands — root-011
 
 <!-- preserved-rule: root-011 -->
 
@@ -148,7 +170,9 @@ and source locations.
 
 <!-- /preserved-rule: root-011 -->
 
-## root-012
+<a id="root-012"></a>
+
+## Commands — root-012
 
 <!-- preserved-rule: root-012 -->
 
@@ -156,7 +180,9 @@ and source locations.
 
 <!-- /preserved-rule: root-012 -->
 
-## root-013
+<a id="root-013"></a>
+
+## Commands — root-013
 
 <!-- preserved-rule: root-013 -->
 
@@ -166,7 +192,9 @@ and source locations.
 
 <!-- /preserved-rule: root-013 -->
 
-## root-026
+<a id="root-026"></a>
+
+## Commands — root-026
 
 <!-- preserved-rule: root-026 -->
 
@@ -174,7 +202,9 @@ and source locations.
 
 <!-- /preserved-rule: root-026 -->
 
-## root-027
+<a id="root-027"></a>
+
+## Commands — root-027
 
 <!-- preserved-rule: root-027 -->
 
@@ -182,7 +212,9 @@ and source locations.
 
 <!-- /preserved-rule: root-027 -->
 
-## root-028
+<a id="root-028"></a>
+
+## Commands — root-028
 
 <!-- preserved-rule: root-028 -->
 
@@ -190,7 +222,9 @@ and source locations.
 
 <!-- /preserved-rule: root-028 -->
 
-## root-029
+<a id="root-029"></a>
+
+## Commands — root-029
 
 <!-- preserved-rule: root-029 -->
 
@@ -198,7 +232,9 @@ and source locations.
 
 <!-- /preserved-rule: root-029 -->
 
-## root-030
+<a id="root-030"></a>
+
+## Commands — root-030
 
 <!-- preserved-rule: root-030 -->
 
@@ -206,7 +242,9 @@ and source locations.
 
 <!-- /preserved-rule: root-030 -->
 
-## root-064
+<a id="root-064"></a>
+
+## Commands — root-064
 
 <!-- preserved-rule: root-064 -->
 
@@ -214,7 +252,9 @@ and source locations.
 
 <!-- /preserved-rule: root-064 -->
 
-## root-070
+<a id="root-070"></a>
+
+## Commands — root-070
 
 <!-- preserved-rule: root-070 -->
 
@@ -228,7 +268,9 @@ and source locations.
 
 <!-- /preserved-rule: root-070 -->
 
-## root-135
+<a id="root-135"></a>
+
+## Core Rules — root-135
 
 <!-- preserved-rule: root-135 -->
 
@@ -238,7 +280,9 @@ and source locations.
 
 <!-- /preserved-rule: root-135 -->
 
-## root-138
+<a id="root-138"></a>
+
+## Core Rules — root-138
 
 <!-- preserved-rule: root-138 -->
 
@@ -246,7 +290,9 @@ and source locations.
 
 <!-- /preserved-rule: root-138 -->
 
-## root-140
+<a id="root-140"></a>
+
+## Core Rules — root-140
 
 <!-- preserved-rule: root-140 -->
 
@@ -255,7 +301,9 @@ and source locations.
 
 <!-- /preserved-rule: root-140 -->
 
-## root-152
+<a id="root-152"></a>
+
+## Core Rules — root-152
 
 <!-- preserved-rule: root-152 -->
 
@@ -265,7 +313,9 @@ and source locations.
 
 <!-- /preserved-rule: root-152 -->
 
-## root-153
+<a id="root-153"></a>
+
+## Core Rules — root-153
 
 <!-- preserved-rule: root-153 -->
 
@@ -275,7 +325,9 @@ and source locations.
 
 <!-- /preserved-rule: root-153 -->
 
-## root-154
+<a id="root-154"></a>
+
+## Core Rules — root-154
 
 <!-- preserved-rule: root-154 -->
 
@@ -286,7 +338,9 @@ and source locations.
 
 <!-- /preserved-rule: root-154 -->
 
-## root-155
+<a id="root-155"></a>
+
+## Core Rules — root-155
 
 <!-- preserved-rule: root-155 -->
 
@@ -295,7 +349,9 @@ and source locations.
 
 <!-- /preserved-rule: root-155 -->
 
-## root-156
+<a id="root-156"></a>
+
+## Core Rules — root-156
 
 <!-- preserved-rule: root-156 -->
 
@@ -307,7 +363,9 @@ and source locations.
 
 <!-- /preserved-rule: root-156 -->
 
-## root-157
+<a id="root-157"></a>
+
+## Core Rules — root-157
 
 <!-- preserved-rule: root-157 -->
 
@@ -316,7 +374,9 @@ and source locations.
 
 <!-- /preserved-rule: root-157 -->
 
-## root-168
+<a id="root-168"></a>
+
+## Core Rules — root-168
 
 <!-- preserved-rule: root-168 -->
 
@@ -325,7 +385,9 @@ and source locations.
 
 <!-- /preserved-rule: root-168 -->
 
-## root-169
+<a id="root-169"></a>
+
+## Core Rules — root-169
 
 <!-- preserved-rule: root-169 -->
 
@@ -334,7 +396,9 @@ and source locations.
 
 <!-- /preserved-rule: root-169 -->
 
-## root-170
+<a id="root-170"></a>
+
+## Core Rules — root-170
 
 <!-- preserved-rule: root-170 -->
 
@@ -343,7 +407,9 @@ and source locations.
 
 <!-- /preserved-rule: root-170 -->
 
-## root-201
+<a id="root-201"></a>
+
+## Core Rules — root-201
 
 <!-- preserved-rule: root-201 -->
 
@@ -353,7 +419,9 @@ and source locations.
 
 <!-- /preserved-rule: root-201 -->
 
-## root-250
+<a id="root-250"></a>
+
+## Core Rules — root-250
 
 <!-- preserved-rule: root-250 -->
 
@@ -364,7 +432,9 @@ and source locations.
 
 <!-- /preserved-rule: root-250 -->
 
-## root-279
+<a id="root-279"></a>
+
+## Package Placement — root-279
 
 <!-- preserved-rule: root-279 -->
 
@@ -379,7 +449,9 @@ and source locations.
 
 <!-- /preserved-rule: root-279 -->
 
-## root-280
+<a id="root-280"></a>
+
+## Package Contract — root-280
 
 <!-- preserved-rule: root-280 -->
 
@@ -398,7 +470,9 @@ documented exception.
 
 <!-- /preserved-rule: root-280 -->
 
-## root-281
+<a id="root-281"></a>
+
+## Migration Rules — root-281
 
 <!-- preserved-rule: root-281 -->
 
@@ -417,7 +491,9 @@ wholesale into this repository.
 
 <!-- /preserved-rule: root-281 -->
 
-## root-282
+<a id="root-282"></a>
+
+## Server Change Policy — root-282
 
 <!-- preserved-rule: root-282 -->
 
@@ -450,7 +526,9 @@ Disallowed server activity:
 
 <!-- /preserved-rule: root-282 -->
 
-## root-283
+<a id="root-283"></a>
+
+## Validation Expectations — root-283
 
 <!-- preserved-rule: root-283 -->
 
@@ -467,7 +545,9 @@ Before a PR:
 
 <!-- /preserved-rule: root-283 -->
 
-## root-284
+<a id="root-284"></a>
+
+## Documentation Rules — root-284
 
 <!-- preserved-rule: root-284 -->
 
@@ -484,7 +564,9 @@ Before a PR:
 
 <!-- /preserved-rule: root-284 -->
 
-## root-285
+<a id="root-285"></a>
+
+## First Read For New Agents — root-285
 
 <!-- preserved-rule: root-285 -->
 
@@ -506,7 +588,9 @@ boundaries before making broad changes.
 
 <!-- /preserved-rule: root-285 -->
 
-## sidecar-001
+<a id="sidecar-001"></a>
+
+## Map — sidecar-001
 
 <!-- preserved-rule: sidecar-001 -->
 
