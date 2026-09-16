@@ -272,7 +272,10 @@ rollback instead.
 
 ## Request Contract
 
-Deploy requests must match `deploy-request.schema.json`.
+Deploy requests must match `deploy-request.schema.json`. Compute `expires_at` from the
+same `created_at` timestamp, not a second clock read: the server strictly limits request
+lifetime to 60 minutes, including millisecond precision. The clock-advance regression
+runs in `pnpm deploy:runner:check`.
 
 Important fields:
 
