@@ -1,5 +1,8 @@
 import importlib.util
 import os
+import pwd
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -55,6 +58,23 @@ class PermissionsTests(unittest.TestCase):
             chown.assert_called_once()
         self.assertEqual(self.target.read_bytes(), self.source.read_bytes())
         self.assertEqual(self.target.stat().st_mode & 0o777, 0o750)
+
+    @unittest.skipUnless(sys.platform == "linux" and os.geteuid() == 0, "requires disposable Linux root runner")
+    def test_real_ubuntu_readability_and_repeat_install(self):
+        account = pwd.getpwnam("ubuntu")
+        self.root.chmod(0o755)
+        os.chown(self.target, 0, 0)
+        read = ["/usr/sbin/runuser", "-u", "ubuntu", "--", "/usr/bin/test", "-r", str(self.target)]
+        self.assertNotEqual(subprocess.run(read).returncode, 0)
+        first = repair.inspect_wrapper(self.source, self.target, account.pw_gid, apply=True)
+        self.assertTrue(first["changed"])
+        self.assertEqual(subprocess.run(read).returncode, 0)
+        self.assertEqual(self.target.stat().st_uid, 0)
+        self.assertEqual(self.target.stat().st_gid, account.pw_gid)
+        second = repair.inspect_wrapper(self.source, self.target, account.pw_gid, apply=True)
+        self.assertFalse(second["changed"])
+        denied = ["/usr/sbin/runuser", "-u", "nobody", "--", "/usr/bin/test", "-r", str(self.target)]
+        self.assertNotEqual(subprocess.run(denied).returncode, 0)
 
 
 if __name__ == "__main__":

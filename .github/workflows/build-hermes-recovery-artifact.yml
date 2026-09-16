@@ -8,6 +8,8 @@ on:
       - "runtime/hermes/check_*compatibility.py"
       - "runtime/hermes/check_dashboard_http.py"
       - "runtime/hermes/tests/test_dashboard*.py"
+      - "runtime/hermes/repair_snapshot_permissions.py"
+      - "runtime/hermes/tests/test_repair_snapshot_permissions.py"
       - "tools/deploy/build-hermes-dashboard.py"
       - "skills/qiwe/**"
       - "tools/deploy/build-deploy-bundle.mjs"
@@ -52,6 +54,10 @@ jobs:
         run:
           python3 -m unittest discover -s runtime/hermes/tests -p 'test_dashboard*.py'
           -v
+      - name: Verify root installation and Ubuntu script readability
+        run: |
+          id -u ubuntu >/dev/null 2>&1 || sudo useradd --create-home ubuntu
+          sudo python3 -m unittest discover -s runtime/hermes/tests -p 'test_repair_snapshot_permissions.py' -v
       - name: Probe real official dashboard with synthetic profile
         run:
           .local-workspace/official-core/.venv/bin/python
