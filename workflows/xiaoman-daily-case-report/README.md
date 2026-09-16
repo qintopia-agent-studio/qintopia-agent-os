@@ -393,3 +393,11 @@ candidate text.
 
 - `python3 workflows/xiaoman-daily-case-report/daily_case_report.py --dry-run --render html`
   validates the template generation path without image rendering dependencies.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Daily report contract — part 1](docs/agent-contract.md)
+- [Daily report contract — part 2](docs/agent-contract-2.md)

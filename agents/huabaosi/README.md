@@ -48,3 +48,12 @@ pnpm smoke:sidecar
 pnpm registry:check
 pnpm policy:check
 ```
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Huabaosi image contract — part 1](docs/image-agent-contract.md)
+- [Huabaosi image contract — part 2](docs/image-agent-contract-2.md)
+- [Huabaosi WeCom contract](docs/wecom-agent-contract.md)

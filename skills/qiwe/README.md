@@ -254,3 +254,11 @@ Before production wiring changes:
 2. Decide server cutover from the old plugin checkout to this monorepo package.
 3. Use reviewed commit SHA deployment only; do not hot-edit the server checkout.
 4. Confirm server backup cleanup or archival with owner approval.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [QiWe media contract](docs/media-agent-contract.md)
+- [QiWe channel contract](docs/channel-agent-contract.md)

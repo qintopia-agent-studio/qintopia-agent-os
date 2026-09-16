@@ -328,3 +328,10 @@ rollback target after the Hermes job is disabled.
 
 Do not activate this through a hand-copied cron, server-local script, or an unreviewed
 direct QiWe sender.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Morning brief contract](docs/agent-contract.md)

@@ -57,3 +57,10 @@ pnpm agents:profile-bundles:check
 pnpm registry:check
 pnpm policy:check
 ```
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Erhua identity contract](docs/identity-agent-contract.md)

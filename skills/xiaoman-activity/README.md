@@ -60,3 +60,10 @@ pnpm skills:xiaoman-activity:check
 pnpm skills:qintopia-tools:check
 pnpm registry:check
 ```
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Xiaoman activity contract](docs/agent-contract.md)

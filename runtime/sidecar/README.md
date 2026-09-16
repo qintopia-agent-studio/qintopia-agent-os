@@ -369,3 +369,10 @@ pnpm check:sidecar
 Use smoke scripts under `deploy/sidecar/scripts/` only with the documented environment
 and owner approval. Guarded apply smokes can write Postgres state when explicitly
 enabled.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Sidecar engineering contract](docs/agent-contract.md)

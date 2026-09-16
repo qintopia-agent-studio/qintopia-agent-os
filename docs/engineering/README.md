@@ -41,3 +41,10 @@ reviewed, migrated, and deployed.
 - Add executable checks when package changes make that practical.
 - Add anti-drift policy checks when a migration boundary must be enforced for all future
   contributors.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Working contract](agent-working-contract.md)

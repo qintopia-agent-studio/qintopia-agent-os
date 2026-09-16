@@ -184,3 +184,11 @@ and Ubuntu snapshot readability. Active/readiness alone does not establish recov
 The offline `check_cron_ack_publication.py` reports the known incomplete-ready-file race
 as a blocker; it never runs a business job. `check_core_plugin_compatibility.py` accepts
 `--plugin-dir` for the packaged QiWe tree and tests three independent process consumers.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Cron contract](docs/cron-agent-contract.md)
+- [Hermes runtime contract](docs/runtime-agent-contract.md)

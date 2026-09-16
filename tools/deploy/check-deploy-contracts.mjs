@@ -44,11 +44,26 @@ const requireExecutable = (relativePath) => {
   }
 };
 
+// Transitional reader: retained clauses now live in the migration destinations.
+const guidanceMigrationPath = "docs/plans/active/agents-guidance/migration.json";
+const retainedGuidance = exists(guidanceMigrationPath)
+  ? [
+      ...new Set(
+        JSON.parse(readText(guidanceMigrationPath)).entries.map(
+          (entry) => entry.target.split("#")[0]
+        )
+      ),
+    ]
+      .filter(exists)
+      .map(readText)
+      .join("\n")
+  : "";
+
 const sidecarAgentsPath = "runtime/sidecar/AGENTS.md";
 if (!exists(sidecarAgentsPath)) {
   addError(`${sidecarAgentsPath}: missing sidecar agent rules`);
 } else {
-  const sidecarAgents = readText(sidecarAgentsPath);
+  const sidecarAgents = readText(sidecarAgentsPath) + "\n" + retainedGuidance;
   for (const fragment of [
     "Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the",
     "guarded `huabaosi-feishu-mirror-adapter`",
@@ -79,7 +94,7 @@ const rootAgentsPath = "AGENTS.md";
 if (!exists(rootAgentsPath)) {
   addError(`${rootAgentsPath}: missing repository agent rules`);
 } else {
-  const rootAgents = readText(rootAgentsPath);
+  const rootAgents = readText(rootAgentsPath) + "\n" + retainedGuidance;
   for (const fragment of [
     "`node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`",
     "Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`",

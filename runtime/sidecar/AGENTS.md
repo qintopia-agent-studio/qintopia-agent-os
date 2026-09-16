@@ -1,279 +1,122 @@
-# Project Instructions
+# Sidecar runtime instructions
 
-## Map
+<!-- guidance-scope: runtime/sidecar -->
 
-- Human setup and usage: `README.md`
-- Source snapshot: `docs/source-snapshot.md`
-- Database migrations: `../postgres/migrations/`
-- Versioned data design docs: `../postgres/docs/data-design/`
-- Server deployment scripts: `../../deploy/sidecar/scripts/`
-- Current cutover runbook: `../../docs/operations/m9-server-cutover-runbook.md`
-- Target server directory plan: `../../docs/operations/server-directory-plan.md`
-- Legacy standalone deployment snapshot:
-  `../../deploy/sidecar/docs/server-deployment.md`
-- Sidecar entrypoint: `src/main.rs`
-- NATS consumer loop: `src/consumer.rs`
-- Postgres persistence: `src/db.rs`
-- Event protocol parsing: `src/event.rs`
+These instructions supplement the [root contract](../../AGENTS.md) for the Rust
+consumer, persistence, capability registry and governed workers.
 
-## Commands
+## Map and required reading
 
-- Format: `cargo fmt`
-- Check: `cargo check`
-- Test: `RUST_MIN_STACK=33554432 cargo test`
-- Local readiness: `cargo run -- check`
-- Run consumer: `cargo run -- run`
-- Erhua current room roster sync:
-  `cargo run -- identity-backfill --sync-room-members --chat-id <reviewed-erhua-qiwe-group-id> --dry-run`
-  Retained evidence may keep `scope_fingerprint`; never retain the raw group id or QiWe
-  user ids.
-- Erhua scoped member profile refresh:
-  `cargo run -- member-profile --chat-id <reviewed-erhua-qiwe-group-id> --apply --quiet`
-  Retained evidence may keep aggregate counts and `scope_fingerprints`; never retain raw
-  chat ids or candidate facts.
-- Erhua speaker self-canary private sender map:
-  `cargo run -- erhua-member-speaker-canary-sender-map --chat-id <reviewed-erhua-qiwe-group-id>`.
-  Its output contains raw QiWe sender ids; keep it as a server-local temporary file only
-  and never retain it as evidence.
-- Huabaosi WeCom shadow capture fixture tests: `cargo test huabaosi_wecom_shadow`
-- Huabaosi WeCom policy preview fixture tests: `cargo test huabaosi_wecom_policy`
-- Huabaosi WeCom canary gateway fixture tests: `cargo test huabaosi_wecom_canary`
+- [Package guide](README.md) and [source snapshot](docs/source-snapshot.md).
+- [Complete engineering constraints](docs/agent-contract.md).
+- [Database migrations](../postgres/migrations/).
+- [Versioned data design](../postgres/docs/data-design/).
+- [Deployment rules](../../deploy/AGENTS.md).
+- [QiWe rules](../../skills/qiwe/AGENTS.md).
+- [Change routing](../../docs/engineering/change-routing-index.md).
 
-From the monorepo root, prefer:
+Start from the changed capability and its owning topic, not a file's language. Read QiWe
+or Huabaosi topic contracts when working on those adapters; root and sibling summaries
+cannot replace their complete conditions and exceptions.
 
-- Test: `pnpm test:sidecar`
-- Full check: `pnpm check`
+The consumer, database and event protocol entrypoints remain `src/consumer.rs`,
+`src/db.rs` and `src/event.rs`; the CLI enters through `src/main.rs`.
 
-## Rules
+Treat the old standalone deployment snapshot as historical rollback evidence, not the
+current installation path. Manage changes through the monorepo Git root.
 
-- Keep the sidecar independent from 二花's ordinary reply path; NATS, sidecar, or
-  Postgres failures must not delay ordinary Hermes webhook ACKs or replies. The sole
-  exception is the default-disabled authenticated system-event boundary: when
-  `QIWE_SYSTEM_EVENT_DURABLE_CAPTURE_ENABLED=1`, the adapter may spend at most 1.5
-  seconds for the complete envelope waiting for every raw JetStream PubAck and must
-  return a bounded 503 on any missing or failed acknowledgement so QiWe can retry.
-- Derive authenticated ingress only from the actual NATS subject received by the
-  consumer while `QINTOPIA_SIDECAR_TRUST_AUTHENTICATED_RAW_SUBJECT=true`; never trust an
-  `ingress_auth_verified` value carried in publisher JSON. Keep the authenticated raw
-  subject distinct from legacy raw and normalized-message subjects.
-- Do not place NATS credentials in `QINTOPIA_SIDECAR_NATS_URL`. Use the fixed private
-  consumer auth file and keep it distinct from the QiWe producer auth file. Before
-  production Space automation activation, the release-local preflight must prove
-  anonymous denial, producer-only authenticated publication, consumer-only durable
-  consumption/ack permissions, and the expected stream/consumer filters. This proves ACL
-  configuration, not end-to-end JetStream delivery; retain one real authenticated shadow
-  callback as consumption evidence before event automation activation.
-- Keep compatibility with the supported Rust toolchain: `rustc/cargo 1.96.0`.
-- Manage this project through the monorepo root git repository.
-- Treat `deploy/sidecar/docs/server-deployment.md` as historical rollback evidence, not
-  the current deployment path.
-- Do not commit database credentials or server-only env files.
-- Use runtime SQLx queries, not compile-time `query!` macros, so builds do not require
-  database access.
-- Migrations must be idempotent and safe to run on sidecar startup.
-- Every database schema migration must have a matching versioned design note under
-  `../postgres/docs/data-design/` and must record itself in
-  `qintopia_agent_os.schema_change_log` when that table exists.
-- New built-in capabilities must be registered in both `builtin_capability()` and
-  `BUILTIN_CAPABILITY_KEYS`, with matching capability-list smoke expectations. If a new
-  root capability should participate in Xiaoman downstream starters, update every
-  candidate selector for child creation, image generation, and send-request staging.
-- Group-message send-readiness and policy-denial transitions must release the complete
-  claim tuple (`claimed_by`, `locked_at`, and `claim_expires_at`) and require exactly
-  one work-item update before appending the corresponding audit event.
-- Work-item creation events must not mirror full request metadata. If a capability needs
-  metadata in `work_item_events.data`, add an explicit allowlist that emits only stable,
-  non-secret audit fields; `work_items.metadata` may retain broader internal context
-  after normal sensitivity validation.
-- The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
-  CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
-  production sidecar service environment.
-- The complete suite includes fake provider/media tests that bind ephemeral loopback
-  sockets. In restricted coding sandboxes, run the same `cargo test` command with
-  loopback-bind permission; `PermissionDenied` from `TcpListener::bind` is an
-  environment failure and must be confirmed by an unsandboxed rerun, not hidden by
-  skipping tests.
-- Test helpers used only by a non-default adapter feature must carry the same feature
-  gate on their imports, types, and implementations; default-feature Clippy compiles
-  test targets and rejects otherwise-unused helpers.
-- Huabaosi live provider/media execution must compile with exactly one non-default live
-  feature: `huabaosi-staging-adapter` or `huabaosi-production-adapter`. A build with
-  neither or both must reject apply before Postgres. Staging keeps the exact owner
-  phrase and reviewed staging database hash. Production must verify the exact production
-  approval phrase, deployed release SHA binding, database URL hash binding, and adapter
-  policy before Postgres or external I/O; shell scripts cannot be the only enforcement
-  point.
-- Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the
-  guarded `huabaosi-feishu-mirror-adapter`, and the default-disabled
-  `xiaoman-feishu-poster-adapter`. QiWe live features, staging adapters, mixed
-  staging/production builds, and all-features production artifacts remain forbidden.
-  Mirror apply must still fail before Postgres or external I/O unless the exact owner
-  phrase, deployed release SHA, database hash, fixed Base/table allowlists, schema,
-  profile path, media host policy, and persistent enable flag all pass. QiWe production
-  apply code must still fail before Postgres, callback stdin, or network access unless
-  the exact owner phrase, production database hash, Feishu delivery config, webhook
-  readiness, and persistent enablement all pass, but QiWe live features must not be
-  bundled into the Huabaosi production artifact. Ordinary release installation may
-  install mirror and QiWe production preflights, workers, services, and timers, but only
-  the explicit owner activation scripts may enable external timers. Feishu primary
-  storage for the first canary is part of the Huabaosi production adapter path and still
-  creates only pending AgentOS artifacts.
-- Xiaoman Feishu poster apply must fail before Postgres or external I/O unless the exact
-  owner phrase, release SHA, database hash, official API host, app credentials, and
-  direct-chat/user/media allowlists pass. Internal-group selection and callbacks
-  additionally require authenticated ingress, the separate group switch, the persisted
-  internal policy/thread target, matching ingress/delivery chat and user ceilings, and
-  an operations reviewer ceiling covering every allowed user. Persist an attempt before
-  upload, terminalize expired in-flight attempts as ambiguous, verify card callbacks
-  inside the sidecar, never fall back from a group thread to a main timeline or direct
-  chat, and never create group-send authorization. Keep direct and group production
-  scheduling in separate scope-pinned services and timers even though they share the
-  durable queue and worker binary; review callback dry-runs must enforce the same
-  runtime delivery boundary as apply and may skip only persistence mutations; group
-  activation and rollback must not mutate the direct timer.
-- When `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HOOK_ENABLE=1` and
-  `QINTOPIA_XIAOMAN_FEISHU_INGRESS_HMAC_KEY` are configured, legacy V2 operations intake
-  must fail closed before session trust, Postgres, or workflow mutation. Unset or `0`
-  hook enablement must keep authenticated ingress disabled even when other ingress env
-  exists; other enablement values must fail closed. Do not allow a caller to downgrade
-  from authenticated Feishu ingress to the local V2 direct workflow path.
-- The dedicated QiWe production sidecar artifact is separate and compile-reviewed. Its
-  manifest profile is `qiwe-production`, its artifact name is
-  `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu`, and it must compile
-  exactly `qiwe-production-adapter`. Production deploy requests must record
-  `runtime_artifact_profile`, and QiWe enabled-state observations must accept only this
-  reviewed artifact profile, never a mixed Huabaosi/QiWe binary.
-- `xiaoman-real-activity-production-evidence` must read the adjacent
-  `artifact-manifest.json`, require `commit_sha` to match
-  `QINTOPIA_DEPLOYED_COMMIT_SHA`, require `validation.artifact_profile=qiwe-production`,
-  and require exactly `validation.cargo_features=["qiwe-production-adapter"]` before
-  exporting sanitized evidence. Final completion evidence must also keep the Huabaosi
-  canary profile as `huabaosi-production`.
-- A canary review apply must provide expected artifact type and review status
-  preconditions. The sidecar must enforce them again under the artifact row lock before
-  changing review state, and before authenticated Feishu revalidation, so a mistaken
-  generated-image UUID cannot be approved through a poster-brief workflow.
-- Production mirror observation must discover
-  `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
-  only when it resolves to that same immutable binary with the approved production
-  features; source-tree `cargo run` fallback is forbidden. Its shell may parse only the
-  mirror enable flag; a direct child launcher may pass only that parsed flag and the
-  non-secret release SHA to the immutable binary without sourcing shell, importing
-  secrets into the shell, or writing a secret-bearing temporary file. It may run only
-  the non-secret mirror observation preflight, not full configuration preflight or
-  worker dry-run. Non-allowlisted env values must be ignored before mirror-flag value
-  validation. Activation must fail before preflight or timer mutation until persistent
-  mirror enablement is present exactly once and exactly `1`; timer rollback must stop
-  external work immediately and fail closed until it is present exactly once and exactly
-  `0` in the reviewed environment file.
-- The disposable operations smoke may enter the live retry path only with both the
-  Huabaosi and PostgreSQL integration features, its explicit apply-smoke flag, exact
-  literal-loopback `qintopia_test` URL hash, and literal-loopback-only provider/media
-  configuration.
-- Expired or incomplete Huabaosi image-generation `processing` claims must become a
-  sanitized terminal ambiguous outcome before new work is selected. Never infer from a
-  lost lease that provider generation or media upload stayed local, and never reclaim
-  that row for automatic external retry.
-- v1 only captures raw/normalized messages and creates pending processing jobs;
-  embedding and graph extraction must remain separate workers.
-- Sanitize QiWe asynchronous `cmd=20000` callback credentials before raw-event
-  persistence. Dead letters may keep only payload length and digest; malformed payloads
-  must not become a bypass that stores callback credentials or raw private text. Only
-  preserve callback event/message ids matching `qiwe-callback:<64 hex SHA-256>`; hash
-  the complete id again when a prefixed value has any other suffix.
-- Callback credential-shape reports may expose only one fixed reviewed schema id and an
-  additional-field count. Reject canonical and alias spellings that appear together;
-  never report request ids, credential values, filenames, MD5 values, unknown field
-  names, or unknown values.
-- QiWe image-send state transitions must lock both the work item and attempt, recheck
-  the same unexpired claim plus approved artifact/target/final-confirmation facts, and
-  store only canonical hashes. The `sending` transition is the at-most-once boundary;
-  crashes or transport uncertainty after it require `ambiguous` human reconciliation,
-  never an automatic retry with callback credentials. A non-2xx or non-success business
-  response after the request may have been sent is also ambiguous without a reviewed
-  no-send failure-code allowlist. Treat QiWe target group ids as opaque and
-  case-sensitive, and match their allowlist exactly. An ambiguous send audit must use
-  `external_send_executed=null` and outcome `unknown`, never a definite false. Late
-  callbacks must atomically expire the awaiting attempt and requeue the same work item
-  before returning. After the send gate commits, terminal writes must still require the
-  exact attempt and claim token but must not fail only because its short TTL elapsed.
-  Before selecting new work, the claim transaction must expire and requeue a stale
-  `awaiting_callback` attempt even when no callback ever arrives; never apply that
-  timeout retry path to `sending`.
-- `run-qiwe-text-send-worker` is only for the Erhua morning-brief text send path. It may
-  process only `text_activity_announcement` work items backed by approved
-  `text_announcement` artifacts, final confirmation, send-ready evidence, exact
-  artifact/content-hash binding, and an allowlisted QiWe target group. Apply must use
-  the `qiwe-production` companion runtime, `QINTOPIA_QIWE_TEXT_SEND_ENABLED=1`, the
-  exact `approved-production-qiwe-text-send` phrase, and the reviewed production
-  database URL hash before Postgres or QiWe network access. Do not reuse it as a generic
-  text sender, do not bypass `run-group-message-send-worker` send-ready evidence, and
-  record ambiguous QiWe outcomes with `external_send_executed=null`.
-- Persist an `uploading` attempt in the same transaction that claims the work item,
-  before any external socket can open. Expired `uploading` attempts and legacy claims
-  with no attempt row are unknown external outcomes: terminalize them as `ambiguous`
-  with automatic retry disabled. Worker previews must reuse the exact apply-side group
-  and media-host allowlists.
-- The QiWe upload worker and callback processor may compile live helpers only through
-  `qiwe-staging-adapter` or `qiwe-production-adapter`. Default builds must fail apply
-  before Postgres or network access, and callback apply must do so before reading stdin.
-  If a test or accidental build includes both QiWe live features, apply must select the
-  production owner/database gate and must never fall back to staging approval or staging
-  database hashing. Runtime env flags are not a substitute for the compile and owner
-  gates. Callback JSON is accepted from bounded stdin only, never CLI arguments or
-  environment variables. File credentials may open the send gate only when canonical MD5
-  and byte size exactly match the approved final JPEG identity snapshotted at upload. A
-  callback filename is optional and must match when supplied; the send filename must
-  always come from the transaction-locked approved artifact. Callback credentials,
-  request ids, media URLs, target groups, tokens, device ids, response bodies, and
-  provider message ids must not appear in reports or logs; sensitive in-memory buffers
-  must be zeroized on drop.
-- A staging-feature callback apply must validate explicit enablement, API/media/group
-  allowlists, and webhook readiness before reading stdin. Upload apply must validate the
-  same adapter configuration before connecting to Postgres.
-- A staging-feature QiWe apply must require
-  `QINTOPIA_QIWE_IMAGE_SEND_STAGING_APPROVAL=approved-staging-qiwe-image-send` before
-  adapter configuration, stdin, Postgres, or network access. The Cargo feature, enable
-  flag, secrets, and allowlists do not substitute for this owner-reviewed one-shot gate.
-- CI must execute the non-ignored sidecar suite with all features so staging-only
-  adapter tests run, then run warning-denied Clippy once with no default features and
-  once with all features. The all-feature test/build is CI-only and cannot stand in for
-  the production feature set; ignored PostgreSQL tests stay in their disposable
-  integration job.
-- QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
-  identity validator as apply. It may skip locks and writes, but not policy checks.
-- External adapter modules must use `bounded_http`; do not add another raw socket HTTP
-  implementation. Test-only loopback HTTP is allowed, while production clients require
-  HTTPS and the reviewed endpoint/host allowlists.
-- `space_agent_turn_result` artifacts are inert data. A future consumer must derive
-  destinations and capability arguments from the exact work item's trusted `space_id`
-  and the live capability registry; never interpret result property names or values as a
-  room, target, URL, HTTP request, executable input, or tool invocation.
-- Do not adopt files from the server Huabaosi shadow branch until owner review
-  explicitly approves them.
-- `xiaoman-profile-bundle-observation-smoke.sh` may only verify reviewed source hashes
-  and byte parity after rendering into a temporary directory. It must not print
-  server-local identity values, create symlinks, edit live profile files, restart
-  Hermes, write Postgres/Feishu, use external adapters, or send.
-- `huabaosi-wecom-shadow-capture` is a preview-only migration command. It may read one
-  event from bounded stdin and emit only sanitized hashes, byte counts, field presence,
-  classification, and fixed guardrails. It must not gain an apply mode, connect to
-  Postgres or external services, send WeCom/QiWe messages, generate or upload media,
-  write Feishu, create artifacts, or print raw ids, user text, media URLs, filenames,
-  tokens, or callback credentials.
-- `huabaosi-wecom-policy-preview` is a preview-only migration command. It may read one
-  event from bounded stdin and emit only sanitized policy classifications, fixed
-  fallback copy, and hash-based idempotency metadata. It must not gain an apply mode,
-  connect to Postgres or external services, send WeCom/QiWe messages, generate or upload
-  media, write Feishu, create artifacts, or print raw ids, user text, media URLs,
-  filenames, tokens, or callback credentials. Internal-process suppression must use
-  narrow full-template matches with negative fixture coverage for ordinary user text
-  containing terms such as `plain text`.
-- `huabaosi-wecom-canary-preflight` is a local configuration preflight only. It must not
-  read stdin, open network or database connections, source env files, or emit
-  endpoint/token/id values. `huabaosi-wecom-canary-gateway --apply` is staging-only,
-  requires the non-default `huabaosi-wecom-canary-gateway` Cargo feature plus explicit
-  enablement, approval phrase, HTTPS endpoint, token, and exact Bot/chat/user
-  allowlists, and must remain unscheduled. Default builds must fail closed before stdin,
-  network, database, or send access. It must not change production routing, run image
-  generation, upload media, write Feishu/Postgres, or send outside the allowlist.
+## Validation commands
+
+From the repository root:
+
+- `pnpm test:sidecar`
+- `pnpm check:pr:auto`
+- `pnpm check:pr:heavy`
+
+From this directory:
+
+- `cargo fmt --check`
+- `cargo check`
+- `RUST_MIN_STACK=33554432 cargo test`
+
+Use the supported Rust 1.96.0 toolchain. The complete test suite needs a 32 MiB thread
+stack; this is test-only, not a production environment setting.
+
+Fake provider/media tests bind ephemeral loopback sockets. A denied local bind is an
+environment failure, not permission to skip tests or treat them as passed.
+
+Test-only helpers must share the feature gates of their callers. Preserve CI's
+all-feature fixture coverage and both default/all-feature warning-denied Clippy;
+all-features CI builds are not deployable production artifacts.
+
+## Persistence and capabilities
+
+Use runtime SQLx queries rather than compile-time query macros so compilation does not
+require database access. Never commit database credentials or server env files.
+
+Migrations must remain idempotent and safe at startup. Each schema migration needs its
+versioned data-design note and schema-change-log entry when the log exists.
+
+Register new built-in capabilities in both registry surfaces and capability-list smokes.
+Update downstream selectors only when the capability is intended to take part in those
+workflows; preserve their explicit authorization boundaries.
+
+State changes must retain row locking, exact claim/attempt identity and atomic audit
+behavior. Release all claim fields together where required. Lost leases do not establish
+that external effects stayed local or make automatic retry safe.
+
+Audit events use explicit non-secret allowlists. Broader internal metadata is not
+permission to mirror complete request payloads into event history or reports.
+
+Treat Agent turn results as inert data. Resolve destinations and capabilities from
+trusted work-item/registry context, never from arbitrary result properties.
+
+## Transport and external effects
+
+Ordinary Hermes webhook acknowledgements and replies must not depend on Sidecar, NATS or
+Postgres. Preserve the narrowly specified authenticated system-event PubAck exception in
+the QiWe channel contract.
+
+Authenticated ingress comes from the actual trusted subject, not publisher JSON. Keep
+producer/consumer credentials, subjects and permissions distinct.
+
+External adapters must use the shared bounded HTTP client, approved HTTPS hosts and
+reviewed allowlists. Do not introduce another raw socket implementation. Test-only
+loopback providers do not relax production transport policy.
+
+Record upload/send attempts before network effects. Preserve terminal ambiguous outcomes
+and no-retry boundaries for expired processing, uploading and sending. A missing
+response cannot establish that the provider did nothing.
+
+## Artifact and apply boundaries
+
+Main production artifacts retain the reviewed Huabaosi production, guarded Feishu mirror
+and default-disabled Xiaoman poster features. The QiWe production adapter is a separate
+companion artifact, not another feature in the main runtime.
+
+Only exact reviewed staging/production feature combinations may enter their respective
+live paths. Defaults fail closed. A runtime enable flag does not replace a compile gate,
+owner approval, database binding or target allowlist.
+
+Apply must enforce the owning capability's checks before database, stdin or external
+access as specified in its complete contract. A shell-only check cannot replace
+validation in the runtime itself.
+
+Keep approvals tied to exact artifact type/status, content identity and row lock. A
+canary review cannot approve an unrelated generated artifact through a different
+workflow. Dry-run must preserve the apply-side policy checks it is specified to share.
+
+Observations discover the immutable reviewed binary. Do not fall back to source
+`cargo run`, read arbitrary environment values or expose credentials for convenience.
+
+## Evidence and completion
+
+Keep provider bodies, callback credentials, filenames, raw identities and private
+messages out of retained evidence. Follow each capability's fixed output schema.
+
+Preview-only migration commands stay preview-only: no database writes, generated
+artifacts, external API calls or sends. An apply flag is not a harmless extension.
+
+Do not adopt server shadow branches without explicit owner review. Keep pending
+production acceptance and historical restrictions visible through their owning runbooks
+and reports; a fixture pass is not live delivery acceptance.

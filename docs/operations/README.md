@@ -134,3 +134,12 @@ deployment docs.
 - Treat server-side exploration as `review-pool` until owner review.
 - Do not copy live secrets, `.env` files, generated caches, raw member profile text, or
   private chat logs into this repository.
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Xiaoman acceptance contract](xiaoman-acceptance-agent-contract.md)
+- [Weekly workflow contract](xiaoman-weekly-agent-contract.md)
+- [Compatibility and historical acceptance](agent-guidance-history.md)

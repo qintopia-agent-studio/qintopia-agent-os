@@ -556,3 +556,10 @@ deploy requests. Do not run the three unconditional-wait workflows in that state
 pnpm deploy:runner:check
 pnpm check:light
 ```
+
+## Agent operating contracts
+
+Read the relevant topic when changing this capability. These documents retain the full
+constraints behind the scoped AGENTS.md summaries.
+
+- [Release and deployment contract](docs/agent-contract.md)
