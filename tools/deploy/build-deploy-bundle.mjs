@@ -420,6 +420,36 @@ const collectDirectoryFiles = (relativeDir) => {
   return discovered.sort();
 };
 
+const copyDashboardArtifact = () => {
+  const configured = process.env.QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR;
+  if (configured === undefined) return [];
+  if (!configured) throw new Error("dashboard artifact directory is empty");
+  const root = path.resolve(configured);
+  run("python3", [
+    "-c",
+    "import sys; from pathlib import Path; sys.path.insert(0, 'runtime/hermes'); from dashboard_artifact import validate_payload, digest; p=Path(sys.argv[1]); validate_payload(p, digest(p/'dashboard-manifest.json'))",
+    root,
+  ]);
+  const copied = [];
+  const walk = (directory, prefix = "") => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const source = path.join(directory, entry.name);
+      const relative = path.posix.join(prefix, entry.name);
+      if (entry.isDirectory()) walk(source, relative);
+      else
+        copied.push(
+          copyPayloadFile(
+            source,
+            `runtime/hermes/dashboard-artifact/${relative}`,
+            `generated:hermes-dashboard/${relative}`
+          )
+        );
+    }
+  };
+  walk(root);
+  return copied;
+};
+
 const buildStartedAt = new Date().toISOString();
 const commitSha = process.env.GITHUB_SHA || gitOutput(["rev-parse", "HEAD"], "unknown");
 const branch =
@@ -431,6 +461,7 @@ fs.mkdirSync(payloadDir, { recursive: true });
 const files = [
   ...[...sourceFiles, ...sourceDirs.flatMap(collectDirectoryFiles)].map(copyFile),
   ...collectVendoredYamlFiles().map(copyVendoredYamlFile),
+  ...copyDashboardArtifact(),
 ];
 
 run("tar", ["--no-xattrs", "-C", bundleDir, "-czf", archivePath, "payload"], {

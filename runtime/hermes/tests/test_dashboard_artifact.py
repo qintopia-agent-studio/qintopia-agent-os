@@ -73,9 +73,13 @@ class DashboardArtifactTests(unittest.TestCase):
         (self.dist / "web_dist/assets/main.js").write_text("tampered")
         with self.assertRaisesRegex(artifact.ArtifactError, "dist_inventory_mismatch"):
             self.verify()
+        (self.dist / "web_dist/assets/main.js").write_text("console.log('fixture')")
         (self.core / "core/hermes_cli/web_server.py").write_text("new backend")
         with self.assertRaisesRegex(artifact.ArtifactError, "core_file_mismatch"):
             self.verify()
+
+    def test_payload_validation_needs_no_installed_core(self):
+        self.assertEqual(artifact.validate_payload(self.dist, self.checksum), self.manifest)
 
     def test_manifest_digest_required(self):
         with self.assertRaisesRegex(artifact.ArtifactError, "manifest_digest_mismatch"):

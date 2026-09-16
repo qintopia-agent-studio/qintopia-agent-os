@@ -36,6 +36,54 @@ try {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(bundleRoot, "artifact-manifest.json"), "utf8")
   );
+  if (process.env.QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR) {
+    const packaged = path.join(payloadRoot, "runtime/hermes/dashboard-artifact");
+    assert.ok(fs.existsSync(path.join(packaged, "web_dist/index.html")));
+    assert.ok(
+      manifest.files.some(
+        (entry) =>
+          entry.path ===
+          "payload/runtime/hermes/dashboard-artifact/dashboard-manifest.json"
+      )
+    );
+    const validate = (root) =>
+      spawnSync(
+        "python3",
+        [
+          "-c",
+          "import sys; from pathlib import Path; sys.path.insert(0,'runtime/hermes'); from dashboard_artifact import validate_payload,digest; p=Path(sys.argv[1]); validate_payload(p,digest(p/'dashboard-manifest.json'))",
+          root,
+        ],
+        { cwd: repoRoot, encoding: "utf8" }
+      );
+    assert.equal(validate(packaged).status, 0);
+    const damaged = path.join(tmpRoot, "dashboard");
+    fs.cpSync(packaged, damaged, { recursive: true });
+    fs.appendFileSync(path.join(damaged, "web_dist/index.html"), "tampered");
+    assert.notEqual(validate(damaged).status, 0);
+    fs.rmSync(path.join(damaged, "web_dist/index.html"));
+    assert.notEqual(validate(damaged).status, 0);
+    const rejected = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, "tools/deploy/build-deploy-bundle.mjs")],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR: path.join(tmpRoot, "missing"),
+        },
+      }
+    );
+    assert.notEqual(rejected.status, 0, "explicit missing artifact must block build");
+    // Restore the valid bundle after deliberately testing the rejected build.
+    const rebuilt = spawnSync(
+      process.execPath,
+      [path.join(repoRoot, "tools/deploy/build-deploy-bundle.mjs")],
+      { cwd: repoRoot, encoding: "utf8" }
+    );
+    assert.equal(rebuilt.status, 0, rebuilt.stderr);
+  }
   assert.deepEqual(manifest.validation.runtime_node_dependencies, [
     { name: "yaml", version: "2.9.0", dependencies: [] },
   ]);

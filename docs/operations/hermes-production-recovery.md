@@ -6,9 +6,9 @@ This runbook does not replace the approved release pipeline or the
 
 ## Preconditions
 
-1. Use the separately reviewed recovery PR and published Qintopia release SHA. Recheck
-   core SHA, release pointer, seven profiles, five enabled/two disabled WeCom channels,
-   service entrypoints and active jobs immediately before switching.
+1. Use the separately reviewed recovery PR and approved immutable Qintopia release SHA.
+   Recheck core SHA, release pointer, seven profiles, five enabled/two disabled WeCom
+   channels, service entrypoints and active jobs immediately before switching.
 2. Create a root-owned 0700 server-local recovery directory. Record unit definitions,
    drop-ins, release targets, config/environment file hashes and permissions, plugin
    links, execution/delivery states and active workers there. Copy configuration and
@@ -70,14 +70,29 @@ Run the offline official-core HTTP check before promotion:
 The check creates a synthetic profile and blocks external network access. Production
 browser acceptance is separate.
 
-Stage the **complete reviewed artifact** at
-`/var/lib/qintopia-hermes-dashboard/incoming/<manifest-sha256>` using the reviewed
-artifact delivery mechanism. All parents must be root-owned and not group/world
-writable. Never scp individual source files, copy old `web_dist`, or install
+Both artifact publication and release builds call the pinned dashboard composite action.
+The complete dashboard is validated and packaged under
+`runtime/hermes/dashboard-artifact` in the existing checksummed deploy bundle, delivered
+through the existing COS protocol. Explicit missing or invalid dashboard input blocks
+that build. Source-only test bundles may omit this generated input.
+
+After the delivery fix is merged, build its approved master SHA with the `Artifacts`
+workflow (`build_deploy_bundle=true`, `upload_cos=true`; unrelated runtime builds can
+remain off when retaining an available approved runtime artifact). Record the actual
+build SHA and verify COS upload succeeded. Use the production runner's `dry_run=true`
+staging path first, with fixed runtime/deploy-bundle/release SHAs. Do not publish a
+GitHub Release as a staging shortcut: its publication event triggers production
+deployment. Review that event's scope and restart targets separately before publication.
+Inspect the assembled immutable release and backup inventory before any activation; do
+not invoke the default fleet restart. Read and record the packaged
+`dashboard-manifest.json` digest against CI before invoking the installer. It selects
+installed assets first, then the packaged release artifact; the fixed root-owned
+incoming directory is only a legacy fallback. All parents must be root-owned and not
+group/world writable. Never scp individual source files, copy old `web_dist`, or install
 dependencies at service startup. The matching immutable core release and release-local
 Python must already exist under `/var/lib/qintopia-hermes-core/releases/<core-sha>`.
 
-From the published immutable Qintopia release, run as root:
+From the approved, staged immutable Qintopia release, run as root:
 
 ```bash
 python3 <release>/deploy/runner/install-hermes-dashboard.py \

@@ -16,6 +16,7 @@ on:
       - "skills/qiwe/**"
       - "tools/deploy/build-deploy-bundle.mjs"
       - ".github/workflows/build-hermes-recovery-artifact.yml"
+      - ".github/actions/build-hermes-dashboard/**"
 
 permissions:
   contents: read
@@ -26,13 +27,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
-      - name: Checkout pinned official core
-        uses: actions/checkout@v7
-        with:
-          repository: NousResearch/hermes-agent
-          ref: 2237be355906fbe6065ce1815711eee52b2d646e
-          path: .local-workspace/official-core
-          persist-credentials: false
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
@@ -45,10 +39,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Install repository dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build matching frontend from tracked source
-        run: |
-          git -C .local-workspace/official-core archive --format=tar.gz --output=../official-core.tar.gz 2237be355906fbe6065ce1815711eee52b2d646e
-          python3 tools/deploy/build-hermes-dashboard.py --source-archive .local-workspace/official-core.tar.gz --core-commit 2237be355906fbe6065ce1815711eee52b2d646e --output dist/hermes-dashboard
+      - uses: ./.github/actions/build-hermes-dashboard
       - name: Install locked official Python runtime
         working-directory: .local-workspace/official-core
         run: uv sync --frozen --extra messaging --extra wecom --no-dev --python 3.12
@@ -70,6 +61,8 @@ jobs:
           runtime/hermes/check_dashboard_http.py --core-dir
           .local-workspace/official-core --dist dist/hermes-dashboard/web_dist
       - name: Build payload and discover packaged QiWe in fresh processes
+        env:
+          QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR: dist/hermes-dashboard
         run: |
           node tools/deploy/test-deploy-bundle-runtime-dependencies.mjs
           .local-workspace/official-core/.venv/bin/python runtime/hermes/check_core_plugin_compatibility.py --core-dir .local-workspace/official-core --plugin-dir dist/deploy-bundles/qintopia-agent-os-deploy-bundle/payload/skills/qiwe

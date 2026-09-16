@@ -127,3 +127,13 @@ inventory are mandatory before activation and have not yet been taken by this re
 
 Known-faulty previous console state is a downgrade rollback, not restored service. Keep
 this report open until the user-triggered flows and observation windows pass.
+
+## Post-merge delivery follow-up
+
+Recovery PR #706 merged as `672199b3171ba639ebc84919259e788c4e7c1ae4`. The dashboard CI
+artifact alone did not complete the normal COS delivery path. The follow-up packages its
+complete validated contents in the existing deploy bundle, using one pinned
+official-source build action in artifact and release workflows. The installer can
+consume that immutable release directly. Missing generated input, missing assets and
+tampered contents are negative-test cases. No service activation, backup execution or
+business-message acceptance is implied by the merge.
