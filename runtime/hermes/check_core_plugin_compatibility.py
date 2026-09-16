@@ -1,11 +1,12 @@
 """Offline plugin registration against a real, separately installed Hermes core.
 
 Run with the candidate core's Python and --core-dir; never uses live profiles.
-This checks import/registration contracts, not message delivery or configuration parity.
+Checks discovery, listener startup and reconnect; not business delivery or config parity.
 """
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 from pathlib import Path
 import socket
@@ -38,7 +39,12 @@ def main() -> None:
         os.environ.update(HOME=home, HERMES_HOME=home, PATH="/usr/bin:/bin")
         sys.dont_write_bytecode = True
         sys.path[:0] = [str(core), str(plugin.parent)]
-        with patch.object(socket.socket, "connect", side_effect=RuntimeError("network forbidden in compatibility probe")):
+        original_connect = socket.socket.connect
+        def loopback_only(sock, address):
+            if not isinstance(address, tuple) or address[0] not in ("127.0.0.1", "::1"):
+                raise RuntimeError("external network forbidden in compatibility probe")
+            return original_connect(sock, address)
+        with patch.object(socket.socket, "connect", loopback_only):
             # Exercise each production consumer before any direct import/registration.
             if args.entry == "gateway":
                 from gateway.config import load_gateway_config
@@ -60,9 +66,23 @@ def main() -> None:
             assert qiwe.MessageEvent is MessageEvent
             assert issubclass(qiwe.QiWeAdapter, BasePlatformAdapter)
             assert issubclass(wecom.WeComAdapter, BasePlatformAdapter)
-            qiwe_adapter = qiwe.QiWeAdapter(SimpleNamespace(extra={}))
+            qiwe_adapter = qiwe.QiWeAdapter(SimpleNamespace(extra={"token": "synthetic-probe", "host": "127.0.0.1", "port": 0}))
             assert qiwe_adapter.platform.value == "qiwe"
-            print(f"real_core_plugin_discovery={args.entry}:passed delivery=not_exercised")
+            async def probe_listener():
+                from aiohttp import ClientSession
+                with patch.object(qiwe_adapter._reminder_worker, "start"):
+                    for reconnect in (False, True):
+                        try:
+                            assert await qiwe_adapter.connect(is_reconnect=reconnect), "listener startup failed"
+                            port = qiwe_adapter._runner.addresses[0][1]
+                            async with ClientSession() as client:
+                                async with client.get(f"http://127.0.0.1:{port}/health") as response:
+                                    assert response.status == 200, "listener health failed"
+                        finally:
+                            await qiwe_adapter.disconnect()
+                        assert qiwe_adapter._runner is None, "listener cleanup failed"
+            asyncio.run(probe_listener())
+            print(f"real_core_plugin_discovery={args.entry}:passed listener_and_reconnect=passed delivery=not_exercised")
 
 
 if __name__ == "__main__":

@@ -157,3 +157,29 @@ A further runbook correction: the existing promotion dry-run validates a tempora
 assembly and removes it on exit; it does not retain a new immutable release directory. A
 reviewed way to retain a staged release without changing `current` is still required
 before invoking release-owned recovery tools. Do not bypass this by enabling promotion.
+
+## Direct production verification and remaining QiWe startup defect
+
+The owner authorized direct production verification. A server-local protected backup
+covered seven profiles and 20 SQLite databases with successful integrity checks before
+switching to 83d694f. The normal runner failed at Space quiescence because reset-failed
+returns failure for inactive units garbage-collected by systemd. All three units were
+independently proved stopped/disabled; retaining their systemd D-Bus references allowed
+the unchanged release installer and smoke scripts to complete successfully. No deployed
+source files were edited and no business tasks were replayed.
+
+Actual HTTP verification still found QiWe unavailable. New Gateway logs identified
+`QiWeAdapter.connect() got an unexpected keyword argument 'is_reconnect'`. The discovery
+probe had not exercised connection; it missed the current official BasePlatformAdapter
+contract. Accept the official keyword and extend the fresh-process probe to bind a real
+loopback listener, check HTTP health, disconnect, and reconnect. External networking and
+business reminder dispatch remain disabled in that synthetic probe.
+
+The console was separately activated using the CI-pinned complete dashboard artifact.
+Its HTML/assets/API smoke passed, homepage returned 200, and the existing
+unauthenticated Nginx entry returned 401. The previously recorded upstream frontend
+typecheck failure was explicitly retained during this owner-authorized direct
+verification. Browser acceptance remains pending. The fixed snapshot wrapper was
+repaired to root:ubuntu 0750. All 20 backed-up profile config/auth files matched after
+deployment except Erhua's `auth.json` updated_at timestamp; credential content was
+unchanged.

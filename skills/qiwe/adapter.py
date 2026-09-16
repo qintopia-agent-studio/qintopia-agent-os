@@ -2285,7 +2285,8 @@ class QiWeAdapter(BasePlatformAdapter):
             logger.warning("[qiwe] image callback processor disabled after config error")
             return QiWeImageCallbackBridge(enabled=False)
 
-    async def connect(self) -> bool:
+    async def connect(self, *, is_reconnect: bool = False) -> bool:
+        # Webhook delivery has no remote update queue to discard on reconnect.
         if self.qiwe.webhook_auth_required and not self.qiwe.webhook_auth_token:
             logger.error("[qiwe] webhook ingress authentication is required but not configured")
             self._set_fatal_error(
