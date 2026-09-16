@@ -70,12 +70,22 @@ Run the offline official-core HTTP check before promotion:
 The check creates a synthetic profile and blocks external network access. Production
 browser acceptance is separate.
 
-Stage the **complete reviewed artifact** at
-`/var/lib/qintopia-hermes-dashboard/incoming/<manifest-sha256>` using the reviewed
-artifact delivery mechanism. All parents must be root-owned and not group/world
-writable. Never scp individual source files, copy old `web_dist`, or install
-dependencies at service startup. The matching immutable core release and release-local
-Python must already exist under `/var/lib/qintopia-hermes-core/releases/<core-sha>`.
+Both artifact publication and release builds call the pinned dashboard composite action.
+The complete dashboard is validated and packaged under
+`runtime/hermes/dashboard-artifact` in the existing checksummed deploy bundle, delivered
+through the existing COS protocol. Explicit missing or invalid dashboard input blocks
+that build. Source-only test bundles may omit this generated input.
+
+After owner release approval, use the production runner's `dry_run=true` staging path
+first, with fixed runtime/deploy-bundle/release SHAs. Inspect the assembled immutable
+release and backup inventory before any activation; do not invoke the default fleet
+restart. Read and record the packaged `dashboard-manifest.json` digest against CI before
+invoking the installer. It selects installed assets first, then the packaged release
+artifact; the fixed root-owned incoming directory is only a legacy fallback. All parents
+must be root-owned and not group/world writable. Never scp individual source files, copy
+old `web_dist`, or install dependencies at service startup. The matching immutable core
+release and release-local Python must already exist under
+`/var/lib/qintopia-hermes-core/releases/<core-sha>`.
 
 From the published immutable Qintopia release, run as root:
 

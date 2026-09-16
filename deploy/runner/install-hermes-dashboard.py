@@ -2,7 +2,7 @@
 """Activate a checksum-pinned dashboard; touch no gateway or profile configuration.
 
 Run from a reviewed immutable Qintopia release. The artifact must already be staged
-under the fixed incoming root by the operator, with its manifest digest pinned.
+inside the immutable release bundle, with its manifest digest pinned.
 """
 from __future__ import annotations
 
@@ -129,7 +129,8 @@ def perform(args) -> None:
     incoming = ROOT / "incoming" / checksum
     installed = ROOT / "releases" / checksum
     state = ROOT / "state" / checksum
-    source = installed if installed.exists() else incoming
+    packaged = REPO / "runtime/hermes/dashboard-artifact"
+    source = installed if installed.exists() else (packaged if packaged.exists() else incoming)
     checked_directory(source)
     if digest(source / "dashboard-manifest.json") != checksum:
         raise ArtifactError("manifest_digest_mismatch")

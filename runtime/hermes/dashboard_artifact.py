@@ -78,7 +78,7 @@ def validate_entry(dist: Path, files: dict[str, str]) -> None:
             raise ArtifactError("entry_asset_missing")
 
 
-def validate(artifact: Path, core_release: Path, expected_manifest: str) -> dict:
+def validate_payload(artifact: Path, expected_manifest: str) -> dict:
     if not re.fullmatch(r"[0-9a-f]{64}", expected_manifest):
         raise ArtifactError("manifest_digest_invalid")
     manifest_path = artifact / "dashboard-manifest.json"
@@ -99,6 +99,25 @@ def validate(artifact: Path, core_release: Path, expected_manifest: str) -> dict
     commit = manifest["core_commit"]
     if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise ArtifactError("core_commit_invalid")
+    files = inventory(artifact / "web_dist")
+    if files != manifest["files"]:
+        raise ArtifactError("dist_inventory_mismatch")
+    validate_entry(artifact / "web_dist", files)
+    regular(artifact / "pnpm-lock.yaml")
+    if digest(artifact / "pnpm-lock.yaml") != manifest["pnpm_lock_sha256"]:
+        raise ArtifactError("lock_digest_mismatch")
+    if set(manifest["runtime_files"]) != {"dashboard_launcher.py", "dashboard_artifact.py"}:
+        raise ArtifactError("runtime_inventory_invalid")
+    for rel, checksum in manifest["runtime_files"].items():
+        regular(artifact / rel)
+        if digest(artifact / rel) != checksum:
+            raise ArtifactError("runtime_digest_mismatch")
+    return manifest
+
+
+def validate(artifact: Path, core_release: Path, expected_manifest: str) -> dict:
+    manifest = validate_payload(artifact, expected_manifest)
+    commit = manifest["core_commit"]
     if core_release.name != commit:
         raise ArtifactError("core_commit_mismatch")
     regular(core_release / "artifact-manifest.json")
@@ -113,17 +132,4 @@ def validate(artifact: Path, core_release: Path, expected_manifest: str) -> dict
         regular(path)
         if digest(path) != checksum:
             raise ArtifactError("core_file_mismatch")
-    files = inventory(artifact / "web_dist")
-    if files != manifest["files"]:
-        raise ArtifactError("dist_inventory_mismatch")
-    validate_entry(artifact / "web_dist", files)
-    regular(artifact / "pnpm-lock.yaml")
-    if digest(artifact / "pnpm-lock.yaml") != manifest["pnpm_lock_sha256"]:
-        raise ArtifactError("lock_digest_mismatch")
-    if set(manifest["runtime_files"]) != {"dashboard_launcher.py", "dashboard_artifact.py"}:
-        raise ArtifactError("runtime_inventory_invalid")
-    for rel, checksum in manifest["runtime_files"].items():
-        regular(artifact / rel)
-        if digest(artifact / rel) != checksum:
-            raise ArtifactError("runtime_digest_mismatch")
     return manifest

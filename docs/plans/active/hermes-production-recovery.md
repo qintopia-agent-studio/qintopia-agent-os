@@ -45,7 +45,9 @@ Production rechecked at 2026-09-16 11:51 CST:
 - [ ] Classify tool errors and verify the Silaoshi bridge without business actions.
 - [x] Reproduce acknowledgement race and reconcile historical execution outcomes.
 - [ ] Run targeted tests, repository checks, and review the deployment boundary.
-- [ ] Open a separate PR, deploy verified artifacts, and record component acceptance.
+- [x] Merge independent recovery PR #706 (672199b); production remains unchanged.
+- [ ] Merge follow-up dashboard deploy-bundle delivery, deploy verified artifacts, and
+      record component acceptance.
 - [ ] Complete owner-triggered messaging/browser checks and observation window.
 
 ## Validation and stop conditions

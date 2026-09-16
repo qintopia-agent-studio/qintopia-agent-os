@@ -384,7 +384,7 @@ jobs:
 
   deploy-bundle-artifact:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     needs: publish-plan
     if: >-
       ${{ needs.publish-plan.outputs.publish == 'true' &&
@@ -407,8 +407,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      - uses: pnpm/action-setup@v6
+        with:
+          version: "10.29.2"
+
+      - uses: ./.github/actions/build-hermes-dashboard
+
       - name: Build deploy bundle
         run: node tools/deploy/build-deploy-bundle.mjs
+        env:
+          QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR: dist/hermes-dashboard
 
       - name: Upload deploy bundle
         uses: actions/upload-artifact@v7

@@ -155,9 +155,12 @@ jobs:
         env:
           GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
 
+      - uses: ./.github/actions/build-hermes-dashboard
+
       - name: Build release deploy bundle
         run: node tools/deploy/build-deploy-bundle.mjs
         env:
+          QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR: dist/hermes-dashboard
           GITHUB_SHA: ${{ steps.release.outputs.commit-sha }}
 
       - name: Upload release build artifact
