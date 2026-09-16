@@ -556,3 +556,312 @@ deploy requests. Do not run the three unconditional-wait workflows in that state
 pnpm deploy:runner:check
 pnpm check:light
 ```
+
+## Operating rules
+
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
+
+### Commands
+
+- COSCLI installer defaults must use a versioned official GitHub release asset and the
+  matching asset digest, not the floating `coscli-linux-amd64` alias. The alias can move
+  before Tencent download docs update their SHA table and break production release
+  deploys at install-time checksum verification.
+- Deploy-runner production one-shots run from the root service boundary. If a one-shot
+  needs ubuntu user systemd, use fixed `/usr/sbin/runuser -u ubuntu` with
+  `XDG_RUNTIME_DIR=/run/user/<ubuntu-uid>` and the matching user bus address; direct
+  root `systemctl --user` cannot prove the ubuntu user timer boundary.
+- After ordinary release promotion, deploy-runner must execute
+  `deploy/runner/install-release-systemd-units.sh` and `deploy/runner/smoke-release.sh`
+  from the just-promoted release directory, not from the root runner's already-installed
+  `RUNNER_DIR`. The root runner may be older than the release it is promoting, so using
+  stale runner-local install or smoke logic can block self-bootstrap fixes before they
+  reach production.
+- Release Please PR manual CI validation:
+  `gh workflow run ci.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
+- Release Please PR required PR-Agent check validation:
+  `gh workflow run pr-agent.yml --ref <release-please-head-branch> -f release_please_pr_number=<pr-number>`
+- Staging runtime values metadata observation smoke:
+  `QINTOPIA_STAGING_RUNTIME_VALUES_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/staging-runtime-values-observation-smoke.sh`
+- AgentOS downstream evidence/visual timers observation smoke:
+  `QINTOPIA_OPERATIONS_DOWNSTREAM_TIMERS_OBSERVATION_ENABLE=1 deploy/sidecar/scripts/operations-downstream-timers-observation-smoke.sh`
+
+### Core Rules
+
+- When adding a new workflow package, update `registry/workflows.yaml`,
+  `tools/workflows/check-workflows.mjs`, and `deploy/restart-target-rules.yaml` in the
+  same PR. CI treats unmatched `workflows/**` files as production-adjacent.
+- CI must install the fixed cargo-nextest and cargo-llvm-cov versions from checksum-
+  verified prebuilt releases through `taiki-e/install-action` with Cargo fallback
+  disabled. Do not restore per-run `cargo install`; it reintroduces crates.io index
+  failures before tests start. Prepare a non-empty diagnostic artifact before tool
+  download so an installation failure cannot be obscured by a second missing-artifact
+  error.
+- Local PR validation is also risk-tiered. Use `pnpm check:pr:auto` before opening an
+  ordinary PR; it always runs the quick tier and escalates to heavy Rust checks for
+  sidecar, Postgres, deploy script, and CI workflow changes. Use `pnpm check:pr:heavy`
+  when you want the full local quick + Rust + disposable PostgreSQL mirror and local
+  `qintopia_test` is ready on `127.0.0.1:5432`.
+- Document first for new features, behavior changes, migrations, runtime changes, or
+  production-adjacent work.
+- Do not manually edit root `CHANGELOG.md` in ordinary feature or fix PRs. Release
+  Please owns routine release changelog updates from merged Conventional Commits.
+- Merging a Release Please PR prepares a version and draft GitHub Release. Manual owner
+  publication remains the default production boundary.
+- Low-risk classification is a safety boundary for the conversational programming-
+  extension runner, not approval to merge or publish. Every generated candidate PR,
+  Release Please PR, and draft Release must be reviewed and advanced explicitly by the
+  owner.
+- If any earlier Release Please version or draft GitHub Release in the current release
+  sequence was not published, do not publish the newest version. Stop, reconcile or
+  delete the unpublished drafts as an explicit release decision, then regenerate and
+  validate a fresh Release Please PR instead of skipping ahead.
+- Before publishing a draft GitHub Release, confirm its tag points to current
+  `origin/master`. If `master` advanced after the draft was prepared, do not publish or
+  retry the stale tag; validate and publish the next Release Please PR instead.
+- Production release deploy resolution must not scan unbounded historical Actions logs.
+  Keep `deploy-production.yml` release-run lookup bounded to recent completed release
+  deploy runs and keep `tools/deploy/collect-release-deploy-results.mjs` enforcing a
+  `--max-release-runs` cap before it calls `gh run view --log`.
+- Do not merge a Release Please PR unless the draft GitHub Release will be published or
+  intentionally deleted in the same release decision. The repository release manifest
+  must track the latest published Release tag; deleted draft-only releases must not
+  remain as the Release Please baseline.
+- A Release Please PR created or updated with `GITHUB_TOKEN` may have no automatic PR
+  checks because GitHub suppresses recursive workflow triggers. Before merging such a
+  PR, run the manual CI validation command on its exact head branch and require the
+  workflow `changes`, `check`, `Rust quality baseline`, and `PostgreSQL integration`
+  jobs plus the PR-attached `Release Please validation` commit status to pass. Run the
+  manual PR-Agent validation on that same exact head when the ruleset-required
+  `PR-Agent review assistant` check was suppressed. Both dispatches must fail if the PR
+  is not open, does not target `master`, is not bot-authored, or the checked-out SHA
+  differs from the PR head. The authenticated PR-Agent dispatch must skip external AI
+  review and must not edit or comment on the generated Release PR.
+- Do not hot-edit production servers.
+- Existing `/etc/qintopia/message-sidecar.env` owner/mode drift must be repaired only by
+  reviewed deploy/runner code. The release systemd installer normalizes it to
+  `root:ubuntu 0640`; do not run ad-hoc production `chown`/`chmod`.
+- Any script expected to exist under `/home/ubuntu/qintopia-agent-os-releases/current`
+  after deployment must be included in `tools/deploy/build-deploy-bundle.mjs` and
+  guarded by `tools/deploy/check-deploy-contracts.mjs`; adding a repo file alone does
+  not put it on the production release root.
+- Production COS fetch must leave `artifact-manifest.json`, `SHA256SUMS`, and packaged
+  archives mode `0444`, while the sidecar binary remains `0755`. These files are
+  immutable non-secret release evidence needed by unprivileged release-local
+  observation; mode `0640` can make a valid release unverifiable after root-owned
+  promotion.
+- Production COS archive extraction runs under the root deploy runner and must use
+  `tar --no-same-owner` for both sidecar and deploy-bundle payloads. Never preserve
+  GitHub runner numeric owners from an artifact archive or propagate them into the
+  immutable production release with `cp -a`; the promoted release tree must remain owned
+  by the deploy runner.
+- Staging sidecar provisioning runs as the `ubuntu` operator, not root. It must create
+  the fixed staging release root, release directory, and sidecar directory with explicit
+  mode `0755` independent of ambient `umask`, then freeze the immutable release and
+  sidecar directories to `0555`. Failed attempts may remove only paths they created;
+  they must not reuse or delete an existing release directory.
+- CI must execute non-ignored sidecar tests with all Cargo features so staging-only
+  adapter tests actually run. This is test coverage only: ignored PostgreSQL tests
+  remain in the disposable integration job. Production artifacts must still use only
+  reviewed production features; an all-features CI build must never be promoted or
+  treated as a production artifact.
+- Heavy PR checks are risk-tiered. Keep `check` meaningful for ordinary PRs, but run
+  `rust-quality-baseline` and `postgres-integration` only for sidecar, Postgres, deploy
+  sidecar script, or CI workflow changes. Explicit manual dispatches and authenticated
+  Release Please validation force the full light, runtime, Rust, and PostgreSQL tiers.
+  Do not weaken production deploy or published Release gates; those remain the full
+  safety boundary.
+- `staging-runtime-prerequisite-observation-smoke.sh` is a read-only observation gate
+  for fixed staging env and immutable release prerequisites. It must never read env
+  contents, execute the sidecar, connect to Postgres, call external services, install
+  units, enable timers, or report secret-bearing values. Its path checks must lstat
+  every parent component and reject symlinks, non-directories, group/world-writable
+  parents, unexpected parent owners, and a sidecar binary the running user cannot
+  execute; tests for these checks must use repository-local temporary roots, not `/tmp`.
+- Server Hermes patches under `docs/operations/review-pool/hermes/` are non-deployable
+  migration evidence. Do not add them to release bundles or apply them to production;
+  migrate each accepted behavior into an owned package with focused tests and a separate
+  cutover PR.
+- The disposable operations apply smoke may exercise the Huabaosi retry state only when
+  both `huabaosi-staging-adapter` and `postgres-integration-tests` are compiled,
+  `QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE=1`, the database is exactly `qintopia_test` on
+  a literal loopback IP with its approved URL hash, and every provider/media endpoint
+  and allowlist host is a literal loopback IP. This exception must never accept an
+  external host or production database.
+- The first release containing a deploy-runner behavior change is processed by the
+  previous runner. Use a reviewed follow-up `workflow_dispatch` request for the same
+  published SHA to activate the new runner behavior; do not bootstrap it with server
+  edits.
+- If the previous runner rejects the new Huabaosi artifact feature contract before
+  promotion, the default-disabled `legacy_runner_bootstrap` workflow mode is the only
+  allowed bridge. It must bind the legacy runtime to the latest trusted successful
+  deploy result, accept only the exact deployed Huabaosi three-feature artifact, use a
+  distinct transition release SHA, and restrict scope/restarts to `deploy-bundle` and
+  `qintopia-system-services`. Normal fetches must continue to require the current
+  three-feature artifact. Run a dry-run before any live bootstrap.
+- Deploy result diagnostics may include only bounded non-secret runner facts such as the
+  fixed failure stage, numeric exit status, promotion state, and profile activation
+  attempt state. Do not upload raw server logs, journal output, env files, secrets,
+  external adapter payloads, or command output into COS deploy result JSON.
+- If the server poller rejects a malformed deploy request before the runner starts, it
+  must still upload a bounded `status=failed` result with
+  `checks=[{"name":"deploy-request-validation","status":"failed"}]`. That fallback may
+  normalize invalid SHA/profile/scope/restart fields; `wait-deploy-result.sh` must
+  accept only this exact validation-failure shape and keep strict identity matching for
+  every other deploy result.
+
+### Sidecar Rules
+
+- Treat `deploy/sidecar/docs/server-deployment.md` as historical rollback evidence, not
+  the current deployment path.
+- Group-message send-readiness and policy-denial transitions must release the complete
+  claim tuple (`claimed_by`, `locked_at`, and `claim_expires_at`) and require exactly
+  one work-item update before appending the corresponding audit event.
+- The complete sidecar suite needs a 32 MiB test-thread stack. `pnpm test:sidecar` and
+  CI set `RUST_MIN_STACK=33554432`; this is test-only and must not be copied into the
+  production sidecar service environment.
+- Huabaosi live provider/media execution must compile with exactly one non-default live
+  feature: `huabaosi-staging-adapter` or `huabaosi-production-adapter`. A build with
+  neither or both must reject apply before Postgres. Staging keeps the exact owner
+  phrase and reviewed staging database hash. Production must verify the exact production
+  approval phrase, deployed release SHA binding, database URL hash binding, and adapter
+  policy before Postgres or external I/O; shell scripts cannot be the only enforcement
+  point.
+- Production mirror observation must discover
+  `release/current/sidecar/qintopia-message-sidecar` or accept `QINTOPIA_SIDECAR_BIN`
+  only when it resolves to that same immutable binary with the approved production
+  features; source-tree `cargo run` fallback is forbidden. Its shell may parse only the
+  mirror enable flag; a direct child launcher may pass only that parsed flag and the
+  non-secret release SHA to the immutable binary without sourcing shell, importing
+  secrets into the shell, or writing a secret-bearing temporary file. It may run only
+  the non-secret mirror observation preflight, not full configuration preflight or
+  worker dry-run. Non-allowlisted env values must be ignored before mirror-flag value
+  validation. Activation must fail before preflight or timer mutation until persistent
+  mirror enablement is present exactly once and exactly `1`; timer rollback must stop
+  external work immediately and fail closed until it is present exactly once and exactly
+  `0` in the reviewed environment file.
+- A staging-feature callback apply must validate explicit enablement, API/media/group
+  allowlists, and webhook readiness before reading stdin. Upload apply must validate the
+  same adapter configuration before connecting to Postgres.
+- CI must execute the non-ignored sidecar suite with all features so staging-only
+  adapter tests run, then run warning-denied Clippy once with no default features and
+  once with all features. The all-feature test/build is CI-only and cannot stand in for
+  the production feature set; ignored PostgreSQL tests stay in their disposable
+  integration job.
+- External adapter modules must use `bounded_http`; do not add another raw socket HTTP
+  implementation. Test-only loopback HTTP is allowed, while production clients require
+  HTTPS and the reviewed endpoint/host allowlists.
+- Production timer activation should use the `Activate Production Timers` GitHub
+  workflow after the reviewed release containing the runner support is deployed. It
+  creates a signed `production-activation` deploy-runner request and accepts only these
+  fixed targets: `erhua-morning-brief`, `space-automation-runtime`,
+  `xiaoman-weekly-recruitment`, `xiaoman-weekly-plan-confirmation`,
+  `xiaoman-weekly-preview`, and `xiaoman-daily-case-report-auto-publish`. The activation
+  request does not retire legacy cron files, write persistent production config, or
+  promise automatic rollback; each selected target requires its owner-approved
+  production config to have been applied first. Legacy cron retirement must be handled
+  through the explicit `production-legacy-cron-retirement` request and evidenced before
+  activation retries. The `xiaoman-weekly-recruitment` and
+  `xiaoman-weekly-plan-confirmation` target additions are a 2026-08-09 owner-approved
+  fixed-boundary expansion for the Xiaoman weekly minimum loop; they may enable only
+  their own release-managed systemd timers and must not send, publish, write Feishu,
+  call Erhua, or call QiWe. `space-automation-runtime` must be the only target in its
+  activation request. It may enable only the generic dispatcher timer and Space
+  execution worker after the fixed production approval, database hash, Qiwe host,
+  companion artifact, authenticated ingress, and exact-unit observation checks pass. A
+  release installation disables and stops both units; every new release therefore
+  requires a fresh explicit activation.
+- Production runtime observation should use the `Observe Production Runtime` GitHub
+  workflow after the reviewed release containing the runner support is deployed. It
+  creates a signed `production-observation` deploy-runner request and accepts only these
+  fixed targets: `qiwe-image-send`, `space-automation-runtime`,
+  `xiaoman-daily-case-report-auto-publish`, `hermes-cron-snapshot`,
+  `hermes-cron-live-parity`, and the worker-run evidence targets
+  `erhua-morning-brief-worker-run`, `xiaoman-daily-case-report-worker-run`,
+  `xiaoman-weekly-recruitment-worker-run`,
+  `xiaoman-weekly-plan-confirmation-worker-run`, and
+  `xiaoman-weekly-preview-worker-run`. `hermes-cron-snapshot` reports only safe
+  server-local snapshot unit/repo facts, and `hermes-cron-live-parity` reports only
+  reviewed/live/enabled counts after comparing the reviewed registry to live
+  declarations including `deliver` and `origin` boundaries. Do not hard-code the
+  reviewed job count in live-parity observation; the registry may grow while the safe
+  output remains bounded counts only. Migrated worker-run targets prove the reviewed
+  Hermes cron wrapper wrote a latest `<timestamp> <task> run=ok` sentinel for the
+  expected Asia/Shanghai schedule date and the worker exited successfully; stale
+  sentinels from an older scheduled date must fail as `scheduled_run_missing`, not be
+  classified as the current worker result. Erhua morning brief observation must also
+  parse the worker's sanitized summary from that latest log segment and verify the text
+  artifact was created plus the optional auto-publish summary reports
+  `external_send_executed=true`; never fall back to sentinel-only success for Erhua
+  sends. Weekly targets also validate the worker's `latest-summary.json` draft
+  invariants. When the fixed Hermes cron log is absent or contains no reviewed sentinel
+  for the task, the observation passes with `<key>_worker_run_result=not_started`;
+  before the first scheduled trigger this means the Hermes job has not fired yet, not a
+  regression, while `not_started` after the scheduled time means the Hermes job did not
+  reach the reviewed wrapper and needs reviewed investigation. Observation is read-only:
+  it may run only fixed release-local observation scripts, must not enable or disable
+  timers, write persistent config, retire legacy cron files, call QiWe/Feishu/Postgres
+  mutation commands, or run activation/rollback scripts, and must not print live
+  `jobs.json`, group ids, prompts, env values, snapshot contents, or raw script output.
+  `space-automation-runtime` additionally verifies the exact release-bound unit bytes,
+  enabled/active state, scheduled timer value, and that the live worker PID resolves to
+  the current immutable Qiwe companion binary; it never reports process arguments or
+  environment values.
+- Production immediate worker/backfill runs should use the
+  `Run Production Runtime One-Shot` GitHub workflow after the reviewed release
+  containing the runner support is deployed. Erhua one-shots still require the
+  corresponding release-managed timer to be enabled; Xiaoman daily case-report backfill
+  is the reviewed Hermes-cutover exception and must not require the retired systemd
+  timer to be enabled. Control targets enforce their fixed target-specific
+  preconditions. It creates a signed `production-runtime-one-shot` deploy-runner request
+  and accepts exactly one fixed target per request: `erhua-morning-brief` with
+  `approved-production-erhua-morning-brief-one-shot`, or
+  `xiaoman-daily-case-report-auto-publish-backfill` with
+  `approved-production-xiaoman-daily-case-report-auto-publish-backfill` and `YYYY-MM-DD`
+  backfill date, or `xiaoman-daily-case-report-approval-repair` /
+  `xiaoman-daily-case-report-read-through-repair` /
+  `xiaoman-daily-case-report-chat-id-repair` with
+  `approved-production-xiaoman-daily-case-report-config-v1`, or
+  `qiwe-image-send-intro-text-enable` with
+  `approved-production-qiwe-image-send-intro-text-v1`, or
+  `xiaoman-creative-profile-candidates-apply` with
+  `approved-production-xiaoman-creative-profile-candidates` and the 64-hex SHA-256 of
+  the fixed server-local reviewed payload, or `hermes-cron-snapshot-install` with
+  `approved-production-hermes-cron-snapshot` and empty `backfill_date` when
+  `hermes-cron-snapshot` observation reports
+  `hermes_cron_snapshot_observation_error=unit_missing`, or `qiwe-webhook-ingress-apply`
+  with `approved-production-qiwe-webhook-ingress-apply`, or
+  `qiwe-webhook-ingress-rollback` with
+  `approved-production-qiwe-webhook-ingress-rollback`, or
+  `space-automation-runtime-rollback` with
+  `approved-production-space-automation-runtime-rollback`. The snapshot target installs
+  only the fixed server-local snapshot timer and baseline snapshot repo, then should be
+  followed by observation with `hermes-cron-snapshot,hermes-cron-live-parity`. This path
+  may create real production publish/send side effects through the reviewed worker
+  boundaries, but it must not write persistent config, enable/disable business worker
+  timers, retire cron files, accept multiple targets, or record raw worker output, live
+  cron JSON, group ids, prompts, database URLs, tokens, person ids, reviewed profile
+  payload content, Feishu payloads, QiWe payloads, message content, snapshot contents,
+  or journal logs. Runtime one-shot entrypoints must emit a bounded
+  `qintopia_runtime_one_shot_safe_failure=` marker for every pre-worker failure as well
+  as worker failures; otherwise deploy results collapse to bare `exit 1` and production
+  troubleshooting loses the reviewed boundary.
+- As of `v0.2.30`, an existing release first assembled by `v0.2.29` may have a
+  `manifest.json` that omits `runtime_artifact_profile` even though the immutable
+  sidecar artifact manifest already records the reviewed profile. The same-SHA repair
+  path must adopt that profile from `sidecar/artifact-manifest.json`, then persist it
+  back into the release manifest before exact identity comparison. Do not hot-edit the
+  server manifest by hand.
+- As of 2026-07-15, the corrected `v0.2.10` same-SHA follow-up deploy installed the new
+  systemd units. A same-SHA request for an existing release must reuse the immutable
+  manifest's exact runtime, runtime artifact profile, bundle, commit, scope, and
+  restart-target fields. The only content exception is installing a complete missing
+  QiWe companion into a legacy Huabaosi-only release without changing the primary
+  binary. Narrowing `restart_targets` is rejected before promotion and does not trigger
+  rollback. Content, path, type, or symlink drift must fail before mutation. After the
+  bounded metadata or companion repair allowed above, the existing tree must satisfy the
+  same deploy-runner owner, non-writable, directory accessibility, regular/symlink type,
+  sidecar `0755`, and metadata `0444` checks as a new staging tree. Same-SHA reuse must
+  preserve a distinct `previous` target. Production release and staging roots must be
+  created explicitly as `0755` so the validation contract does not depend on ambient
+  `umask`.

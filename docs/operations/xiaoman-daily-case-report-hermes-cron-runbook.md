@@ -275,3 +275,39 @@ damage of an accidental overlap, but the one-path rule is absolute.
 - The server-local snapshot repo recorded the change.
 - No real group id, chat id, media URI, database URL, or secret appears in any command
   output or evidence.
+
+## Operating rules
+
+The following scheduler migration constraints retain their original conditions. Paths in
+backticks are relative to the repository root.
+
+- Xiaoman daily case-report auto-publish now uses a Hermes cron job (task 4), not the
+  release-managed daily timer. The reviewed declaration is
+  `runtime/hermes/cron/xiaoman/daily-case-report.job.json`, the wrapper is
+  `runtime/hermes/scripts/qintopia_xiaoman_daily_case_report.sh`, and the registry entry
+  pins expr `0 9 * * *`. Install and enable the Hermes job with
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_HERMES_CRON=approved-production-xiaoman-daily-case-report-hermes-cron`
+  plus `apply-xiaoman-daily-case-report-hermes-cron.sh --install` then `--enable`.
+  Disable the old timer with
+  `rollback-xiaoman-daily-case-report-auto-publish-production.sh` before enabling the
+  job; the rollback script requires
+  `QINTOPIA_XIAOMAN_DAILY_CASE_REPORT_AUTO_PUBLISH_ENABLED=0` in the sidecar env while
+  the worker requires `1`, so the wrapper exports that flag itself and the env file
+  keeps `0` for the retired systemd path. Disabled production config must preserve the
+  reviewed chat id, target group, read-through, storage backend, and message text keys
+  already present in the sidecar env; only the retired systemd enablement flag should
+  stay `0`, otherwise the Hermes worker fires on time but fails before render/upload.
+  Production configuration still goes through the fixed release-local config entrypoint:
+  `deploy/sidecar/scripts/apply-xiaoman-daily-case-report-production-config.py --stdin --apply --approval approved-production-xiaoman-daily-case-report-config-v1`.
+  Observation and rollback for the retired systemd path are
+  `xiaoman-daily-case-report-auto-publish-production-observation-smoke.sh` and
+  `rollback-xiaoman-daily-case-report-auto-publish-production.sh`; the systemd
+  activation script is kept only as the rollback target. Follow
+  `docs/operations/xiaoman-daily-case-report-hermes-cron-runbook.md`. The send chain is
+  unchanged: the worker uploads through the Huabaosi Feishu primary-storage boundary and
+  records the `generated_image` artifact plus one automatic `group_message_request`;
+  actual QiWe delivery rides the separate `operations-group-send-ready` chain. The
+  `xiaoman-daily-case-report-auto-publish-backfill` one-shot workflow target stays valid
+  after migration because it calls the worker boundary directly, temporarily exporting
+  the worker enablement/date override for that process while leaving the persistent
+  sidecar env flag at `0` and the retired systemd timer disabled.

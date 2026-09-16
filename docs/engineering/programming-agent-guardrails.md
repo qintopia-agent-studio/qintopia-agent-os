@@ -220,3 +220,185 @@ Stop and ask for owner confirmation before:
 - replacing or symlinking `SOUL.md` or `config.yaml` for a live Hermes profile
 - deleting archives or rollback material permanently
 - reviving WorkTool, OpenClaw, Hermes Kanban, or current WorkTool-bound Xiaoqin runtime
+
+## Operating rules
+
+Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
+
+### References
+
+Use the [documentation hub](../README.md) and [change routing](change-routing-index.md)
+for package and task maps. Production evidence runbook:
+`docs/operations/xiaoman-production-evidence-runbook.md`.
+
+### Worktree Lifecycle
+
+- Reuse the project root or an existing suitable worktree by default, developing on a
+  feature branch. A new task, branch, or PR alone does not justify another worktree.
+- Create one only for explicit user-requested isolation, parallel work requiring
+  independent file states, uncommitted work that blocks safe progress, or simultaneous
+  execution of different versions. Inspect `git worktree list`, branches, and local
+  changes first; unrelated dirty files alone do not require isolation.
+- Before creating one, state the concrete reason, path, branch, and cleanup condition.
+  Proceed within existing task authorization without adding a step-by-step approval
+  gate. Put manually managed worktrees in the target repository's ignored
+  `.worktrees/<task>/`, not long-lived `/tmp` or `/private/tmp` directories. Preserve
+  user-specified or app-managed directory conventions.
+- At handoff, check actual PR merge status (including squash merges), local changes,
+  untracked and ignored configuration/evidence, and running previews. Retire only this
+  task's completed, recoverable worktrees; retain pending acceptance work with its
+  purpose recorded. Archive local material under ignored `.local-workspace/`; never
+  commit credentials or business snapshots with source changes.
+- PR merge, task archival, and worktree cleanup are separate actions. Preserve all local
+  work before restoring the ordinary project entrypoint to current `master` without
+  disrupting another task. Never force-overwrite work or delete historical branches as
+  an implicit side effect.
+- For cross-repository work, resolve the target Git root and read its `AGENTS.md`. Codex
+  project grouping does not change filesystem ancestry or Git boundaries. When operating
+  on Green PMS, follow its worktree policy and `main`/PR requirements too.
+
+### Commands
+
+- Install dependencies: `pnpm install`
+- Format: `pnpm format`
+- Pre-commit quick checks: `.husky/pre-commit`
+- Repository check: `pnpm check`
+- Markdown lint: `pnpm lint:md`
+- Local business testing: read `docs/testing/agent-guide.md`; use the `pnpm test:*`
+  entries backed by `node tools/testing/run.mjs` for setup, discovery, targeted runs,
+  full runs, reports, and harness checks.
+- PR readiness: `pnpm pr:doctor`
+- PR body validation: `pnpm pr:check-body`
+- Local PR quick tier: `pnpm check:pr:quick`
+- Local PR heavy tier: `pnpm check:pr:heavy`
+- Local PR auto tier: `pnpm check:pr:auto`
+- PR creation: `pnpm pr:create -- --body-file <completed-pr-body.md>`
+- If the local pnpm version shim cannot verify a registry signature, do not set
+  `pmOnFail=ignore`. Confirm the exact `package.json` script first; when it is a fixed
+  repository-local Node entrypoint, run that entrypoint directly and record the failed
+  pnpm validation attempt. In Codex's restricted sandbox, pnpm 10/11 package-manager
+  switching can also fail because Node fetch to npm and writes to the user-level
+  `PNPM_HOME/.tools` cache are blocked; verify once with the reviewed non-sandbox
+  boundary before treating the error as lockfile tampering.
+
+### Core Rules
+
+- A `group_message_send` claim must clear `claimed_by`, `locked_at`, and
+  `claim_expires_at` together when it records send-ready or policy-denied state. The
+  transition must update exactly the locked work item before appending its audit event.
+- Do not hand humans a prefilled GitHub compare URL as the normal PR flow. Use
+  `pnpm pr:doctor`, then `pnpm pr:create` with a completed PR body. If GitHub CLI is
+  missing, run `pnpm pr:bootstrap`.
+- In the Codex desktop environment, do not run extra GitHub authentication checks before
+  creating a PR. Use `pnpm pr:create` directly after PR readiness checks; only handle
+  authentication when the actual push or PR creation command fails.
+- In Codex sandboxed command execution, a repo-owned Node PR script can fail when its
+  child `gh` process reaches `api.github.com` even though a top-level `gh pr ...`
+  command works. Treat that as sandbox network permission, not an auth failure; rerun
+  the repo-owned PR entrypoint with network approval instead of re-authenticating `gh`.
+- PR-Agent must not automatically edit PR descriptions. The completed repository PR
+  template is author-owned because CI validates its required sections.
+- Before merging any PR, read the complete PR Reviewer Guide, submitted reviews,
+  conversation comments, and inline review threads for the latest head SHA. A green
+  PR-Agent check is not sufficient. Resolve every security concern and recommended
+  review item in code or record an explicit disposition, then wait for replacement CI
+  and review results before merge.
+- Do not copy secrets, live `.env` files, tokens, table ids, private chat logs, raw
+  member profiles, or server-only runtime state into git.
+- WorkTool is not a Qintopia Agent OS channel for new work. Treat WorkTool and the
+  WorkTool Hermes plugin as deprecated or audit-only material.
+- Hermes Kanban is not the future task/orchestration backbone. Do not build new
+  workflows on Hermes Kanban.
+- Evidence and visual worker reports must derive `dry_run` from `apply_requested` so a
+  `--dry-run` observation cannot report `dry_run=false`; preflight must fail closed on
+  any mismatch rather than weakening that assertion.
+- A content-hash conflict may reuse an existing pending `generated_image` only when its
+  stable URI, source refs, and complete immutable worker metadata exactly match the new
+  final JPEG result. Reviewed, stale, or modified artifacts must fail closed and must
+  never be overwritten by retry processing.
+
+### Package requirements
+
+Follow the [package contract](package-contract.md) for placement, required files,
+owner/risk metadata, validation, production boundaries and rollback. Missing
+requirements need a documented exception before a package is called production-ready.
+
+### Migration Rules
+
+Migration is inventory-first:
+
+1. Identify the current source path.
+2. Record whether it is `adopt`, `template`, `runtime-only`, `deprecated`, or `remove`.
+3. Preserve source hash or commit reference.
+4. Add package metadata.
+5. Add focused tests or fixtures.
+6. Only then wire it into registry and deployment.
+
+Server runtime directories under `.hermes/profiles/*` must be treated as live runtime
+state. They can produce inventory records, templates, or diffs; they must not be copied
+wholesale into this repository.
+
+### Server changes
+
+Follow the [server change policy](server-change-policy.md), including allowed activity,
+connection identity, prohibited hot edits, deployment evidence and emergency rollback.
+
+### Validation Expectations
+
+Before a PR:
+
+- Run package-level tests.
+- Run fixture replay when available.
+- Run registry/manifest checks when available.
+- Validate the completed PR body with `pnpm pr:check-body` or `pnpm pr:doctor`.
+- For runtime/deploy changes, include dry-run output and rollback notes.
+- For user-facing HTML reports, run HTML parse and browser overflow checks.
+- For production-adjacent changes, state whether the change touches external sends,
+  database writes, profile runtime, secrets, Feishu, QiWe, or systemd.
+
+### Documentation Rules
+
+- Keep decisions in git, not only in chat.
+- For every production, deploy, preflight, or CI integration failure, add or update a
+  dated, indexed record under `docs/reports/` in the same PR. Include the observed
+  evidence, root cause, resolution, validation, remaining boundary, and follow-up owner
+  action. Update affected runbooks, package READMEs, manifests, or checks in that same
+  PR; do not leave the repair documented only in a report or chat.
+- Prefer short, focused docs over one large manual.
+- Mark server-side exploration as unapproved until owner review confirms it.
+- Avoid formalistic phrasing when writing internal engineering docs.
+- Keep technical reports concrete: current state, evidence, risk, next action.
+
+### First Read For New Agents
+
+1. `README.md`
+2. `AGENTS.md`
+3. `docs/README.md`
+4. `docs/architecture/agent-os-overview.md`
+5. `docs/plans/active/current-roadmap.md`
+6. `docs/engineering/programming-agent-guardrails.md`
+7. `docs/engineering/change-routing-index.md`
+8. `docs/product/agent-os-prd.md` for product scope changes
+9. `docs/agent-os/README.md` for Agent OS design changes
+10. `docs/plans/completed/monorepo-migration.md` for historical migration evidence
+11. Target package README or manifest
+12. Relevant docs under `docs/engineering/` or `docs/operations/`
+
+Report what you read, what you plan to touch, validation commands, and production
+boundaries before making broad changes.
+
+### Sidecar Map
+
+- Human setup and usage: `README.md`
+- Source snapshot: `docs/source-snapshot.md`
+- Database migrations: `../postgres/migrations/`
+- Versioned data design docs: `../postgres/docs/data-design/`
+- Server deployment scripts: `../../deploy/sidecar/scripts/`
+- Current cutover runbook: `../../docs/operations/m9-server-cutover-runbook.md`
+- Target server directory plan: `../../docs/operations/server-directory-plan.md`
+- Legacy standalone deployment snapshot:
+  `../../deploy/sidecar/docs/server-deployment.md`
+- Sidecar entrypoint: `src/main.rs`
+- NATS consumer loop: `src/consumer.rs`
+- Postgres persistence: `src/db.rs`
+- Event protocol parsing: `src/event.rs`

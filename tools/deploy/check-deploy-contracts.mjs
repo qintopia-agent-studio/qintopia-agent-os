@@ -48,7 +48,13 @@ const sidecarAgentsPath = "runtime/sidecar/AGENTS.md";
 if (!exists(sidecarAgentsPath)) {
   addError(`${sidecarAgentsPath}: missing sidecar agent rules`);
 } else {
-  const sidecarAgents = readText(sidecarAgentsPath);
+  const sidecarAgents = [
+    readText(sidecarAgentsPath),
+    readText("runtime/sidecar/README.md"),
+    readText("skills/qiwe/README.md"),
+    readText("deploy/runner/README.md"),
+    readText("agents/huabaosi/README.md"),
+  ].join("\n");
   for (const fragment of [
     "Production sidecar artifacts compile exactly `huabaosi-production-adapter`, the",
     "guarded `huabaosi-feishu-mirror-adapter`",
@@ -79,7 +85,15 @@ const rootAgentsPath = "AGENTS.md";
 if (!exists(rootAgentsPath)) {
   addError(`${rootAgentsPath}: missing repository agent rules`);
 } else {
-  const rootAgents = readText(rootAgentsPath);
+  const rootAgents = [
+    readText(rootAgentsPath),
+    readText("docs/engineering/programming-agent-guardrails.md"),
+    readText("docs/operations/xiaoman-production-evidence-runbook.md"),
+    readText("deploy/runner/README.md"),
+    readText("skills/qiwe/README.md"),
+    readText("agents/huabaosi/README.md"),
+    readText("docs/operations/xiaoman-weekly-minimum-loop-runbook.md"),
+  ].join("\n");
   for (const fragment of [
     "`node tools/deploy/check-xiaoman-production-evidence-chain-local.mjs`",
     "Production evidence runbook: `docs/operations/xiaoman-production-evidence-runbook.md`",
@@ -92,7 +106,7 @@ if (!exists(rootAgentsPath)) {
     "apply-xiaoman-activity-read-through-production-config.py",
     "sourcing the Xiaoman Hermes profile",
   ]) {
-    requireFragment(rootAgentsPath, rootAgents, fragment);
+    requireFragment(rootAgentsPath, rootAgents.replace(/\s+/g, " "), fragment);
   }
 }
 
