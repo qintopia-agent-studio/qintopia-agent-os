@@ -30,6 +30,25 @@ platform discovery must not be generalized into a claim that every worker direct
 messages. Existing Silaoshi bridge tests establish local bridge behavior, not production
 tool or WeCom acceptance.
 
+## Legacy source inventory
+
+The retained pre-clean checkout has 11 tracked dirty files: six implementation files and
+five tests. Implementation paths are `gateway/platforms/base.py`,
+`gateway/platforms/webhook.py`, `gateway/platforms/wecom.py`, `hermes_cli/kanban_db.py`,
+`tools/kanban_tools.py` and `tools/send_message_tool.py`. The Kanban changes include
+claimer identity, task creation, completion and worker session metadata. These are
+additional **parity review items**, not confirmed causes of this incident. Do not copy
+this mixed tree back or declare full behavioral migration from clean-core status.
+
+The old WeCom entry moved to the official plugin path; old frontend assets exist while
+the active source lacks them. Both old and current cores retain terminal and code
+execution entrypoints, so their failures are not explained by missing tool source files.
+Server-local bridge inspection confirms its action script/interpreter exist, its action
+digest matches the pinned binding, and its socket is Ubuntu-owned 0600. This is not an
+execution acceptance test. Recent tool-result classification found policy, JSON parsing,
+file-path and secret-scope errors; no blanket security/permission relaxation is
+justified.
+
 ## Profile acceptance baseline
 
 `未验证` means no accepted user-triggered round trip in this recovery. Preserve both
