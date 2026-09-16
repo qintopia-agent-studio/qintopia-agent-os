@@ -100,6 +100,13 @@ class DashboardInstallTests(unittest.TestCase):
         self.restart.assert_not_called()
         self.assertFalse((self.root / "state").exists())
 
+    def test_concurrent_activation_refuses_without_changing_unit(self):
+        with module.activation_lock():
+            with self.assertRaisesRegex(module.ArtifactError, "already_in_progress"):
+                self.invoke("--apply")
+        self.assertEqual(self.dropin.read_bytes(), self.previous)
+        self.restart.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

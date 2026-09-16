@@ -7,6 +7,8 @@ under the fixed incoming root by the operator, with its manifest digest pinned.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -102,14 +104,21 @@ def restart() -> None:
     subprocess.run(["/usr/bin/systemctl", "restart", "hermes-dashboard.service"], check=True, capture_output=True)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--manifest-sha256", required=True)
-    action = parser.add_mutually_exclusive_group()
-    action.add_argument("--apply", action="store_true")
-    action.add_argument("--rollback", action="store_true")
-    parser.add_argument("--accept-upstream-typecheck-failure", action="store_true")
-    args = parser.parse_args()
+@contextmanager
+def activation_lock():
+    checked_directory(ROOT)
+    fd = os.open(ROOT / ".activation.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ArtifactError("activation_already_in_progress") from None
+        yield
+    finally:
+        os.close(fd)
+
+
+def perform(args) -> None:
     checksum = args.manifest_sha256
     if not re.fullmatch(r"[0-9a-f]{64}", checksum):
         raise ArtifactError("manifest_digest_invalid")
@@ -201,6 +210,22 @@ def main() -> None:
         restart()
         raise ArtifactError("activation_failed_previous_restored") from None
     print("hermes_dashboard_activation=passed browser_acceptance=pending")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--manifest-sha256", required=True)
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--apply", action="store_true")
+    action.add_argument("--rollback", action="store_true")
+    parser.add_argument("--accept-upstream-typecheck-failure", action="store_true")
+    args = parser.parse_args()
+    if os.geteuid() != 0:
+        raise ArtifactError("root_required")
+    if REPO.parent != Path("/home/ubuntu/qintopia-agent-os-releases") or not re.fullmatch(r"[0-9a-f]{40}", REPO.name):
+        raise ArtifactError("reviewed_release_required")
+    with activation_lock() if args.apply or args.rollback else nullcontext():
+        perform(args)
 
 
 if __name__ == "__main__":

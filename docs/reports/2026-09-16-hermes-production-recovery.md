@@ -74,8 +74,9 @@ them.
 - QiWe unit suite: 303 tests, passed with one skip.
 - Hermes runtime suite initially passed 35 tests under candidate Python 3.12. Initial
   default Python 3.14 run lacked PyYAML; changing the local interpreter resolved setup.
-- Dashboard artifact tests: seven passed. Installer transaction tests: six passed,
-  including preflight failure, retry, operator drift, idempotence and rollback.
+- Dashboard artifact tests: seven passed. Installer transaction tests: seven passed,
+  including preflight failure, retry, operator drift, idempotence, rollback and
+  concurrent activation refusal.
 - Server-local recovery backup tests: four passed, including a committed live-WAL
   snapshot, source permission preservation, symlink inventory without traversal and
   refusal to overwrite an existing backup. Production backup execution remains pending.
