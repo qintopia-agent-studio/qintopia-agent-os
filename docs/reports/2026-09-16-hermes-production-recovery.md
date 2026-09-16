@@ -53,10 +53,13 @@ them.
   discover the packaged QiWe plugin against the pinned official core. No network or live
   profile was used; this is registration acceptance, not delivery acceptance.
 - QiWe unit suite: 303 tests, passed with one skip.
-- Hermes runtime suite: 35 tests passed under candidate Python 3.12. Initial default
-  Python 3.14 run lacked PyYAML; changing the local interpreter resolved setup.
+- Hermes runtime suite initially passed 35 tests under candidate Python 3.12. Initial
+  default Python 3.14 run lacked PyYAML; changing the local interpreter resolved setup.
 - Dashboard artifact tests: seven passed. Installer transaction tests: six passed,
   including preflight failure, retry, operator drift, idempotence and rollback.
+- Server-local recovery backup tests: four passed, including a committed live-WAL
+  snapshot, source permission preservation, symlink inventory without traversal and
+  refusal to overwrite an existing backup. Production backup execution remains pending.
 - Snapshot permissions tests: five passed; timer installation fixture passed. Real Linux
   root/ubuntu execution remains pending.
 - Silaoshi script bridge suite: 16 passed, including bounded retries, action
@@ -80,7 +83,18 @@ them.
 - PR checks initially failed formatting; files were formatted. Markdown lint also
   traversed ignored local official-core evidence; its ignore list now matches the
   repository-owned `.local-workspace`/`.worktrees` lifecycle convention.
-- Full PR checks and CI results will be recorded after the candidate diff is complete.
+- `deploy:hermes-core:check` and `deploy:contracts:check` passed.
+- Heavy check light tier, default Rust tests (850 passed), feature-boundary tests,
+  Clippy and all-feature tests (865 passed, 61 ignored) passed. Local heavy exits
+  blocked at PostgreSQL readiness because `pg_isready` is unavailable; it did not use
+  the unrelated existing database on port 5432. Disposable PostgreSQL CI is separate.
+- Reusing the official-core editable venv for repository QiWe unit tests caused enum
+  registration failures. Those tests passed again in a clean project Python 3.12 venv;
+  real-core discovery is verified independently in the candidate venv.
+- First Linux artifact CI passed: run `35057214493`, artifact digest
+  `sha256:8581277de596a0f9dc97d7a8c2678ef0cb9c01e89cf4239f56c9a0ff27a10bfa`. Later
+  commits add Linux root/Ubuntu permission acceptance and backup tests; their final CI
+  status remains to be recorded.
 - Chrome plugin/browser acceptance, authenticated production browsing, user messages,
   15-minute rolling observations and 24-hour/natural-cron observations remain pending.
 

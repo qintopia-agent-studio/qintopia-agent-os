@@ -378,6 +378,7 @@ if (!exists(deployBundleBuilderPath)) {
     "skills/qiwe/space_change_tools.py",
     "skills/qiwe/space_agent_completion.py",
     "runtime/hermes/repair_snapshot_permissions.py",
+    "runtime/hermes/recovery_backup.py",
     "runtime/hermes/dashboard_artifact.py",
     "runtime/hermes/dashboard_launcher.py",
     "deploy/runner/install-hermes-dashboard.py",

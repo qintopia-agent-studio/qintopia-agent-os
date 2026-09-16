@@ -9,6 +9,8 @@ on:
       - "runtime/hermes/check_dashboard_http.py"
       - "runtime/hermes/tests/test_dashboard*.py"
       - "runtime/hermes/repair_snapshot_permissions.py"
+      - "runtime/hermes/recovery_backup.py"
+      - "runtime/hermes/tests/test_recovery_backup.py"
       - "runtime/hermes/tests/test_repair_snapshot_permissions.py"
       - "tools/deploy/build-hermes-dashboard.py"
       - "skills/qiwe/**"
@@ -54,6 +56,10 @@ jobs:
         run:
           python3 -m unittest discover -s runtime/hermes/tests -p 'test_dashboard*.py'
           -v
+      - name: Verify consistent server-local backup fixtures
+        run:
+          python3 -m unittest discover -s runtime/hermes/tests -p
+          test_recovery_backup.py -v
       - name: Verify root installation and Ubuntu script readability
         run: |
           id -u ubuntu >/dev/null 2>&1 || sudo useradd --create-home ubuntu

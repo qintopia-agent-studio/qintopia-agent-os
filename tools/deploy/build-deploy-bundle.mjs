@@ -162,6 +162,7 @@ const sourceFiles = [
   "runtime/hermes/verify_runtime_provider.py",
   "runtime/hermes/validate_hermes_python.py",
   "runtime/hermes/repair_snapshot_permissions.py",
+  "runtime/hermes/recovery_backup.py",
   "runtime/hermes/dashboard_artifact.py",
   "runtime/hermes/dashboard_launcher.py",
   "runtime/hermes/profile-registry.yaml",

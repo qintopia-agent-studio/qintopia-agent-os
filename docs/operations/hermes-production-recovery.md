@@ -24,6 +24,24 @@ This runbook does not replace the approved release pipeline or the
 5. Audit old-vs-official source behavior with synthetic fixtures. Old source is
    evidence; it is not a validated all-component rollback image.
 
+Run the release-owned backup tool on the server before activation:
+
+```bash
+python3 <release>/runtime/hermes/recovery_backup.py
+python3 <release>/runtime/hermes/recovery_backup.py --apply
+```
+
+It writes only a timestamped root-owned directory under
+`/var/lib/qintopia-hermes-recovery` and prints counts. Inspect the server-local
+manifest: `complete` covers the selected configuration, profile state,
+cron/session/memory/scripts, plugin link inventory, bridge binding/secret and unit
+files, **not every possible external memory provider or symlink target**. Inventory
+links without following them; separately verify any required referenced state before
+acceptance. Missing mandatory profile config, changed files, unsupported file types,
+insufficient space or failed SQLite integrity checks block the backup. Partial
+directories without a complete manifest are not usable activation evidence. The backup
+contains no restore/replay operation.
+
 ## Console artifact and activation
 
 Use the official commit's `git archive`, never archive the live working directory or
