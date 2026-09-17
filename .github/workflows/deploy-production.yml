@@ -536,7 +536,7 @@ jobs:
           restart_targets="$(normalize_csv_allowlist \
             "restart_targets" \
             "$restart_targets" \
-            "qintopia-system-services,hermes-erhua,hermes-wenyuange,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-guanerye")"
+            "$(node tools/deploy/resolve-restart-targets.mjs --list-ordinary-targets)")"
           dry_run="$(normalize_boolean "dry_run" "$dry_run")"
           rollback_on_smoke_failure="$(normalize_boolean \
             "rollback_on_smoke_failure" \

@@ -274,6 +274,8 @@ if is_hermes_core_release:
         fail("hermes-core-release requires exactly hermes-core")
     if data.get("rollback_on_smoke_failure") is not True:
         fail("hermes-core-release requires rollback_on_smoke_failure=true")
+if not is_hermes_core_release and "hermes-core" in restart_targets:
+    fail("hermes-core requires exclusive hermes-core-release scope")
 if "hermes-profile-erhua" in release_scope:
     if release_scope != ["hermes-profile-erhua"]:
         fail("hermes-profile-erhua must be the only release scope")

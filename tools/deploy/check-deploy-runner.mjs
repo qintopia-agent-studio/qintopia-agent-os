@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import Ajv2020 from "ajv/dist/2020.js";
 import YAML from "yaml";
 
@@ -434,6 +436,90 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
     addError(
       "deploy request schema must reject mixed Hermes core and ordinary release fields"
     );
+  }
+  // Execute the server's real validation body without starting the deployment runner.
+  const validator = readText("deploy/runner/qintopia-agent-os-deploy-runner").match(
+    /validate_request\(\) \{\n  python3 - "\$request_file" <<'PY'\n([\s\S]*?)\nPY\n\}/
+  )?.[1];
+  if (!validator) throw new Error("Cannot locate runner request validator");
+  const canonical = (value) => {
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+    if (value && typeof value === "object")
+      return `{${Object.keys(value)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
+        .join(",")}}`;
+    return JSON.stringify(value);
+  };
+  const ordinaryTargetCsv = execFileSync(
+    process.execPath,
+    ["tools/deploy/resolve-restart-targets.mjs", "--list-ordinary-targets"],
+    { encoding: "utf8" }
+  ).trim();
+  if (ordinaryTargetCsv.split(",").includes("hermes-core")) {
+    addError("ordinary workflow allowlist must exclude hermes-core");
+  }
+  if (
+    !readText(".github/workflows/deploy-production.yml").includes(
+      '"$(node tools/deploy/resolve-restart-targets.mjs --list-ordinary-targets)")"'
+    )
+  ) {
+    addError("ordinary workflow must use the rules-derived target allowlist");
+  }
+  const scopeCases = [
+    ...ordinaryTargetCsv.split(",").map((target) => ({
+      request: { ...sampleRequest, restart_targets: [target] },
+      valid: true,
+    })),
+    { request: hermesCoreRequest, valid: true },
+    ...[["hermes-core"], ["hermes-erhua", "hermes-core"]].map((restart_targets) => ({
+      request: { ...sampleRequest, restart_targets },
+      valid: false,
+    })),
+    {
+      request: {
+        ...hermesCoreRequest,
+        restart_targets: ["hermes-core", "hermes-erhua"],
+      },
+      valid: false,
+    },
+  ];
+  for (const { request, valid } of scopeCases) {
+    if (validateRequest(request) !== valid)
+      addError("request schema scope boundary mismatch");
+    const { signature, ...unsigned } = request;
+    const { value: ignoredSignature, ...metadata } = signature;
+    const signed = {
+      ...unsigned,
+      signature: {
+        ...metadata,
+        value: crypto
+          .createHmac("sha256", "isolated-scope-test")
+          .update(canonical({ request: unsigned, signature: metadata }))
+          .digest("hex"),
+      },
+    };
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-scope-"));
+    try {
+      const requestPath = path.join(fixtureDir, "request.json");
+      fs.writeFileSync(requestPath, JSON.stringify(signed));
+      const result = spawnSync("python3", ["-c", validator, requestPath], {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          DEPLOY_REQUEST_SIGNING_KEY: "isolated-scope-test",
+          DEPLOY_REQUEST_SIGNING_KEY_ID: "production",
+        },
+      });
+      if (
+        (result.status === 0) !== valid ||
+        (!valid && !result.stderr.includes("hermes-core"))
+      ) {
+        addError(`runner scope boundary mismatch: ${result.stderr}`);
+      }
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+    }
   }
   const profileRequest = {
     ...sampleRequest,
@@ -2806,6 +2892,21 @@ for (const target of schemaTargets) {
   if (!allowedRuleTargets.has(target)) {
     addError(
       `deploy/runner/deploy-request.schema.json: target ${target} missing from restart rules`
+    );
+  }
+}
+for (const [target, scope] of Object.entries(restartRules.independent_targets ?? {})) {
+  const contract = deployRequestSchema.allOf.find(
+    (entry) =>
+      JSON.stringify(entry.if?.properties?.release_scope?.const) ===
+      JSON.stringify([scope])
+  );
+  if (
+    JSON.stringify(contract?.then?.properties?.restart_targets?.const) !==
+    JSON.stringify([target])
+  ) {
+    addError(
+      `independent target ${target} must match the exclusive ${scope} schema contract`
     );
   }
 }

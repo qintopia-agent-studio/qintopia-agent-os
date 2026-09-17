@@ -670,6 +670,11 @@
           "deploy_bundle_sha",
           "release_sha"
         ],
+        "properties": {
+          "restart_targets": {
+            "not": { "type": "array", "contains": { "const": "hermes-core" } }
+          }
+        },
         "not": { "required": ["hermes_core_release"] }
       }
     },
