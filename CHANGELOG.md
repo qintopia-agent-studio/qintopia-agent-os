@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.2](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.1...v0.3.2) (2026-09-17)
+
+
+### Bug Fixes
+
+* **deploy:** separate ordinary release targets from Hermes core upgrades ([#716](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/716)) ([e479475](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/e479475b8ce23d000b4919b640a2f3d34c478ffe))
+* **qiwe:** make activity reminder planning explicit and recoverable ([#714](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/714)) ([9b566de](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/9b566de58b1a5704a86f9b5e1fe6f76a7065b760))
+
 ## [0.3.1](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.0...v0.3.1) (2026-09-16)
 
 
