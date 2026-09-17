@@ -73,7 +73,7 @@ class FakeSolitaireContentParser:
         activity_type: str = "社区活动",
         activity_identity: str = "",
         detail: str = "剪鸭村·秦托邦数字游民社区(鄠邑区石井街道太土路457号)",
-        start_time: str = "2026-06-11",
+        start_time: str = "2026-06-12 00:00",
         participants: list[str] | None = None,
         promo_text: str = "",
     ) -> None:
@@ -1521,7 +1521,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(activity.source_sender_id, "弦默")
         self.assertEqual(activity.activity_subject, "接龙数据格式测试")
         self.assertEqual(activity.activity_detail, "剪鸭村·秦托邦数字游民社区(鄠邑区石井街道太土路457号)")
-        self.assertEqual(activity.start_time, "2026-06-11")
+        self.assertEqual(activity.start_time, "2026-06-12 00:00")
         self.assertEqual(activity.solitaire_created_at, "2026-06-11T11:10:32+00:00")
         self.assertEqual(activity.participant_names, ["弦默"])
         self.assertEqual(activity.participant_count, 1)
@@ -4620,13 +4620,13 @@ class QiWeParserTests(unittest.TestCase):
 
         self.assertEqual(calls[0][0], "10789255155259073")
         self.assertIn("二花看到有活动啦：接龙数据格式测试", calls[0][1])
-        self.assertIn("时间二花也记下了：2026-06-11", calls[0][1])
-        self.assertIn("活动开始前 30 分钟来群里提醒", calls[0][1])
+        self.assertIn("时间二花也记下了：2026-06-12 00:00", calls[0][1])
+        self.assertIn("目前没有安排新的群提醒", calls[0][1])
         self.assertNotIn("参与人数", calls[0][1])
         self.assertNotIn("参与人", calls[0][1])
         self.assertEqual(calls[0][2], {"conversation_type": "group", "chat_type": "group"})
 
-    def test_passive_solitaire_ack_mentions_current_month_time_correction(self) -> None:
+    def test_passive_solitaire_ack_does_not_rewrite_past_date(self) -> None:
         payload = copy.deepcopy(load_fixture("group_solitaire.json"))
         raw = json.loads(payload["data"])
         raw["fromRoomId"] = 10859791146538059
@@ -4669,8 +4669,8 @@ class QiWeParserTests(unittest.TestCase):
             asyncio.run(adapter._passive_pipeline_safe(parsed))
 
         self.assertEqual(calls[0][0], "10859791146538059")
-        self.assertIn("时间二花也记下了：2026-06-15 14:30", calls[0][1])
-        self.assertIn("当前月份", calls[0][1])
+        self.assertIn("时间二花也记下了：2024-04-15 14:30", calls[0][1])
+        self.assertNotIn("当前月份", calls[0][1])
 
     def test_passive_solitaire_ack_lightly_reminds_when_created_within_thirty_minutes(self) -> None:
         payload = copy.deepcopy(load_fixture("group_solitaire.json"))
@@ -4962,7 +4962,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(result.immediate_reminder, True)
         self.assertEqual(reminders, {})
 
-    def test_reminder_policy_change_removes_stale_unsent_jobs(self) -> None:
+    def test_reminder_policy_change_cancels_stale_unsent_jobs(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
             bot_names=["二花"],
@@ -4986,9 +4986,9 @@ class QiWeParserTests(unittest.TestCase):
             asyncio.run(service.upsert_from_solitaire(normalized_event_from_parsed(parsed)))
             updated = json.loads(reminders_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(len(updated), 1)
-        self.assertIn("before_60m", next(iter(updated)))
-        self.assertNotIn(old_job_id, updated)
+        self.assertEqual(len(updated), 2)
+        self.assertEqual(updated[old_job_id]["delivery_state"], "cancelled")
+        self.assertEqual(sum(j["status"] == "pending" for j in updated.values()), 1)
 
     def test_activity_service_exposes_due_reminders_and_feishu_queue(self) -> None:
         parsed = parse_qiwe_payload(
@@ -5000,7 +5000,7 @@ class QiWeParserTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             service = ActivityService(ActivityRepository(tmp), FeishuActivityWriter(FeishuActivityMapping()), FakeSolitaireContentParser())
             result = asyncio.run(service.upsert_from_solitaire(normalized_event_from_parsed(parsed)))
-            due = service.due_reminders(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc))
+            due = service.due_reminders(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc))
             sync_queue = (Path(tmp) / "solitaire" / "feishu_sync_jobs.jsonl").read_text(encoding="utf-8")
 
         self.assertIs(result.handled, True)
@@ -5075,7 +5075,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(second.is_new_activity, False)
         self.assertEqual(len(activities), 1)
         activity = activities[first.activity_id]
-        self.assertEqual(activity["start_time"], "2026-06-11")
+        self.assertEqual(activity["start_time"], "2026-06-12 00:00")
         self.assertEqual(activity["participant_names"], ["弦默", "无名", "huang"])
 
     def test_stable_activity_body_ignores_participant_snapshot_changes(self) -> None:
@@ -5085,7 +5085,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(stable_activity_body(first), "7点篮球场打匹克球")
         self.assertEqual(stable_activity_body(first), stable_activity_body(second))
 
-    def test_start_time_before_message_time_uses_current_month(self) -> None:
+    def test_start_time_before_message_time_preserves_explicit_date(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
             bot_names=["二花"],
@@ -5096,8 +5096,8 @@ class QiWeParserTests(unittest.TestCase):
 
         start_time, note = normalize_start_time_from_event("2024-04-15 14:30", event)
 
-        self.assertEqual(start_time, "2026-06-15 14:30")
-        self.assertIn("当前月份", note)
+        self.assertEqual(start_time, "2024-04-15 14:30")
+        self.assertEqual(note, "")
 
     def _relative_time_event(self):
         # Solitaire created 2026-08-16 20:51 Asia/Shanghai (12:51 UTC); the
@@ -5395,8 +5395,8 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIs(second.is_new_activity, False)
         self.assertEqual(len(activities), 1)
         activity = activities[first.activity_id]
-        self.assertEqual(activity["start_time"], "2026-06-15 14:30")
-        self.assertIn("当前月份", activity["time_normalization_note"])
+        self.assertEqual(activity["start_time"], "2024-04-15 14:30")
+        self.assertEqual(activity["reminder_plan"]["reason"], "activity_started")
         self.assertEqual(activity["participant_names"], ["秦托邦小客服", "Cici"])
 
     def test_activity_service_merges_new_snapshot_into_legacy_raw_summary_activity(self) -> None:
@@ -5405,6 +5405,7 @@ class QiWeParserTests(unittest.TestCase):
         raw["fromRoomId"] = 10859791146538059
         raw["msgData"]["title"] = "#接龙\n7点篮球场打匹克球\n\n1. HL\n2. 小岸姐"
         raw["msgUniqueIdentifier"] = "pickleball-legacy-update"
+        raw["timestamp"] = int(datetime(2026, 6, 13, 10, 48, tzinfo=timezone.utc).timestamp())
         payload["fromGroup"] = "10859791146538059"
         payload["data"] = json.dumps(raw, ensure_ascii=False)
         parsed = parse_qiwe_payload(payload, bot_names=["二花"], bot_user_id="1688857683805864")
@@ -5457,7 +5458,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(activities[legacy_activity_id]["activity_subject"], "篮球场打匹克球")
         self.assertEqual(activities[legacy_activity_id]["participant_names"], ["HL", "小岸姐"])
 
-    def test_reminder_worker_dry_run_marks_job_once(self) -> None:
+    def test_reminder_worker_dry_run_does_not_consume_job(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
             bot_names=["二花"],
@@ -5471,14 +5472,15 @@ class QiWeParserTests(unittest.TestCase):
             service = ActivityService(ActivityRepository(tmp), FeishuActivityWriter(FeishuActivityMapping()), FakeSolitaireContentParser())
             asyncio.run(service.upsert_from_solitaire(normalized_event_from_parsed(parsed)))
             worker = ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=True), service, send_func)
-            first = asyncio.run(worker.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
-            second = asyncio.run(worker.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
+            first = asyncio.run(worker.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
+            second = asyncio.run(worker.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
             reminders = json.loads((Path(tmp) / "solitaire" / "reminders.json").read_text(encoding="utf-8"))
 
         self.assertEqual(first.scanned, 1)
-        self.assertEqual(first.sent, 1)
-        self.assertEqual(second.scanned, 0)
-        self.assertTrue(all(job["sent"] for job in reminders.values()))
+        self.assertEqual(first.previewed, 1)
+        self.assertEqual(first.sent, 0)
+        self.assertEqual(second.scanned, 1)
+        self.assertTrue(all(not job["sent"] for job in reminders.values()))
 
     def test_reminder_worker_live_respects_allowed_groups(self) -> None:
         parsed = parse_qiwe_payload(
@@ -5496,10 +5498,10 @@ class QiWeParserTests(unittest.TestCase):
             service = ActivityService(ActivityRepository(tmp), FeishuActivityWriter(FeishuActivityMapping()), FakeSolitaireContentParser())
             asyncio.run(service.upsert_from_solitaire(normalized_event_from_parsed(parsed)))
             blocked = ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=False, allowed_groups=["other-group"]), service, send_func)
-            blocked_result = asyncio.run(blocked.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
+            blocked_result = asyncio.run(blocked.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
             self.assertEqual(calls, [])
             allowed = ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=False, allowed_groups=["10789255155259073"]), service, send_func)
-            allowed_result = asyncio.run(allowed.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
+            allowed_result = asyncio.run(allowed.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
 
         self.assertEqual(blocked_result.skipped, 1)
         self.assertEqual(allowed_result.sent, 1)
@@ -5530,7 +5532,7 @@ class QiWeParserTests(unittest.TestCase):
                 return SendResult(success=True, message_id="reminder-1")
 
             worker = ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=False), service, send_func)
-            result = asyncio.run(worker.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
+            result = asyncio.run(worker.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
             reminders = json.loads(reminders_path.read_text(encoding="utf-8"))
 
         job = next(iter(reminders.values()))
@@ -5541,7 +5543,7 @@ class QiWeParserTests(unittest.TestCase):
         self.assertEqual(job["send_result"]["message_id"], "reminder-1")
         self.assertIn("sent_at", job)
 
-    def test_reminder_worker_live_failure_records_failed_without_sent(self) -> None:
+    def test_reminder_worker_live_failure_records_unknown_without_sent(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
             bot_names=["二花"],
@@ -5555,19 +5557,19 @@ class QiWeParserTests(unittest.TestCase):
             service = ActivityService(ActivityRepository(tmp), FeishuActivityWriter(FeishuActivityMapping()), FakeSolitaireContentParser())
             asyncio.run(service.upsert_from_solitaire(normalized_event_from_parsed(parsed)))
             worker = ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=False), service, send_func)
-            result = asyncio.run(worker.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
+            result = asyncio.run(worker.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
             reminders = json.loads((Path(tmp) / "solitaire" / "reminders.json").read_text(encoding="utf-8"))
 
         job = next(iter(reminders.values()))
         self.assertEqual(result.sent, 0)
         self.assertEqual(result.failed, 1)
-        self.assertEqual(job["status"], "failed")
+        self.assertEqual(job["delivery_state"], "ambiguous")
         self.assertIs(job["sent"], False)
         self.assertEqual(job["error"], "QiWe HTTP 400")
         self.assertIs(job["retryable"], False)
         self.assertEqual(job["send_result"]["success"], False)
 
-    def test_reminder_worker_live_retryable_failure_records_pending_retry_without_sent(self) -> None:
+    def test_reminder_worker_live_retryable_response_requires_reconciliation(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
             bot_names=["二花"],
@@ -5581,21 +5583,21 @@ class QiWeParserTests(unittest.TestCase):
             service = ActivityService(ActivityRepository(tmp), FeishuActivityWriter(FeishuActivityMapping()), FakeSolitaireContentParser())
             asyncio.run(service.upsert_from_solitaire(normalized_event_from_parsed(parsed)))
             worker = ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=False), service, send_func)
-            asyncio.run(worker.run_once(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)))
+            asyncio.run(worker.run_once(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)))
             reminders = json.loads((Path(tmp) / "solitaire" / "reminders.json").read_text(encoding="utf-8"))
 
         job = next(iter(reminders.values()))
-        self.assertEqual(job["status"], "pending_retry")
+        self.assertEqual(job["delivery_state"], "ambiguous")
         self.assertIs(job["sent"], False)
-        self.assertIs(job["retryable"], True)
+        self.assertIs(job["retryable"], False)
 
-    def test_due_reminders_skips_sending_job_until_timeout(self) -> None:
+    def test_due_reminders_never_reclaims_sending_after_timeout(self) -> None:
         parsed = parse_qiwe_payload(
             load_fixture("group_solitaire.json"),
             bot_names=["二花"],
             bot_user_id="1688857683805864",
         )
-        now = datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc)
+        now = datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc)
 
         with tempfile.TemporaryDirectory() as tmp:
             service = ActivityService(ActivityRepository(tmp), FeishuActivityWriter(FeishuActivityMapping()), FakeSolitaireContentParser())
@@ -5614,8 +5616,7 @@ class QiWeParserTests(unittest.TestCase):
             due_after_timeout = service.due_reminders(now)
 
         self.assertEqual(due_before_timeout, [])
-        self.assertEqual(len(due_after_timeout), 1)
-        self.assertEqual(due_after_timeout[0].status, "sending")
+        self.assertEqual(due_after_timeout, [])
 
     def test_due_reminders_interprets_legacy_sent_flag_as_status(self) -> None:
         parsed = parse_qiwe_payload(
@@ -5633,11 +5634,11 @@ class QiWeParserTests(unittest.TestCase):
             job.pop("status", None)
             job["sent"] = True
             reminders_path.write_text(json.dumps(reminders, ensure_ascii=False), encoding="utf-8")
-            sent_due = service.due_reminders(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc))
+            sent_due = service.due_reminders(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc))
 
             job["sent"] = False
             reminders_path.write_text(json.dumps(reminders, ensure_ascii=False), encoding="utf-8")
-            pending_due = service.due_reminders(datetime(2026, 6, 10, 15, 30, tzinfo=timezone.utc))
+            pending_due = service.due_reminders(datetime(2026, 6, 11, 15, 30, tzinfo=timezone.utc))
 
         self.assertEqual(sent_due, [])
         self.assertEqual(len(pending_due), 1)

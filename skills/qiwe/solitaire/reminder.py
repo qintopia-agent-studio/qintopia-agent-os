@@ -28,6 +28,7 @@ class ReminderRunResult:
     sent: int = 0
     failed: int = 0
     skipped: int = 0
+    previewed: int = 0
 
 
 class ReminderWorker:
@@ -66,7 +67,10 @@ class ReminderWorker:
         jobs = self.activity_service.due_reminders(current)
         result = ReminderRunResult(scanned=len(jobs))
         for job in jobs:
-            send_result = await self._handle_job(job)
+            send_result = await self._handle_job(job, now=current)
+            if send_result.get("dry_run"):
+                result.previewed += 1
+                continue
             if send_result.get("skipped"):
                 result.skipped += 1
                 continue
@@ -87,7 +91,7 @@ class ReminderWorker:
             except asyncio.TimeoutError:
                 continue
 
-    async def _handle_job(self, job: ReminderJob) -> Dict[str, Any]:
+    async def _handle_job(self, job: ReminderJob, *, now: datetime | None = None) -> Dict[str, Any]:
         activity = self.activity_service.repository.get_activity(job.activity_id)
         if not activity:
             return self._record_skipped(job, "activity_not_found")
@@ -104,18 +108,26 @@ class ReminderWorker:
                 "reminder_type": job.reminder_type,
             }
             self.activity_service.repository.record_reminder_attempt(job, payload)
-            self.activity_service.mark_reminder_sent(job.job_id, payload)
             return payload
 
-        if not self.activity_service.repository.mark_reminder_sending(job.job_id):
+        if not self.activity_service.repository.mark_reminder_sending(job.job_id, now=now):
             return self._record_skipped(job, "not_claimed")
-        send_result = await self._send(job, text)
+        try:
+            send_result = await self._send(job, text)
+        except (Exception, asyncio.CancelledError) as exc:
+            payload = {"dry_run": False, "success": False, "outcome": "unknown",
+                       "retryable": False, "error": "send_outcome_unknown"}
+            self.activity_service.repository.mark_reminder_failed(job.job_id, payload)
+            self.activity_service.repository.record_reminder_attempt(job, payload)
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            return payload
         payload = {
             "dry_run": False,
             "success": bool(getattr(send_result, "success", False)),
             "message_id": getattr(send_result, "message_id", "") or "",
             "error": getattr(send_result, "error", "") or "",
-            "retryable": bool(getattr(send_result, "retryable", False)),
+            "retryable": False,
         }
         self.activity_service.repository.record_reminder_attempt(job, payload)
         if payload["success"]:
@@ -125,10 +137,8 @@ class ReminderWorker:
         return payload
 
     async def _send(self, job: ReminderJob, text: str) -> Any:
-        try:
-            return await self.send_func(job.group_id, text, source_message_ref=job.source_message_ref)
-        except TypeError:
-            return await self.send_func(job.group_id, text)
+        # Never invoke a send twice after a TypeError: the first call may have sent.
+        return await self.send_func(job.group_id, text, source_message_ref=job.source_message_ref)
 
     def _record_skipped(self, job: ReminderJob, reason: str) -> Dict[str, Any]:
         payload = {"skipped": True, "reason": reason, "job_id": job.job_id}

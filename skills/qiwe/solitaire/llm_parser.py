@@ -34,6 +34,9 @@ ACTIVITY_SCHEMA: Dict[str, Any] = {
         "activity_type": {"type": "string"},
         "activity_detail": {"type": "string"},
         "start_time": {"type": "string"},
+        "time_facts": {"type": "object", "additionalProperties": False,
+                       "properties": {"date_text": {"type": "string"}, "time_text": {"type": "string"}},
+                       "required": ["date_text", "time_text"]},
         "participant_names": {"type": "array", "items": {"type": "string"}},
         "promo_text": {"type": "string"},
     },
@@ -116,6 +119,7 @@ def _instructions() -> str:
         "\"activity_type\": string, "
         "\"activity_detail\": string, "
         "\"start_time\": string, "
+        "\"time_facts\": {\"date_text\": string, \"time_text\": string}, "
         "\"participant_names\": string[], "
         "\"promo_text\": string"
         "}\n"
@@ -130,6 +134,9 @@ def _instructions() -> str:
         "正文是“2026-08-19 18:00”这类明确时间就原样填；正文是“下午3点半”“今晚8点”“明天下午六点”这类相对时间，"
         "就原样摘录这段文字（如“明天下午六点”），不要推算成具体日期——系统会按接龙首次发起时间统一换算。"
         "完全没有任何时间信息时才输出空字符串；多场活动无法确定单一开始时间也输出空字符串。\n"
+        "time_facts.date_text 和 time_facts.time_text 分别摘录正文中完整的日期和时刻片段，可以来自不同的行。"
+        "必须逐字来自正文；保留年份、今天/明天、上午/下午和时间区间，不得补写不存在的信息。"
+        "缺失字段用空字符串，多个活动或多天范围不得挑选其中一天冒充唯一开始时间。\n"
         "7. participant_names 按接龙编号提取参与人。代报名要展开为占位名，"
         "例如“大羽带三个人”输出“大羽、大羽代报名1、大羽代报名2、大羽代报名3”；"
         "“阿城 2”表示阿城共 2 人，输出“阿城、阿城代报名1”。\n"
@@ -154,6 +161,7 @@ def _activity_from_fields(event: Any, title: str, fields: Dict[str, Any]) -> Opt
         activity_type=_text(fields.get("activity_type")),
         activity_detail=_text(fields.get("activity_detail")),
         start_time=_text(fields.get("start_time")),
+        time_facts=fields.get("time_facts", {}),
         participant_names=participants,
         promo_text=_text(fields.get("promo_text")),
     )

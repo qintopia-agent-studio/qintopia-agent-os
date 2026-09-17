@@ -717,3 +717,36 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   flag, secrets, and allowlists do not substitute for this owner-reviewed one-shot gate.
 - QiWe upload dry-run must use the same exact group/media allowlists and approved JPEG
   identity validator as apply. It may skip locks and writes, but not policy checks.
+
+## Activity reminder lifecycle
+
+The solitaire parser extracts time evidence; deterministic code resolves it against the
+solitaire's first creation timestamp and configured timezone. Model-provided date/time
+fragments must occur in the source text. Missing dates, ambiguous clock times, invalid
+dates and multiple occurrences remain `needs_confirmation`, never an invented start. A
+date without a clock time cannot schedule a 30-minute reminder. Explicit past dates are
+not silently moved to the current month.
+
+The existing activity ledger owns a `reminder_plan` (state, reason, due times), and the
+existing reminder ledger owns delivery outcomes. Activity updates and reminder changes
+use a locked recoverable transaction; duplicate signup updates preserve delivery
+history, rescheduling cancels pending old occurrences, and restart recovery does not
+replay unknown sends. Corrupt state fails closed instead of becoming an empty ledger. No
+database migration or new scheduler is introduced.
+
+Existing opt-in, allowlisted first-activity acknowledgements explain whether a reminder
+was scheduled or needs a complete date/time. They must not promise a reminder when none
+exists. No new automatic group clarification messages are enabled. Uncertain sends and
+stale `sending` claims require reconciliation, never automatic retry. Dry-run previews
+do not consume live reminders. Historical expired reminders are not backfilled. Terminal
+`delivery_state` values (`ambiguous`, `cancelled`, `expired`) retain the legacy
+`status=failed` sentinel so older workers cannot automatically replay them after
+rollback.
+
+Validation: `pnpm test:qiwe`, including synthetic end-to-end reminder lifecycle tests.
+Deployment uses an immutable reviewed release. Before switching, drain the Erhua Gateway
+and back up its server-local `solitaire` directory consistently. Preserve all legacy
+ledgers. Rolling back requires a drained process and no pending transaction; older code
+must not resume unknown delivery states without reconciliation. Do not restore an old
+ledger over newer send outcomes. No live enablement, resend, configuration change or
+production deployment is authorized merely by these tests passing.

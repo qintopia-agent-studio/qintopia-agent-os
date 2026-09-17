@@ -23,6 +23,7 @@ class ActivityServiceResult:
     activity_subject: str = ""
     start_time: str = ""
     time_normalization_note: str = ""
+    reminder_plan: dict | None = None
     participant_names: List[str] | None = None
     immediate_reminder: bool = False
     feishu_success: bool = False
@@ -37,7 +38,6 @@ class ActivityService:
 
     def upsert_activity(self, activity: ActivityRecord) -> ActivityUpsertResult:
         upsert = self.repository.upsert_activity(activity)
-        self.repository.upsert_reminders(activity)
         self.repository.enqueue_feishu_sync(activity)
         return upsert
 
@@ -68,13 +68,14 @@ class ActivityService:
             participant_count=activity.participant_count,
             activity_subject=activity.activity_subject,
             start_time=activity.start_time,
+            reminder_plan=dict(activity.reminder_plan),
             time_normalization_note=getattr(activity, "time_normalization_note", ""),
             participant_names=list(activity.participant_names),
             immediate_reminder=self._needs_immediate_reminder(activity, upsert),
         )
 
     def _needs_immediate_reminder(self, activity: ActivityRecord, upsert: ActivityUpsertResult) -> bool:
-        if upsert.previous:
+        if upsert.previous or activity.reminder_plan.get("reason") != "reminder_window_elapsed":
             return False
         start_at = self.repository._parse_start_time(activity.start_time)
         if start_at is None:

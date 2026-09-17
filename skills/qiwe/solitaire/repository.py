@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import fcntl
+import threading
+import tempfile
+from contextlib import contextmanager
+from functools import wraps
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,14 +40,25 @@ class ReminderJob:
     send_result: Dict[str, Any] = field(default_factory=dict)
 
 
+def locked(method):
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._locked():
+            return method(self, *args, **kwargs)
+    return call
+
+
 class ActivityRepository:
     def __init__(self, state_dir: str, reminder_policy: ReminderPolicy | None = None):
         self.state_dir = Path(state_dir).expanduser() if state_dir else None
         self.reminder_policy = reminder_policy or ReminderPolicy.from_env()
+        self._mutex = threading.RLock()
+        self._lock_depth = 0
         self._memory_activities: Dict[str, Dict[str, Any]] = {}
         self._memory_record_ids: Dict[str, str] = {}
         self._memory_reminders: Dict[str, Dict[str, Any]] = {}
 
+    @locked
     def upsert_activity(self, activity: ActivityRecord) -> ActivityUpsertResult:
         activities = self._load_json("activities.json", default={})
         if not isinstance(activities, dict):
@@ -53,10 +69,23 @@ class ActivityRepository:
             activity.first_seen_at = str(previous.get("first_seen_at") or activity.first_seen_at)
         if isinstance(previous, dict) and previous.get("solitaire_created_at"):
             activity.solitaire_created_at = str(previous.get("solitaire_created_at") or activity.solitaire_created_at)
+        prior_seen = self._parse_iso_datetime(str(previous.get("last_seen_at") or ""))
+        incoming_seen = self._parse_iso_datetime(activity.last_seen_at)
+        if prior_seen and incoming_seen and incoming_seen < prior_seen:
+            for key in activity.__dataclass_fields__:
+                if key in previous:
+                    setattr(activity, key, previous[key])
         old_names = set(previous.get("participant_names", [])) if isinstance(previous, dict) else set()
         new_names = set(activity.participant_names)
+        if previous.get("start_time") == activity.start_time:
+            activity.reminder_eligible_since = str(previous.get("reminder_eligible_since") or previous.get("first_seen_at") or activity.first_seen_at)
+        else:
+            activity.reminder_eligible_since = activity.last_seen_at or activity.first_seen_at
+        reminders = self._load_json("reminders.json", default={})
+        jobs = self._update_reminders(activity, reminders)
+        activity.reminder_plan = self._plan(activity, jobs, reminders)
         activities[activity.activity_id] = activity.to_internal_fields()
-        self._save_json("activities.json", activities)
+        self._commit_activity_reminders(activities, reminders)
         return ActivityUpsertResult(
             activity=activity,
             added_participants=sorted(new_names - old_names),
@@ -67,29 +96,7 @@ class ActivityRepository:
     def _merge_activity_identity(self, activity: ActivityRecord, activities: Dict[str, Any]) -> ActivityRecord:
         if activity.activity_id in activities:
             return activity
-        merged = self._merge_by_stable_identity(activity, activities)
-        if merged is not None:
-            return merged
-        if not _is_time_only(activity.start_time):
-            return activity
-        subject_key = _compact(activity.activity_subject)
-        group_id = str(activity.source_group_id or "")
-        for activity_id, previous in activities.items():
-            if not isinstance(previous, dict):
-                continue
-            if str(previous.get("source_group_id") or "") != group_id:
-                continue
-            if _compact(str(previous.get("activity_subject") or "")) != subject_key:
-                continue
-            previous_start = str(previous.get("start_time") or "")
-            if not previous_start or _is_time_only(previous_start):
-                continue
-            if not _same_planned_occurrence(activity.start_time, previous_start):
-                continue
-            activity.activity_id = str(activity_id)
-            activity.start_time = previous_start
-            return activity
-        return activity
+        return self._merge_by_stable_identity(activity, activities) or activity
 
     def _merge_by_stable_identity(self, activity: ActivityRecord, activities: Dict[str, Any]) -> ActivityRecord | None:
         group_id = str(activity.source_group_id or "")
@@ -109,6 +116,10 @@ class ActivityRepository:
             same_solitaire = _same_solitaire_thread(activity, previous)
             if not same_solitaire and not _same_planned_occurrence(activity.start_time, str(previous.get("start_time") or "")):
                 continue
+            if same_solitaire:
+                activity.activity_id = str(activity_id)
+                self._preserve_specific_start_time(activity, previous, force=True)
+                return activity
             if fingerprint and previous_fingerprint and fingerprint == previous_fingerprint:
                 activity.activity_id = str(activity_id)
                 self._preserve_specific_start_time(activity, previous, force=same_solitaire)
@@ -121,9 +132,13 @@ class ActivityRepository:
 
     def _preserve_specific_start_time(self, activity: ActivityRecord, previous: Dict[str, Any], *, force: bool = False) -> None:
         previous_start = str(previous.get("start_time") or "")
-        if previous_start and (force or _is_time_only(activity.start_time)) and not _is_time_only(previous_start):
+        same_body = activity.stable_body_fingerprint == previous.get("stable_body_fingerprint")
+        if self._parse_start_time(previous_start) is not None and _has_explicit_time(previous_start) and (same_body and (force or _is_time_only(activity.start_time))) and not _is_time_only(previous_start):
             activity.start_time = previous_start
+            activity.time_resolution = dict(previous.get("time_resolution") or {})
+            activity.time_normalization_note = str(previous.get("time_normalization_note") or "")
 
+    @locked
     def get_activity(self, activity_id: str) -> Dict[str, Any]:
         activities = self._load_json("activities.json", default={})
         if not isinstance(activities, dict):
@@ -229,6 +244,7 @@ class ActivityRepository:
         records = self._load_json("feishu_record_ids.json", default={})
         return str(records.get(activity_id, "") if isinstance(records, dict) else "")
 
+    @locked
     def set_feishu_record_id(self, activity_id: str, record_id: str) -> None:
         if not activity_id or not record_id:
             return
@@ -238,10 +254,13 @@ class ActivityRepository:
         records[activity_id] = record_id
         self._save_json("feishu_record_ids.json", records)
 
+    @locked
     def upsert_reminders(self, activity: ActivityRecord) -> List[Dict[str, Any]]:
-        reminders = self._load_json("reminders.json", default={})
-        if not isinstance(reminders, dict):
-            reminders = {}
+        # Compatibility entrypoint: never update a plan independently of its activity.
+        self.upsert_activity(activity)
+        return self._build_reminder_jobs(activity)
+
+    def _update_reminders(self, activity: ActivityRecord, reminders: Dict[str, Any]) -> List[Dict[str, Any]]:
         jobs = self._build_reminder_jobs(activity)
         job_ids = {str(job.get("job_id") or "") for job in jobs}
         for existing_id, existing in list(reminders.items()):
@@ -251,11 +270,15 @@ class ActivityRepository:
                 continue
             if existing_id in job_ids or bool(existing.get("sent", False)):
                 continue
-            reminders.pop(existing_id, None)
+            if self._reminder_status(existing) in {"pending", "pending_retry"}:
+                self._terminalize(existing, "cancelled", "activity_changed")
         for job in jobs:
             existing = reminders.get(job["job_id"])
             if isinstance(existing, dict):
-                if not bool(existing.get("sent", False)) and self._reminder_status(existing) in {"pending", "pending_retry", "sending"}:
+                if self._reminder_status(existing) == "cancelled" and not existing.get("attempt_count"):
+                    reminders[job["job_id"]] = job
+                    continue
+                if not bool(existing.get("sent", False)) and self._reminder_status(existing) in {"pending"}:
                     existing.update(
                         {
                             "group_id": job["group_id"],
@@ -268,22 +291,27 @@ class ActivityRepository:
                     reminders[job["job_id"]] = existing
                 continue
             reminders[job["job_id"]] = job
-        self._save_json("reminders.json", reminders)
         return jobs
 
+    @locked
     def due_reminders(self, now: datetime) -> List[ReminderJob]:
         now_utc = now.astimezone(timezone.utc) if now.tzinfo else now.replace(tzinfo=timezone.utc)
         reminders = self._load_json("reminders.json", default={})
         if not isinstance(reminders, dict):
             return []
         due: List[ReminderJob] = []
+        changed = False
         for payload in reminders.values():
             if not isinstance(payload, dict):
                 continue
             status = self._reminder_status(payload)
-            if status in {"sent", "failed"}:
-                continue
-            if status == "sending" and not self._reminder_sending_timed_out(payload, now_utc):
+            if status == "sending" and self._reminder_sending_timed_out(payload, now_utc):
+                self._terminalize(payload, "ambiguous", "send_outcome_unknown")
+                changed = True
+            if status == "pending_retry":
+                self._terminalize(payload, "ambiguous", "legacy_retry_needs_reconciliation")
+                changed = True
+            if self._reminder_status(payload) != "pending":
                 continue
             due_at = self._parse_iso_datetime(str(payload.get("due_at") or ""))
             if due_at is None or due_at > now_utc:
@@ -297,6 +325,8 @@ class ActivityRepository:
                 continue
             start_at = self._parse_start_time(str(activity.get("start_time") or ""))
             if start_at is None or start_at <= now_utc:
+                self._terminalize(payload, "expired", "activity_started")
+                changed = True
                 continue
             due.append(
                 ReminderJob(
@@ -312,8 +342,11 @@ class ActivityRepository:
                     send_result=dict(payload.get("send_result") or {}) if isinstance(payload.get("send_result"), dict) else {},
                 )
             )
+        if changed:
+            self._save_reminder_outcomes(reminders)
         return due
 
+    @locked
     def mark_reminder_sending(self, job_id: str, *, now: datetime | None = None) -> bool:
         if not job_id:
             return False
@@ -325,7 +358,14 @@ class ActivityRepository:
             return False
         current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
         status = self._reminder_status(job)
-        if status == "sent" or (status == "sending" and not self._reminder_sending_timed_out(job, current)):
+        if status != "pending":
+            return False
+        activity = self.get_activity(str(job.get("activity_id") or ""))
+        if not activity or activity.get("status", "active") != "active" or activity.get("start_time") != job.get("start_time"):
+            return False
+        start = self._parse_start_time(str(job.get("start_time") or ""))
+        due = self._parse_iso_datetime(str(job.get("due_at") or ""))
+        if start is None or due is None or not due <= current < start:
             return False
         job["sent"] = False
         job["status"] = "sending"
@@ -335,9 +375,10 @@ class ActivityRepository:
         job.pop("error", None)
         job.pop("retryable", None)
         reminders[job_id] = job
-        self._save_json("reminders.json", reminders)
+        self._save_reminder_outcomes(reminders)
         return True
 
+    @locked
     def mark_reminder_sent(self, job_id: str, result: Dict[str, Any]) -> None:
         if not job_id:
             return
@@ -347,13 +388,17 @@ class ActivityRepository:
         job = reminders.get(job_id)
         if not isinstance(job, dict):
             return
+        if self._reminder_status(job) not in {"sending", "ambiguous"}:
+            return
         job["sent"] = True
         job["status"] = "sent"
+        job.pop("delivery_state", None)
         job["sent_at"] = datetime.now(timezone.utc).isoformat()
         job["send_result"] = dict(result or {})
         reminders[job_id] = job
-        self._save_json("reminders.json", reminders)
+        self._save_reminder_outcomes(reminders)
 
+    @locked
     def mark_reminder_failed(self, job_id: str, result: Dict[str, Any]) -> None:
         if not job_id:
             return
@@ -363,15 +408,18 @@ class ActivityRepository:
         job = reminders.get(job_id)
         if not isinstance(job, dict):
             return
-        retryable = bool((result or {}).get("retryable", False))
+        if self._reminder_status(job) not in {"sending", "ambiguous"}:
+            return
+        # A failed/timeout response does not prove that the external send did not happen.
+        retryable = False
         job["sent"] = False
-        job["status"] = "pending_retry" if retryable else "failed"
+        self._terminalize(job, "ambiguous", "send_outcome_unknown")
         job["last_attempt_at"] = datetime.now(timezone.utc).isoformat()
         job["error"] = str((result or {}).get("error") or "")
         job["retryable"] = retryable
         job["send_result"] = dict(result or {})
         reminders[job_id] = job
-        self._save_json("reminders.json", reminders)
+        self._save_reminder_outcomes(reminders)
 
     def record_reminder_attempt(self, job: ReminderJob, result: Dict[str, Any]) -> None:
         self._append_jsonl(
@@ -388,15 +436,18 @@ class ActivityRepository:
 
     def _build_reminder_jobs(self, activity: ActivityRecord) -> List[Dict[str, Any]]:
         start_at = self._parse_start_time(activity.start_time)
+        if (activity.status != "active" or not _has_explicit_time(activity.start_time)
+                or (activity.time_resolution and activity.time_resolution.get("state") != "resolved")):
+            return []
         if start_at is None:
             return []
         first_seen_at = None
         if _has_explicit_time(activity.start_time):
-            first_seen_at = self._parse_iso_datetime(getattr(activity, "first_seen_at", "") or getattr(activity, "last_seen_at", ""))
+            first_seen_at = self._parse_iso_datetime(activity.reminder_eligible_since or activity.first_seen_at or activity.last_seen_at)
         jobs = []
         for offset in self.reminder_policy.offsets_for(activity.activity_type):
             due_at = start_at - offset.delta
-            if first_seen_at is not None and due_at <= first_seen_at:
+            if first_seen_at is not None and due_at < first_seen_at:
                 continue
             job_id = f"{activity.activity_id}:{_reminder_start_slug(activity.start_time)}:{offset.label}"
             jobs.append(
@@ -429,7 +480,17 @@ class ActivityRepository:
                 continue
         return None
 
+    @staticmethod
+    def _terminalize(job: Dict[str, Any], state: str, reason: str) -> None:
+        # Old releases skip failed/sent only. Retain a terminal legacy status so a
+        # drained rollback cannot turn an uncertain or cancelled send into a retry.
+        job.update(status="failed", delivery_state=state, reason=reason, retryable=False)
+
     def _reminder_status(self, job: Dict[str, Any]) -> str:
+        if job.get("sent"):
+            return "sent"
+        if job.get("delivery_state"):
+            return str(job["delivery_state"])
         status = str(job.get("status") or "").strip()
         if status:
             return status
@@ -469,9 +530,12 @@ class ActivityRepository:
         try:
             if not path.exists():
                 return default
-            return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return default
+            value = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                raise ValueError("ledger must be an object")
+            return value
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("activity_ledger_unreadable") from exc
 
     def _save_json(self, name: str, value: Any) -> None:
         path = self._path(name)
@@ -484,9 +548,114 @@ class ActivityRepository:
                 self._memory_reminders = dict(value)
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
-        tmp_path.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-        tmp_path.replace(path)
+        fd, temp_name = tempfile.mkstemp(prefix=".ledger-", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                json.dump(value, handle, ensure_ascii=False, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, path)
+            self._sync_directory(path.parent)
+        finally:
+            if os.path.exists(temp_name):
+                os.unlink(temp_name)
+
+    @staticmethod
+    def _sync_directory(path):
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+    @contextmanager
+    def _locked(self):
+        with self._mutex:
+            if self._lock_depth:
+                yield
+                return
+            path = self._path(".activity.lock")
+            if path is None:
+                self._lock_depth += 1
+                try:
+                    yield
+                finally:
+                    self._lock_depth -= 1
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a") as handle:
+                os.chmod(path, 0o600)
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                self._lock_depth += 1
+                try:
+                    self._recover_transaction()
+                    yield
+                finally:
+                    self._lock_depth -= 1
+                    fcntl.flock(handle, fcntl.LOCK_UN)
+
+    def _recover_transaction(self):
+        pending = self._path("activity-transaction.json")
+        if pending is None or not pending.exists():
+            return
+        transaction = self._load_json("activity-transaction.json", default={})
+        if set(transaction) != {"activities", "reminders"} or any(not isinstance(v, dict) for v in transaction.values()):
+            raise RuntimeError("activity_transaction_invalid")
+        self._save_json("activities.json", transaction["activities"])
+        self._save_json("reminders.json", transaction["reminders"])
+        pending.unlink()
+        self._sync_directory(pending.parent)
+
+    def _commit_activity_reminders(self, activities, reminders):
+        if self.state_dir is None:
+            self._save_json("activities.json", activities)
+            self._save_json("reminders.json", reminders)
+            return
+        self._save_json("activity-transaction.json", {"activities": activities, "reminders": reminders})
+        self._recover_transaction()
+
+    def _save_reminder_outcomes(self, reminders):
+        activities = self._load_json("activities.json", default={})
+        for activity in activities.values():
+            plan = activity.get("reminder_plan") or {}
+            ids = plan.get("job_ids") or []
+            states = {self._reminder_status(reminders[j]) for j in ids if j in reminders}
+            if not states:
+                continue
+            if "ambiguous" in states:
+                plan.update(state="needs_reconciliation", reason="send_outcome_unknown")
+            elif "sending" in states:
+                plan.update(state="sending", reason="send_in_progress")
+            elif "pending" in states:
+                plan.update(state="scheduled", reason="scheduled")
+            elif states == {"sent"}:
+                plan.update(state="sent", reason="delivery_confirmed")
+            else:
+                plan.update(state="not_scheduled", reason="delivery_" + sorted(states)[0])
+            activity["reminder_plan"] = plan
+        self._commit_activity_reminders(activities, reminders)
+
+    def _plan(self, activity, jobs, reminders):
+        resolution = activity.time_resolution
+        if activity.status != "active":
+            return {"state": "not_scheduled", "reason": "activity_inactive", "due_at": []}
+        if (resolution and resolution.get("state") != "resolved") or not _has_explicit_time(activity.start_time):
+            return {"state": "needs_confirmation", "reason": resolution.get("reason", "missing_clock"), "due_at": []}
+        start = self._parse_start_time(activity.start_time)
+        seen = self._parse_iso_datetime(activity.last_seen_at)
+        if start is None:
+            return {"state": "needs_confirmation", "reason": "invalid_time", "due_at": []}
+        if seen and start <= seen:
+            return {"state": "not_scheduled", "reason": "activity_started", "due_at": []}
+        if not jobs:
+            return {"state": "not_scheduled", "reason": "reminder_window_elapsed", "due_at": []}
+        states = [self._reminder_status(reminders[j["job_id"]]) for j in jobs]
+        if "ambiguous" in states or "sending" in states or "pending_retry" in states:
+            return {"state": "needs_reconciliation", "reason": "send_outcome_unknown",
+                    "due_at": [j["due_at"] for j in jobs], "job_ids": [j["job_id"] for j in jobs]}
+        state = "scheduled" if "pending" in states else "sent" if set(states) == {"sent"} else "not_scheduled"
+        return {"state": state, "reason": "scheduled" if state == "scheduled" else "delivery_already_recorded",
+                "due_at": [j["due_at"] for j in jobs], "job_ids": [j["job_id"] for j in jobs]}
 
     def _append_jsonl(self, name: str, value: Dict[str, Any]) -> None:
         path = self._path(name)
