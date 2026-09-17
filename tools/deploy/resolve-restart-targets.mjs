@@ -76,8 +76,28 @@ const readRules = (rulesPath) => {
   if (!Array.isArray(rules.rules)) {
     throw new Error(`${rulesPath}: rules must be an array`);
   }
+  if (
+    !rules.independent_targets ||
+    typeof rules.independent_targets !== "object" ||
+    Array.isArray(rules.independent_targets) ||
+    Object.entries(rules.independent_targets).some(
+      ([target, scope]) =>
+        !rules.allowed_targets.includes(target) ||
+        typeof scope !== "string" ||
+        !scope.trim()
+    )
+  ) {
+    throw new Error(
+      `${rulesPath}: independent_targets must map allowed targets to scopes`
+    );
+  }
   return rules;
 };
+
+const ordinaryTargets = (rules) =>
+  rules.allowed_targets.filter(
+    (target) => !Object.hasOwn(rules.independent_targets, target)
+  );
 
 const diffFiles = ({ baseRef, headRef }) => {
   if (process.env.RESTART_TARGET_CHANGED_FILES) {
@@ -228,6 +248,10 @@ const main = () => {
   );
   const failOnUnmatched = argValue("--fail-on-unmatched", "true") !== "false";
   const rules = readRules(rulesPath);
+  if (hasArg("--list-ordinary-targets")) {
+    process.stdout.write(`${ordinaryTargets(rules).join(",")}\n`);
+    return;
+  }
 
   let baseRef = argValue("--base-ref", "");
   let headRef = argValue("--head-ref", "");
@@ -303,4 +327,11 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   }
 }
 
-export { globToRegex, matchesAny, readRules, resolveTargets, writeSummary };
+export {
+  ordinaryTargets,
+  globToRegex,
+  matchesAny,
+  readRules,
+  resolveTargets,
+  writeSummary,
+};

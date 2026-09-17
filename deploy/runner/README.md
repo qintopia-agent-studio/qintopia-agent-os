@@ -388,6 +388,14 @@ that target. This keeps first-run and history-pruned cases deployable, while avo
 missed restarts after a published Release deploy failed, only dry-ran, or skipped a
 target.
 
+Ordinary releases exclude the independently managed `hermes-core` target. The rules file
+declares independent targets and their required release scope; the release resolver
+reports those impacts separately without scheduling a core restart. Shared deploy-bundle
+changes still retain their ordinary restart targets. Core upgrades must use the existing
+exclusive `hermes-core-release` transaction, with its artifact, lineage and rollback
+gates. Manual overrides cannot cross this boundary; both request schema and server
+validation reject a core target in an ordinary request.
+
 PR checks may show a restart impact preview, but the Release workflow must recompute the
 target list from the final tags. PR output is advisory only.
 

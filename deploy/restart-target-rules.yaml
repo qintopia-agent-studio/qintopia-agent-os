@@ -10,6 +10,9 @@ allowed_targets:
   - hermes-guanerye
   - hermes-core
 
+independent_targets:
+  hermes-core: hermes-core-release
+
 no_restart_paths:
   - "*.md"
   - "**/*.md"

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -58,6 +59,8 @@ const runResolver = ({ currentTag, releases, results }) => {
       releasesFile,
       "--deploy-results-file",
       resultsFile,
+      "--summary-output",
+      path.join(fixtureRepo, "summary.md"),
       "--rules",
       path.join(repoRoot, "deploy/restart-target-rules.yaml"),
     ],
@@ -270,6 +273,60 @@ try {
   if (!v023Sha) {
     throw new Error("shared database fixture commit was not created");
   }
+  // A core-only impact stays visible but cannot become an ordinary restart.
+  for (const name of ["releases.json", "results.json", "summary.md"]) {
+    fs.rmSync(path.join(fixtureRepo, name), { force: true });
+  }
+  write("runtime/hermes/hermes-core-launcher.py", "# core launcher change\n");
+  commit("core-only impact");
+  tag("v0.3.0");
+  const coreReleases = ["v0.3.0", "v0.2.3"].map((tag_name) => ({ tag_name }));
+  const coreOnly = runResolver({
+    currentTag: "v0.3.0",
+    releases: coreReleases,
+    results: [],
+  });
+  assert.equal(coreOnly.status, 0, coreOnly.stderr);
+  assert.equal(coreOnly.stdout.trim(), "");
+  assert.match(
+    fs.readFileSync(path.join(fixtureRepo, "summary.md"), "utf8"),
+    /hermes-core: requires separate hermes-core-release transaction/
+  );
+
+  for (const name of ["releases.json", "results.json", "summary.md"]) {
+    fs.rmSync(path.join(fixtureRepo, name), { force: true });
+  }
+  write(
+    "tools/deploy/plan-hermes-core-release.mjs",
+    "// shared bundle and core impact\n"
+  );
+  write("agents/erhua/agent.yaml", "# ordinary profile change\n");
+  commit("mixed impact");
+  tag("v0.3.1");
+  const mixed = runResolver({
+    currentTag: "v0.3.1",
+    releases: [{ tag_name: "v0.3.1" }, ...coreReleases],
+    results: [],
+  });
+  assert.equal(mixed.status, 0, mixed.stderr);
+  assert.equal(mixed.stdout.trim(), "qintopia-system-services,hermes-erhua");
+  assert.match(
+    fs.readFileSync(path.join(fixtureRepo, "summary.md"), "utf8"),
+    /hermes-core: requires separate hermes-core-release transaction/
+  );
+  for (const name of ["releases.json", "results.json", "summary.md"]) {
+    fs.rmSync(path.join(fixtureRepo, name), { force: true });
+  }
+  write("agents/new-agent/agent.yaml", "# no reviewed restart decision\n");
+  commit("unknown production path");
+  tag("v0.3.2");
+  const unknown = runResolver({
+    currentTag: "v0.3.2",
+    releases: [{ tag_name: "v0.3.2" }, { tag_name: "v0.3.1" }],
+    results: [],
+  });
+  assert.notEqual(unknown.status, 0);
+  assert.match(unknown.stderr, /unmatched production-adjacent files/);
 } finally {
   fs.rmSync(fixtureRepo, { recursive: true, force: true });
 }

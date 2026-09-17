@@ -6,6 +6,7 @@ import process from "node:process";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import {
+  ordinaryTargets,
   readRules,
   resolveTargets,
   writeSummary as writeRestartSummary,
@@ -234,7 +235,10 @@ const resolveReleaseRestartTargets = ({ currentTag, releases, results, rules }) 
   }
 
   return {
-    targets: rules.allowed_targets.filter((target) => targets.has(target)),
+    targets: ordinaryTargets(rules).filter((target) => targets.has(target)),
+    independentTargets: Object.entries(rules.independent_targets)
+      .filter(([target]) => targets.has(target))
+      .map(([target, scope]) => ({ target, scope })),
     targetRanges,
     matched,
     ignored,
@@ -254,6 +258,15 @@ const writeReleaseSummary = ({ outputPath, currentTag, resolution }) => {
     `Current Release tag: ${currentTag}`,
     `Resolved targets: ${resolution.targets.length ? resolution.targets.join(",") : "none"}`,
   ];
+  if (resolution.independentTargets.length > 0) {
+    lines.push(
+      "",
+      "Independent upgrades (not scheduled by this release):",
+      ...resolution.independentTargets.map(
+        ({ target, scope }) => `- ${target}: requires separate ${scope} transaction`
+      )
+    );
+  }
   if (resolution.targetRanges.length > 0) {
     lines.push(
       "",
