@@ -18,6 +18,7 @@ class SolitaireProcessResult:
     activity_subject: str = ""
     start_time: str = ""
     time_normalization_note: str = ""
+    reminder_plan: dict | None = None
     participant_names: list[str] | None = None
     immediate_reminder: bool = False
     feishu_success: bool = False
@@ -39,6 +40,7 @@ class SolitaireActivityProcessor:
             participant_count=result.participant_count,
             activity_subject=getattr(result, "activity_subject", ""),
             start_time=getattr(result, "start_time", ""),
+            reminder_plan=getattr(result, "reminder_plan", None),
             time_normalization_note=getattr(result, "time_normalization_note", ""),
             participant_names=list(getattr(result, "participant_names", []) or []),
             immediate_reminder=bool(getattr(result, "immediate_reminder", False)),

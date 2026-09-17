@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import calendar
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
+
+from .time_resolution import resolve_time
 
 
 @dataclass
@@ -24,6 +25,9 @@ class ActivityRecord:
     start_time: str = ""
     solitaire_created_at: str = ""
     time_normalization_note: str = ""
+    time_resolution: Dict[str, Any] = field(default_factory=dict)
+    reminder_plan: Dict[str, Any] = field(default_factory=dict)
+    reminder_eligible_since: str = ""
     participant_names: List[str] = field(default_factory=list)
     participant_count: int = 0
     promo_text: str = ""
@@ -47,6 +51,9 @@ class ActivityRecord:
             "start_time": self.start_time,
             "solitaire_created_at": self.solitaire_created_at,
             "time_normalization_note": self.time_normalization_note,
+            "time_resolution": dict(self.time_resolution),
+            "reminder_plan": dict(self.reminder_plan),
+            "reminder_eligible_since": self.reminder_eligible_since,
             "participant_names": list(self.participant_names),
             "participant_count": self.participant_count,
             "promo_text": self.promo_text,
@@ -145,6 +152,7 @@ def build_activity_record_from_fields(
     start_time: str = "",
     participant_names: List[str] | None = None,
     promo_text: str = "",
+    time_facts: Dict[str, Any] | None = None,
 ) -> Optional[ActivityRecord]:
     subject = _text(activity_subject)
     participants = [_text(name) for name in (participant_names or []) if _text(name)]
@@ -157,7 +165,11 @@ def build_activity_record_from_fields(
         last_seen_at = datetime.now(timezone.utc).isoformat()
     solitaire_created_at = solitaire_created_at_from_event(event, fallback=last_seen_at)
     detail = _text(activity_detail)
-    normalized_start_time, time_normalization_note = normalize_start_time_from_event(start_time, event)
+    anchor = datetime.fromisoformat(solitaire_created_at) if solitaire_created_at else None
+    resolution = resolve_time(start_time, anchor=anchor, timezone=str(_activity_timezone()),
+                              source=stable_activity_body(title), facts=time_facts)
+    normalized_start_time = resolution.start_time or _text(start_time)
+    time_normalization_note = "" if resolution.state == "resolved" else "活动日期或时刻还不明确，暂未安排开始前提醒；请在接龙里补充完整日期和时间。"
     stable_body = stable_activity_body(title)
     stable_body_fingerprint = _hash(_compact(stable_body), 20) if stable_body else ""
     identity = _text(activity_identity) or _first_nonempty_line(stable_body) or subject
@@ -179,6 +191,7 @@ def build_activity_record_from_fields(
         start_time=normalized_start_time,
         solitaire_created_at=solitaire_created_at,
         time_normalization_note=time_normalization_note,
+        time_resolution=resolution.to_dict(),
         participant_names=participants,
         participant_count=len(participants),
         promo_text=_text(promo_text) or _promo_text(subject, detail, normalized_start_time, len(participants)),
@@ -231,205 +244,14 @@ def _epoch_datetime(value: Any) -> datetime | None:
         return None
 
 
-_CN_NUM = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
-
-# Day-offset keywords for Chinese relative dates. Longest match wins.
-_DAY_OFFSETS = [
-    ("大后天", 3),
-    ("后天", 2),
-    ("明天", 1),
-    ("明日", 1),
-    ("今晚", 0),
-    ("明晚", 1),
-    ("今天", 0),
-    ("今日", 0),
-]
-
-_WEEKDAY_CN = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
-
-
-def _cn_or_arabic_int(text: str) -> int | None:
-    """Parse a small Chinese or Arabic integer (e.g. 三/3/十二/十五/二十)."""
-    text = _text(text)
-    if not text:
-        return None
-    if text.isdigit():
-        return int(text)
-    if text in _CN_NUM:
-        return _CN_NUM[text]
-    # 十X / X十 / X十Y forms for 10..59.
-    m = re.fullmatch(r"([一二两三四五六七八九])?十([一二两三四五六七八九])?", text)
-    if m:
-        tens = _CN_NUM.get(m.group(1), 1) if m.group(1) else 1
-        ones = _CN_NUM.get(m.group(2), 0) if m.group(2) else 0
-        return tens * 10 + ones
-    m = re.fullmatch(r"([一二两三四五六七八九])十([一二两三四五六七八九])", text)
-    if m:
-        return _CN_NUM[m.group(1)] * 10 + _CN_NUM[m.group(2)]
-    return None
-
-
-def _parse_time_of_day(text: str) -> tuple[int, int] | None:
-    """Parse a time-of-day from Chinese text. Returns (hour, minute) or None.
-
-    Handles: 下午六点/下午6点/晚上8点半/8点/18:00/中午12点/凌晨2点 etc.
-    Daypart words (早上/上午/中午/下午/晚上/今晚/明晚/凌晨) adjust the hour.
-    """
-    t = _text(text)
-    if not t:
-        return None
-    daypart = ""
-    for kw in ("凌晨", "早上", "早晨", "上午", "中午", "下午", "傍晚", "晚上", "今晚", "明晚", "午间"):
-        if kw in t:
-            daypart = kw
-            break
-
-    hour: int | None = None
-    minute = 0
-    m = re.search(r"([01]?\d|2[0-3])[:：]([0-5]\d)", t)
-    if m:
-        hour = int(m.group(1))
-        minute = int(m.group(2))
-    else:
-        m = re.search(r"([零一二两三四五六七八九十]{1,3}|\d{1,2})点(半|[零一二两三四五六七八九十]{1,3}|\d{1,2})?", t)
-        if not m:
-            return None
-        hour = _cn_or_arabic_int(m.group(1))
-        if hour is None:
-            return None
-        tail = m.group(2)
-        if tail == "半":
-            minute = 30
-        elif tail:
-            minute = _cn_or_arabic_int(tail) or 0
-
-    if daypart in ("下午", "傍晚", "晚上", "今晚", "明晚") and hour < 12:
-        hour += 12
-    elif daypart == "中午" and hour < 12:
-        # 中午1点 -> 13:00; 中午12点 stays 12.
-        if hour != 12:
-            hour += 12
-    elif daypart == "凌晨" and hour == 12:
-        hour = 0
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return None
-    return hour, minute
-
-
-def _resolve_cn_relative_date(text: str, anchor_local: datetime) -> datetime | None:
-    """Resolve a Chinese relative date to a concrete local date using anchor.
-
-    anchor_local is the solitaire's first-creation time in the activity timezone.
-    Returns a tz-aware datetime (date possibly combined with a parsed time), or
-    None when the text carries no recognisable relative date.
-    """
-    t = _text(text)
-    if not t:
-        return None
-
-    base_date = anchor_local.date()
-    # Explicit weekday: 下周三 / 周五 / 星期三 (this-or-next occurrence).
-    wm = re.search(r"(下?)(?:周|星期)([一二三四五六日天])", t)
-    weekday_target: int | None = None
-    if wm:
-        weekday_target = _WEEKDAY_CN[wm.group(2)]
-        next_week = wm.group(1) == "下"
-
-    day_offset: int | None = None
-    for kw, off in _DAY_OFFSETS:
-        if kw in t:
-            day_offset = off
-            break
-
-    target_date = None
-    if weekday_target is not None:
-        days_ahead = (weekday_target - anchor_local.weekday()) % 7
-        if next_week:
-            days_ahead = days_ahead + 7 if days_ahead else 7
-        elif days_ahead == 0:
-            days_ahead = 7  # "周五" on Friday means the coming Friday.
-        target_date = base_date + timedelta(days=days_ahead)
-    elif day_offset is not None:
-        target_date = base_date + timedelta(days=day_offset)
-
-    if target_date is None:
-        return None
-
-    tod = _parse_time_of_day(t)
-    if tod is not None:
-        hour, minute = tod
-        return anchor_local.replace(
-            year=target_date.year, month=target_date.month, day=target_date.day,
-            hour=hour, minute=minute, second=0, microsecond=0,
-        )
-    # Date only: keep date, no specific time.
-    return anchor_local.replace(
-        year=target_date.year, month=target_date.month, day=target_date.day,
-        hour=0, minute=0, second=0, microsecond=0,
-    )
-
-
-def resolve_relative_start_time(phrase: Any, event: Any) -> tuple[str, str]:
-    """Deterministically resolve a Chinese relative-time phrase to start_time.
-
-    Anchored to the solitaire's FIRST creation time (not the parse/forward time),
-    so "明天" is computed from when the solitaire was created. Returns
-    (start_time, note); both empty when the phrase is not a recognisable
-    relative time. Output format matches the downstream contract
-    ("%Y-%m-%d %H:%M" or "%Y-%m-%d").
-    """
-    text = _text(phrase)
-    if not text:
-        return "", ""
-    anchor_iso = solitaire_created_at_from_event(event)
-    anchor_dt: datetime | None = None
-    if anchor_iso:
-        try:
-            anchor_dt = datetime.fromisoformat(anchor_iso)
-        except ValueError:
-            anchor_dt = None
-    if anchor_dt is None:
-        anchor_dt = getattr(event, "timestamp", None)
-    if not isinstance(anchor_dt, datetime):
-        return "", ""
-    zone = _activity_timezone()
-    anchor_local = anchor_dt.astimezone(zone) if anchor_dt.tzinfo else anchor_dt.replace(tzinfo=zone)
-    resolved = _resolve_cn_relative_date(text, anchor_local)
-    if resolved is None:
-        return "", ""
-    has_time = _parse_time_of_day(text) is not None
-    rendered = _format_activity_datetime(resolved, has_time=has_time)
-    note = f"相对时间已按接龙首次发起时间换算为 {rendered}。"
-    return rendered, note
-
-
 def normalize_start_time_from_event(start_time: Any, event: Any) -> tuple[str, str]:
-    normalized = _text(start_time)
-    if not normalized:
-        return "", ""
-    # Relative-time phrases (明天/今晚/周五...) are resolved deterministically
-    # against the solitaire's first-creation time, so the LLM never has to do
-    # date arithmetic (which it anchors to the wrong day). Only kicks in when
-    # the value is not already an absolute date.
-    if _parse_activity_datetime(normalized) is None:
-        resolved, rel_note = resolve_relative_start_time(normalized, event)
-        if resolved:
-            return resolved, rel_note
-        return normalized, ""
-    parsed = _parse_activity_datetime(normalized)
-    sent_at = getattr(event, "timestamp", None)
-    if parsed is None or not isinstance(sent_at, datetime):
-        return normalized, ""
-    zone = _activity_timezone()
-    sent_local = sent_at.astimezone(zone) if sent_at.tzinfo else sent_at.replace(tzinfo=zone)
-    parsed_local = parsed.replace(tzinfo=zone)
-    if parsed_local >= sent_local:
-        return normalized, ""
-    day = min(parsed_local.day, calendar.monthrange(sent_local.year, sent_local.month)[1])
-    corrected = parsed_local.replace(year=sent_local.year, month=sent_local.month, day=day)
-    corrected_text = _format_activity_datetime(corrected, has_time=_start_time_has_time(normalized))
-    note = f"接龙里的时间像是写错了月份；二花已按当前月份记录为 {corrected_text}。"
-    return corrected_text, note
+    created = solitaire_created_at_from_event(event)
+    anchor = datetime.fromisoformat(created) if created else getattr(event, "timestamp", None)
+    result = resolve_time(start_time, anchor=anchor, timezone=str(_activity_timezone()))
+    note = "已按接龙首次发起时间确认活动时间。" if result.state == "resolved" and result.start_time != _text(start_time) else ""
+    if result.state != "resolved":
+        note = "时间待确认，暂未安排提醒。"
+    return result.start_time or _text(start_time), note
 
 
 def _activity_timezone() -> ZoneInfo:
@@ -439,33 +261,6 @@ def _activity_timezone() -> ZoneInfo:
         return ZoneInfo(os.getenv("QIWE_ACTIVITY_TIMEZONE", "Asia/Shanghai"))
     except Exception:
         return ZoneInfo("Asia/Shanghai")
-
-
-def _parse_activity_datetime(value: str) -> datetime | None:
-    text = _text(value)
-    if not text:
-        return None
-    try:
-        return datetime.fromisoformat(text)
-    except ValueError:
-        pass
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M", "%Y/%m/%d"):
-        try:
-            return datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-    return None
-
-
-def _start_time_has_time(value: str) -> bool:
-    text = _text(value)
-    return bool(re.search(r"\d{1,2}:\d{2}", text) or "T" in text)
-
-
-def _format_activity_datetime(value: datetime, *, has_time: bool) -> str:
-    if has_time:
-        return value.strftime("%Y-%m-%d %H:%M")
-    return value.strftime("%Y-%m-%d")
 
 
 def _first_nonempty_line(value: str) -> str:

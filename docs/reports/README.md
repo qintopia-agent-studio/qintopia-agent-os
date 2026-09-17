@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-17 QiWe reminder time resolution](2026-09-17-qiwe-reminder-time-resolution.md)
+
 - [2026-09-16 Hermes production recovery](2026-09-16-hermes-production-recovery.md)
 
 - [PR #704 Reviewer 建议处理](2026-09-15-pr704-review-followup.md)

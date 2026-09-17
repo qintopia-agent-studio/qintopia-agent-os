@@ -2915,7 +2915,7 @@ class QiWeAdapter(BasePlatformAdapter):
         if allowed and group_id not in allowed:
             logger.debug("[qiwe] passive ack skipped group_id=%s message_id=%s", group_id, parsed.message_id)
             return
-        text = self._passive_ack_text(result)
+        text = self._passive_ack_text(result, group_id=group_id)
         if not text:
             return
         send_result = await self.send(group_id, text, metadata={"conversation_type": "group", "chat_type": "group"})
@@ -2929,7 +2929,7 @@ class QiWeAdapter(BasePlatformAdapter):
                 _text(getattr(result, "activity_id", "")),
             )
 
-    def _passive_ack_text(self, result: Any) -> str:
+    def _passive_ack_text(self, result: Any, *, group_id: str = "") -> str:
         subject = _text(getattr(result, "activity_subject", "")) or _text(getattr(result, "activity_id", "")) or "未命名活动"
         start_time = _text(getattr(result, "start_time", "")) or "未识别"
         time_note = _text(getattr(result, "time_normalization_note", ""))
@@ -2940,10 +2940,16 @@ class QiWeAdapter(BasePlatformAdapter):
         ]
         if time_note:
             lines.append(time_note)
-        if bool(getattr(result, "immediate_reminder", False)):
+        plan = getattr(result, "reminder_plan", None) or {}
+        if plan.get("state") == "needs_confirmation":
+            if not time_note:
+                lines.append("暂未安排提醒，请在接龙里补充完整日期和时间（注明上午或下午）。")
+        elif bool(getattr(result, "immediate_reminder", False)):
             lines.append("离开始时间已经不到 30 分钟啦，二花这里先轻轻提醒一下：要参加的朋友可以准备出发或收拾一下。")
+        elif plan.get("state") == "scheduled" and self.qiwe.activity_reminder_enabled and not self.qiwe.activity_reminder_dry_run and (not self.qiwe.activity_reminder_allowed_groups or group_id in self.qiwe.activity_reminder_allowed_groups):
+            lines.append("已安排活动开始前提醒。")
         else:
-            lines.append("我会帮大家盯着，活动开始前 30 分钟来群里提醒一声。")
+            lines.append("活动已记录，目前没有安排新的群提醒。")
         return "\n".join(lines)
 
     async def _send_activity_reminder(
