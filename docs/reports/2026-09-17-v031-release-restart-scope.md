@@ -36,3 +36,11 @@ Do not reuse an expired signed request or treat rerunning the old tag's workflow
 installing this repair. Verify the new run reaches request/result handling and compare
 the signed server result and installed release identities before claiming deployment.
 See the [runner guide](../../deploy/runner/README.md#restart-target-resolution).
+
+## Repair validation follow-up
+
+The first PR CI run exposed a fixture portability error: Linux could not reopen Node's
+subprocess input as `/dev/stdin` (`ENXIO`), although macOS passed. The scope fixture now
+passes a temporary JSON file, matching the real runner's input contract, and removes it
+in `finally`. It still executes the unmodified validator with synthetic signed requests;
+no deployment process starts.

@@ -2,6 +2,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -498,20 +499,26 @@ if (exists("deploy/runner/deploy-request.schema.json")) {
           .digest("hex"),
       },
     };
-    const result = spawnSync("python3", ["-c", validator, "/dev/stdin"], {
-      encoding: "utf8",
-      input: JSON.stringify(signed),
-      env: {
-        PATH: process.env.PATH,
-        DEPLOY_REQUEST_SIGNING_KEY: "isolated-scope-test",
-        DEPLOY_REQUEST_SIGNING_KEY_ID: "production",
-      },
-    });
-    if (
-      (result.status === 0) !== valid ||
-      (!valid && !result.stderr.includes("hermes-core"))
-    ) {
-      addError(`runner scope boundary mismatch: ${result.stderr}`);
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-scope-"));
+    try {
+      const requestPath = path.join(fixtureDir, "request.json");
+      fs.writeFileSync(requestPath, JSON.stringify(signed));
+      const result = spawnSync("python3", ["-c", validator, requestPath], {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          DEPLOY_REQUEST_SIGNING_KEY: "isolated-scope-test",
+          DEPLOY_REQUEST_SIGNING_KEY_ID: "production",
+        },
+      });
+      if (
+        (result.status === 0) !== valid ||
+        (!valid && !result.stderr.includes("hermes-core"))
+      ) {
+        addError(`runner scope boundary mismatch: ${result.stderr}`);
+      }
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
     }
   }
   const profileRequest = {
