@@ -6,6 +6,11 @@ This document defines the shared business object language for Qintopia Agent OS.
 docs, package manifests, workflow records, Feishu/Postgres schemas, tools, and
 acceptance tests should use these terms consistently.
 
+For the first community identity and scoped-collaboration slice, use the
+[community business model](community-business-model.md). It maps six objects to the
+existing schemas and tools, distinguishes definitions from live facts, and records the
+remaining Erhua consumer gaps without creating another identity or policy system.
+
 ## Core Objects
 
 | Object            | Meaning                                                      | Preferred store            |

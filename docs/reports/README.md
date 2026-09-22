@@ -1,7 +1,10 @@
 # Reports
 
+- [2026-09-22 二花与岸岸历史对话合并评审](2026-09-22-erhua-anan-history-review.md)
+- [2026-09-22 早期 QinTopia Agent OS 总指挥归档评审](2026-09-22-early-agent-os-command-review.md)
+- [2026-09-22 Agent OS 总指挥交接核对](2026-09-22-agent-os-command-handoff-review.md)
+- [2026-09-22 社区业务模型对照与本地检查阻断](2026-09-22-community-business-model-validation.md)
 - [2026-09-18 工作台用户名密码本地验收](2026-09-18-workbench-password-login.md)
-
 - [2026-09-17 QiWe reminder time resolution](2026-09-17-qiwe-reminder-time-resolution.md)
 - [2026-09-17 v0.3.1 release restart scope failure](2026-09-17-v031-release-restart-scope.md)
 

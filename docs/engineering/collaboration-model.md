@@ -27,6 +27,16 @@ Claude Code. The collaboration model is intentionally git-first and CI-backed.
 Do not develop directly on `master`. CI runs on `master` after merge; feature work
 belongs on a branch.
 
+### Local iteration and push cadence
+
+The owner's confirmed preference is to minimize development overhead: iterate locally
+with focused package checks and existing fixtures, then run the applicable repository
+checks at a reviewable milestone. Push when collaboration, remote CI, or PR review
+requires it; individual local edits do not require a push. Reuse suitable checkouts
+under the worktree lifecycle rules. This cadence does not waive required checks or
+authorize merge, Release publication, deployment, or external messages. Test scope
+follows behavior risk and affected contracts, not a fixed time budget.
+
 ## Programming Agent Read Order
 
 For Codex, Claude Code, or another programming agent:
