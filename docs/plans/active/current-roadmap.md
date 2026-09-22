@@ -32,6 +32,14 @@ inherited constraints, reviewed identity links, future terms, capability states,
 resident audiences, readable history and accessible help icons. The earlier batch
 report's UI gap table is historical.
 
+Engineering closeout (2026-09-23): foundation/welcome implementation is committed in
+`19957ef`, and the completed ontology UI is committed in `70abd52`. The owner requested
+local commits without waiting for manual acceptance. A new development conversation owns
+front-desk interaction collection; both parts will receive joint manual acceptance on
+the morning of 2026-09-24 (Asia/Shanghai). Follow the
+[closeout handoff](../../reports/2026-09-23-ontology-ui-local-acceptance.md#工程交付与次日验收2026-09-23)
+for the fixed code, preserved local evidence and outstanding real integrations.
+
 The
 [Erhua and Anan history review](../../reports/2026-09-22-erhua-anan-history-review.md)
 also preserves the full room-booking collaboration goal and the deferred evaluation of
