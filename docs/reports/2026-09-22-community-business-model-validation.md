@@ -6,6 +6,9 @@
 `6be9ac1`，本工作区尚未同步；下文原始源码核对和本地检查仍对应
 `0806c2e`，不能将它们视作新主线复验。详情见[总指挥交接核对](2026-09-22-agent-os-command-handoff-review.md)。
 
+随后分支清理与 PR 准备已将当前交付分支同步到
+`6be9ac1`；下文按原始核对时点保留。最新分支和提交状态见[后续收口记录](2026-09-22-agent-os-command-handoff-review.md#分支清理与-pr-准备2026-09-22)。
+
 ## 交付与验证
 
 [社区业务模型](../agent-os/community-business-model.md)完成六类对象的含义、现有表/接口、接入缺口及三个消费者验收场景。已逐项核对源码和现有测试断言，未把历史测试通过视为本轮执行结果。
@@ -172,6 +175,26 @@ process.argv[1] === new URL(import.meta.url).pathname;
 | `with space` | 1      | `results.json` 缺失，返回 `ENOENT` |
 
 临时复制未修改脚本，未访问 GitHub、服务器或真实发布日志；运行后清理本次临时目录。路径问题的复现不意味着业务验收通过，也不证明线上部署失败。
+
+## PR 准备时的 staging smoke 权限检查失败
+
+当前交付分支纳入 `6be9ac1` 后，本轮首次 `pnpm check:pr:auto` 在 quick tier 的
+`test-qiwe-image-staging-smoke.mjs:325`
+失败，尚未运行到上述发布结果收集器测试。upload 阶段已经通过，callback 阶段报告打包二进制或父目录可写；错误未指出具体路径，根因未确定。
+
+该测试在 `process.cwd()/sidecar/` 创建合成打包文件，并将目录及二进制设置为
+`0555`。Shell 的测试模式检查源码根、sidecar 目录和二进制，不检查
+`TMPDIR`；不能仅凭报错归因于 macOS 临时目录权限。
+
+独立复验仅复制测试、evidence checker 和 staging
+shell 三份未修改文件，逐文件核对 SHA256 一致。在独占临时源码根下，分别使用独占 `TMPDIR`
+和原 macOS `TMPDIR`
+运行同一完整定向测试，两次均退出 0。临时副本已清理，未修改工作区代码或权限，也未放宽断言。
+
+在原工作区串行复跑一次完整检查，仍在同一 callback 权限检查失败；两次均未进入 deploy
+runner 或 heavy tier。因此既不能将隔离定向通过记为全量通过，也不能将失败归因为并发干扰。
+
+后续应记录具体被检查路径和权限，再确定是否需要修复测试隔离；同时避免同一 checkout 并发运行此套件。排查入口见[测试指南](../testing/README.md#staging-smoke-测试的路径隔离)。
 
 ## 处理和后续
 

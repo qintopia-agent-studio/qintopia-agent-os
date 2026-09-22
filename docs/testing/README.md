@@ -122,3 +122,14 @@ Docker 镜像下载失败时先检查本机 Docker 网络，恢复后重跑；�
 可定向复现；这不是生产部署结果。
 
 修复应正确转换文件 URL，并补含空格路径回归；不要把子进程零退出码或无空格目录中的通过当作当前工作区全量通过。证据与待办见[验证记录](../reports/2026-09-22-community-business-model-validation.md)。
+
+## Staging smoke 测试的路径隔离
+
+`tools/deploy/test-qiwe-image-staging-smoke.mjs` 在当前 checkout 的 `sidecar/`
+创建合成打包路径；同一 checkout 不应并发执行该套件。单独设置 `TMPDIR`
+不能隔离该路径，勿修改仓库或系统目录权限来绕过安全检查。
+
+若 upload 通过而 callback 报打包文件或父目录可写，保留原始错误，记录实际路径与权限。可在独占临时源码根复制未修改的测试、evidence
+checker 和 staging shell，核对内容哈希后定向复验；只清理本次临时资料。
+
+2026-09-22 两组隔离复验均通过，但首次完整检查的具体权限变化原因仍未确定；不将隔离通过记为全套通过。详见[验证记录](../reports/2026-09-22-community-business-model-validation.md#pr-准备时的-staging-smoke-权限检查失败)。
