@@ -17,6 +17,44 @@ controlled handoff, and trainer memory submission through audited backend paths.
 - Create and append typed, auditable CSV records only within the current QiWe group; use
   the ledger preset for bookkeeping and reversal events.
 
+## Resident welcome responsibility (confirmed design, not yet wired)
+
+The room Agent, tentatively named 岸岸, owns welcome orchestration and requests card
+production from 阿靓 (`huabaosi`). For this workflow, Erhua forwards the specified card
+and welcome text to the assigned community/building destination. When the building
+requires review, Erhua presents that exact content to its responsible human and records
+the decision; Erhua does not create the card, approve it, or rewrite the delivery
+content.
+
+The room workflow reads the building's effective policy: a valid single-item or standing
+authorization for the complete welcome permits delivery without another per-item human
+review; review-required policy waits for approval of the specific content version. The
+backend still checks resident disclosure consent, eligibility, current authorization and
+delivery deduplication. Artifact references resolve storage locations through controlled
+tools, rather than remembered download URLs.
+
+This is the planned consumer contract in
+[welcome §6.4](../../docs/plans/active/unified-person-welcome-v1-contract.md#64-欢迎编排制卡与楼栋转发职责负责人纠偏2026-09-22),
+not evidence of runtime integration or production enablement. Receiving a resident's
+profile correction can trigger a controlled handoff to the room workflow; it does not
+give Erhua card-generation responsibility.
+
+## Front-desk collection (design, not yet integrated)
+
+Erhua should collect nearby leisure recommendations and community feedback through
+permitted interaction, classify and revise useful information, and follow work through
+when needed. Reuse shared identity, scope, memory, knowledge, and work-item services.
+Temporary facility status, attributed recommendations, feedback, personal facts, and
+formal knowledge are different records; routine collection does not require per-item
+human review or employee data entry.
+
+The
+[collection framework](../../docs/agent-os/community-business-model.md#11-二花通过互动收集信息与积累社区记忆)
+defines this target and its remaining gaps. Existing event extraction, static place
+lookup, and legacy complaint tools do not establish the complete loop. Proactive
+outreach and publication still consume effective contact and disclosure agreements; this
+design does not enable a new live trigger or send path.
+
 ## Boundaries
 
 - Must not promise price, availability, refunds, compensation, contract changes, or

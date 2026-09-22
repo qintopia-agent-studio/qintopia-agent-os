@@ -1,5 +1,9 @@
 # 组织与人员工作台 A 本地验收
 
+> 后续状态更新（2026-09-18）：相关人员工作台和本地欢迎代码已于 2026-09-15 经
+> [PR #704](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/704)
+> 合并至主线（`171e227`）。下文保留当时的验收记录；“未提交”、旧分支、临时目录及暂停合并描述不代表当前开发入口或待合并状态。当前实现范围与未完成接入见[模块说明](../../runtime/sidecar/src/person_collaboration/README.md)。合并不证明真实身份、统一业务授权或生产迁移完成，历史测试结果也不是本次重新执行的结果。
+
 日期：2026-09-11。范围来自 person-agent-foundation-parallel-handoff
 §1—3。当前为本地代码和合成数据库验证；不代表生产登录、真实智能体或发送入口已接通。
 

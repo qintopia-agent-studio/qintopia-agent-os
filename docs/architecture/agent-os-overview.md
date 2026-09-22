@@ -36,16 +36,43 @@ Human workbench and external systems
 
 - Hermes is the Agent runtime. It should execute profiles and tools, but it should not
   become the business database.
-- Postgres and Agent OS data structures are the system fact source.
-- Feishu is a human workbench and mirror. It is not the long-term source of truth.
+- Agent OS owns shared identity links, scope, authority, governed knowledge versions,
+  work items, and execution evidence. PMS remains authoritative for orders, stays,
+  inventory, and financial facts; Agent OS consumes necessary references and
+  projections.
+- Feishu Base remains an application intake and operations surface. Feishu documents may
+  own authored content; governed versions and access rules determine how Agents use it.
+  Do not treat every Feishu resource as a mirror or move all source facts into Agent OS.
 - Sidecars and workers handle slower or isolated work. They must not block the initial
   QiWe / WeCom acknowledgement path.
-- High-risk actions need human review or explicit confirmation before external delivery.
+- Apply each capability's human-review requirements and valid explicit authorization. A
+  standing authorization covers its agreed actions without another per-item approval; it
+  does not authorize unrelated operations or bypass current scope and disclosure checks.
 - Raw prompt handoff is not a reliable system interface. Use governed capabilities, work
   items, artifacts, events, and review records.
 - WorkTool and Hermes Kanban are deprecated for future product development.
 - Server-side Rust and Huabaosi shadow work is review-pool material until owner
   approval.
+
+## Scoped Knowledge And Runtime Responsibilities
+
+Community, building, and business-domain knowledge have explicit ownership and scope.
+Their maintainers use conversation and UI entrypoints backed by the same governed
+services. Buildings can consume applicable shared community content while preserving
+maintenance permissions and restricted audiences. This does not require a physical
+database or Runtime per building.
+
+Agents interpret requests, advise, and invoke tools within their roles. Hermes hosts
+models, sessions, channels, tools, and local runtime context; Profile memory does not
+replace shared business authority. Recurring triggers retain the existing
+[Hermes cron ownership](../operations/hermes-cron-source-of-truth.md).
+
+The
+[community business model](../agent-os/community-business-model.md#9-社区楼栋与领域知识的分层维护)
+records the current knowledge design, implementation gaps, and staged acceptance. Scope
+configuration and retrieval foundations exist; full knowledge inheritance and shared
+conversation/UI editing are not yet connected. 岸岸 is a planned room Agent and is not
+yet an independently registered Agent package or Hermes Profile.
 
 ## Control Plane Objects
 

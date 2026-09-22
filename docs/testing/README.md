@@ -111,3 +111,14 @@ Docker 镜像下载失败时先检查本机 Docker 网络，恢复后重跑；�
 
 交付记录：[已完成计划](../plans/completed/local-business-testing.md) ·
 [验收结果与边界](../reports/2026-09-13-local-business-testing.md)。
+
+## 含空格路径下的发布检查
+
+2026-09-22 在基线 `0806c2e` 发现：`pnpm check:pr:auto` 的 deploy runner 检查可能在
+`test-collect-release-deploy-results.mjs` 读取 `results.json`
+时失败。收集器将文件路径与保留 URL 编码的 `pathname`
+比较，含空格路径使 CLI 主程序未执行。用
+`node tools/deploy/test-collect-release-deploy-results.mjs`
+可定向复现；这不是生产部署结果。
+
+修复应正确转换文件 URL，并补含空格路径回归；不要把子进程零退出码或无空格目录中的通过当作当前工作区全量通过。证据与待办见[验证记录](../reports/2026-09-22-community-business-model-validation.md)。

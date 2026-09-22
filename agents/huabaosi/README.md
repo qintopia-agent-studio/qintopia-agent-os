@@ -14,6 +14,23 @@ prompts, caption drafts, and related creative artifacts.
   `image_generation_request`; a real image is still blocked on the dedicated provider
   and media-storage approval gate.
 
+## Resident welcome responsibility (confirmed design, not yet wired)
+
+The room Agent, tentatively named 岸岸, requests the welcome card
+from 阿靓 (`huabaosi`), who produces it from approved, purpose-filtered inputs and
+returns the versioned Artifact and controlled attachment reference. Welcome cards belong
+in the application Base's welcome-card attachment, not the ordinary design-output Base.
+`huabaosi` neither selects the delivery group nor sends the welcome.
+
+The room workflow then applies each building's policy. A single-item or standing
+authorization that explicitly covers the full welcome card and text permits that
+target's Erhua to forward them without per-item human review; a review-required policy
+waits for the responsible human's approval. Artifact availability alone authorizes
+neither path. This planned welcome-specific alternative is defined in
+[welcome §6.4](../../docs/plans/active/unified-person-welcome-v1-contract.md#64-欢迎编排制卡与楼栋转发职责负责人纠偏2026-09-22).
+It does not enable the runtime or change the existing activity-poster review and
+provider gates described elsewhere in this package.
+
 ## Boundaries
 
 - Must not publish, send, or modify externally visible material without review.
@@ -469,7 +486,7 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   unprovable upload or Feishu write and become `true` only after confirmed storage. Do
   not change the shared timeout for QiWe, WeCom, Feishu, or other adapters to remediate
   image-provider latency.
-- 阿亮画报师生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
+- 阿靓生产 WeCom Bot 的 `Interrupting current task` / `Response formatting failed`
   用户可见中断提示来自 live Hermes gateway busy-ack and platform send fallback
   (`hermes-gateway-huabaosi.service`, `gateway/run.py`, `gateway/platforms/base.py`),
   not Rust sidecar image generation or QiWe image-send state. Diagnose this path through

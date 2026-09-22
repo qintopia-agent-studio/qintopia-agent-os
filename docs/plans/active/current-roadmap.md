@@ -2,6 +2,29 @@
 
 Updated: 2026-09-09
 
+Command handoff checkpoint (2026-09-22): the new decision conversation inherits the full
+project scope. Read the
+[handoff review](../../reports/2026-09-22-agent-os-command-handoff-review.md) for
+confirmed decisions, superseded status, and open work across streams. The current
+person/permission/memory and welcome sequence is in the
+[foundation execution plan](person-agent-foundation-execution-plan.md). The historical
+snapshots below and the production status index are not a fresh production observation;
+use dated evidence before assigning recovery work.
+
+The owner-authorized first batch combines baseline preparation, C, and D into one local
+development batch with one combined product acceptance. Engineering dependencies and
+checks remain sequential where required. Use the
+[combined handoff](person-agent-foundation-parallel-handoff.md#8-合并交接共同底座二花接入与欢迎闭环);
+the owner requested a new project conversation for implementation. Handoff is ready, but
+the current tools cannot create that conversation, so execution has not been confirmed.
+This authorization does not enable production actions.
+
+The
+[Erhua and Anan history review](../../reports/2026-09-22-erhua-anan-history-review.md)
+also preserves the full room-booking collaboration goal and the deferred evaluation of
+Erhua's answer-quality improvement. They are not new prerequisites for C/D. Future
+payment integration reuses PMS-owned synchronization and matching.
+
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at
 [../completed/monorepo-migration.md](../completed/monorepo-migration.md).

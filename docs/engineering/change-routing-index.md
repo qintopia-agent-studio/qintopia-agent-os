@@ -18,6 +18,12 @@ X. Where do I start?"
 Do not start from implementation language. Start from Agent, skill, workflow, MCP,
 runtime, deploy, fixture, or registry ownership.
 
+For people, authorization, memory, room collaboration, and welcome changes, first use
+the [current decision sources](../agent-os/README.md#current-decisions-and-handoff).
+Read the confirmed behavior and execution status before proposing a replacement design;
+historical package notes or assistant suggestions alone do not supersede owner
+decisions.
+
 ## Common Change Requests
 
 | Change request                                     | Start here                                                                                                                                                                   | Then inspect                                                                                                                                                                                                           | Validation                                                                                                                                          |
