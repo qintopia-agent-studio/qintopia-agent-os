@@ -27,11 +27,8 @@ impl Store {
             p.can_inspect(actor.person, scope, &agent, &domain),
             "management_denied"
         );
-        for g in p
-            .grants
-            .iter()
-            .filter(|g| g.collaboration == id && g.active)
-        {
+        let configured = self.configured_grant_ids(tx, Some(id)).await?;
+        for g in p.grants.iter().filter(|g| configured.contains(&g.id)) {
             ensure!(g.parent.is_some(), "bootstrap_relation_cannot_be_rewritten");
             ensure!(
                 p.manager(actor.person, scope, &agent, &domain, &g.action)

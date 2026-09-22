@@ -158,6 +158,10 @@ pub(super) async fn handle(
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-catalog.js"),
             )),
+            "/workbench-ontology.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_str!("workbench-ontology.js"),
+            )),
             "/workbench-organization.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-organization.js"),
@@ -202,6 +206,43 @@ pub(super) async fn dispatch(
     let result: Result<Value> = async {
         match (r.method.as_str(), r.path.as_str()) {
             ("GET", "/api/state") => store.state(actor).await,
+            ("GET", path) if path.starts_with("/api/ontology?scope=") => {
+                let scope = Uuid::parse_str(path.trim_start_matches("/api/ontology?scope="))
+                    .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                store.ontology(actor, scope).await
+            }
+            ("GET", path)
+                if path == "/api/identities" || path.starts_with("/api/identities?person=") =>
+            {
+                let person = if path == "/api/identities" {
+                    None
+                } else {
+                    Some(
+                        Uuid::parse_str(path.trim_start_matches("/api/identities?person="))
+                            .map_err(|_| anyhow::anyhow!("invalid_command"))?,
+                    )
+                };
+                store.identities(actor, person).await
+            }
+            ("POST", "/api/identities/preview" | "/api/identities/save") => {
+                let command: super::store::IdentityUiCommand = serde_json::from_slice(&r.body)
+                    .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                if r.path.ends_with("/preview") {
+                    store.preview_identity(actor, &command).await
+                } else {
+                    store.save_identity(actor, &command).await
+                }
+            }
+            ("POST", "/api/audience-preview") => {
+                #[derive(serde::Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Preview {
+                    collaboration: Uuid,
+                }
+                let command: Preview = serde_json::from_slice(&r.body)
+                    .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                store.audience_preview(actor, command.collaboration).await
+            }
             ("POST", "/api/contact-decision") => {
                 #[derive(serde::Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -310,6 +351,23 @@ pub(super) async fn dispatch(
                 | "unknown_agent_or_domain"
                 | "invalid_actions"
                 | "expired_term"
+                | "invalid_term_range"
+                | "term_start_in_past"
+                | "identity_management_denied"
+                | "identity_version_conflict"
+                | "identity_operation_conflict"
+                | "identity_gateway_conflict"
+                | "identity_namespace_conflict"
+                | "gateway_not_active"
+                | "identity_gateway_version_conflict"
+                | "identity_observation_required"
+                | "revoke_person_mismatch"
+                | "revoke_conflicting_link_first"
+                | "person_outside_tenant"
+                | "audience_management_denied"
+                | "audience_authority_revoked"
+                | "identity_scope_unbound"
+                | "shared_account_person_unknown"
                 | "delegation_envelope_required"
                 | "invalid_delegation" => message.as_str(),
                 _ => "configuration_not_saved",
@@ -319,7 +377,10 @@ pub(super) async fn dispatch(
                     401
                 } else if matches!(
                     code,
-                    "scope_access_denied" | "management_denied" | "catalog_management_required"
+                    "scope_access_denied"
+                        | "management_denied"
+                        | "catalog_management_required"
+                        | "identity_management_denied"
                 ) {
                     403
                 } else {

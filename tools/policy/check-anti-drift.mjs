@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import YAML from "yaml";
@@ -150,11 +151,49 @@ const designDocs = new Set(
 );
 
 const migrationDocReferences = new Set();
+// This exact migration was applied before its missing design reference was found.
+// Preserve its SQLx identity; only the reviewed additive repair can supply the note.
+// Design: runtime/postgres/docs/data-design/2026-09-23-ontology-audience.md
+const frozenMigration = "202609230006_person_stay_building_history.sql";
+const frozenMigrationSha384 =
+  "34e808a8f0748270e54569c07318ab22b8106e80a98ad22de0966393c8d1b3d807bea6c256f799feae6cfb338b251151";
+const frozenMigrationRepair =
+  "runtime/postgres/migrations/202609230007_person_stay_building_history_registration.sql";
+const frozenMigrationDesign = "2026-09-23-ontology-audience.md";
+if (!exists(`runtime/postgres/migrations/${frozenMigration}`)) {
+  addError(`${frozenMigration}: frozen applied migration is missing`);
+}
 for (const file of migrationFiles) {
   const sql = readText(file);
   const references = [...sql.matchAll(/docs\/data-design\/([a-zA-Z0-9._-]+\.md)/g)].map(
     (match) => match[1]
   );
+
+  if (file === `runtime/postgres/migrations/${frozenMigration}`) {
+    const checksum = createHash("sha384")
+      .update(fs.readFileSync(path.join(repoRoot, file)))
+      .digest("hex");
+    if (checksum !== frozenMigrationSha384) {
+      addError(`${file}: frozen applied migration SHA-384 mismatch`);
+    } else if (!exists(frozenMigrationRepair)) {
+      addError(`${file}: required additive repair ${frozenMigrationRepair} is missing`);
+    } else {
+      const repair = readText(frozenMigrationRepair);
+      if (
+        !/\('2026-09-23\.006'\s*,\s*'202609230006_person_stay_building_history\.sql'/.test(
+          repair
+        ) ||
+        !/"repairs"\s*:\s*"202609230006"/.test(repair) ||
+        !repair.includes(`docs/data-design/${frozenMigrationDesign}`)
+      ) {
+        addError(
+          `${frozenMigrationRepair}: must register and repair ${frozenMigration} with its exact design note`
+        );
+      } else {
+        references.push(frozenMigrationDesign);
+      }
+    }
+  }
 
   if (references.length === 0 && !bootstrapMigrationsWithoutLog.has(file)) {
     addError(

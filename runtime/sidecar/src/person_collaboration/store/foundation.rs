@@ -961,6 +961,7 @@ impl Store {
                         agent: "erhua".into(),
                         domain: "community_service".into(),
                         responsibility: "第一批合成验收职责".into(),
+                        valid_from: None,
                         valid_until: None,
                         proxy_for: None,
                         actions: vec![],

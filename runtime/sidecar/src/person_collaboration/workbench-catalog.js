@@ -27,7 +27,7 @@ function ledgerItems() {
 function ledgerRelations(item) {
   return state.relations.filter(
     (r) =>
-      r.status === "active" &&
+      ["active", "scheduled"].includes(r.status) &&
       (ledgerKind === "role"
         ? r.role === item.role_id && r.scope === item.scope_id
         : ledgerKind === "person"
@@ -128,31 +128,7 @@ function renderLedger() {
     renderLedgerDetail(item, right);
   }
   drawList();
-  const history = details("最近配置变更记录");
-  history.className = "ql-history";
-  for (const h of state.organization.history || []) {
-    const c = h.result?.change || h.change || {},
-      kind =
-        {
-          configure_work: "任职、权限与触达",
-          assign: "任职与权限",
-          save_ledger: "台账登记",
-          save_position: "岗位归属",
-          lifecycle: "停用 / 恢复",
-          end_appointment: "结束任职",
-          end_collaboration: "解除协作",
-          set_groups: "群范围关联",
-          save_role: "岗位职责",
-          save_duty: "职责定义",
-        }[c.kind] || "配置变更";
-    history.append(
-      sub(
-        `${new Date(h.created_at).toLocaleString()} · ${kind} · ${c.after?.label || c.before?.label || "已记录"}`
-      )
-    );
-  }
-  if (!state.organization.history?.length) history.append(sub("暂无变更记录。"));
-  root.append(history);
+  root.append(historyPanel());
 }
 function renderLedgerDetail(item, host) {
   host.replaceChildren();
@@ -179,7 +155,7 @@ function renderLedgerDetail(item, host) {
     panel.append(
       el(
         "div",
-        `${item.derived || item.verified ? "能力已登记" : "仅台账登记，尚未接入能力"}；真实智能体尚未接入，配置保存不代表运行已生效。`,
+        `${item.derived || item.verified ? "智能体已登记" : "仅台账登记"}；能力、合作配置和渠道启用情况见下方，分别核对。`,
         "qo-note"
       )
     );
@@ -212,7 +188,7 @@ function renderLedgerDetail(item, host) {
     row.append(
       el(
         "span",
-        `${pos?.label || labelOf("roles", r.role)} · ${personName(r.person)} · ${agentName(r.agent)}`
+        `${pos?.label || labelOf("roles", r.role)} · ${personName(r.person)} · ${agentName(r.agent)}${r.status === "scheduled" ? " · 尚未开始" : ""}`
       )
     );
     if (!r.immutable && r.can_manage) {
@@ -341,6 +317,12 @@ function renderLedgerDetail(item, host) {
       )
     );
   host.append(panel);
+  if (ledgerKind === "person") host.append(identityPanel(item));
+  if (ledgerKind === "agent") {
+    const scope = refs[0]?.scope || selectedOrg()?.scope_id || state.scopes[0]?.id;
+    host.append(readinessPanel(item.object_ref, scope));
+  }
+  if (ledgerKind === "role") host.append(constraintsPanel(item.scope_id));
 }
 function catalogForm(title) {
   discardPreview();

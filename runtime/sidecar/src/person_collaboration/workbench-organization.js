@@ -12,7 +12,7 @@ function renderOrganization() {
     tree = el("aside", undefined, "qo-tree"),
     detail = el("div");
   tree.setAttribute("aria-label", "组织与岗位结构");
-  tree.append(el("h3", "秦托邦"), sub("选择岗位，查看当前安排"));
+  tree.append(el("h3", "秦托邦"), sub("选择岗位，查看负责人和工作边界"));
   const pos = selectedOrg();
   selectedPosition = pos?.id;
   const seen = new Set();
@@ -44,8 +44,15 @@ function renderOrganization() {
         el(
           "small",
           active(p)
-            ? [...new Set(rs.map((r) => personName(r.person)))].join("、") ||
-                "空缺 · 待安排"
+            ? [
+                ...new Set(
+                  rs.map(
+                    (r) =>
+                      personName(r.person) +
+                      (r.status === "scheduled" ? "（待开始）" : "")
+                  )
+                ),
+              ].join("、") || "空缺 · 待安排"
             : statusNames[p.status]
         )
       );
@@ -99,7 +106,7 @@ function renderOrganization() {
       edit
     )
   );
-  const manage = box("管理关系"),
+  const manage = box("谁负责什么"),
     dl = el("dl"),
     grants = state.grants.filter(
       (g) => rs.some((r) => r.id === g.collaboration) && g.effective
@@ -134,6 +141,11 @@ function renderOrganization() {
     )
   );
   manage.append(dl);
+  explainHeading(
+    manage,
+    "责任与决定权",
+    "上下级岗位说明责任归属，不能代替业务授权。下方分别列出已生效决定权、未来安排和共同约束。"
+  );
   detail.append(manage);
   const contact = box("智能体在这项工作中的触达范围");
   if (!state.contact_configuration_visible)
@@ -157,18 +169,43 @@ function renderOrganization() {
       ),
       sub(audienceSummary(a))
     );
-    if (a?.residents && a.residents !== "none")
-      row.append(sub("动态名单待 PMS 身份与住宿解析；当前未执行联系。"));
+    if (a) row.append(audiencePreview(r));
     contact.append(row);
   }
   detail.append(contact);
-  const powers = box("在以上范围内可以做什么");
+  const powers = box("能决定什么、何时生效");
+  explainHeading(
+    powers,
+    "决定方式",
+    "自主决定只在已授权职责和范围内有效。需要指定人确认时，对方还须持有当前有效的对应权限；未授予的事项不能执行。"
+  );
   if (!rs.length) empty(powers, "空缺岗位没有可执行的业务权限。");
   for (const r of rs) {
     const row = el("div", undefined, "qo-scope-row");
-    row.append(el("h4", `${personName(r.person)} · ${agentName(r.agent)}`));
+    row.append(
+      el("h4", `${personName(r.person)} · ${agentName(r.agent)}`),
+      el("p", r.responsibility || "工作说明尚未填写"),
+      sub(termSummary(r))
+    );
     const gs = grants.filter((g) => g.collaboration === r.id);
-    if (!gs.length) row.append(sub("未授予有效决定权"));
+    if (r.status === "scheduled") {
+      row.append(el("p", "这项任职尚未开始，当前不能使用它的权限。", "qo-note"));
+      const scheduled = state.grants.filter(
+        (g) => g.collaboration === r.id && g.revocable
+      );
+      if (scheduled.length)
+        row.append(
+          details(
+            "已保存的开始后安排",
+            ...scheduled.map((g) =>
+              sub(
+                `${text(g.action)}：${modeNames[g.mode]}${g.reviewer ? `，由${personName(g.reviewer)}确认` : ""}`
+              )
+            )
+          )
+        );
+    } else if (!gs.length)
+      row.append(sub("当前没有有效决定权，请先核对身份、任期与业务授权。"));
     for (const g of gs)
       row.append(
         el(
@@ -176,7 +213,6 @@ function renderOrganization() {
           `${modeNames[g.mode]}：${text(g.action)}${g.reviewer ? ` · ${personName(g.reviewer)}` : ""}`
         )
       );
-    row.append(sub(r.responsibility));
     if (!r.immutable && r.can_manage) {
       row.append(
         actions(
@@ -199,7 +235,7 @@ function renderOrganization() {
                 ["结束任职", `${personName(r.person)} · ${pos.label}`],
                 [
                   "影响",
-                  `结束此任职的 ${state.relations.filter((x) => x.appointment === r.appointment && x.status === "active").length} 项协作，立即收回对应权限。历史保留，不等待交接。`,
+                  `结束此任职的 ${state.relations.filter((x) => x.appointment === r.appointment && ["active", "scheduled"].includes(x.status)).length} 项协作，立即收回对应权限并取消尚未开始的安排。历史保留。`,
                 ],
               ],
               row
@@ -244,7 +280,7 @@ function renderOrganization() {
   );
   if (active(pos) && state.management_available)
     powers.append(actions(button("添加另一项协作", () => openWork(pos, null))));
-  detail.append(powers);
+  detail.append(powers, constraintsPanel(pos.scope_id));
 }
 function openWork(pos, r) {
   selectedPosition = pos.id;
@@ -318,29 +354,65 @@ function renderSettings() {
   );
   person.required = true;
   const termBox = el("div");
+  let startMode = null,
+    from = null;
+  if (r) {
+    termBox.append(
+      pair("任职开始", displayTime(r.valid_from)),
+      sub("已有任职的开始时间保留历史。如需未来安排，请另加一项任职。")
+    );
+  } else {
+    startMode = selectField(
+      termBox,
+      "start-mode",
+      "从什么时候开始",
+      [
+        { id: "now", label: "保存后立即开始" },
+        { id: "scheduled", label: "指定未来时间" },
+      ],
+      "now"
+    );
+    fieldExplanation(
+      startMode,
+      "未来任期",
+      "未来任职可以提前保存，但开始时间之前不会产生可执行权限。保存不等于提前赋权。"
+    );
+    from = inputField(termBox, "from", "开始时间（本地时间）", "", "datetime-local");
+    from.parentElement.hidden = true;
+    startMode.addEventListener("change", () => {
+      from.parentElement.hidden = startMode.value !== "scheduled";
+      from.required = startMode.value === "scheduled";
+      if (from.required) from.min = localDateTime(new Date().toISOString());
+    });
+  }
   const term = selectField(
     termBox,
     "term",
-    "任期",
+    "任期到什么时候",
     [
-      { id: "ongoing", label: "持续有效，直至撤销或离任" },
-      { id: "temporary", label: "临时任职 · 指定截止时间" },
+      { id: "ongoing", label: "持续至离任或撤销" },
+      { id: "temporary", label: "指定截止时间" },
     ],
     r?.valid_until ? "temporary" : "ongoing"
   );
-  let untilValue = "";
-  if (r?.valid_until) {
-    const d = new Date(r.valid_until);
-    untilValue = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 16);
-  }
-  const until = inputField(termBox, "until", "任期截止", untilValue, "datetime-local");
+  const until = inputField(
+    termBox,
+    "until",
+    "截止时间（本地时间）",
+    localDateTime(r?.valid_until),
+    "datetime-local"
+  );
   until.parentElement.hidden = !r?.valid_until;
+  until.required = !!r?.valid_until;
   term.addEventListener("change", () => {
     until.parentElement.hidden = term.value === "ongoing";
     until.required = term.value === "temporary";
   });
+  fieldExplanation(
+    term,
+    "任期截止",
+    "到期后，对应决定权失效。临时代理必须有截止时间；截止应晚于开始，且不能已经到期。历史审批不会改写为新人的决定。"
+  );
   two.append(peopleBox, termBox);
   one.append(
     two,
@@ -428,7 +500,7 @@ function renderSettings() {
         navigate("ledger");
       })
     );
-  form.append(work);
+  form.append(work, constraintsPanel(pos.scope_id));
   const audience = audienceOf(r || {}) || {
     groups: [],
     people: [],
@@ -443,6 +515,11 @@ function renderSettings() {
     contactColumns = el("div", undefined, "qo-two"),
     groupBox = el("fieldset"),
     personBox = el("fieldset");
+  explainHeading(
+    contacts,
+    "联系范围",
+    "能联系谁与能向对方说什么分别核对。选择群或个人不代表已发送，也不会开放额外私人信息；主动联系仍需要发布授权。"
+  );
   groupBox.append(el("legend", "群"));
   const bound = state.bindings
     .filter((b) => b.scope === pos.scope_id)
@@ -479,7 +556,7 @@ function renderSettings() {
   );
   contactColumns.append(groupBox, personBox);
   contacts.append(contactColumns);
-  selectField(
+  const residents = selectField(
     contacts,
     "residents",
     "动态人员集合",
@@ -493,8 +570,15 @@ function renderSettings() {
   );
   contacts.append(
     sub(
-      "动态集合按可靠住宿及身份关联解析，当前 PMS 消费尚未接入。“全部”不包含范围外人员或整个通讯录。"
+      "动态对象按本范围的可靠住宿与已确认身份解析。“全部”指在住和过往入住人员，不包含整个通讯录；资料不确定时保留待核对状态。"
     )
+  );
+  if (r) contacts.append(audiencePreview(r, true));
+  else contacts.append(sub("先保存这项工作，再核对它实际覆盖的人员。"));
+  fieldExplanation(
+    residents,
+    "动态人员范围",
+    "名单随可靠住宿事实变化，执行时重新核对。当前在住、过往入住和资料不明会分别显示；历史入住不等于目前仍在住。"
   );
   const modeFields = el("div", undefined, "qo-two"),
     modes = Object.entries(modeNames).map(([id, label]) => ({ id, label }));
@@ -531,7 +615,7 @@ function renderSettings() {
   proactive.addEventListener("change", contactModeChanged);
   contactModeChanged();
   const more = details("公开咨询、内容边界与信息可见性");
-  selectField(
+  const openReception = selectField(
     more,
     "open-reception",
     "公开咨询接待",
@@ -549,7 +633,7 @@ function renderSettings() {
     "textarea",
     true
   );
-  selectField(
+  const visibility = selectField(
     more,
     "visibility",
     "信息可见性",
@@ -560,11 +644,26 @@ function renderSettings() {
     audience.visibility
   );
   contacts.append(more);
+  fieldExplanation(
+    openReception,
+    "公开咨询接待",
+    "允许回应主动咨询的外部人员，只限公开信息。它不会把对方加入主动通知对象，也不会扩大可查看的内容。"
+  );
+  fieldExplanation(
+    visibility,
+    "信息可见性",
+    "这是这项工作的内容边界，实际消费端仍逐项核验用途和权限。可联系某人不等于可以把全部资料告诉他。"
+  );
   form.append(contacts);
   const powers = box("4 · 职责内的决定权"),
     permissions = el("div");
   permissions.id = "permissions";
   powers.append(permissions);
+  explainHeading(
+    powers,
+    "职责内的决定权",
+    "按具体操作分别授予。选择指定确认人只是建立确认条件，不代表对方已批准某份内容；确认人也必须拥有对应的当前自主权。"
+  );
   const delegation = details("可交给其他人的管理范围");
   delegation.id = "delegation";
   const envelope = state.grants.find(
@@ -593,12 +692,17 @@ function renderSettings() {
     state.actions.map((id) => ({ id, label: text(id) })),
     envelope?.actions
   );
-  selectField(
+  const depth = selectField(
     delegation,
     "depth",
     "下级继续分配层数",
     [0, 1, 2, 3].map((x) => ({ id: String(x), label: String(x) })),
     String(envelope?.depth || 0)
+  );
+  fieldExplanation(
+    depth,
+    "继续分配权限",
+    "0 表示接到管理授权的人不能再转授；更高层数允许继续向下分配，但每一层都不能超出上层明确给出的智能体、领域和权限。"
   );
   powers.append(
     delegation,
@@ -666,7 +770,7 @@ function renderSettings() {
     "textarea",
     true
   );
-  selectField(
+  const proxy = selectField(
     advanced,
     "proxy",
     "临时代理哪项任职",
@@ -689,6 +793,11 @@ function renderSettings() {
     r?.proxy_for || "",
     "不是临时代理"
   );
+  fieldExplanation(
+    proxy,
+    "临时代理",
+    "代理须对应另一人的同岗位同范围任职，并明确截止时间。它不会继承未授予的权限，也不会改写原任职记录。"
+  );
   form.append(advanced);
   const submit = el("button", "预览配置影响", "qo-primary");
   submit.type = "submit";
@@ -702,6 +811,35 @@ function renderSettings() {
     e.preventDefault();
     const d = duties.find((x) => x.id === duty.value);
     if (!d) return notice("请先选择岗位承担的职责。", true);
+    const startsAt = r
+      ? null
+      : startMode.value === "scheduled" && from.value
+        ? new Date(from.value)
+        : null;
+    if (
+      !r &&
+      startMode.value === "scheduled" &&
+      (!startsAt || Number.isNaN(startsAt.getTime()) || startsAt <= new Date())
+    ) {
+      notice("请选择晚于现在的任职开始时间。", true);
+      from.focus();
+      return;
+    }
+    const endsAt =
+      term.value === "temporary" && until.value ? new Date(until.value) : null;
+    const effectiveStart =
+      startsAt || (r?.valid_from ? new Date(r.valid_from) : new Date());
+    if (
+      term.value === "temporary" &&
+      (!endsAt ||
+        Number.isNaN(endsAt.getTime()) ||
+        endsAt <= effectiveStart ||
+        endsAt <= new Date())
+    ) {
+      notice("截止时间须晚于任职开始，且不能已经到期。", true);
+      until.focus();
+      return;
+    }
     const assignment = {
       collaboration: r?.id || null,
       person: person.value,
@@ -711,10 +849,8 @@ function renderSettings() {
       agent: agent.value,
       domain: d.domain,
       responsibility: $("responsibility").value,
-      valid_until:
-        term.value === "temporary" && until.value
-          ? new Date(until.value).toISOString()
-          : null,
+      valid_from: startsAt ? startsAt.toISOString() : null,
+      valid_until: endsAt ? endsAt.toISOString() : null,
       proxy_for: $("proxy").value || null,
       actions: [],
       permissions: d.available_actions.map((action) => ({
@@ -751,9 +887,7 @@ function renderSettings() {
         ["智能体与职责", `${agentName(assignment.agent)} / ${d.label}`],
         [
           "任期",
-          assignment.valid_until
-            ? new Date(assignment.valid_until).toLocaleString()
-            : "持续有效，直至撤销或离任",
+          `${r ? `沿用 ${displayTime(r.valid_from)} 的开始时间` : assignment.valid_from ? `${displayTime(assignment.valid_from)} 开始` : "保存后立即开始"}；${assignment.valid_until ? `${displayTime(assignment.valid_until)} 截止` : "持续至离任或撤销"}`,
         ],
         ["群触达", a.groups.map((x) => labelOf("groups", x)).join("、") || "无"],
         ["个人触达", a.people.map(personName).join("、") || "无"],
@@ -769,9 +903,11 @@ function renderSettings() {
         ],
         [
           "生效方式",
-          r && r.person !== assignment.person
-            ? "本项工作换任，旧连接及权限立即失效；其他工作不变。触达与权限在同一事务保存。"
-            : "本项工作、权限和触达在同一事务保存；不触发真实消息。",
+          effectiveStart > new Date()
+            ? "未来安排先保存，开始前没有可执行权限；届时仍需核验身份、职责与授权。"
+            : r && r.person !== assignment.person
+              ? "本项工作换任，旧连接及权限立即失效；其他工作不变。触达与权限在同一事务保存。"
+              : "本项工作、权限和触达在同一事务保存；不触发真实消息。",
         ],
       ],
       form

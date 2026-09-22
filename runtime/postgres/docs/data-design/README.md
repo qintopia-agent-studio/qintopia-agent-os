@@ -15,6 +15,12 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-23.007`:
+  [Building history registration and replay-safe installation](2026-09-23-ontology-audience.md)
+
+- `2026-09-23.006`:
+  [Observed building history and dynamic contact audiences](2026-09-23-ontology-audience.md)
+
 - `2026-09-22.005`: [Synthetic turn replay](2026-09-22-person-foundation-consumers.md)
 
 - `2026-09-22.004`: [Welcome local executors](2026-09-22-foundation-welcome.md)

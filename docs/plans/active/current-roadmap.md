@@ -25,6 +25,13 @@ and keep the local dialogue harness outside business navigation. Welcome is an
 individual authorized matter, with no dedicated product page or permission category.
 This authorization does not enable production actions.
 
+The owner then authorized ontology UI completion inside the preserved organization
+framework. See the
+[UI acceptance record](../../reports/2026-09-23-ontology-ui-local-acceptance.md) for
+inherited constraints, reviewed identity links, future terms, capability states, actual
+resident audiences, readable history and accessible help icons. The earlier batch
+report's UI gap table is historical.
+
 The
 [Erhua and Anan history review](../../reports/2026-09-22-erhua-anan-history-review.md)
 also preserves the full room-booking collaboration goal and the deferred evaluation of

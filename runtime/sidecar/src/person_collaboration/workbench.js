@@ -43,7 +43,31 @@ const errors = {
   invalid_audience: "请核对人员范围与信息可见性。",
   existing_term_differs:
     "此人有同岗位同范围的其他工作。请沿用相同任期，或先结束原任职再配置。",
-  expired_term: "任期截止时间须晚于现在。",
+  expired_term: "任期截止时间须晚于开始时间，且不能已经到期。",
+  invalid_term: "请核对任期：截止时间必须晚于开始时间。",
+  invalid_term_range: "请核对任期：截止时间必须晚于开始时间。",
+  invalid_term_start: "开始时间不符合当前任职条件。新任职请选择现在或未来时间。",
+  term_start_in_past: "开始时间已经过去。请改为保存后立即开始，或重新选择未来时间。",
+  existing_term_start_immutable:
+    "已有任职的开始时间保留历史，不能改写。请另行安排新任职。",
+  identity_management_denied: "当前账号没有身份管理权，请由获授权的身份管理者核对。",
+  identity_version_conflict: "这个账号的关联已变化。请重新读取，核对现状后再次预览。",
+  identity_gateway_version_conflict: "来源登记已变化。请重新读取候选，核对其最新范围。",
+  identity_operation_conflict: "这次核验编号已用于其他内容。请重新读取并预览。",
+  identity_scope_unbound: "来源与工作范围的关联已失效，请由来源维护者先核对登记。",
+  shared_account_not_person:
+    "共享账号不能直接确认为某个人，请选择已有可信观测的个人账号。",
+  shared_account_person_unknown:
+    "共享账号不能直接确认为某个人，请选择已有可信观测的个人账号。",
+  identity_source_evidence_required: "来源缺少可信观测，请先由来源接入方补齐记录。",
+  identity_observation_required: "来源缺少可信观测，请先由来源接入方补齐记录。",
+  identity_namespace_conflict:
+    "来源登记存在冲突，请先由技术负责人核对，再重新选择账号。",
+  gateway_not_active: "账号来源或所属范围已停用，请先由来源维护者核对。",
+  revoke_conflicting_link_first:
+    "该账号已经关联另一人。请先核对并撤销原关联，不能直接覆盖。",
+  revoke_person_mismatch: "该账号目前对应的人员已变化。请重新读取后核对撤销对象。",
+  person_outside_tenant: "当前人员不属于可核验范围，请重新选择已有人员。",
   proxy_requires_expiry: "临时代理须填写截止时间。",
   invalid_proxy_appointment: "临时代理须关联同岗位同范围的另一项有效任职。",
   duty_not_available_for_role: "岗位未关联所选职责，请在岗位台账维护职责。",
@@ -87,7 +111,11 @@ async function api(path, body) {
         : { cache: "no-store" }
     );
   } catch {
-    throw new Error("无法连接本地服务。请检查服务是否运行，再重试原操作。");
+    throw new Error(
+      body
+        ? "尚未取得服务回执。请先重新读取状态核对是否已保存，不要直接重复操作。"
+        : "无法连接本地服务。请检查服务是否运行，再重新读取。"
+    );
   }
   let data;
   try {
@@ -123,7 +151,8 @@ async function readState() {
   if (!next.organization || !Array.isArray(next.relations))
     throw new Error("配置响应不完整，请检查本地服务版本。");
   state = next;
-  $("result").textContent = `配置版本 ${state.version} · Postgres 已连接`;
+  ontologyRequests.clear();
+  $("result").textContent = `已读取配置版本 ${state.version} · 本地验收`;
   $("recovery").hidden = true;
 }
 function navigate(next) {
@@ -187,6 +216,10 @@ async function preview(change, summary, host, onSaved) {
         })
       )
     );
+    for (const impact of Array.isArray(checked.change?.impact)
+      ? checked.change.impact
+      : [])
+      panel.insertBefore(el("p", impact, "qo-note"), panel.lastElementChild);
     host.append(panel);
     notice("服务端预览通过，请核对变更内容。");
   } catch (e) {
@@ -202,8 +235,12 @@ async function savePending() {
   setBusy(true);
   let saved = false;
   try {
-    const result = await api("/api/save", operation.command);
-    if (result.persisted !== true)
+    const result = await api(operation.savePath || "/api/save", operation.command);
+    if (
+      operation.savePath
+        ? result.saved !== true && result.replayed !== true
+        : result.persisted !== true
+    )
       throw new Error("服务端未确认持久保存，请核对状态后重试。");
     saved = true;
     discardPreview();
@@ -215,7 +252,7 @@ async function savePending() {
     }
     setBusy(false);
     navigate(page);
-    notice("已保存到本地数据库。刷新或重启服务后仍可读取；真实智能体尚未接入。");
+    notice(operation.successMessage || "本次变更已保存，页面已读取最新状态。");
   } catch (e) {
     if (saved) notice("变更已保存，但读取失败。请重新读取核对，避免重复新建。", true);
     else onError(e);

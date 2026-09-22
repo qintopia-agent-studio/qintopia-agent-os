@@ -93,6 +93,8 @@ pub struct Assignment {
     pub agent: String,
     pub domain: String,
     pub responsibility: String,
+    #[serde(default)]
+    pub valid_from: Option<DateTime<Utc>>,
     pub valid_until: Option<DateTime<Utc>>,
     pub proxy_for: Option<Uuid>,
     #[serde(default)]
@@ -300,6 +302,11 @@ impl Assignment {
             );
         }
         ensure!(self.valid_until.is_none_or(|t| t > now), "expired_term");
+        ensure!(
+            self.valid_until
+                .is_none_or(|t| t > self.valid_from.unwrap_or(now)),
+            "invalid_term_range"
+        );
         ensure!(
             self.proxy_for.is_none() || self.valid_until.is_some(),
             "proxy_requires_expiry"

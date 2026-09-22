@@ -12,6 +12,7 @@ fn assignment() -> Assignment {
         agent: "erhua".into(),
         domain: "community_service".into(),
         responsibility: "确认本栋知识".into(),
+        valid_from: None,
         valid_until: None,
         proxy_for: None,
         actions: vec!["train".into()],

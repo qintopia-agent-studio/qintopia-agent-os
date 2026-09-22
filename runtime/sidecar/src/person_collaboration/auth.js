@@ -11,6 +11,22 @@
     invalid_username: "请使用 3–64 位英文字母、数字、点、下划线或连字符。",
     account_not_active: "账号已停用或不可操作，请重新查看列表。",
   };
+  const loginStates = {
+    ready: ["可登录", "身份核验有效；登录后可做什么仍由当前任职和授权决定。"],
+    disabled: ["无法登录", "账号已停用，重新核验身份或重置密码不会自动启用账号。"],
+    identity_invalid: [
+      "身份已失效，无法登录",
+      "账号绑定的身份核验已撤销或发生变化。请到基础台账的人员详情核对来源关联；重置密码不能恢复身份或旧授权。",
+    ],
+    person_inactive: [
+      "人员已停用，无法登录",
+      "请先核对该人员当前状态；重置密码不能恢复人员或业务权限。",
+    ],
+    person_unavailable: [
+      "人员资料待处理，无法登录",
+      "人员台账当前为草稿或已停用，请先核对人员状态和来源身份。",
+    ],
+  };
   const tell = (text) => {
     $("auth-notice").textContent = text;
   };
@@ -95,9 +111,14 @@
         element("h3", a.label),
         element(
           "p",
-          `${a.username} · ${a.status === "active" ? "正常" : "已停用"} · 人员 ${a.person.slice(0, 8)}`
+          `${a.username} · ${a.status === "active" ? "账号已启用" : "账号已停用"} · 人员 ${a.person.slice(0, 8)}`
         )
       );
+      const availability = loginStates[a.login_state] || [
+        "登录状态待核对",
+        "尚未取得当前登录条件，请刷新后再确认。",
+      ];
+      row.append(element("p", `${availability[0]}。${availability[1]}`));
       if (a.status === "active") {
         const form = element("form"),
           label = element("label", "重置为新密码"),
@@ -119,7 +140,11 @@
             account: a.id,
             password: d.password,
           });
-          tell("密码已重置，旧会话已失效。");
+          tell(
+            a.login_available
+              ? "密码已重置，旧会话已失效。"
+              : "密码已重置，旧会话已失效；仍须处理账号列表中说明的登录限制。"
+          );
           await accounts();
         });
         const disable = element("button", "停用账号");

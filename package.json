@@ -58,7 +58,7 @@
     "agents:check": "node tools/agents/check-agents.mjs",
     "agents:profile-bundles:check": "node tools/agents/check-profile-bundles.mjs && python3 agents/xiaoman/profile-bundle/render.py --check-only && python3 agents/xiaoman/profile-bundle/migrate_values.py --check-only && python3 -m unittest discover -s agents/xiaoman/profile-bundle/tests -p 'test_*.py'",
     "collaboration:check": "node tools/policy/check-collaboration.mjs",
-    "policy:check": "node tools/policy/check-anti-drift.mjs",
+    "policy:check": "node tools/policy/check-anti-drift.mjs && node tools/policy/test-anti-drift-frozen-migration.mjs",
     "secrets:check": "node tools/security/check-secrets.mjs",
     "deploy:preflight": "node tools/deploy/preflight.mjs",
     "deploy:preflight:ci": "node tools/deploy/preflight.mjs --ci",

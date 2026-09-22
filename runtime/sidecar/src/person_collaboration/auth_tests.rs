@@ -69,7 +69,7 @@ async fn create(
         )
         .await?["id"]))
 }
-async fn request(
+pub(super) async fn request(
     store: &Store,
     method: &str,
     path: &str,
@@ -139,6 +139,7 @@ fn assignment(s: &Value, person: &str, scope: &str) -> Assignment {
         agent: "erhua".into(),
         domain: "community_service".into(),
         responsibility: format!("{scope}合成管理"),
+        valid_from: None,
         valid_until: None,
         proxy_for: None,
         actions: vec![],
@@ -620,6 +621,7 @@ async fn account_management_requires_current_explicit_identity_authority() -> Re
         agent: "default".into(),
         domain: "organization".into(),
         responsibility: "合成组织台账管理员，尚无账号权".into(),
+        valid_from: None,
         valid_until: None,
         proxy_for: None,
         actions: vec![],

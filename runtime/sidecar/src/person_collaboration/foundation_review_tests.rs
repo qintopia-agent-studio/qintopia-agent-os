@@ -48,6 +48,7 @@ async fn assign(
         agent: "erhua".into(),
         domain: "community_service".into(),
         responsibility: "独立回归：本栋规则维护".into(),
+        valid_from: None,
         valid_until: None,
         proxy_for: None,
         actions: vec![],

@@ -1,5 +1,27 @@
 # Data Design Changelog
 
+## `2026-09-23.007`
+
+Migration: `migrations/202609230007_person_stay_building_history_registration.sql`.
+Design note: `docs/data-design/2026-09-23-ontology-audience.md`.
+
+Registers migrations 006 and 007 in the schema change log and installs the building
+history table, conservative backfill, capture function and trigger idempotently.
+Migration 006 was already applied during local validation; this additive repair
+preserves its original checksum and existing observations without rewriting the
+applied migration record or enabling external effects.
+
+## `2026-09-23.006`
+
+Migration: `migrations/202609230006_person_stay_building_history.sql`.
+Design note: `docs/data-design/2026-09-23-ontology-audience.md`.
+
+Preserves actual occupancy observations for each building across moves within one
+stay. Legacy history backfills only its recorded last building, with unknown
+observation times left empty. Dynamic contact audiences reuse current verified PMS
+projections and confirmed tenant-scoped Person links; historical observations alone
+do not prove current membership or authorize sending.
+
 ## `2026-09-22.005`
 
 Migration: `migrations/202609220005_foundation_turn_input.sql`.

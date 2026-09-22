@@ -285,6 +285,7 @@ impl Store {
     ) -> Result<Value> {
         let mut tx = self.pool.begin().await?;
         authorize(&mut tx, actor, "identity", None).await?;
+        crate::person_collaboration::Store::lock_reviewed_source_identity(&mut tx, link).await?;
         let request = json!([link, person, expected, evidence, revoke]);
         if let Some(result) = operation_start(&mut tx, actor, operation, &request).await? {
             return Ok(result);
@@ -312,6 +313,8 @@ impl Store {
             );
         }
         invalidate_link(&mut tx, link).await?;
+        crate::person_collaboration::Store::invalidate_reviewed_source_identity(&mut tx, link)
+            .await?;
         sqlx::query("UPDATE qintopia_identity.source_identity_links SET person_id=$2,status=$3,version=version+1,evidence_ref=$4,confirmed_by=$5,updated_at=now() WHERE id=$1")
             .bind(link).bind(person).bind(if revoke {"revoked"} else {"confirmed"}).bind(evidence).bind(actor.person).execute(&mut *tx).await?;
         let result = json!({"link_ref":link,"version":expected+1,"status":if revoke {"revoked"} else {"confirmed"}});

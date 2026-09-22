@@ -23,7 +23,9 @@ port = int(sys.argv[1])
 if not 1024 <= port <= 65535:
     raise SystemExit('Choose a non-privileged port.')
 with socket.socket() as probe:
+    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     probe.bind(('127.0.0.1', port))
+    probe.listen(1)
 PY
 python3 - "$sidecar_dir" <<'PY'
 import hashlib, pathlib, subprocess, sys

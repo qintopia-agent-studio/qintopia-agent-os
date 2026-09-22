@@ -26,6 +26,10 @@ mod foundation_server_tests;
 #[cfg(test)]
 mod identity_memory_tests;
 #[cfg(test)]
+mod identity_ui_tests;
+#[cfg(test)]
+mod ontology_ui_tests;
+#[cfg(test)]
 mod tests;
 
 use anyhow::{ensure, Result};
