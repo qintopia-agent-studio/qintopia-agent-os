@@ -2943,6 +2943,36 @@ for (const entry of agentRegistry.entries ?? []) {
   const agentManifest = readYaml(entry.manifest);
   const target = agentManifest.runtime?.restart_target;
   const service = agentManifest.runtime?.systemd_user_service;
+  // Registered local-only draft Agents are not production deploy targets. Keep
+  // this exception narrower than a status check, and prove the inverse boundary.
+  if (agentManifest.production_boundary?.runtime_profile === false) {
+    const boundary = agentManifest.production_boundary;
+    const profiles = readYaml("runtime/hermes/profile-registry.yaml").profiles ?? [];
+    if (
+      entry.status !== "draft" ||
+      agentManifest.status !== "draft" ||
+      agentManifest.source?.disposition !== "template" ||
+      !agentManifest.tags?.includes("local-only") ||
+      Object.values(boundary).some((enabled) => enabled !== false)
+    ) {
+      addError(
+        `${entry.manifest}: undeployed Agent must be an explicit local-only draft template`
+      );
+    }
+    if (
+      schemaTargets.has(target) ||
+      allowedRuleTargets.has(target) ||
+      ruleTargets.has(target) ||
+      smokeText.includes(`${target})`) ||
+      smokeText.includes(service) ||
+      profiles.some((profile) => profile.agent_manifest === entry.manifest)
+    ) {
+      addError(
+        `${entry.manifest}: local-only Agent must not enter production deploy or Profile inventories`
+      );
+    }
+    continue;
+  }
   if (!target || !service) {
     addError(`${entry.manifest}: runtime restart target and service are required`);
     continue;

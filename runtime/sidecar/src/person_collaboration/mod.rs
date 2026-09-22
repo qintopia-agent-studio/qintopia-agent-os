@@ -1,14 +1,30 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
 pub mod auth_server;
+mod foundation_server;
 pub mod local_server;
 mod model;
 mod store;
 pub use model::{Assignment, Change, Command, Delegation};
+pub use store::foundation::{
+    authorize_current, can_inspect_current, effective_knowledge_in, put_knowledge_in, Authority,
+    KnowledgeVersion, KnowledgeWrite,
+};
+pub(crate) use store::shared_reply_context;
 pub use store::{Actor, Store};
+pub use store::{IdentityCommand, QiweConversion};
+pub use store::{MemoryChange, MemoryCommand, MemoryEvidence, ReplyCondition, ReplyStyle};
 #[cfg(test)]
 mod auth_tests;
 #[cfg(test)]
 mod duty_store_tests;
+#[cfg(test)]
+mod foundation_consumer_tests;
+#[cfg(test)]
+mod foundation_review_tests;
+#[cfg(test)]
+mod foundation_server_tests;
+#[cfg(test)]
+mod identity_memory_tests;
 #[cfg(test)]
 mod tests;
 

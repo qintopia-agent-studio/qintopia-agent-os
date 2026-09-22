@@ -1,0 +1,10 @@
+name: qintopia-anan
+label: 岸岸本地任务入口
+kind: standalone
+version: 0.1.0
+description:
+  Local-only independent Anan task context and receipt tools; no production Profile.
+author: Qintopia
+provides_tools:
+  - qintopia_person_context
+  - qintopia_person_task_status

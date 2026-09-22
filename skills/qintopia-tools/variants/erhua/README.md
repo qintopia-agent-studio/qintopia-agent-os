@@ -14,6 +14,17 @@ handoff, proposal/demo draft, disclosure filtering, and conversation summary beh
 lives in `skills/operations-intake`. Change those behaviors there; this plugin keeps
 stable Hermes tool registration.
 
+## Local Person foundation tools
+
+The Erhua profile additionally registers `qintopia_person_context`,
+`qintopia_person_save_rule`, `qintopia_person_remember`, `qintopia_person_history` and
+`qintopia_person_task_status` through `skills/person-foundation`. They are disabled by
+default and use a trusted gateway session plus the local authenticated Unix broker.
+Model arguments cannot supply an actor, tenant, scope or destination. Other profiles
+loading this legacy variant do not inherit these tools. The shared service owns
+persistence and current authorization; tool registration is not production enablement or
+proof of real LLM acceptance.
+
 ## Tools
 
 - `qintopia_kb_search`: searches approved Qintopia knowledge snapshot indexes. Defaults

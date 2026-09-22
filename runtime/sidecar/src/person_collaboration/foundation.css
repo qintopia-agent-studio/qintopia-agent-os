@@ -1,0 +1,166 @@
+/* Local conversation harness, using the existing workbench's confirmed theme. */
+#qt-foundation {
+  max-width: 860px;
+  margin: auto;
+  border: 1px solid var(--qo-line);
+  border-radius: 14px;
+  background: var(--qo-bg);
+  overflow: hidden;
+}
+#qt-foundation a {
+  color: var(--qo-accent);
+  text-underline-offset: 4px;
+}
+#qt-foundation .qo-top {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+#qt-foundation .qo-top p {
+  margin: 6px 0 0;
+}
+.pf-header-links,
+.pf-toolbar,
+.pf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.pf-header-links {
+  font-size: 13px;
+}
+.pf-toolbar {
+  padding: 14px 22px;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--qo-line);
+}
+.pf-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+#foundation-notice {
+  padding: 10px 22px;
+  color: var(--qo-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+#foundation-notice[data-error="true"] {
+  color: var(--qo-warn);
+}
+#foundation-main {
+  padding: 12px 22px 24px;
+}
+#talk-log {
+  min-height: 270px;
+  max-height: 56vh;
+  overflow: auto;
+  padding: 8px 4px;
+}
+.pf-empty {
+  color: var(--qo-muted);
+  font-size: 14px;
+  padding: 24px 0;
+}
+.pf-talk-entry {
+  margin: 0 0 22px;
+  max-width: 96%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.pf-talk-entry strong {
+  display: block;
+  color: var(--qo-muted);
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.pf-self {
+  margin-left: auto;
+  padding: 12px 15px;
+  background: var(--qo-soft);
+  border-radius: 9px;
+}
+.pf-talk-entry figure {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid var(--qo-line);
+  border-radius: 8px;
+}
+.pf-talk-entry figcaption {
+  color: var(--qo-muted);
+  font-size: 12px;
+}
+.pf-card-image {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  border-radius: 7px;
+  margin: 10px auto;
+}
+.pf-examples {
+  margin: 12px 0;
+  font-size: 13px;
+  color: var(--qo-muted);
+}
+.pf-examples summary {
+  cursor: pointer;
+}
+#talk-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+#talk-samples button,
+.pf-talk-entry button {
+  font-size: 12px;
+  padding: 6px 9px;
+  white-space: normal;
+}
+#talk-form label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+#qt-foundation textarea,
+#qt-foundation select {
+  background: var(--qo-panel);
+  border: 1px solid var(--qo-line);
+  border-radius: 7px;
+  padding: 10px 12px;
+  color: var(--qo-text);
+  font: inherit;
+}
+#talk-input {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.7;
+  margin-bottom: 12px;
+}
+#qt-foundation footer {
+  padding: 14px 22px;
+  border-top: 1px solid var(--qo-line);
+  color: var(--qo-muted);
+  font-size: 12px;
+}
+@media (max-width: 520px) {
+  body {
+    padding: 8px;
+  }
+  .pf-toolbar,
+  #foundation-main,
+  #qt-foundation footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .pf-toolbar label {
+    width: 100%;
+    justify-content: space-between;
+  }
+  #scope-select {
+    max-width: 65%;
+  }
+}

@@ -147,10 +147,10 @@ pub(crate) async fn create_work(
         "unsupported welcome task"
     );
     ensure!(
-        matches!(target, "silaoshi" | "erhua" | "huabaosi"),
+        matches!(target, "anan" | "silaoshi" | "erhua" | "huabaosi"),
         "unsupported welcome agent"
     );
-    let row = sqlx::query("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,dedupe_key,idempotency_key,source_type) VALUES ($1,$2,'silaoshi',$3,'resident_welcome.coordinate','Resident welcome controlled task',$4,$4,'resident_welcome') ON CONFLICT (idempotency_key) DO NOTHING RETURNING id")
+    let row = sqlx::query("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,dedupe_key,idempotency_key,source_type) VALUES ($1,$2,'anan',$3,'resident_welcome.coordinate','Resident welcome controlled task',$4,$4,'resident_welcome') ON CONFLICT (idempotency_key) DO NOTHING RETURNING id")
         .bind(kind).bind(status).bind(target).bind(key).fetch_optional(&mut **tx).await?;
     if let Some(row) = row {
         let id = row.get("id");
@@ -196,7 +196,7 @@ async fn accept_tx(tx: &mut Transaction<'_, Postgres>, event: &VerifiedEvent) ->
         });
     }
     let key = format!("welcome-inbox/{receipt}");
-    let work = create_work(tx, &key, "welcome_event", "silaoshi", "queued").await?;
+    let work = create_work(tx, &key, "welcome_event", "anan", "queued").await?;
     sqlx::query("UPDATE qintopia_agent_os.welcome_inbox SET work_item_id=$2 WHERE id=$1")
         .bind(receipt)
         .bind(work)

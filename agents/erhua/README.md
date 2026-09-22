@@ -17,9 +17,9 @@ controlled handoff, and trainer memory submission through audited backend paths.
 - Create and append typed, auditable CSV records only within the current QiWe group; use
   the ledger preset for bookkeeping and reversal events.
 
-## Resident welcome responsibility (confirmed design, not yet wired)
+## Resident welcome responsibility (local integration; production not enabled)
 
-The room Agent, tentatively named 岸岸, owns welcome orchestration and requests card
+The independent room Agent 岸岸 (`anan`) owns welcome orchestration and requests card
 production from 阿靓 (`huabaosi`). For this workflow, Erhua forwards the specified card
 and welcome text to the assigned community/building destination. When the building
 requires review, Erhua presents that exact content to its responsible human and records
@@ -33,11 +33,24 @@ backend still checks resident disclosure consent, eligibility, current authoriza
 delivery deduplication. Artifact references resolve storage locations through controlled
 tools, rather than remembered download URLs.
 
-This is the planned consumer contract in
-[welcome §6.4](../../docs/plans/active/unified-person-welcome-v1-contract.md#64-欢迎编排制卡与楼栋转发职责负责人纠偏2026-09-22),
-not evidence of runtime integration or production enablement. Receiving a resident's
-profile correction can trigger a controlled handoff to the room workflow; it does not
-give Erhua card-generation responsibility.
+The local foundation workbench now exercises these consumer responsibilities with
+versioned rules, real PNG Artifacts and durable per-part results. Uploads and sends use
+local synthetic adapters; this is not evidence of production enablement or real-channel
+delivery. The shared contract remains in
+[welcome §6.4](../../docs/plans/active/unified-person-welcome-v1-contract.md#64-欢迎编排制卡与楼栋转发职责负责人纠偏2026-09-22).
+Receiving a resident's profile correction can trigger a controlled handoff to the room
+workflow; it does not give Erhua card-generation responsibility.
+
+## Shared identity and memory (local integration)
+
+The Erhua plugin registers `skills/person-foundation` tools for the fixed `erhua`
+Profile. Host-provided QiWe session evidence selects the person, gateway and working
+scope; model arguments cannot supply identity or permissions. The authenticated local
+broker reads shared knowledge and saves authorized rules, while personal reply
+preferences support conditional corrections and stopping without old-message revival.
+Tools are disabled until explicitly configured for the local broker. Scripted intent
+tests do not establish real-model understanding; real gateway ingestion and production
+rollout remain separate acceptance work.
 
 ## Front-desk collection (design, not yet integrated)
 

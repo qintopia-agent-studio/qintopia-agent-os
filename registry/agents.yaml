@@ -38,3 +38,9 @@ entries:
     manifest: agents/huabaosi/agent.yaml
     status: draft
     notes: Visual asset Agent contract; shadow/Rust material remains review-pool.
+  - id: agents/anan
+    path: agents/anan
+    manifest: agents/anan/agent.yaml
+    status: draft
+    notes:
+      Local-only room Agent for persisted welcome orchestration; no production Profile.

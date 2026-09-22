@@ -8,6 +8,7 @@ const names = {
   wenyuange: "文渊阁",
   guanerye: "关二爷",
   huabaosi: "阿靓",
+  anan: "岸岸",
   train: "指导智能体改进服务",
   confirm_knowledge: "确认可用于回答的知识",
   change_rules: "决定职责范围内的运营规则",

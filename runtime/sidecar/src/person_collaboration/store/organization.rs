@@ -327,7 +327,7 @@ impl Store {
                         }
                         "group" => {
                             let group = Uuid::parse_str(reference.as_deref().unwrap_or(""))?;
-                            let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_messages.conversations WHERE tenant_id=$1 AND id=$2 AND chat_type='group' AND status='active')")
+                            let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND id=$2 AND chat_type='group' AND status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items k WHERE k.tenant_key=$1 AND k.space_id=c.id))")
                                 .bind(&self.tenant).bind(group).fetch_one(&mut **tx).await?;
                             ensure!(known, "group_not_verified");
                             (group.to_string(), true)

@@ -61,3 +61,10 @@ entries:
       Dedicated Xiaoman activity read-through, announcement, weekly preview, promotion,
       and bounded update capability; qintopia-tools keeps stable Hermes registration
       while the legacy implementation is extracted.
+  - id: skills/person-foundation
+    path: skills/person-foundation
+    manifest: skills/person-foundation/manifest.yaml
+    status: draft
+    notes:
+      Local-only trusted tools for shared Person, scoped rules, memory and persisted
+      Agent work.

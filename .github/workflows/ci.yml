@@ -484,6 +484,7 @@ jobs:
       - name: Person collaboration and resident welcome PostgreSQL integration
         env:
           QINTOPIA_TEST_MODE: "1"
+          QINTOPIA_FOUNDATION_LOCAL_ENABLE: "1"
           RUST_MIN_STACK: "33554432"
         run: |
           cargo test --locked --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests person_collaboration -- --include-ignored --test-threads=1

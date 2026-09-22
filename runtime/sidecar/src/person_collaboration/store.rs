@@ -9,7 +9,13 @@ use uuid::Uuid;
 mod auth;
 pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
+pub(crate) mod foundation;
+mod identity;
 mod organization;
+pub use identity::{IdentityCommand, QiweConversion};
+mod memory;
+pub(crate) use memory::reply_context as shared_reply_context;
+pub use memory::{MemoryChange, MemoryCommand, MemoryEvidence, ReplyCondition, ReplyStyle};
 
 pub struct Store {
     pub(super) pool: PgPool,
@@ -21,6 +27,8 @@ pub struct Actor {
     link: Uuid,
     person: Uuid,
     identity_version: i64,
+    identity_namespace: String,
+    gateway: Option<(String, i64, Uuid)>,
     session_hash: Option<String>,
     tenant: String,
 }
@@ -65,17 +73,29 @@ impl Store {
             session_hash: None,
             person: row.get("person_id"),
             identity_version: row.get("version"),
+            identity_namespace: self.tenant.clone(),
+            gateway: None,
             tenant: self.tenant.clone(),
         })
     }
 
     async fn verify(&self, tx: &mut Transaction<'_, Postgres>, actor: &Actor) -> Result<()> {
         ensure!(actor.tenant == self.tenant, "tenant_mismatch");
+        if let Some((gateway, version, scope)) = &actor.gateway {
+            let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.version=$3 AND g.scope_id=$4 AND g.namespace=$5 AND g.active AND g.account_kind<>'shared' AND s.status='active' AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.id=$6 AND l.namespace=g.namespace AND l.subject_type=g.subject_type))")
+                .bind(&self.tenant).bind(gateway).bind(version).bind(scope).bind(&actor.identity_namespace).bind(actor.link).fetch_one(&mut **tx).await?;
+            ensure!(active, "gateway_changed_or_revoked");
+        } else {
+            ensure!(
+                actor.identity_namespace == self.tenant,
+                "identity_namespace_unbound"
+            );
+        }
         if let Some(hash) = &actor.session_hash {
             self.verify_session(tx, hash, actor.person).await?;
         }
         let row=sqlx::query("SELECT l.person_id,l.version,l.status,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL FOR SHARE OF l,p")
-            .bind(actor.link).bind(&self.tenant).fetch_optional(&mut **tx).await?
+            .bind(actor.link).bind(&actor.identity_namespace).fetch_optional(&mut **tx).await?
             .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
         ensure!(
             row.get::<Uuid, _>("person_id") == actor.person
@@ -92,49 +112,7 @@ impl Store {
         tx: &mut Transaction<'_, Postgres>,
         now: DateTime<Utc>,
     ) -> Result<Policy> {
-        let rows=sqlx::query("SELECT id,parent_scope_id,status FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1")
-            .bind(&self.tenant).fetch_all(&mut **tx).await?;
-        let scopes = rows
-            .iter()
-            .map(|r| Scope {
-                id: r.get("id"),
-                parent: r.get("parent_scope_id"),
-                active: r.get::<String, _>("status") == "active",
-            })
-            .collect();
-        let rows=sqlx::query("SELECT g.*,a.person_id,a.scope_id,c.agent_key,c.domain_key,c.duty_id,(g.status='active' AND c.status='active' AND a.status='active' AND p.status='active' AND role.status='active' AND (c.duty_id IS NULL OR duty.status='active') AND a.valid_from<=$2 AND (a.valid_until IS NULL OR a.valid_until>$2) AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.person_id=a.person_id AND l.namespace=$1 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL)) AS effective_now FROM qintopia_agent_os.collaboration_grants g JOIN qintopia_agent_os.agent_collaborations c ON c.id=g.collaboration_id JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_identity.persons p ON p.id=a.person_id JOIN qintopia_agent_os.collaboration_roles role ON role.id=a.role_id LEFT JOIN qintopia_agent_os.collaboration_duties duty ON duty.id=c.duty_id WHERE g.tenant_key=$1")
-            .bind(&self.tenant).bind(now).fetch_all(&mut **tx).await?;
-        let mut grants: Vec<Grant> = rows
-            .iter()
-            .map(|r| Grant {
-                id: r.get("id"),
-                collaboration: r.get("collaboration_id"),
-                person: r.get("person_id"),
-                scope: r.get("scope_id"),
-                agent: r.get("agent_key"),
-                domain: r.get("domain_key"),
-                action: r.get("action_key"),
-                duty: r.get("duty_id"),
-                mode: r
-                    .get::<String, _>("decision_mode")
-                    .parse()
-                    .unwrap_or(PermissionMode::Denied),
-                reviewer: r.get("reviewer_person_id"),
-                parent: r.get("parent_grant_id"),
-                descendants: r.get("include_descendants"),
-                active: r.get("effective_now"),
-                delegation: Delegation {
-                    agents: r.get("managed_agents"),
-                    domains: r.get("managed_domains"),
-                    actions: r.get("managed_actions"),
-                    depth: r.get("delegation_depth"),
-                },
-            })
-            .collect();
-        // Postgres may return the same rows in a different physical order after a rollback.
-        // Keep policy selection and serialized configuration stable across readbacks.
-        grants.sort_by_key(|grant| grant.id);
-        Ok(Policy { scopes, grants })
+        foundation::load_policy(tx, &self.tenant, now).await
     }
 
     pub async fn allowed(
@@ -432,7 +410,7 @@ impl Store {
                         && p.in_scope(*scope, root.id, true),
                     "group_binding_management_required"
                 );
-                let count:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND id=ANY($2) AND status='active' AND chat_type='group' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active')")
+                let count:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND id=ANY($2) AND status='active' AND chat_type='group' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items k WHERE k.tenant_key=$1 AND k.space_id=c.id) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active')")
                     .bind(&self.tenant).bind(conversations).fetch_one(&mut **tx).await?;
                 ensure!(count == conversations.len() as i64, "group_outside_tenant");
                 sqlx::query("UPDATE qintopia_agent_os.collaboration_scope_bindings SET revoked_at=$3,version=version+1 WHERE tenant_key=$1 AND scope_id=$2 AND revoked_at IS NULL")
@@ -676,7 +654,7 @@ impl Store {
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let relations:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',c.id,'appointment',a.id,'person',a.person_id,'role',a.role_id,'scope',a.scope_id,'agent',c.agent_key,'domain',c.domain_key,'duty',c.duty_id,'version',c.version,'replaces',c.replaces_id,'immutable',EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_grants g WHERE g.collaboration_id=c.id AND g.parent_grant_id IS NULL),'responsibility',c.responsibility_text,'status',CASE WHEN c.status<>'active' THEN c.status WHEN a.status<>'active' THEN a.status WHEN a.valid_until<=$3 THEN 'expired' ELSE 'active' END,'valid_until',a.valid_until,'proxy_for',a.proxy_for_id) ORDER BY c.created_at),'[]') FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND a.scope_id=ANY($2)")
             .bind(&self.tenant).bind(&visible).bind(now).fetch_one(&mut *tx).await?;
-        let groups:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',display_name) ORDER BY display_name),'[]') FROM qintopia_messages.conversations WHERE tenant_id=$1 AND chat_type='group' AND status='active'")
+        let groups:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',display_name) ORDER BY display_name),'[]') FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND chat_type='group' AND status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items k WHERE k.tenant_key=$1 AND k.space_id=c.id)")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let bindings:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('scope',scope_id,'conversation',conversation_id) ORDER BY scope_id,conversation_id),'[]') FROM qintopia_agent_os.collaboration_scope_bindings WHERE tenant_key=$1 AND scope_id=ANY($2) AND revoked_at IS NULL")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;

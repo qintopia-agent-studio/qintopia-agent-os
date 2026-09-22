@@ -10,12 +10,24 @@ Owner: PatrickLiveCool。状态：draft，本地开发；风险：high。
 人员任职、智能体训练授权和协作职责属于整个 Agent
 OS 的统一设置；本流程只使用这些设置，不要求用户为欢迎重新任命小管家或舍长。具体约束见共同契约第 5.3 节。
 
-当前 `welcome_grants`
-仍是欢迎专用的本地实现，尚未接通统一训练授权与职责解析，不能视为通用人员基础设施已完成。
+新接入目标通过 `welcome_foundation_targets` 绑定共同 tenant/scope，执行前消费
+`collaboration_grants` 与有效 Space 规则版本；这些目标拒绝旧 `welcome_grants`
+执行路径。旧未接入 fixture 保留原行为以回归历史接收和恢复契约。
 
 客房领域通过结构化 WorkItem 协调，阿靓由 huabaosi 处理产物，二花面向社区/楼栋，四老师处理内部协作。
 
-当前本地工作项技术协调宿主复用 silaoshi；没有注册新的客房 Agent、恢复 call_agent 或改动任何 profile。
+本批本地任务由岸岸 `anan` 编排，阿靓 `huabaosi` 渲染受控卡片，二花 `erhua`
+传递具体版本审核并转发。内部可信上下文从持久 WorkItem 的固定 Agent、capability 和来源构造；模型不能自行填 Agent 身份。不恢复 call_agent，不启用生产 Profile。
+
+本地 Runtime 通过固定 `scripts/local_agent_runtime.py` 子进程加载各 Agent 自己的
+`welcome_runtime.py`，调用其真实注册工具。Rust 锁定 WorkItem 后构造 stdin 可信任务上下文；工具的模型参数固定为空。
+
+岸岸返回制卡请求和逐部分执行计划，阿靓运行 Pillow 并返回 PNG，二花返回绑定具体 Artifact/hash 的审核或转发指令。Rust 实际使用这些结果，并保留最终身份、权限、内容版本与发送门禁。
+
+每次调用保存 call ID、请求及结果 hash、插件身份、版本和源码 hash。这是独立插件进程的
+`local_scripted_agent_runtime` 验证，不等于真实 LLM、生产 Hermes
+Profile 或真实渠道验收。原通用 `qintopia_person_task_status`
+只查询共同基础分派任务；欢迎状态通过受控对话和对应 WorkItem/Runtime 结果查询。
 
 小满不是前置条件。
 
@@ -89,3 +101,41 @@ git diff --check
 
 数据库测试还需显式配置 `QINTOPIA_WELCOME_TEST_DATABASE_URL` 指向本次独立的loopback
 `qintopia_test`；测试会应用版本化迁移并写合成数据。没有此配置不会尝试其他数据库。不要把真实数据导入测试库。
+
+## 共同基础欢迎链路（2026-09-22）
+
+舍长通过共同工作台的二花对话，在有效业务授权内约定这项具体工作，不设置独立欢迎分类或配置页。业务设置由共享知识版本服务保存：固定
+`resident_welcome`
+key，支持完整内容或仅文案、直接发送或先审、单次或持续、未来生效和到期。单次设置仅覆盖对应案例，不修改默认规则。上层指定人确认、个人展示许可、真实入住、目标成员关系仍在执行前检查。
+
+直接发送保留有效规则和发布授权依据，不伪造人工批准。审核记录绑定具体 Artifact、hash、目标、规则和审核人的现行授权。每个目标的图片和文字分别持久去重；unknown 先从测试 provider 的持久记录回读，不能再次发送。
+
+Pillow 合成渲染器位于 `scripts/render_synthetic_card.py`，显式配置
+`QINTOPIA_WELCOME_RENDER_PYTHON`
+为有 Pillow 的本地 Python 绝对路径。脚本只接收虚构姓名和受限简介，不接受网络 URL 或附件；不访问真实资料。旧
+`generate_card_v10.py`
+仍没有可复用的本地版本化源码，当前渲染是独立的合成排版验证，不能称为旧脚本迁移验收。样卡返回同一 Artifact，附件测试适配器固定登记申请 Base 的稳定引用，未连接阿靓普通设计产出 Base。
+
+本地方法 `bootstrap_foundation_fixture(tenant)`
+只在显式合成 tenant 创建两栋住宿与申请、来源身份、成员关系和本地执行器登记；它不授予岗位或权限。
+`refresh_foundation_fixture`
+是人工演示时对固定合成来源的回读，刷新观察时间，不创建 live 事件、不升级历史准入。常规源码路径保留 60 秒观察时效门禁。
+
+本地对话验收可显式设置 `QINTOPIA_FOUNDATION_FIXTURE_OBSERVE=1`，与
+`QINTOPIA_FOUNDATION_LOCAL_ENABLE=1` 一起启动既有的本地服务。默认关闭；只在
+`Store::local`
+完成隔离 loopback 数据库校验、127.0.0.1 监听成功后，每 20 秒调用上述合成回读。
+
+每次核验 tenant 已初始化为 synthetic、目标非空且全属于本 tenant 的固定合成来源，拒绝混合来源。只更新已有来源和成员的观察时间，不重设订单、成员 current 状态、申请、准入或业务版本，也不触发欢迎发送。
+
+这是伴随本地验收进程存活的开发夹具，不是业务调度或真实 PMS 接入。延迟不会补跑；任一次失败后停用观察器并输出固定错误码，不自动重试。停止本地进程即停止观测；重新启动时须再次显式保留开关。人工验收记录应注明来源仍为合成观测。
+
+专项验证：
+
+```bash
+python3 -m unittest discover -s workflows/resident-welcome/tests -v
+cargo test --manifest-path runtime/sidecar/Cargo.toml \
+  --features postgres-integration-tests foundation_welcome -- --ignored
+```
+
+第二条需已有测试框架的隔离数据库环境、明确本地 Python 路径和 Pillow。真实模型理解、渠道人员身份、批准入口、申请附件权限及真实群送达仍待实测。

@@ -11,6 +11,37 @@ if [[ -z "${QINTOPIA_SIDECAR_DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
+# Bind only this opted-in disposable smoke to its exact local database. The Rust
+# exception is compiled only with postgres-integration-tests + staging adapter;
+# ordinary staging and production keep their reviewed database boundaries.
+QINTOPIA_HUABAOSI_IMAGE_TEST_DATABASE_URL_SHA256="$(python3 - <<'PY'
+import hashlib
+import os
+import sys
+from urllib.parse import urlsplit
+
+raw = os.environ["QINTOPIA_SIDECAR_DATABASE_URL"]
+try:
+    parsed = urlsplit(raw)
+    valid = (
+        not any(char in raw for char in "\r\n\t")
+        and parsed.scheme in ("postgres", "postgresql")
+        and parsed.hostname in ("127.0.0.1", "::1")
+        and parsed.port is not None
+        and 1024 <= parsed.port <= 65535
+        and parsed.path == "/qintopia_test"
+        and not parsed.fragment
+        and parsed.query in ("", "sslmode=disable")
+    )
+except ValueError:
+    valid = False
+if not valid:
+    sys.exit("apply smoke requires literal-loopback qintopia_test with an explicit non-privileged port and no connection overrides")
+print(hashlib.sha256(raw.encode()).hexdigest())
+PY
+)"
+export QINTOPIA_HUABAOSI_IMAGE_TEST_DATABASE_URL_SHA256
+
 if ! command -v psql >/dev/null 2>&1; then
   echo "psql is required for operations control-plane apply smoke" >&2
   exit 1
@@ -39,8 +70,8 @@ run_json() {
   local name="$1"
   shift
   local output="$tmp_dir/${name}.json"
-  "${BIN_CMD[@]}" "$@" >"$output"
-  python3 - "$output" <<'PY'
+  "${BIN_CMD[@]}" "$@" >"$output" || return $?
+  python3 - "$output" <<'PY' || return $?
 import json
 import sys
 with open(sys.argv[1], "r", encoding="utf-8") as fh:

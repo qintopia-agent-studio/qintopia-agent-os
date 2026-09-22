@@ -123,7 +123,7 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
     let actor = match actor {
         Ok(a) => a,
         Err(_) => {
-            if r.method == "GET" && r.path == "/" {
+            if r.method == "GET" && matches!(r.path.as_str(), "/" | "/foundation") {
                 return respond(
                     stream,
                     200,
@@ -149,6 +149,62 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
             200,
             "text/html; charset=utf-8",
             super::local_server::HTML.as_bytes(),
+            None,
+        )
+        .await;
+    }
+    if r.method == "GET"
+        && matches!(
+            r.path.as_str(),
+            "/foundation" | "/foundation.js" | "/foundation.css"
+        )
+    {
+        let (mime, body) = match r.path.as_str() {
+            "/foundation" => ("text/html; charset=utf-8", include_str!("foundation.html")),
+            "/foundation.js" => (
+                "text/javascript; charset=utf-8",
+                include_str!("foundation.js"),
+            ),
+            _ => ("text/css; charset=utf-8", include_str!("foundation.css")),
+        };
+        return respond(stream, 200, mime, body.as_bytes(), None).await;
+    }
+    if r.method == "GET" && r.path.starts_with("/api/foundation/card?id=") {
+        let result = async {
+            let id = Uuid::parse_str(r.path.trim_start_matches("/api/foundation/card?id="))?;
+            super::foundation_server::card(store, &actor, id).await
+        }
+        .await;
+        return match result {
+            Ok(bytes) => respond(stream, 200, "image/png", &bytes, None).await,
+            Err(_) => {
+                respond(
+                    stream,
+                    403,
+                    "application/json",
+                    br#"{"code":"scope_access_denied"}"#,
+                    None,
+                )
+                .await
+            }
+        };
+    }
+    if r.path.starts_with("/api/foundation/")
+        && (r.method == "POST" || (r.method == "GET" && r.path == "/api/foundation/state"))
+    {
+        let result = super::foundation_server::dispatch(store, &actor, &r.path, &r.body).await;
+        let (status, body) = match result {
+            Ok(v) => (200, v),
+            Err(e) => (
+                400,
+                json!({"code":super::foundation_server::error_code(&e)}),
+            ),
+        };
+        return respond(
+            stream,
+            status,
+            "application/json",
+            &serde_json::to_vec(&body)?,
             None,
         )
         .await;

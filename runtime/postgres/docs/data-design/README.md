@@ -15,6 +15,17 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-22.005`: [Synthetic turn replay](2026-09-22-person-foundation-consumers.md)
+
+- `2026-09-22.004`: [Welcome local executors](2026-09-22-foundation-welcome.md)
+
+- `2026-09-22.003`: [Shared foundation welcome](2026-09-22-foundation-welcome.md)
+
+- `2026-09-22.002`: [Person identity and memory](2026-09-22-person-memory.md)
+
+- `2026-09-22.001`:
+  [Person foundation consumers](2026-09-22-person-foundation-consumers.md)
+
 - `2026-09-18.001`: [Workbench accounts](2026-09-18-workbench-accounts.md)
 
 - `2026-09-11.001`:

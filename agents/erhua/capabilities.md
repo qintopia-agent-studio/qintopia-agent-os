@@ -12,6 +12,17 @@
 - In QiWe groups, create typed current-group CSV datasets, append auditable records,
   query bounded results, and use the ledger preset for bookkeeping and reversal events.
 
+## Local Foundation Consumers
+
+- Use the shared identity, knowledge and self-memory services through host-bound
+  `person-foundation` tools; never accept actor, person, tenant or scope from the model.
+- Save authorized knowledge versions and conditionally revise or stop personal reply
+  preferences. Old messages cannot restore stopped preferences.
+- For resident welcome, review or deliver the exact card and text under the building's
+  effective policy. Card production stays with `huabaosi`, orchestration with `anan`.
+- These paths currently use the local broker and synthetic delivery adapters. Real model
+  understanding, real QiWe ingestion and production delivery remain unverified.
+
 ## Requires Human Approval
 
 - Complaint outcome, compensation, refund, policy exception, or member conflict.

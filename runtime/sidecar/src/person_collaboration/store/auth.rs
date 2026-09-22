@@ -119,6 +119,8 @@ impl Store {
             link: row.get("identity_link_id"),
             person: row.get("person_id"),
             identity_version: row.get("identity_version"),
+            identity_namespace: self.tenant.clone(),
+            gateway: None,
             tenant: self.tenant.clone(),
             session_hash: Some(hash),
         };
@@ -321,6 +323,8 @@ impl Store {
             link: row.get("id"),
             person,
             identity_version: row.get("version"),
+            identity_namespace: self.tenant.clone(),
+            gateway: None,
             tenant: self.tenant.clone(),
             session_hash: None,
         };

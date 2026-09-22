@@ -1,0 +1,35 @@
+id: skills/person-foundation
+type: skill
+name: Person Foundation Trusted Tools
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Local-only Hermes tools for current identity, governed memory, scoped rules and
+  persisted dispatch.
+source:
+  path: docs/plans/active/person-agent-foundation-parallel-handoff.md
+  reference: confirmed-local-batch-2026-09-22-section-8
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+validation:
+  commands:
+    - python3 -m unittest discover -s skills/person-foundation/tests -v
+    - pnpm skills:qintopia-tools:check
+    - pnpm registry:check
+dependencies:
+  - runtime/sidecar
+  - skills/qiwe
+tags:
+  - identity
+  - authorization
+  - local-only
+  - hermes-plugin
+next_actions:
+  - Record synthetic persistence, actual Hermes LLM and external channel evidence
+    separately.
+  - Require reviewed production gateway binding and deployment before activation.

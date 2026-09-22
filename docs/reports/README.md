@@ -1,5 +1,6 @@
 # Reports
 
+- [2026-09-22 本体基础与欢迎闭环：第一批本地实现](2026-09-22-foundation-welcome-batch1.md)
 - [2026-09-22 二花与岸岸历史对话合并评审](2026-09-22-erhua-anan-history-review.md)
 - [2026-09-22 早期 QinTopia Agent OS 总指挥归档评审](2026-09-22-early-agent-os-command-review.md)
 - [2026-09-22 Agent OS 总指挥交接核对](2026-09-22-agent-os-command-handoff-review.md)

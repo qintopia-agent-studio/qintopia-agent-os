@@ -706,8 +706,14 @@ export function commandForScenario(feature, scenario, runContext, junitFile) {
       "runtime/sidecar/target/debug/qintopia-message-sidecar"
     ),
     QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE: "1",
+    QINTOPIA_WELCOME_RENDER_PYTHON: venvPython,
   };
   const env = pythonEnvironment({ ...baseEnv });
+  if (
+    target.path ===
+    "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs"
+  )
+    env.QINTOPIA_FOUNDATION_LOCAL_ENABLE = "1";
   if (target.pythonpath?.length)
     env.PYTHONPATH = target.pythonpath
       .map((entry) => assertRelativePath(entry, "pythonpath"))

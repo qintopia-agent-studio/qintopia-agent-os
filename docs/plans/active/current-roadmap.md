@@ -15,8 +15,14 @@ The owner-authorized first batch combines baseline preparation, C, and D into on
 development batch with one combined product acceptance. Engineering dependencies and
 checks remain sequential where required. Use the
 [combined handoff](person-agent-foundation-parallel-handoff.md#8-合并交接共同底座二花接入与欢迎闭环);
-the owner requested a new project conversation for implementation. Handoff is ready, but
-the current tools cannot create that conversation, so execution has not been confirmed.
+the local implementation is on `codex/person-foundation-welcome-batch1`. The
+[batch report](../../reports/2026-09-22-foundation-welcome-batch1.md) records consumer,
+memory, welcome, browser and integration evidence for combined manual acceptance. Real
+model/channel acceptance and the unavailable legacy card script remain explicit
+follow-ups. The owner corrected the UI boundary during local acceptance: keep the
+existing organization page for managers, use Erhua conversation for house-leader work,
+and keep the local dialogue harness outside business navigation. Welcome is an
+individual authorized matter, with no dedicated product page or permission category.
 This authorization does not enable production actions.
 
 The

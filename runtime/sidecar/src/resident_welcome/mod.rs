@@ -3,6 +3,10 @@ pub mod artifact;
 pub mod channels;
 pub mod client;
 pub mod delivery;
+pub mod foundation;
+mod foundation_fixture;
+#[cfg(test)]
+mod foundation_tests;
 pub mod ingress;
 #[cfg(feature = "welcome-synthetic-driver")]
 pub mod local_driver;
@@ -11,6 +15,7 @@ pub mod projection;
 pub mod protocol;
 pub mod recovery;
 pub mod review;
+mod runtime_adapter;
 pub mod state;
 pub mod store;
 #[cfg(test)]

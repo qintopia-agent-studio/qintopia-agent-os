@@ -1,8 +1,52 @@
-# 人员与智能体协作 F1
+# 人员与智能体协作
 
 Owner：Agent OS /
 sidecar。风险级别：high（身份和授权）。本目录是现有 sidecar 包的子模块，沿用
-`runtime/sidecar/manifest.yaml`；不是新的业务 workflow 或 Agent。当前只提供合成环境入口，无生产登录、runtime 接入或外部执行能力。
+`runtime/sidecar/manifest.yaml`；不是新的业务 workflow 或 Agent。当前提供隔离合成环境的密码工作台、受控工具 broker 和欢迎消费者；没有启用生产登录、生产 Profile 或外部执行。
+
+## 第一批共同基础与对话入口（2026-09-22）
+
+保留现有组织与授权页面，在 `/foundation`
+只提供明确标注的本地对话验收工具，不进入业务导航。组织管理者使用原组织架构页面配置任职与授权；舍长在日常对话中与二花协作，不新增记忆、规则或流程维护控制台。
+
+欢迎只是其中的单项事项，通过对话确定约定及批准具体版本。
+
+沿用现有密码会话；浏览器不能提交操作者 Person、切换 tenant 或用模型参数声明管理范围。未登录及过期会话仍按现有认证拒绝。
+
+- 身份复用 Person 和来源链接，可信 Gateway 绑定来源类型、命名空间及范围。同一已确认人在两个入口解析到同一 Person；同名不合并，共享工作账号不冒充自然人，撤销后的旧入口拒绝。
+- 规则正文与版本复用 Space
+  `business_definition_versions`。新增映射只保存作用范围、生效区间、作者及授权依据；社区共享可读与本栋维护分别判断。未来版本生效前读旧版；不新增调度器。二花工具和工作台消费同一服务。
+- 本人回复偏好支持一般与费用条件、明确更正、停止使用及旧消息重放防恢复。后续上下文读取和已有回答工具实际消费当前事实；可选记忆缺失保持未知，不生成工作人员核对任务。PMS 来源维护长期成员和历次实际住宿的观察记录，当前状态与历史分开；非住宿来访及更广人物记忆仍未接入。
+- 受控管理入口将明确事项持久交给二花，受理、等待确认、完成、失败各自留证。执行前在共同 tenant 锁内重验身份、现行任职、范围、动作和授权；撤权后旧任务无法写入。管理员管理权不自动变成本人的业务执行权。
+- 岸岸 `anan`、阿靓 `huabaosi`、二花 `erhua`
+  通过已有 WorkItem、Artifact 与事件完成合成欢迎链路。直接发送和先审、单次和持续均消费共同规则与授权。需要审核时批准具体内容版本；直接发送不伪造批准。部分失败只恢复未完成部分，unknown 回读原记录，不能盲目重发。
+
+Pillow 渲染会实际产生虚构资料 PNG；上传与群发送使用固定测试适配器。旧
+`generate_card_v10.py`
+的本地版本化源码仍缺失，当前独立合成排版不代表旧 renderer 已迁移。真实 LLM 理解、账号与渠道、附件权限和实际群送达分别待实测。完整知识编辑器、全域知识迁移、兴趣技能和人物展示许可等不在本批完成声明中。
+
+启动前显式配置本任务隔离的 `QINTOPIA_COLLABORATION_LOCAL_DATABASE_URL`、唯一
+`QINTOPIA_COLLABORATION_LOCAL_TENANT`、空闲
+`QINTOPIA_FOUNDATION_LOCAL_PORT`，以及有 Pillow 的 `QINTOPIA_WELCOME_RENDER_PYTHON`
+绝对路径。首次空 tenant 另提供仅供合成账号使用的
+`QINTOPIA_FOUNDATION_FIXTURE_PASSWORD`，通过以下脚本初始化：
+
+```bash
+bash runtime/sidecar/src/person_collaboration/run-foundation-local.sh --init-fixture
+```
+
+之后去掉
+`--init-fixture`。脚本先构建当前源码、检查端口并输出源码与二进制摘要，不使用旧二进制冒充当前版本。它保留数据库的 loopback、`qintopia_test`
+与 synthetic 门禁；不加载生产 `.env` 或 Profile。合成账号 `admin`、
+`house-one`、`house-two`
+分别体验管理、一栋和二栋，账号本身不授予权限。上述 fixture 的岗位和授权通过正常共同服务显式创建，不是生产初始化方式。
+
+工具契约见
+[Person Foundation](../../../../skills/person-foundation/README.md)，欢迎边界见
+[Resident Welcome](../../../../workflows/resident-welcome/README.md)。三份数据设计见
+[共同消费者](../../../postgres/docs/data-design/2026-09-22-person-foundation-consumers.md)、
+[身份与记忆](../../../postgres/docs/data-design/2026-09-22-person-memory.md)、
+[欢迎](../../../postgres/docs/data-design/2026-09-22-foundation-welcome.md)。
 
 ## 用户名密码本地入口（2026-09-18）
 
@@ -18,7 +62,9 @@ PHC，数据库仅存会话摘要；8 小时绝对到期，所有 POST 严格校
 账号管理单独要求根范围 `default / organization / identity`
 的有效管理授权，组织台账权与登录本身都不够。开通账号不增加业务权限，不新建 Person。无公开注册、居民入口、微信、企业微信、短信找回或对外发送。
 
-独立页面：`http://127.0.0.1:18876/`。沿用组织关系 / 配置任职与范围 / 基础台账；右上角“个人账号”提供改密与有权管理员的账号管理。普通任职只返回自己或授权范围内的连接，配置操作仍逐项检查管理权。空任职账号可登录、改密、退出，无默认业务权。
+独立页面：`http://127.0.0.1:18876/`。沿用组织关系 / 配置任职与范围 / 基础台账；右上角“个人账号”提供改密与有权管理员的账号管理。
+
+普通任职只返回自己或授权范围内的连接，配置操作仍逐项检查管理权。空任职账号可登录、改密、退出，无默认业务权。
 
 首次创建本任务专用空合成库并初始化（不要替换为业务库）：
 
@@ -52,11 +98,13 @@ python3 -c 'import getpass,subprocess,sys; subprocess.run(sys.argv[1:],input=get
 不再进入 HTTP 身份链；原合成 HTTP 适配只编译进测试。旧数据库使用前须正常追加迁移，不能改 SQLx
 checksum。
 
-设计与回滚：[账号数据设计](../../../postgres/docs/data-design/2026-09-18-workbench-accounts.md)。验证：[本轮登录验收记录](../../../../docs/reports/2026-09-18-workbench-password-login.md)。
+设计与回滚：[账号数据设计](../../../postgres/docs/data-design/2026-09-18-workbench-accounts.md)。
+
+验证：[本轮登录验收记录](../../../../docs/reports/2026-09-18-workbench-password-login.md)。
 
 ## 已实现
 
-### 当前集成状态（2026-09-18 核对）
+### 已有集成基线（2026-09-18 核对）
 
 本模块及本地欢迎流程已于 2026-09-15 通过
 [PR #704](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/704) 合并到
@@ -71,9 +119,9 @@ checksum。
 关联任职与智能体职责，`collaboration_grants`
 保存具体动作、授权来源及确认条件。这些结构已有 SQL 迁移和真实数据库读写代码，历史合成数据库验收不等于生产数据库已迁移。
 
-统一接入尚未完成：`Store::local` 和事务入口仍要求 synthetic 环境；欢迎执行路径仍读取
-`welcome_grants`，不能宣称已全部消费通用
-`collaboration_grants`。真实身份接入、业务执行前统一授权重验及生产数据库状态仍需分别验证。本次只核对源码和文档，没有重跑数据库测试或查询生产库。
+本批本地消费者已通过统一 `collaboration_grants` 重验授权。已绑定共同基础的欢迎目标拒绝旧
+`welcome_grants` 执行路径；未绑定的历史 fixture 保留用于接收与恢复回归。`Store::local`
+与事务入口仍要求 synthetic 环境；生产数据库、真实来源及旧生产工具的切换尚未执行。
 
 - 复用 Person 与来源身份；会话只从当前合成 tenant 的已有清单选择。姓名搜索与具体人员选择分开，不用显示名作唯一键。
 - 岗位、职责、范围分别维护。小管家、技术负责人等预置岗位可编辑、关联职责、停用；现有定义保留历史，只有明确未使用的台账或组织岗位草稿可删除。群绑定由组织管理授权控制。
@@ -157,7 +205,9 @@ A 独立体验实例使用端口 `18873`，tenant 为 `synthetic-collaboration-a
 `QINTOPIA_COLLABORATION_LOCAL_OPERATOR_LINK`
 固定另一已核验合成身份进行越权验收；它不绕过身份、管理授权或命名空间检查，也没有 HTTP 切换操作者入口。不能作为生产登录方案。
 
-进程只绑定 loopback；请求验证 Host、会话 cookie、Origin、JSON 类型和长度，拒绝重复 HTTP 头与编码请求体。没有外部客户端、真实制卡/上传/发送或 PMS 写入口。端口和合成数据库地址必须显式配置；没有生产环境变量回退。
+进程只绑定 loopback；请求验证 Host、会话 cookie、Origin、JSON 类型和长度，拒绝重复 HTTP 头与编码请求体。没有外部客户端、真实制卡/上传/发送或 PMS 写入口。
+
+端口和合成数据库地址必须显式配置；没有生产环境变量回退。
 
 ## 验证
 
@@ -194,10 +244,11 @@ A 设计与验收入口：
 
 ## 后续接入与回滚
 
-F1 未接真实 UI 登录、自然语言入口、合作启动 WorkItem、知识审核或旧训练/发送工具。初始化真实管理员必须另有可信登录与受控 runbook；不能沿用这里的合成操作者方式。Agent
-registry 证明包已登记，不证明真实 Hermes 版本或工具已可运行；客房 Agent 不在清单时不可凭名称启用。
+本批已接通本地密码 UI、受控对话工具、持久 WorkItem、规则和欢迎消费者。初始化真实管理员仍需受控 runbook 与独立真实账号证据，不能沿用合成操作者或合成密码。
 
-F2 实现引导和知识确认；F3 让实际工具入口在最终执行事务中重新验证当前权限、范围绑定版本和实际渠道上限。完整交接中的开放任务转交、旧审批失效与知识衍生处理须在这些消费者接入后验收。当前结束任职只影响本模块的当前授权判断，不能声称旧生产工具已同步撤权。
+岸岸已有最小登记和独立本地工具契约；registry 不证明生产 Hermes Profile 已启用。
+
+共同消费者在实际写入和发送准备前重验现行权限与版本。完整开放任务转交、知识衍生处理和全部旧生产入口迁移仍需后续验收；本地撤权通过不能声称旧生产工具已同步切换授权权威。
 
 本地停止进程即可关闭入口，保留测试库及审计可复验。新增迁移仅加表及岗位职责列，无生产默认授权，不回滚删除历史。未来生产切换仍须单一授权权威、不可回退到宽松旧名单、未知发送先核对。
 

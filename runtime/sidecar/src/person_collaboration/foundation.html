@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>二花 · 本地对话验收</title>
+    <link rel="stylesheet" href="/workbench.css" />
+    <link rel="stylesheet" href="/foundation.css" />
+    <script src="/foundation.js" defer></script>
+  </head>
+  <body>
+    <main id="qt-foundation">
+      <header class="qo-top">
+        <div>
+          <strong>二花 · 本地对话验收</strong>
+          <p class="qo-sub">仅供本批合成账号联调，正式协作入口为日常对话。</p>
+        </div>
+        <div class="pf-header-links">
+          <a href="/">组织与授权</a><a href="/account">切换体验账号</a>
+        </div>
+      </header>
+      <div class="pf-toolbar">
+        <span id="current-person">正在核验登录身份</span>
+        <label for="scope-select"
+          >本次对话范围<select id="scope-select">
+            <option>正在读取……</option>
+          </select></label
+        >
+      </div>
+      <div id="foundation-notice" role="status" aria-live="polite">
+        正在读取当前身份与可用范围……
+      </div>
+      <section id="foundation-main" aria-busy="true" aria-label="与二花的对话">
+        <div id="talk-log" role="log" aria-live="polite">
+          <p class="pf-empty">
+            可以询问本栋情况、交代具体事项，或告诉二花你的交流偏好。
+          </p>
+        </div>
+        <details class="pf-examples">
+          <summary>本地可验证的表达</summary>
+          <div id="talk-samples" aria-label="填入示例对话"></div>
+        </details>
+        <form id="talk-form">
+          <label for="talk-input">想对二花说的话</label>
+          <textarea
+            id="talk-input"
+            rows="3"
+            maxlength="4000"
+            required
+            placeholder="例如：把本栋厨房关闭时间改成晚上十点"
+          ></textarea>
+          <div class="pf-actions">
+            <button class="qo-primary" type="submit">交给二花</button
+            ><span id="model-evidence" class="qo-sub">本地脚本理解 · 持久服务执行</span>
+          </div>
+        </form>
+      </section>
+      <footer>这里仅产生本地测试回执；真实模型、账号与渠道仍待接入验收。</footer>
+    </main>
+  </body>
+</html>
