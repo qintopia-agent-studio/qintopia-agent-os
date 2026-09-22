@@ -18,7 +18,12 @@ function renderOrganization() {
   const seen = new Set();
   function branch(parent, into) {
     for (const p of state.organization.positions
-      .filter((x) => (x.parent_id || null) === parent)
+      .filter(
+        (x) =>
+          (state.organization.positions.some((p) => p.id === x.parent_id)
+            ? x.parent_id
+            : null) === parent
+      )
       .sort((a, b) => {
         const order = (x) =>
           ({ 一栋: 1, 二栋: 2, 三栋: 3 })[labelOf("scopes", x.scope_id)] || 10;
@@ -64,8 +69,10 @@ function renderOrganization() {
   if (!pos) {
     empty(
       detail,
-      "尚无组织岗位。登记岗位不会自动授予权限。",
-      button("新增岗位", () => openPosition())
+      state.catalog_admin
+        ? "尚无组织岗位。登记岗位不会自动授予权限。"
+        : "当前没有可见的有效任职。账号开通不增加业务权限，请联系负责人配置。",
+      ...(state.catalog_admin ? [button("新增岗位", () => openPosition())] : [])
     );
     return;
   }
@@ -81,11 +88,14 @@ function renderOrganization() {
       ),
     "qo-primary"
   );
-  edit.disabled = !active(pos) || (rs.length > 0 && rs.every((r) => r.immutable));
+  edit.disabled =
+    !state.management_available ||
+    !active(pos) ||
+    (rs.length > 0 && rs.every((r) => r.immutable));
   detail.append(
     titleRow(
       `${people.join("、") || "暂缺任职人员"} · ${pos.label}`,
-      `上级岗位：${parent?.label || "无上级岗位"}`,
+      `上级岗位：${parent?.label || (pos.parent_id ? "当前权限未展示上级岗位" : "无上级岗位")}`,
       edit
     )
   );
@@ -126,8 +136,10 @@ function renderOrganization() {
   manage.append(dl);
   detail.append(manage);
   const contact = box("智能体在这项工作中的触达范围");
-  if (!rs.length) empty(contact, "任职后按工作配置群和个人范围。");
-  for (const r of rs) {
+  if (!state.contact_configuration_visible)
+    empty(contact, "联系对象与触达配置仅向有权管理人员展示。");
+  else if (!rs.length) empty(contact, "任职后按工作配置群和个人范围。");
+  for (const r of state.contact_configuration_visible ? rs : []) {
     const a = audienceOf(r),
       row = el("div", undefined, "qo-scope-row");
     row.append(
@@ -165,7 +177,7 @@ function renderOrganization() {
         )
       );
     row.append(sub(r.responsibility));
-    if (!r.immutable) {
+    if (!r.immutable && r.can_manage) {
       row.append(
         actions(
           button("调整 / 换人", () => openWork(pos, r)),
@@ -230,7 +242,7 @@ function renderOrganization() {
       "qo-note"
     )
   );
-  if (active(pos))
+  if (active(pos) && state.management_available)
     powers.append(actions(button("添加另一项协作", () => openWork(pos, null))));
   detail.append(powers);
 }
@@ -243,6 +255,14 @@ function openWork(pos, r) {
 function renderSettings() {
   const target = $("settings");
   target.replaceChildren();
+  if (!state.management_available) {
+    empty(
+      target,
+      "当前账号可查看获授权的工作；配置任职与范围需要另行管理授权。",
+      button("查看组织关系", () => navigate("overview"))
+    );
+    return;
+  }
   const pos = selectedOrg();
   if (!pos || !active(pos)) {
     empty(

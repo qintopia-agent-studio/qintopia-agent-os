@@ -3,7 +3,9 @@ use super::{
     model::Command,
     store::{Actor, Store},
 };
-use crate::local_http::{request, respond};
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+use crate::local_http::request;
+use crate::local_http::respond;
 use anyhow::{ensure, Result};
 use serde_json::{json, Value};
 use tokio::{
@@ -34,13 +36,6 @@ pub async fn run(port: u16, init_fixture: bool) -> Result<()> {
         let actor = store.actor(store.fixture_operator().await?).await?;
         store.organization_fixture(&actor).await?;
     }
-    // The local process owner fixes the session identity. No actor switch/role claim in HTTP.
-    let link = match std::env::var("QINTOPIA_COLLABORATION_LOCAL_OPERATOR_LINK") {
-        Ok(value) => Uuid::parse_str(&value)?,
-        Err(_) => store.fixture_operator().await?,
-    };
-    let actor = store.actor(link).await?;
-    let csrf = Uuid::new_v4().to_string();
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
     println!("Collaboration local settings: http://127.0.0.1:{port}/");
     loop {
@@ -51,7 +46,7 @@ pub async fn run(port: u16, init_fixture: bool) -> Result<()> {
         if !matches!(
             tokio::time::timeout(
                 std::time::Duration::from_secs(5),
-                handle(&mut stream, &store, &actor, port, &csrf)
+                super::auth_server::handle(&mut stream, &store, port)
             )
             .await,
             Ok(Ok(()))
@@ -61,6 +56,7 @@ pub async fn run(port: u16, init_fixture: bool) -> Result<()> {
     }
 }
 
+#[cfg(all(test, feature = "postgres-integration-tests"))]
 pub(super) async fn handle(
     stream: &mut TcpStream,
     store: &Store,
@@ -138,6 +134,15 @@ pub(super) async fn handle(
         )
         .await;
     }
+    dispatch(stream, store, actor, r).await
+}
+
+pub(super) async fn dispatch(
+    stream: &mut TcpStream,
+    store: &Store,
+    actor: &Actor,
+    r: crate::local_http::Request,
+) -> Result<()> {
     let result: Result<Value> = async {
         match (r.method.as_str(), r.path.as_str()) {
             ("GET", "/api/state") => store.state(actor).await,
@@ -195,7 +200,10 @@ pub(super) async fn handle(
         Err(e) => {
             let message = e.to_string();
             let code = match message.as_str() {
-                "configuration_version_conflict"
+                "command_already_processed_refresh_state"
+                | "authentication_required"
+                | "scope_access_denied"
+                | "configuration_version_conflict"
                 | "position_has_children"
                 | "position_history_dimensions_fixed"
                 | "invalid_position_parent"
@@ -250,7 +258,19 @@ pub(super) async fn handle(
                 | "invalid_delegation" => message.as_str(),
                 _ => "configuration_not_saved",
             };
-            (409, json!({"code":code}))
+            (
+                if code == "authentication_required" {
+                    401
+                } else if matches!(
+                    code,
+                    "scope_access_denied" | "management_denied" | "catalog_management_required"
+                ) {
+                    403
+                } else {
+                    409
+                },
+                json!({"code":code}),
+            )
         }
     };
     respond(

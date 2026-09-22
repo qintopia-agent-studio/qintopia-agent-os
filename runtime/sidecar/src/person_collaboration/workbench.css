@@ -489,3 +489,14 @@ pre {
     grid-template-columns: 80px minmax(0, 1fr);
   }
 }
+
+.qo-top a {
+  color: #b6d5c7;
+  white-space: nowrap;
+}
+.qo-top {
+  flex-wrap: wrap;
+}
+.qo-top #sign-out {
+  min-height: 44px;
+}

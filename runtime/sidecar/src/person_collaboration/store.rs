@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
+mod auth;
+pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
 mod organization;
 
@@ -19,6 +21,7 @@ pub struct Actor {
     link: Uuid,
     person: Uuid,
     identity_version: i64,
+    session_hash: Option<String>,
     tenant: String,
 }
 
@@ -59,6 +62,7 @@ impl Store {
             .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
         Ok(Actor {
             link,
+            session_hash: None,
             person: row.get("person_id"),
             identity_version: row.get("version"),
             tenant: self.tenant.clone(),
@@ -67,6 +71,9 @@ impl Store {
 
     async fn verify(&self, tx: &mut Transaction<'_, Postgres>, actor: &Actor) -> Result<()> {
         ensure!(actor.tenant == self.tenant, "tenant_mismatch");
+        if let Some(hash) = &actor.session_hash {
+            self.verify_session(tx, hash, actor.person).await?;
+        }
         let row=sqlx::query("SELECT l.person_id,l.version,l.status,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL FOR SHARE OF l,p")
             .bind(actor.link).bind(&self.tenant).fetch_optional(&mut **tx).await?
             .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
@@ -165,7 +172,11 @@ impl Store {
             .bind(&self.tenant).bind(collaboration).fetch_optional(&mut *tx).await?
             .ok_or_else(|| anyhow::anyhow!("collaboration_not_found"))?;
         ensure!(
-            r.get::<Uuid, _>("person_id") == actor.person
+            (r.get::<Uuid, _>("person_id") == actor.person
+                && (actor.session_hash.is_none()
+                    || p.grants
+                        .iter()
+                        .any(|g| g.collaboration == collaboration && p.effective(g))))
                 || p.can_inspect(
                     actor.person,
                     r.get("scope_id"),
@@ -219,6 +230,9 @@ impl Store {
         if let Some(row)=sqlx::query("SELECT request_hash,result,actor_identity_id FROM qintopia_agent_os.collaboration_commands WHERE id=$1 AND tenant_key=$2")
             .bind(command.operation_id).bind(&self.tenant).fetch_optional(&mut *tx).await? {
             ensure!(row.get::<Uuid,_>("actor_identity_id")==actor.link && row.get::<String,_>("request_hash")==hash,"idempotency_conflict");
+            // Password sessions never replay historical payloads after an authority change.
+            // Caller must refresh current state; the already committed command remains intact.
+            ensure!(actor.session_hash.is_none(), "command_already_processed_refresh_state");
             let mut result:Value=row.get("result");
             result["replayed"]=json!(true);
             return Ok(result);
@@ -640,16 +654,18 @@ impl Store {
                 Self::catalog_admin(&p, actor)
                     || p.grants.iter().any(|g| {
                         g.person == actor.person
-                            && g.action == "manage"
-                            && g.mode == PermissionMode::Autonomous
-                            && g.reviewer.is_none()
+                            && (actor.session_hash.is_some() || g.action == "manage")
                             && p.effective(g)
+                            && (g.action != "manage"
+                                || (g.mode == PermissionMode::Autonomous && g.reviewer.is_none()))
                             && p.in_scope(s.id, g.scope, g.descendants)
                     })
             })
             .map(|s| s.id)
             .collect();
-        ensure!(!visible.is_empty(), "management_denied");
+        if actor.session_hash.is_none() {
+            ensure!(!visible.is_empty(), "management_denied");
+        }
         let people:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(x ORDER BY x->>'label'),'[]') FROM (SELECT DISTINCT jsonb_build_object('id',p.id,'label',coalesce(p.preferred_name,p.display_name),'display_name',p.display_name) x FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE l.namespace=$1 AND l.status='confirmed' AND p.status='active') s")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let scopes:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'parent',parent_scope_id,'label',label,'kind',kind,'version',version,'status',status) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2)")
@@ -664,8 +680,8 @@ impl Store {
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let bindings:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('scope',scope_id,'conversation',conversation_id) ORDER BY scope_id,conversation_id),'[]') FROM qintopia_agent_os.collaboration_scope_bindings WHERE tenant_key=$1 AND scope_id=ANY($2) AND revoked_at IS NULL")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;
-        let grants:Vec<Value>=p.grants.iter().filter(|g|p.can_inspect(actor.person,g.scope,&g.agent,&g.domain)).map(|g|json!({"id":g.id,"collaboration":g.collaboration,"person":g.person,"scope":g.scope,"agent":g.agent,"domain":g.domain,"duty":g.duty,"action":g.action,"mode":g.mode,"reviewer":g.reviewer,"effective":p.effective(g),"revocable":g.active,"management_envelope":if g.action=="manage" && g.mode==PermissionMode::Autonomous{Some(&g.delegation)}else{None}})).collect();
-        let relations: Vec<Value> = relations
+        let grants:Vec<Value>=p.grants.iter().filter(|g|(g.person==actor.person && p.effective(g)) || p.can_inspect(actor.person,g.scope,&g.agent,&g.domain)).map(|g|json!({"id":g.id,"collaboration":g.collaboration,"person":g.person,"scope":g.scope,"agent":g.agent,"domain":g.domain,"duty":g.duty,"action":g.action,"mode":g.mode,"reviewer":g.reviewer,"effective":p.effective(g),"revocable":g.active,"management_envelope":if g.action=="manage" && g.mode==PermissionMode::Autonomous{Some(&g.delegation)}else{None}})).collect();
+        let mut relations: Vec<Value> = relations
             .as_array()
             .into_iter()
             .flatten()
@@ -674,16 +690,35 @@ impl Store {
                     .as_str()
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .is_some_and(|scope| {
-                        p.can_inspect(
-                            actor.person,
-                            scope,
-                            r["agent"].as_str().unwrap_or(""),
-                            r["domain"].as_str().unwrap_or(""),
-                        )
+                        (r["person"] == json!(actor.person)
+                            && p.grants
+                                .iter()
+                                .any(|g| json!(g.collaboration) == r["id"] && p.effective(g)))
+                            || p.can_inspect(
+                                actor.person,
+                                scope,
+                                r["agent"].as_str().unwrap_or(""),
+                                r["domain"].as_str().unwrap_or(""),
+                            )
                     })
             })
             .cloned()
             .collect();
+        for relation in &mut relations {
+            let scope: Uuid = serde_json::from_value(relation["scope"].clone())?;
+            relation["can_manage"] = json!(p.can_inspect(
+                actor.person,
+                scope,
+                relation["agent"].as_str().unwrap_or(""),
+                relation["domain"].as_str().unwrap_or("")
+            ));
+        }
+        let management_available = p.grants.iter().any(|g| {
+            g.person == actor.person
+                && g.action == "manage"
+                && g.mode == PermissionMode::Autonomous
+                && p.effective(g)
+        });
         let root_manager = p.scopes.iter().filter(|s| s.parent.is_none()).any(|s| {
             p.manager(actor.person, s.id, "default", "organization", "manage")
                 .is_some()
@@ -710,8 +745,36 @@ impl Store {
             .as_array_mut()
             .unwrap()
             .retain(|a| relations.iter().any(|r| r["id"] == a["collaboration"]));
+        // Login callers only receive people participating in visible authorized connections.
+        // Legacy fixture adapters keep their explicitly synthetic provisioning picker.
+        let people: Vec<Value> = people
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|person| {
+                actor.session_hash.is_none()
+                    || root_manager
+                    || person["id"] == json!(actor.person)
+                    || relations.iter().any(|r| r["person"] == person["id"])
+                    || grants.iter().any(|g| g["reviewer"] == person["id"])
+            })
+            .cloned()
+            .collect();
+        if actor.session_hash.is_some() && !root_manager {
+            // Full contact/ledger metadata can contain arbitrary Person references. Only managers see it.
+            organization["ledger"] = json!([]);
+            organization["audiences"] = json!([]);
+            organization["positions"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|pos| {
+                    relations
+                        .iter()
+                        .any(|r| r["role"] == pos["role_id"] && r["scope"] == pos["scope_id"])
+                });
+        }
         Ok(
-            json!({"version":version,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents(),"domains":DOMAINS,"actions":ACTIONS,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":Self::catalog_admin(&p,actor),"mode":"synthetic","runtime_connected":false}),
+            json!({"version":version,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents(),"domains":DOMAINS,"actions":ACTIONS,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":Self::catalog_admin(&p,actor),"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"mode":"synthetic","runtime_connected":false}),
         )
     }
 

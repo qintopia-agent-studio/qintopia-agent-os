@@ -4,7 +4,76 @@ Owner：Agent OS /
 sidecar。风险级别：high（身份和授权）。本目录是现有 sidecar 包的子模块，沿用
 `runtime/sidecar/manifest.yaml`；不是新的业务 workflow 或 Agent。当前只提供合成环境入口，无生产登录、runtime 接入或外部执行能力。
 
+## 用户名密码本地入口（2026-09-18）
+
+本轮已实现个人账号登录、退出、修改密码，以及有权管理员为已有 Person 开通、重置和停用账号。入口只使用合成人员与隔离 PostgreSQL；不是生产启用声明。
+
+可信会话在服务端绑定稳定 person_id 和已核验来源身份。密码为 Argon2id
+PHC，数据库仅存会话摘要；8 小时绝对到期，所有 POST 严格校验 Origin 和 JSON。每个请求及业务事务重验账号、会话、身份和现行授权。
+
+密码重置、修改、账号停用撤销全部旧会话；撤销任职或授权后，无需退出即可收回后续访问和操作权。登录按用户名及整个本地入口限流，15 分钟分别最多 5
+/
+60 次尝试；改密最多 5 次。日志与审计不存密码、会话值或哈希。密码会话不会重放历史配置返回载荷，重复保存须重新读取当前状态核对，原提交不会重复执行。
+
+账号管理单独要求根范围 `default / organization / identity`
+的有效管理授权，组织台账权与登录本身都不够。开通账号不增加业务权限，不新建 Person。无公开注册、居民入口、微信、企业微信、短信找回或对外发送。
+
+独立页面：`http://127.0.0.1:18876/`。沿用组织关系 / 配置任职与范围 / 基础台账；右上角“个人账号”提供改密与有权管理员的账号管理。普通任职只返回自己或授权范围内的连接，配置操作仍逐项检查管理权。空任职账号可登录、改密、退出，无默认业务权。
+
+首次创建本任务专用空合成库并初始化（不要替换为业务库）：
+
+```bash
+docker run -d --name agentos-workbench-login-20260918 \
+  -e POSTGRES_DB=qintopia_test -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -p 127.0.0.1:55448:5432 pgvector/pgvector:pg18
+cargo build --locked --manifest-path runtime/sidecar/Cargo.toml
+bash runtime/sidecar/src/person_collaboration/run-login-local.sh --init-fixture
+```
+
+容器或 tenant 已存在时不可重复初始化；后续启动去掉
+`--init-fixture`。该端口仅 loopback，本地数据库不使用真实凭据。历史 `55439` 库保持原样。
+
+首次管理员通过进程所有者 CLI 开通，无 HTTP 初始化接口。先从合成 fixture 的明确
+`source_ref=fixture-person-0`
+和本任务 tenant 查询已有 person_id，不按姓名匹配。CLI 仅允许空账号 tenant 中已具有组织身份管理授权的 Person，不创建任何授权。以下
+`PERSON_UUID` 替换为核对后的 UUID；口令由标准输入传递，不放在命令参数或 Git：
+
+```bash
+export QINTOPIA_COLLABORATION_LOCAL_ENABLE=1
+export QINTOPIA_COLLABORATION_LOCAL_DATABASE_URL=postgres://postgres@127.0.0.1:55448/qintopia_test
+export QINTOPIA_COLLABORATION_LOCAL_TENANT=synthetic-collaboration-login-20260918
+python3 -c 'import getpass,subprocess,sys; subprocess.run(sys.argv[1:],input=getpass.getpass("初始密码（12–128 字符）: ")+"\n",text=True,check=True)' \
+  runtime/sidecar/target/debug/qintopia-message-sidecar \
+  bootstrap-collaboration-account --person PERSON_UUID --username demo-owner
+```
+
+下述旧固定操作者说明保留为历史合成验收记录。当前 `run-collaboration-local`
+一律走密码认证，`LOCAL_OPERATOR_LINK`
+不再进入 HTTP 身份链；原合成 HTTP 适配只编译进测试。旧数据库使用前须正常追加迁移，不能改 SQLx
+checksum。
+
+设计与回滚：[账号数据设计](../../../postgres/docs/data-design/2026-09-18-workbench-accounts.md)。验证：[本轮登录验收记录](../../../../docs/reports/2026-09-18-workbench-password-login.md)。
+
 ## 已实现
+
+### 当前集成状态（2026-09-18 核对）
+
+本模块及本地欢迎流程已于 2026-09-15 通过
+[PR #704](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/704) 合并到
+`master`（合并提交
+`171e227`）。后续从主线创建任务分支，不再依赖旧工作台分支或临时目录。历史验收报告中的分支、未提交和暂停合并描述仅代表报告当时状态。
+
+人员、组织和权限不是一张表：`qintopia_identity.persons`
+保存人员，`source_identity_links` 关联来源身份；`collaboration_positions`
+保存组织岗位及上下级，`collaboration_roles` 和 `collaboration_duties`
+定义岗位与职责，`collaboration_scopes` 定义范围， `collaboration_appointments`
+关联人员、岗位、范围和任期，`agent_collaborations`
+关联任职与智能体职责，`collaboration_grants`
+保存具体动作、授权来源及确认条件。这些结构已有 SQL 迁移和真实数据库读写代码，历史合成数据库验收不等于生产数据库已迁移。
+
+统一接入尚未完成：`Store::local` 和事务入口仍要求 synthetic 环境；欢迎执行路径仍读取
+`welcome_grants`，不能宣称已全部消费通用
+`collaboration_grants`。真实身份接入、业务执行前统一授权重验及生产数据库状态仍需分别验证。本次只核对源码和文档，没有重跑数据库测试或查询生产库。
 
 - 复用 Person 与来源身份；会话只从当前合成 tenant 的已有清单选择。姓名搜索与具体人员选择分开，不用显示名作唯一键。
 - 岗位、职责、范围分别维护。小管家、技术负责人等预置岗位可编辑、关联职责、停用；现有定义保留历史，只有明确未使用的台账或组织岗位草稿可删除。群绑定由组织管理授权控制。
@@ -30,8 +99,22 @@ sidecar。风险级别：high（身份和授权）。本目录是现有 sidecar 
 
 ## 本地启动
 
-确认稿工作台独立体验入口：`http://127.0.0.1:18875/`。固定深色主题，横向导航为“组织关系 / 配置任职与范围 / 基础台账”。工作台本轮实现位于独立分支
-`codex/org-agent-workbench-confirmed`，继承 A 冻结后端；原 A 入口继续保留。
+### 已确认的首期登录方案（实施前记录）
+
+本节保留原始已确认范围与当时状态；本轮实现及验证见上方新入口和验收记录。
+
+用户已选择用户名密码登录。首期仅面向舍长和内部管理人员，不涉及普通居民、公开注册或微信/企业微信扫码接入。
+
+- 管理员为已有 Person 开通个人账号，账号绑定稳定的
+  `person_id`；不另建人员库，不按昵称自动关联。开账号不自动授予业务权限。
+- 登录后由后端根据当前有效身份、任职、职责、范围与授权决定可见内容和可执行动作；前端隐藏入口不能替代后端检查。
+- 使用成熟密码哈希实现，禁止明文存储；具备登录限流、安全会话、退出和管理员重置密码能力。重置密码或停用账号使旧会话失效；业务撤权须在后续访问及执行时生效。
+- 不建设短信找回、多平台账号中心或居民自助注册。以后若增加微信，仅增加账号认证入口，复用同一 Person 与业务授权。
+- 实现需将可信账号会话接入现有授权服务，不能把当前固定合成操作者直接作为真实用户，也不能简单移除 synthetic 门禁。
+
+上述是已确认的实施范围，不是功能完成声明。当前仍使用下述本地合成入口；后续必须验证错误密码、未登录、跨范围访问、账号停用、密码重置及任职撤销后的拒绝行为，并证明拒绝操作没有写入副作用。
+
+确认稿工作台独立体验入口：`http://127.0.0.1:18875/`。固定深色主题，横向导航为“组织关系 / 配置任职与范围 / 基础台账”。实现已集成到主线；下方原 A 入口说明保留用于历史合成场景复验，不要求恢复旧分支。
 
 本轮首次初始化已完成，后续从本工作区启动：
 

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>个人账号 · 秦托邦工作台</title>
+    <link rel="stylesheet" href="/auth.css" />
+    <script src="/auth.js" defer></script>
+  </head>
+  <body data-auth="account">
+    <main class="account-shell">
+      <header class="account-top">
+        <a href="/">← 返回工作台</a><button id="logout" type="button">退出登录</button>
+      </header>
+      <h1>个人账号</h1>
+      <p id="identity" class="muted"></p>
+      <p id="auth-notice" role="status" aria-live="polite"></p>
+      <section class="auth-card">
+        <h2>修改密码</h2>
+        <p class="muted">修改后，所有已登录设备都需要重新登录。</p>
+        <form id="password-form">
+          <label
+            >当前密码<input
+              name="current_password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="128" /></label
+          ><label
+            >新密码<input
+              name="new_password"
+              type="password"
+              autocomplete="new-password"
+              required
+              minlength="12"
+              maxlength="128"
+            /><small>12–128 个字符，建议使用独立的长口令。</small></label
+          ><button class="primary" type="submit">修改并重新登录</button>
+        </form>
+      </section>
+      <section id="account-admin" hidden>
+        <h2>账号管理</h2>
+        <p class="muted">为已有人员开通账号。账号本身不增加业务权限。</p>
+        <div class="auth-card">
+          <h3>开通个人账号</h3>
+          <form id="create-account">
+            <label>已有人员<select name="person" required></select></label
+            ><label
+              >用户名<input
+                name="username"
+                autocomplete="off"
+                required
+                pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,63}"
+                maxlength="64"
+              /><small>3–64 位英文字母、数字、点、下划线或连字符。</small></label
+            ><label
+              >初始密码<input
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                required
+                minlength="12"
+                maxlength="128" /></label
+            ><button class="primary" type="submit">开通账号</button>
+          </form>
+        </div>
+        <div id="accounts"></div>
+      </section>
+      <p class="boundary">本地体验 · 仅含合成人员与隔离测试数据</p>
+    </main>
+  </body>
+</html>

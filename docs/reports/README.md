@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-18 工作台用户名密码本地验收](2026-09-18-workbench-password-login.md)
+
 - [2026-09-17 QiWe reminder time resolution](2026-09-17-qiwe-reminder-time-resolution.md)
 - [2026-09-17 v0.3.1 release restart scope failure](2026-09-17-v031-release-restart-scope.md)
 

@@ -215,7 +215,7 @@ function renderLedgerDetail(item, host) {
         `${pos?.label || labelOf("roles", r.role)} · ${personName(r.person)} · ${agentName(r.agent)}`
       )
     );
-    if (!r.immutable) {
+    if (!r.immutable && r.can_manage) {
       if (pos) row.append(button("配置任职与范围", () => openWork(pos, r)));
       row.append(
         button(ledgerKind === "group" ? "解除群触达" : "解除本项协作", () => {

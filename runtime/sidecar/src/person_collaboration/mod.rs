@@ -1,9 +1,12 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
+pub mod auth_server;
 pub mod local_server;
 mod model;
 mod store;
 pub use model::{Assignment, Change, Command, Delegation};
 pub use store::{Actor, Store};
+#[cfg(test)]
+mod auth_tests;
 #[cfg(test)]
 mod duty_store_tests;
 #[cfg(test)]

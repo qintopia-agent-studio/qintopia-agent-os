@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>登录 · 秦托邦工作台</title>
+    <link rel="stylesheet" href="/auth.css" />
+    <script src="/auth.js" defer></script>
+  </head>
+  <body data-auth="login">
+    <main class="auth-shell">
+      <div class="brand">秦托邦 <span>人员与智能体工作台</span></div>
+      <section class="auth-card">
+        <p class="eyebrow">内部工作台</p>
+        <h1>欢迎回来</h1>
+        <p class="muted">使用管理员为你开通的个人账号登录。</p>
+        <form id="login-form">
+          <label
+            >用户名<input
+              name="username"
+              autocomplete="username"
+              required
+              maxlength="64"
+              autofocus /></label
+          ><label
+            >密码<input
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              maxlength="128" /></label
+          ><button type="submit" class="primary">登录工作台</button>
+        </form>
+        <p id="auth-notice" role="status" aria-live="polite"></p>
+        <p class="help">忘记密码或账号停用，请联系有权管理员。</p>
+      </section>
+      <p class="boundary">本地体验 · 仅含合成人员与隔离测试数据</p>
+    </main>
+  </body>
+</html>

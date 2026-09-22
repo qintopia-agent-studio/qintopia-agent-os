@@ -368,7 +368,11 @@ impl Store {
         }
     }
 
-    async fn known_person(&self, tx: &mut Transaction<'_, Postgres>, id: Uuid) -> Result<()> {
+    pub(super) async fn known_person(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: Uuid,
+    ) -> Result<()> {
         let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE p.id=$1 AND p.status='active' AND l.namespace=$2 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger WHERE tenant_key=$2 AND kind='person' AND object_ref=$1::text AND status<>'active')")
             .bind(id).bind(&self.tenant).fetch_one(&mut **tx).await?;
         ensure!(known, "person_not_verified");
@@ -604,7 +608,11 @@ impl Store {
         let agent: String = row.get("agent_key");
         let domain: String = row.get("domain_key");
         ensure!(
-            row.get::<Uuid, _>("person_id") == actor.person
+            (row.get::<Uuid, _>("person_id") == actor.person
+                && (actor.session_hash.is_none()
+                    || p.grants
+                        .iter()
+                        .any(|g| g.collaboration == id && p.effective(g))))
                 || p.can_inspect(actor.person, scope, &agent, &domain),
             "scope_access_denied"
         );

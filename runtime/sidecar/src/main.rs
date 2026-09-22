@@ -122,6 +122,9 @@ async fn main() -> Result<()> {
         Command::RunCollaborationLocal { port, init_fixture } => {
             person_collaboration::local_server::run(port, init_fixture).await
         }
+        Command::BootstrapCollaborationAccount { person, username } => {
+            person_collaboration::auth_server::bootstrap(person, &username).await
+        }
         Command::RunWelcomeLocal { port } => resident_welcome::local_server::run(port).await,
         Command::Check => health::check(&cli).await,
         Command::Migrate => migrate(&cli).await,
