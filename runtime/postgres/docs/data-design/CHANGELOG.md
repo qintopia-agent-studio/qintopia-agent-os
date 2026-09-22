@@ -1,5 +1,13 @@
 # Data Design Changelog
 
+## `2026-09-18.001`
+
+Migration: `migrations/202609180001_workbench_accounts.sql`.
+Design note: `docs/data-design/2026-09-18-workbench-accounts.md`.
+
+Adds Person-bound accounts, revocable server sessions and login rate limits.
+No business permission is created by account provisioning; synthetic isolation remains.
+
 ## `2026-09-11.001`
 
 Migration: `migrations/202609110001_organization_person_workbench.sql`.

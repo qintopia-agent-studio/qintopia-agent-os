@@ -638,6 +638,121 @@
               "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
             ]
           }
+        },
+        {
+          "id": "person-collaboration/password-http-requires-credentials-and-rejects-csrf-and-actor-claims",
+          "name": "密码登录、退出、未登录和 CSRF 拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/auth_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::auth_tests::password_http_requires_credentials_and_rejects_csrf_and_actor_claims",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/account-lifecycle-revokes-sessions-and-never-grants-business-authority",
+          "name": "账号开通、改密、重置、停用和越权隔离",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/auth_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::auth_tests::account_lifecycle_revokes_sessions_and_never_grants_business_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/password-session-scope-and-live-revocation-deny-reads-and-writes",
+          "name": "会话跨楼栋隔离与任职实时撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/auth_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::auth_tests::password_session_scope_and_live_revocation_deny_reads_and_writes",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/persistent-limits-expiry-and-identity-revocation-fail-closed",
+          "name": "持久登录限流、会话到期和身份变更",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/auth_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::auth_tests::persistent_limits_expiry_and_identity_revocation_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
+        },
+        {
+          "id": "person-collaboration/account-management-requires-current-explicit-identity-authority",
+          "name": "账号管理须独立身份授权，撤销后即时拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/auth_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::auth_tests::account_management_requires_current_explicit_identity_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["人员与组织协作的真实 Store、版本化迁移、授权和事务"],
+            "simulated": [
+              "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
+            ]
+          }
         }
       ]
     },

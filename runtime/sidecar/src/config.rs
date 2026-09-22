@@ -403,6 +403,13 @@ pub enum Command {
         #[arg(long)]
         init_fixture: bool,
     },
+    /// Provision the first login for an explicitly identified existing authorized Person.
+    BootstrapCollaborationAccount {
+        #[arg(long)]
+        person: uuid::Uuid,
+        #[arg(long)]
+        username: String,
+    },
     /// Serve the synthetic welcome workbench/receiver on literal loopback only.
     RunWelcomeLocal {
         #[arg(long, default_value_t = 18870)]

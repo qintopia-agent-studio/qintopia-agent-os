@@ -15,6 +15,8 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-18.001`: [Workbench accounts](2026-09-18-workbench-accounts.md)
+
 - `2026-09-11.001`:
   [Organization and person workbench A](2026-09-11-organization-person-workbench.md)
 

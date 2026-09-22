@@ -9,6 +9,8 @@ let ledgerKind = "agent",
   ledgerSelection = null,
   ledgerSearch = "";
 const errors = {
+  command_already_processed_refresh_state:
+    "该操作已处理，请重新读取当前状态核对；未重复保存。",
   configuration_version_conflict: "配置已被其他窗口更新。重新读取后，核对并再次预览。",
   idempotency_conflict: "这次保存编号已经用于其他内容，请重新预览。",
   management_denied: "当前操作者没有这项工作的管理权。请联系有权负责人。",
@@ -92,6 +94,10 @@ async function api(path, body) {
     data = await response.json();
   } catch {
     throw new Error("服务未返回可核对的结果，请重新读取配置确认状态。");
+  }
+  if (response.status === 401) {
+    location.replace("/login");
+    throw new Error("登录已失效");
   }
   if (!response.ok) {
     const e = new Error(
@@ -285,3 +291,12 @@ readState()
       "暂时无法读取组织配置。可重新读取，或请有权负责人检查访问权限。"
     );
   });
+
+$("sign-out").addEventListener("click", async () => {
+  try {
+    await api("/api/logout", {});
+    location.replace("/login");
+  } catch (e) {
+    onError(e);
+  }
+});

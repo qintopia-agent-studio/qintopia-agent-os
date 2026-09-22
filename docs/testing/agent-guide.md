@@ -93,3 +93,12 @@ pnpm test:report
 ## 用户请求示例
 
 用户说“测试二花早报是否会重复发送”时，Codex 应定位早报文本发送链，找到或新增“重复执行不重复发送”场景，运行 feature 定向测试并打开报告。用户说“运行全部业务测试”时，Codex 应运行默认全量集合，并报告整个已登记集合的状态，而不是只运行最近修改的模块。
+
+## 本地环境与已知总检查阻断
+
+在 macOS 运行前核对 Rust 1.96、项目指定 pnpm、Python 3.12 与 Allure 所需的 Java
+17 路径；系统 Python 3.9 不能替代 QiWe 测试所需的新版解释器。
+
+若含空格的工作目录在 `test-collect-release-deploy-results.mjs` 出现 `results.json`
+缺失，核对收集脚本的 CLI 入口是否错误比较 URL 编码路径；不要通过跳过该断言或更改用户工作目录宣称总检查通过。记录总检查失败，继续运行受影响模块的原生验证。详见
+[2026-09-18 本地检查记录](../reports/2026-09-18-workbench-password-login.md)。
