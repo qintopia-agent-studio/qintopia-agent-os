@@ -1,5 +1,14 @@
 # Data Design Changelog
 
+## `2026-09-23.008`
+
+Migration: `migrations/202609230008_person_rule_lifecycle.sql`.
+Design note: `docs/data-design/2026-09-23-person-rule-lifecycle.md`.
+
+Adds explicit lifecycle state and operation audit for scoped text agreements.
+Managed agreements expire without resurrecting older versions; stop cancels all
+remaining revisions while retaining history and invalidating stale queued writes.
+
 ## `2026-09-23.007`
 
 Migration: `migrations/202609230007_person_stay_building_history_registration.sql`.

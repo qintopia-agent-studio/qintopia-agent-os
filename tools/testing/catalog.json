@@ -1492,6 +1492,153 @@
             "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
             "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
           }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-expiry-never-restores-old-content",
+          "name": "到期不恢复旧内容",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_expiry_never_restores_old_content",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-schedule-replace-cancel-and-stop",
+          "name": "未来替换取消停止与明确重启",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_schedule_replace_cancel_and_stop",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-review-approve-reject-cancel-and-replay",
+          "name": "完整审核拒绝撤销与回执重放",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_review_approve_reject_cancel_and_replay",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-stopped-rule-rejects-older-approved-request",
+          "name": "停止后旧审批不能恢复约定",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_stopped_rule_rejects_older_approved_request",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-scope-conflicts-and-revocation-fail-closed",
+          "name": "跨栋版本冲突与撤权阻断",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_scope_conflicts_and_revocation_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-dialogue-reports-content-preserves-dates-and-replays",
+          "name": "对话查询实际内容保留日期及幂等",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_dialogue_reports_content_preserves_dates_and_replays",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-review-survives-logout-but-not-account-reset",
+          "name": "请求与审批跨退出持久生效但账号停用重置仍失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_review_survives_logout_but_not_account_reset",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
         }
       ]
     },

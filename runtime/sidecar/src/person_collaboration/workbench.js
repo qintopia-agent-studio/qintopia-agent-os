@@ -9,6 +9,21 @@ let ledgerKind = "agent",
   ledgerSelection = null,
   ledgerSearch = "";
 const errors = {
+  request_account_changed_or_disabled:
+    "提交或确认请求的账号已停用或重置，请重新登录后提交新请求。",
+  knowledge_stopped: "约定已停止。请刷新后选择明确的重新启用操作。",
+  scheduled_revision_changed: "这项未来安排已经变更或开始生效，请刷新后重新选择。",
+  invalid_effective_interval: "截止时间须晚于开始时间，且不能已经到期。",
+  invalid_knowledge_content:
+    "请填写约定名称与正文（名称不超过 80 字，正文不超过 2000 字）。",
+  text_rule_required: "这不是可直接编辑的文本约定，请使用它所属的业务入口。",
+  rejected_by_reviewer: "指定确认人已拒绝，未修改约定。",
+  cancelled_by_requester: "请求人已撤销，未修改约定。",
+  authority_changed_or_revoked: "原授权已变化或撤回，请重新核对。",
+  approval_authority_changed_or_revoked: "确认人的授权已变化，原批准不再有效。",
+  designated_confirmation_required: "只有当前指定且授权有效的确认人可以处理。",
+  review_not_pending: "请求已经处理，请刷新查看结果。",
+  use_rule_lifecycle: "文本约定请使用停止整项或取消未来安排。",
   knowledge_version_conflict: "约定已被更新。草稿已保留，请重新读取并核对后再保存。",
   scope_access_denied: "当前账号没有修改这个范围的权限，请联系负责人核对授权。",
   foundation_disabled: "本地业务入口未启用，暂时无法保存。",

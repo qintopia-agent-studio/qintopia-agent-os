@@ -6,7 +6,7 @@ use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-async fn fixture() -> Result<(Store, Actor, Value)> {
+pub(super) async fn fixture() -> Result<(Store, Actor, Value)> {
     let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
     let store = Store::local(
         &database,
@@ -19,7 +19,7 @@ async fn fixture() -> Result<(Store, Actor, Value)> {
     let state = store.state(&owner).await?;
     Ok((store, owner, state))
 }
-fn find(state: &Value, collection: &str, label: &str) -> Uuid {
+pub(super) fn find(state: &Value, collection: &str, label: &str) -> Uuid {
     serde_json::from_value(
         state[collection]
             .as_array()
@@ -31,7 +31,7 @@ fn find(state: &Value, collection: &str, label: &str) -> Uuid {
     )
     .unwrap()
 }
-async fn assign(
+pub(super) async fn assign(
     store: &Store,
     owner: &Actor,
     state: &Value,

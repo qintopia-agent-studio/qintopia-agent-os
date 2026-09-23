@@ -106,6 +106,19 @@ impl Store {
         Ok(())
     }
 
+    // A durable rule request survives logout/expiry, not account reset or disable.
+    pub(super) async fn verify_rule_request_account(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        hash: &str,
+        person: Uuid,
+    ) -> Result<()> {
+        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_sessions s JOIN qintopia_agent_os.collaboration_accounts a ON a.id=s.account_id AND a.tenant_key=s.tenant_key JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE s.token_hash=$1 AND s.tenant_key=$2 AND a.person_id=$3 AND a.status='active' AND s.account_version=a.version AND s.identity_version=l.version AND l.person_id=a.person_id AND l.namespace=a.tenant_key)")
+            .bind(hash).bind(&self.tenant).bind(person).fetch_one(&mut **tx).await?;
+        ensure!(valid, "request_account_changed_or_disabled");
+        Ok(())
+    }
+
     pub(crate) async fn session_actor(&self, token: &str) -> Result<Actor> {
         ensure!(
             token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()),

@@ -106,3 +106,10 @@ pnpm test:report
 若含空格的工作目录在 `test-collect-release-deploy-results.mjs` 出现 `results.json`
 缺失，核对收集脚本的 CLI 入口是否错误比较 URL 编码路径；不要通过跳过该断言或更改用户工作目录宣称总检查通过。记录总检查失败，继续运行受影响模块的原生验证。详见
 [2026-09-18 本地检查记录](../reports/2026-09-18-workbench-password-login.md)。
+
+复用演示库不能代替一次性全仓 PostgreSQL 环境。若 Space 配置测试报告
+`administrator set exceeds the supported ceiling`，先只读核对 `person_memberships` 中
+`qintopia` 的活跃 `owner/admin`
+数量；历史合成 fixtures 可能累积超过 32。保留演示库、权限上限和失败证据，使用新的本机实例与
+`qintopia_test`
+重跑完整数据库 tier，不删除旧成员或放宽权限校验。见[2026-09-23 约定生命周期检查记录](../reports/2026-09-23-rule-lifecycle-local-acceptance.md)。

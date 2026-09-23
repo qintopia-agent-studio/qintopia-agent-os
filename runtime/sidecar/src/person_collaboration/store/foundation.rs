@@ -154,7 +154,7 @@ pub struct KnowledgeVersion {
     pub authority_grant: Uuid,
 }
 
-async fn receipt(
+pub(super) async fn receipt(
     tx: &mut Transaction<'_, Postgres>,
     tenant: &str,
     person: Uuid,
@@ -172,7 +172,7 @@ async fn receipt(
     })
     .transpose()
 }
-async fn record_receipt(
+pub(super) async fn record_receipt(
     tx: &mut Transaction<'_, Postgres>,
     tenant: &str,
     person: Uuid,
@@ -212,7 +212,7 @@ pub async fn put_knowledge_in(
     put_authorized_knowledge(tx, tenant, person, write, authority.grant_id.unwrap()).await
 }
 
-async fn put_authorized_knowledge(
+pub(super) async fn put_authorized_knowledge(
     tx: &mut Transaction<'_, Postgres>,
     tenant: &str,
     person: Uuid,
@@ -248,16 +248,20 @@ async fn put_authorized_knowledge(
     let inherited:bool=sqlx::query_scalar("WITH RECURSIVE ancestors AS (SELECT parent_scope_id FROM qintopia_agent_os.collaboration_scopes WHERE id=$2 AND tenant_key=$1 UNION ALL SELECT s.parent_scope_id FROM qintopia_agent_os.collaboration_scopes s JOIN ancestors a ON a.parent_scope_id=s.id WHERE s.tenant_key=$1) SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items i JOIN ancestors a ON a.parent_scope_id=i.scope_id WHERE i.tenant_key=$1 AND i.knowledge_key=$3 AND i.kind='principle' AND i.shared)")
         .bind(tenant).bind(write.scope).bind(&write.key).fetch_one(&mut **tx).await?;
     ensure!(!inherited, "inherited_principle_cannot_be_overridden");
-    let mut item=sqlx::query("SELECT id,space_id,definition_key,version,kind,shared FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND knowledge_key=$3 AND case_ref IS NOT DISTINCT FROM $4 FOR UPDATE")
+    let mut item=sqlx::query("SELECT id,space_id,definition_key,version,kind,shared,stopped_at FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND knowledge_key=$3 AND case_ref IS NOT DISTINCT FROM $4 FOR UPDATE")
         .bind(tenant).bind(write.scope).bind(&write.key).bind(write.case_ref).fetch_optional(&mut **tx).await?;
     if item.is_none() {
         ensure!(write.expected_version == 0, "knowledge_version_conflict");
         let space:Uuid=sqlx::query_scalar("INSERT INTO qintopia_messages.conversations(tenant_id,platform,chat_id,chat_type,display_name) VALUES($1,'synthetic',$2,'group','受控知识存储（无消息通道）') RETURNING id")
             .bind(tenant).bind(format!("foundation-knowledge-{}",Uuid::new_v4())).fetch_one(&mut **tx).await?;
-        item=Some(sqlx::query("INSERT INTO qintopia_agent_os.collaboration_knowledge_items(tenant_key,scope_id,knowledge_key,case_ref,space_id,definition_key,kind,shared) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,space_id,definition_key,version,kind,shared")
+        item=Some(sqlx::query("INSERT INTO qintopia_agent_os.collaboration_knowledge_items(tenant_key,scope_id,knowledge_key,case_ref,space_id,definition_key,kind,shared) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,space_id,definition_key,version,kind,shared,stopped_at")
             .bind(tenant).bind(write.scope).bind(&write.key).bind(write.case_ref).bind(space).bind(format!("foundation.{}",write.key)).bind(&write.kind).bind(write.shared).fetch_one(&mut **tx).await?);
     }
     let item = item.unwrap();
+    ensure!(
+        item.get::<Option<DateTime<Utc>>, _>("stopped_at").is_none(),
+        "knowledge_stopped"
+    );
     ensure!(
         i64::from(item.get::<i32, _>("version")) == write.expected_version,
         "knowledge_version_conflict"
@@ -318,22 +322,45 @@ pub async fn effective_knowledge_in(
     key: &str,
     case_ref: Option<Uuid>,
 ) -> Result<Option<KnowledgeVersion>> {
-    let row=sqlx::query("SELECT r.id,d.version,i.scope_id,i.knowledge_key,d.definition,r.author_person_id,r.authority_grant_id,r.effective_at,r.effective_until FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.collaboration_knowledge_revisions r ON r.item_id=i.id JOIN qintopia_agent_os.business_definition_versions d ON d.id=r.id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key=$3 AND (i.case_ref IS NULL OR i.case_ref=$4) AND r.withdrawn_at IS NULL AND d.status='shadow' AND r.effective_at<=clock_timestamp() AND (r.effective_until IS NULL OR r.effective_until>clock_timestamp()) ORDER BY (i.case_ref IS NOT NULL) DESC,r.effective_at DESC,d.version DESC LIMIT 1")
+    let row=sqlx::query("SELECT r.id,d.version,i.scope_id,i.knowledge_key,d.definition,r.author_person_id,r.authority_grant_id,r.effective_at,r.effective_until,(r.effective_until IS NULL OR r.effective_until>clock_timestamp()) AS still_effective FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.collaboration_knowledge_revisions r ON r.item_id=i.id JOIN qintopia_agent_os.business_definition_versions d ON d.id=r.id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key=$3 AND (i.case_ref IS NULL OR i.case_ref=$4) AND i.stopped_at IS NULL AND r.withdrawn_at IS NULL AND d.status='shadow' AND r.effective_at<=clock_timestamp() AND (i.lifecycle_managed OR r.effective_until IS NULL OR r.effective_until>clock_timestamp()) ORDER BY (i.case_ref IS NOT NULL) DESC,r.effective_at DESC,d.version DESC LIMIT 1")
         .bind(tenant).bind(scope).bind(key).bind(case_ref).fetch_optional(&mut **tx).await?;
-    Ok(row.map(|r| KnowledgeVersion {
-        id: r.get("id"),
-        version: r.get("version"),
-        scope: r.get("scope_id"),
-        key: r.get("knowledge_key"),
-        content: r.get::<Value, _>("definition")["content"].clone(),
-        author: r.get("author_person_id"),
-        effective_at: r.get("effective_at"),
-        effective_until: r.get("effective_until"),
-        authority_grant: r.get("authority_grant_id"),
-    }))
+    Ok(row
+        .filter(|r| r.get::<bool, _>("still_effective"))
+        .map(|r| KnowledgeVersion {
+            id: r.get("id"),
+            version: r.get("version"),
+            scope: r.get("scope_id"),
+            key: r.get("knowledge_key"),
+            content: r.get::<Value, _>("definition")["content"].clone(),
+            author: r.get("author_person_id"),
+            effective_at: r.get("effective_at"),
+            effective_until: r.get("effective_until"),
+            authority_grant: r.get("authority_grant_id"),
+        }))
 }
 
 impl Store {
+    pub(crate) async fn foundation_existing_turn_input(
+        &self,
+        actor: &Actor,
+        operation: Uuid,
+        hash: &str,
+    ) -> Result<Option<Value>> {
+        let (mut tx, _, _) = self.begin().await?;
+        self.verify(&mut tx, actor).await?;
+        let row=sqlx::query("SELECT person_id,command_hash,command FROM qintopia_agent_os.collaboration_turn_sources WHERE tenant_key=$1 AND message_ref=$2 AND command IS NOT NULL")
+            .bind(&self.tenant).bind(operation).fetch_optional(&mut *tx).await?;
+        row.map(|r| {
+            ensure!(
+                r.get::<Uuid, _>("person_id") == actor.person
+                    && r.get::<Option<String>, _>("command_hash").as_deref() == Some(hash),
+                "idempotency_conflict"
+            );
+            Ok(r.get("command"))
+        })
+        .transpose()
+    }
+
     pub(crate) async fn foundation_turn_input(
         &self,
         actor: &Actor,
@@ -386,8 +413,12 @@ impl Store {
         {
             return Ok(result);
         }
-        let row=sqlx::query("SELECT i.id,i.version,r.withdrawn_at FROM qintopia_agent_os.collaboration_knowledge_revisions r JOIN qintopia_agent_os.collaboration_knowledge_items i ON i.id=r.item_id WHERE r.id=$1 AND i.tenant_key=$2 AND i.scope_id=$3 FOR UPDATE OF i,r")
+        let row=sqlx::query("SELECT i.id,i.version,i.lifecycle_managed,r.withdrawn_at FROM qintopia_agent_os.collaboration_knowledge_revisions r JOIN qintopia_agent_os.collaboration_knowledge_items i ON i.id=r.item_id WHERE r.id=$1 AND i.tenant_key=$2 AND i.scope_id=$3 FOR UPDATE OF i,r")
             .bind(revision).bind(&self.tenant).bind(scope).fetch_one(&mut *tx).await?;
+        ensure!(
+            !row.get::<bool, _>("lifecycle_managed"),
+            "use_rule_lifecycle"
+        );
         ensure!(
             i64::from(row.get::<i32, _>("version")) == expected_version,
             "knowledge_version_conflict"
@@ -438,7 +469,7 @@ impl Store {
         )
     }
 
-    fn read_scope(&self, policy: &Policy, actor: &Actor, scope: Uuid) -> Result<()> {
+    pub(super) fn read_scope(&self, policy: &Policy, actor: &Actor, scope: Uuid) -> Result<()> {
         if let Some((_, _, gateway_scope)) = actor.gateway {
             ensure!(scope == gateway_scope, "gateway_scope_mismatch");
         }
@@ -538,7 +569,7 @@ impl Store {
         clippy::too_many_arguments,
         reason = "exact work identity and authority are retained in one transaction"
     )]
-    async fn queue_work(
+    pub(super) async fn queue_work(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         actor: &Actor,
@@ -677,7 +708,7 @@ impl Store {
         );
         // A later appointment for the same person is new authority, never a
         // resurrection of this approval. Preserve exact identity and grant proof.
-        let proof = json!({"person_id":actor.person,"identity_link_id":actor.link,"identity_version":actor.identity_version,"identity_namespace":actor.identity_namespace,"gateway":actor.gateway,"grant_id":reviewer.grant_id});
+        let proof = json!({"person_id":actor.person,"identity_link_id":actor.link,"identity_version":actor.identity_version,"identity_namespace":actor.identity_namespace,"gateway":actor.gateway,"session_hash":actor.session_hash,"grant_id":reviewer.grant_id});
         sqlx::query("UPDATE qintopia_agent_os.collaboration_work_requests SET approval_person_id=$2,approved_input_hash=request_hash WHERE work_item_id=$1").bind(work).bind(actor.person).execute(&mut *tx).await?;
         sqlx::query("UPDATE qintopia_agent_os.work_items SET status='queued',payload=jsonb_set(payload,'{approval_authority}',$2) WHERE id=$1").bind(work).bind(proof).execute(&mut *tx).await?;
         work_event(
@@ -702,7 +733,7 @@ impl Store {
         }
         ensure!(status == "queued", "review_required");
         let payload: Value = row.get("payload");
-        let actor = Actor {
+        let mut actor = Actor {
             link: row.get("actor_identity_id"),
             person: row.get("person_id"),
             identity_version: row.get("identity_version"),
@@ -717,6 +748,12 @@ impl Store {
             .execute(&mut *tx)
             .await?;
         let result:Result<Value>=async {
+            let lifecycle=capability=="erhua.foundation_rule" && payload["input"].get("lifecycle").is_some();
+            if lifecycle {
+                if let Some(hash)=actor.session_hash.take() {
+                    self.verify_rule_request_account(&mut tx,&hash,actor.person).await?;
+                }
+            }
             self.verify(&mut tx,&actor).await?;
             ensure!(row.get::<String,_>("target_agent")=="erhua","executor_identity_mismatch");
             if capability=="erhua.foundation_rule" {
@@ -727,11 +764,21 @@ impl Store {
                     let proof=&payload["approval_authority"];
                     let reviewer=Actor{link:serde_json::from_value(proof["identity_link_id"].clone())?,person:serde_json::from_value(proof["person_id"].clone())?,identity_version:serde_json::from_value(proof["identity_version"].clone())?,identity_namespace:serde_json::from_value(proof["identity_namespace"].clone())?,gateway:serde_json::from_value(proof["gateway"].clone())?,session_hash:None,tenant:self.tenant.clone()};
                     self.verify(&mut tx,&reviewer).await?;
+                    if lifecycle {
+                        if let Some(hash)=proof["session_hash"].as_str() {
+                            self.verify_rule_request_account(&mut tx,hash,reviewer.person).await?;
+                        }
+                    }
                     let current=authorize_current(&mut tx,&self.tenant,reviewer.person,scope,"erhua","community_service","change_rules").await?;
                     ensure!(Some(reviewer.person)==auth.reviewer && current.status=="autonomous" && current.grant_id==serde_json::from_value::<Option<Uuid>>(proof["grant_id"].clone())?,"approval_authority_changed_or_revoked");
                 }
-                let write:KnowledgeWrite=serde_json::from_value(payload["input"].clone())?;
-                Ok(json!({"knowledge":put_authorized_knowledge(&mut tx,&self.tenant,actor.person,&write,auth.grant_id.unwrap()).await?,"consumer":"erhua"}))
+                if payload["input"].get("lifecycle").is_some() {
+                    let command = serde_json::from_value(payload["input"]["lifecycle"].clone())?;
+                    self.apply_rule_command(&mut tx, &actor, &command, auth.grant_id.unwrap()).await
+                } else {
+                    let write:KnowledgeWrite=serde_json::from_value(payload["input"].clone())?;
+                    Ok(json!({"knowledge":put_authorized_knowledge(&mut tx,&self.tenant,actor.person,&write,auth.grant_id.unwrap()).await?,"consumer":"erhua"}))
+                }
             }else{
                 ensure!(capability=="erhua.foundation_context","unknown_capability");
                 let policy=self.policy(&mut tx,now).await?;
@@ -773,7 +820,7 @@ impl Store {
     }
 }
 
-async fn work_event(
+pub(super) async fn work_event(
     tx: &mut Transaction<'_, Postgres>,
     work: Uuid,
     kind: &str,
@@ -785,7 +832,7 @@ async fn work_event(
     Ok(())
 }
 
-async fn knowledge_context(
+pub(super) async fn knowledge_context(
     tx: &mut Transaction<'_, Postgres>,
     tenant: &str,
     scope: Uuid,

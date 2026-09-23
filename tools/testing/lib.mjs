@@ -710,8 +710,10 @@ export function commandForScenario(feature, scenario, runContext, junitFile) {
   };
   const env = pythonEnvironment({ ...baseEnv });
   if (
-    target.path ===
-    "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs"
+    [
+      "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+      "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+    ].includes(target.path)
   )
     env.QINTOPIA_FOUNDATION_LOCAL_ENABLE = "1";
   if (target.pythonpath?.length)

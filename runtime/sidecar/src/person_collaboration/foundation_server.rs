@@ -1,5 +1,5 @@
 //! Password UI and authenticated local tool broker; no production fallback.
-use super::{Actor, KnowledgeWrite, Store};
+use super::{store::RuleCommand, Actor, KnowledgeWrite, Store};
 use anyhow::{ensure, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -27,6 +27,13 @@ struct DispatchRequest {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct WorkRequest {
+    work_item_id: Uuid,
+    action: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuleDecisionRequest {
+    scope: Uuid,
     work_item_id: Uuid,
     action: String,
 }
@@ -77,6 +84,20 @@ pub(super) async fn dispatch(
         "/api/foundation/context" => {
             let r: ContextRequest = serde_json::from_slice(body)?;
             store.foundation_context(actor, r.scope, &r.topic).await
+        }
+        "/api/foundation/rules" => {
+            let r: ContextRequest = serde_json::from_slice(body)?;
+            store.rule_state(actor, r.scope).await
+        }
+        "/api/foundation/rule/change" => {
+            let r: RuleCommand = serde_json::from_slice(body)?;
+            store.rule_command(actor, &r).await
+        }
+        "/api/foundation/rule/decision" => {
+            let r: RuleDecisionRequest = serde_json::from_slice(body)?;
+            store
+                .rule_work_decide(actor, r.scope, r.work_item_id, &r.action)
+                .await
         }
         "/api/foundation/rule" => {
             let r: KnowledgeWrite = serde_json::from_slice(body)?;
@@ -129,6 +150,13 @@ async fn scripted_turn(store: &Store, actor: &Actor, r: &TalkRequest) -> Result<
     ensure!(r.text.chars().count() <= 4000, "invalid_text");
     let text = r.text.trim().trim_end_matches(['。', '！']);
     let turn_hash = super::digest(&serde_json::to_vec(&json!({"scope":r.scope,"text":text}))?);
+    if text == "把本栋厨房关闭时间改成晚上十点"
+        || ["新增约定：", "修改约定：", "停止约定：", "删除约定："]
+            .iter()
+            .any(|p| text.starts_with(p))
+    {
+        return scripted_rule_turn(store, actor, r, text, &turn_hash).await;
+    }
     if text.contains("欢迎")
         || text.starts_with("批准卡片版本 ")
         || text.starts_with("批准文案版本 ")
@@ -185,50 +213,6 @@ async fn scripted_turn(store: &Store, actor: &Actor, r: &TalkRequest) -> Result<
             "已保存你的回复习惯，下次对话会读取这次选择。"
         };
         (reply.to_string(), saved)
-    } else if text == "把本栋厨房关闭时间改成晚上十点" {
-        let version = context["knowledge_items"]
-            .as_array()
-            .and_then(|a| {
-                a.iter()
-                    .find(|v| v["key"] == "kitchen" && v["scope"] == json!(r.scope))
-            })
-            .and_then(|v| v["latest_version"].as_i64())
-            .unwrap_or(0);
-        let input = store
-            .foundation_turn_input(
-                actor,
-                r.operation_id,
-                &turn_hash,
-                &serde_json::to_value(KnowledgeWrite {
-                    operation_id: r.operation_id,
-                    expected_version: version,
-                    scope: r.scope,
-                    key: "kitchen".into(),
-                    kind: "rule".into(),
-                    shared: false,
-                    case_ref: None,
-                    content: json!({"text":"本栋厨房每天晚上十点关闭。"}),
-                    effective_at: None,
-                    effective_until: None,
-                })?,
-            )
-            .await?;
-        let saved = store
-            .knowledge_save(actor, &serde_json::from_value(input)?, false)
-            .await?;
-        let reply = if saved["replayed"] == true {
-            "这是原规则请求的持久回执，未创建新版本；请以当前有效知识为准。".into()
-        } else if saved["status"] == "saved" {
-            format!(
-                "已保存本栋厨房规则：每天晚上十点关闭。从 {} 起生效。尚无群通知约定。",
-                saved["knowledge"]["effective_at"]
-                    .as_str()
-                    .unwrap_or("本次保存")
-            )
-        } else {
-            "请求已保存，等待当前权限指定的确认人批准；现行规则保持不变。".into()
-        };
-        (reply, saved)
     } else if text == "我觉得十点关可能更好" {
         (
             "这是一个建议，现行规则尚未修改。明确决定后可说“把本栋厨房关闭时间改成晚上十点”。"
@@ -239,6 +223,45 @@ async fn scripted_turn(store: &Store, actor: &Actor, r: &TalkRequest) -> Result<
         (
             "请说明要改为几点关闭。".into(),
             json!({"status":"needs_time","persisted_rule":false}),
+        )
+    } else if text == "本栋有什么规则" {
+        let lines = context["knowledge"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|rule| {
+                rule["content"]["text"].as_str().map(|body| {
+                    format!(
+                        "{}：{}（{}；{}起；{}）",
+                        rule["content"]["title"]
+                            .as_str()
+                            .unwrap_or(if rule["key"] == "kitchen" {
+                                "厨房使用"
+                            } else {
+                                "工作依据"
+                            }),
+                        body,
+                        if rule["scope"] == json!(r.scope) {
+                            "本栋"
+                        } else {
+                            "上层共同约定"
+                        },
+                        rule["effective_at"].as_str().unwrap_or("已生效"),
+                        rule["effective_until"]
+                            .as_str()
+                            .map(|t| format!("截至 {t}"))
+                            .unwrap_or_else(|| "无截止时间".into())
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        (
+            if lines.is_empty() {
+                "当前没有生效的文本约定，可在“我的工作”查看未来安排或新增约定。".into()
+            } else {
+                lines.join("\n")
+            },
+            context,
         )
     } else if [
         "认识我吗",
@@ -269,6 +292,119 @@ async fn scripted_turn(store: &Store, actor: &Actor, r: &TalkRequest) -> Result<
         ("本地合成对话仅支持页面列出的验收例句。任意自然语言理解由 Hermes 的实际模型工具入口验证；此处未调用真实模型。".into(),json!({"status":"unsupported_synthetic_expression"}))
     };
     Ok(json!({"reply":reply,"tool_result":result,"model_evidence":"scripted_local_adapter"}))
+}
+
+async fn scripted_rule_turn(
+    store: &Store,
+    actor: &Actor,
+    r: &TalkRequest,
+    text: &str,
+    hash: &str,
+) -> Result<Value> {
+    use super::store::{RuleCommand, RuleEdit};
+    if let Some(input) = store
+        .foundation_existing_turn_input(actor, r.operation_id, hash)
+        .await?
+    {
+        let saved = store
+            .rule_command(actor, &serde_json::from_value(input)?)
+            .await?;
+        return Ok(
+            json!({"reply":"已核对原请求，未生成新请求；当前约定及审核结果请查看“我的工作”。","tool_result":saved,"model_evidence":"scripted_local_adapter"}),
+        );
+    }
+    let state = store.rule_state(actor, r.scope).await?;
+    let kitchen = text == "把本栋厨房关闭时间改成晚上十点";
+    let create = text.starts_with("新增约定：");
+    let stop = text.starts_with("停止约定：") || text.starts_with("删除约定：");
+    let expression = text.split_once('：').map(|(_, s)| s).unwrap_or("");
+    let (title, body) = if kitchen {
+        ("厨房使用", "本栋厨房每天晚上十点关闭。")
+    } else if stop {
+        (expression.trim(), "")
+    } else {
+        expression
+            .split_once('｜')
+            .map(|(a, b)| (a.trim(), b.trim()))
+            .unwrap_or(("", ""))
+    };
+    if title.is_empty() || (!stop && body.is_empty()) {
+        return Ok(
+            json!({"reply":"请使用“新增约定：名称｜具体内容”“修改约定：名称｜具体内容”或“停止约定：名称”。日期、未来安排和重新启用请在“我的工作”中设置。","tool_result":{"status":"needs_rule_details"},"model_evidence":"scripted_local_adapter"}),
+        );
+    }
+    let candidates = state["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| {
+            if kitchen {
+                i["key"] == "kitchen"
+            } else {
+                i["revisions"][0]["content"]["title"] == title
+                    || (i["key"] == "kitchen" && title == "厨房使用")
+            }
+        })
+        .collect::<Vec<_>>();
+    if (!create && !kitchen && candidates.len() != 1)
+        || candidates.len() > 1
+        || (create && !candidates.is_empty())
+    {
+        return Ok(
+            json!({"reply":"没有找到唯一对应的约定，或同名约定已经存在。请在“我的工作”选择具体约定后操作。","tool_result":{"status":"needs_rule_selection"},"model_evidence":"scripted_local_adapter"}),
+        );
+    }
+    let item = candidates.first().copied().unwrap_or(&Value::Null);
+    let current = &item["current"];
+    if !item.is_null() && current.is_null() && !stop {
+        return Ok(
+            json!({"reply":"这项约定当前未生效。请在“我的工作”核对原截止时间或未来安排，明确重新安排后保存。","tool_result":{"status":"needs_rule_selection"},"model_evidence":"scripted_local_adapter"}),
+        );
+    }
+    // Keep the effective name and expiry when only changing the content.
+    let until = current["effective_until"]
+        .as_str()
+        .map(str::parse)
+        .transpose()?;
+    let command = RuleCommand {
+        operation_id: r.operation_id,
+        scope: r.scope,
+        key: item["key"].as_str().map(str::to_owned).unwrap_or_else(|| {
+            if kitchen {
+                "kitchen".into()
+            } else {
+                format!("local_{}", r.operation_id)
+            }
+        }),
+        expected_version: item["version"].as_i64().unwrap_or(0),
+        change: if stop {
+            RuleEdit::Stop
+        } else {
+            RuleEdit::Save {
+                content: json!({"title":current["content"]["title"].as_str().unwrap_or(title),"text":body}),
+                effective_at: None,
+                effective_until: until,
+                replace_revision: None,
+                reactivate: false,
+            }
+        },
+    };
+    let input = store
+        .foundation_turn_input(actor, r.operation_id, hash, &serde_json::to_value(command)?)
+        .await?;
+    let saved = store
+        .rule_command(actor, &serde_json::from_value(input)?)
+        .await?;
+    let reply = if saved["replayed"] == true {
+        "这是原请求的回执，未再次修改；请查看当前约定状态。"
+    } else if saved["status"] == "saved" {
+        "已保存约定，名称和原截止时间保留；已有未来安排仍保留。可在“我的工作”核对日期与历史。未发送群通知。"
+    } else if saved["status"] == "stopped" {
+        "已停止整项约定，未来安排也已取消。历史记录保留，不再供二花使用。未发送群通知。"
+    } else {
+        "请求已提交，等待指定人确认。可在“我的工作”的约定请求中查看或撤销；批准前不会修改约定。"
+    };
+    Ok(json!({"reply":reply,"tool_result":saved,"model_evidence":"scripted_local_adapter"}))
 }
 
 fn welcome_version_code(artifact: &Value) -> String {

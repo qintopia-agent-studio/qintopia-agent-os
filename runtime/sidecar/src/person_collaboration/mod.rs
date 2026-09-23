@@ -62,3 +62,6 @@ async fn connect_local(input: &str) -> Result<PgPool> {
         .await
         .map_err(|_| anyhow::anyhow!("local_database_unavailable"))
 }
+
+#[cfg(test)]
+mod rule_lifecycle_tests;
