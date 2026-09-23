@@ -83,6 +83,49 @@ async fn scheduled_appointment_never_grants_early_and_invalid_dates_are_atomic()
         .await
         .context("save scheduled connection")?;
     let id: Uuid = serde_json::from_value(saved["change"]["collaboration"].clone())?;
+    store
+        .account_command(
+            &owner,
+            &super::store::AccountCommand::Create {
+                person: a.person,
+                username: "upcoming-member".into(),
+                password: "ontology-fixture-password".into(),
+            },
+        )
+        .await?;
+    let token = store
+        .login(&super::store::Credentials {
+            username: "upcoming-member".into(),
+            password: "ontology-fixture-password".into(),
+        })
+        .await?;
+    let upcoming_member = store.session_actor(&token).await?;
+    let personal = store.state(&upcoming_member).await?;
+    assert_eq!(personal["actor_person"], json!(a.person));
+    assert_eq!(personal["management_available"], false);
+    assert_eq!(personal["catalog_admin"], false);
+    assert_eq!(personal["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(personal["scopes"][0]["id"], json!(a.scope));
+    assert_eq!(personal["relations"].as_array().unwrap().len(), 1);
+    assert_eq!(personal["relations"][0]["id"], json!(id));
+    assert_eq!(personal["relations"][0]["status"], "scheduled");
+    assert_eq!(personal["relations"][0]["can_manage"], false);
+    assert!(personal["grants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|g| g["effective"] == false));
+    assert!(store.ontology(&upcoming_member, a.scope).await.is_err());
+    let forbidden = Command {
+        operation_id: Uuid::new_v4(),
+        expected_version: personal["version"].as_i64().unwrap(),
+        change: Change::EndCollaboration { collaboration: id },
+    };
+    assert!(store
+        .command(&upcoming_member, &forbidden, true)
+        .await
+        .is_err());
+    assert_eq!(personal, store.state(&upcoming_member).await?);
     assert!(
         !store
             .allowed(
@@ -174,6 +217,15 @@ async fn scheduled_appointment_never_grants_early_and_invalid_dates_are_atomic()
         "invalid_term_range"
     );
     assert_eq!(stable, store.state(&owner).await?);
+    apply_change(&store, &owner, Change::EndAppointment { appointment }).await?;
+    let revoked = store.state(&upcoming_member).await?;
+    for collection in ["relations", "scopes", "roles", "duties", "agents", "grants"] {
+        assert_eq!(
+            revoked[collection],
+            json!([]),
+            "{collection} stays scoped after revocation"
+        );
+    }
     Ok(())
 }
 
@@ -438,9 +490,32 @@ async fn ontology_explains_current_inherited_rules_without_other_buildings_or_li
             .to_string(),
         "scope_access_denied"
     );
+    let bounded = store.state(&session).await?;
+    assert_eq!(bounded["organization"]["history"], json!([]));
+    assert_eq!(bounded["catalog_admin"], false);
+    assert!(bounded["scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|s| s["id"] != json!(other_root)));
+    assert_eq!(bounded["organization"]["ledger"], json!([]));
+    let rejected_catalog = Command {
+        operation_id: Uuid::new_v4(),
+        expected_version: bounded["version"].as_i64().unwrap(),
+        change: Change::SaveRole {
+            id: None,
+            label: "不能跨范围新增的岗位".into(),
+            description: String::new(),
+            duty_ids: vec![],
+        },
+    };
     assert_eq!(
-        store.state(&owner).await?["organization"]["history"],
-        json!([])
+        store
+            .command(&session, &rejected_catalog, true)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "catalog_management_required"
     );
     sqlx::query("UPDATE qintopia_agent_os.collaboration_scopes SET status='revoked' WHERE tenant_key=$1 AND id=$2")
         .bind(&store.tenant).bind(other_root).execute(&store.pool).await?;
@@ -458,6 +533,11 @@ async fn ontology_explains_current_inherited_rules_without_other_buildings_or_li
         store.state(&owner).await?["organization"]["history"],
         json!([])
     );
+    let bounded = store.state(&session).await?;
+    assert_eq!(bounded["catalog_admin"], false);
+    assert_eq!(bounded["scopes"].as_array().unwrap().len(), 1);
+    assert_eq!(bounded["scopes"][0]["label"], "秦托邦");
+    assert_eq!(bounded["groups"], json!([]));
     assert!(store
         .ontology(&owner, find(&state, "scopes", "秦托邦"))
         .await
@@ -518,6 +598,63 @@ async fn ontology_http_reuses_password_scope_and_strict_write_boundaries() -> Re
     use super::auth_tests::request;
     use super::store::Credentials;
     let (store, _, state) = fixture().await?;
+    for (username, label, opposite) in
+        [("house-one", "一栋", "二栋"), ("house-two", "二栋", "一栋")]
+    {
+        let session = store
+            .login(&Credentials {
+                username: username.into(),
+                password: "ontology-fixture-password".into(),
+            })
+            .await?;
+        let (status, personal, _) =
+            request(&store, "GET", "/api/state", Some(&session), json!({}), true).await?;
+        assert_eq!(status, 200);
+        assert_eq!(
+            personal["management_available"], false,
+            "{username} must not inherit the earlier manager example"
+        );
+        assert_eq!(personal["catalog_admin"], false);
+        assert!(personal["actor_person"].is_string());
+        assert!(personal["local_dialogue_available"].is_boolean());
+        assert_eq!(personal["scopes"].as_array().unwrap().len(), 1);
+        assert_eq!(personal["scopes"][0]["label"], label);
+        assert_eq!(personal["relations"].as_array().unwrap().len(), 1);
+        assert_eq!(personal["relations"][0]["person"], personal["actor_person"]);
+        assert_eq!(personal["relations"][0]["can_manage"], false);
+        assert_eq!(personal["roles"].as_array().unwrap().len(), 1);
+        assert_eq!(personal["roles"][0]["label"], "舍长");
+        assert_eq!(personal["duties"].as_array().unwrap().len(), 1);
+        assert_eq!(personal["agents"], json!(["erhua"]));
+        assert_eq!(
+            personal["organization"]["positions"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(personal["organization"]["history"], json!([]));
+        assert_eq!(personal["organization"]["ledger"], json!([]));
+        assert!(!personal.to_string().contains(opposite));
+        let cross = format!("/api/ontology?scope={}", find(&state, "scopes", opposite));
+        assert_eq!(
+            request(&store, "GET", &cross, Some(&session), json!({}), true)
+                .await?
+                .0,
+            403
+        );
+        let own_connection = personal["relations"][0]["id"].clone();
+        let command = json!({"operation_id":Uuid::new_v4(),"expected_version":personal["version"],"change":{"kind":"end_collaboration","collaboration":own_connection}});
+        let (status, _, _) =
+            request(&store, "POST", "/api/save", Some(&session), command, true).await?;
+        assert_eq!(
+            status, 403,
+            "ordinary work authority never becomes configuration authority"
+        );
+        let (_, unchanged, _) =
+            request(&store, "GET", "/api/state", Some(&session), json!({}), true).await?;
+        assert_eq!(personal, unchanged);
+    }
     let scope = find(&state, "scopes", "二栋");
     let path = format!("/api/ontology?scope={scope}");
     assert_eq!(

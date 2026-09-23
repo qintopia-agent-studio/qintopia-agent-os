@@ -110,6 +110,32 @@ button:disabled {
   grid-template-columns: 245px minmax(0, 1fr);
   gap: 20px;
 }
+#overview[role="region"] {
+  max-width: 880px;
+  margin: auto;
+}
+.qo-personal-work li {
+  margin: 8px 0;
+}
+.qo-personal-powers {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.qo-personal-powers h4 {
+  margin: 0;
+}
+.qo-work-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 13px;
+  border-radius: 7px;
+  text-decoration: none;
+}
+.qo-work-link:hover {
+  text-decoration: underline;
+}
 .qo-tree {
   padding: 17px;
   background: var(--qo-panel);

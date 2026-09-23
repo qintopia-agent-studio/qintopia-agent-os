@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>秦托邦 · 组织与智能体</title>
+    <title>秦托邦 · 工作空间</title>
     <link rel="stylesheet" href="/workbench.css" />
     <script src="/workbench-view.js" defer></script>
     <script src="/workbench-ontology.js" defer></script>
@@ -15,11 +15,11 @@
   <body>
     <div id="qt-org-scope">
       <header class="qo-top">
-        <div class="qo-brand">秦托邦 · 组织与智能体</div>
+        <div class="qo-brand" id="workspace-title">秦托邦 · 工作空间</div>
         <span class="qo-caption">本地合成资料 · 真实渠道未启用</span
         ><a href="/account">个人账号</a><button id="sign-out">退出</button>
       </header>
-      <nav class="qo-tabs" role="tablist" aria-label="组织管理">
+      <nav class="qo-tabs" role="tablist" aria-label="工作空间" hidden>
         <button
           id="tab-overview"
           role="tab"
@@ -27,7 +27,7 @@
           aria-selected="true"
           data-page="overview"
         >
-          组织关系</button
+          我的工作</button
         ><button
           id="tab-settings"
           role="tab"
@@ -35,6 +35,7 @@
           aria-selected="false"
           tabindex="-1"
           data-page="settings"
+          hidden
         >
           配置任职与范围</button
         ><button
@@ -44,11 +45,12 @@
           aria-selected="false"
           tabindex="-1"
           data-page="ledger"
+          hidden
         >
           基础台账
         </button>
       </nav>
-      <div id="notice" role="status" aria-live="polite">正在读取本地配置……</div>
+      <div id="notice" role="status" aria-live="polite">正在读取你的工作……</div>
       <div id="recovery" class="qo-actions" hidden>
         <button id="reload-state">重新读取配置</button
         ><span class="qo-sub">未保存的输入保留；读取后须重新预览。</span>
@@ -76,7 +78,7 @@
         ></section>
       </main>
       <footer class="qo-foot">
-        <span>登记不自动授予权限；解除关联不删除对象。</span
+        <span id="workspace-boundary">正在读取你的工作范围。</span
         ><span id="result">尚未读取配置</span>
       </footer>
     </div>

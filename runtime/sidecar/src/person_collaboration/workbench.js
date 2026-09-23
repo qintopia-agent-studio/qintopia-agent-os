@@ -152,13 +152,65 @@ async function readState() {
     throw new Error("配置响应不完整，请检查本地服务版本。");
   state = next;
   ontologyRequests.clear();
-  $("result").textContent = `已读取配置版本 ${state.version} · 本地验收`;
+  updateWorkspaceNavigation();
+  $("result").textContent = state.management_available
+    ? `已读取配置版本 ${state.version} · 本地验收`
+    : "已读取最新工作安排";
   $("recovery").hidden = true;
+}
+function availablePage(next) {
+  return (
+    next === "overview" ||
+    (next === "settings" && state.management_available === true) ||
+    (next === "ledger" && state.catalog_admin === true)
+  );
+}
+function updateWorkspaceNavigation() {
+  const manager = state.management_available === true;
+  $("workspace-title").textContent = manager
+    ? "秦托邦 · 组织与智能体"
+    : "秦托邦 · 我的工作";
+  document.title = $("workspace-title").textContent;
+  $("tab-overview").textContent = manager
+    ? state.catalog_admin
+      ? "组织关系"
+      : "我的管理范围"
+    : "我的工作";
+  const navigation = document.querySelector(".qo-tabs");
+  navigation.hidden = !manager;
+  navigation.setAttribute("aria-label", manager ? "工作管理" : "我的工作");
+  $("overview").setAttribute("role", manager ? "tabpanel" : "region");
+  if (manager) {
+    $("overview").setAttribute("aria-labelledby", "tab-overview");
+    $("overview").removeAttribute("aria-label");
+  } else {
+    $("overview").setAttribute("aria-label", "我的工作");
+    $("overview").removeAttribute("aria-labelledby");
+  }
+  for (const item of document.querySelectorAll("[data-page]"))
+    item.hidden = !availablePage(item.dataset.page);
+  $("workspace-boundary").textContent = manager
+    ? "登记不自动授予权限；解除关联不删除对象。"
+    : "这里只展示你的工作；可决定的事项以当前授权为准。";
+  if (!availablePage(page)) {
+    page = "overview";
+    editing = null;
+    discardPreview();
+  }
+  // Revocation must remove stale management forms, not merely hide the tab.
+  for (const id of ["settings", "ledger"])
+    if (!availablePage(id)) $(id).replaceChildren();
+  for (const item of document.querySelectorAll("[data-page]")) {
+    const selected = item.dataset.page === page;
+    item.setAttribute("aria-selected", String(selected));
+    item.tabIndex = selected ? 0 : -1;
+  }
+  for (const id of ["overview", "settings", "ledger"]) $(id).hidden = id !== page;
 }
 function navigate(next) {
   if (busy || !state) return;
   discardPreview();
-  page = next;
+  page = availablePage(next) ? next : "overview";
   document.querySelectorAll("[data-page]").forEach((b) => {
     const yes = b.dataset.page === page;
     b.setAttribute("aria-selected", String(yes));
@@ -264,7 +316,9 @@ async function savePending() {
 document.querySelectorAll("[data-page]").forEach((b) => {
   b.addEventListener("click", () => navigate(b.dataset.page));
   b.addEventListener("keydown", (e) => {
-    const tabs = [...document.querySelectorAll("[data-page]")];
+    const tabs = [...document.querySelectorAll("[data-page]")].filter(
+      (item) => !item.hidden && !item.disabled
+    );
     let i = tabs.indexOf(b);
     if (e.key === "ArrowRight") i = (i + 1) % tabs.length;
     else if (e.key === "ArrowLeft") i = (i + tabs.length - 1) % tabs.length;
@@ -323,10 +377,7 @@ readState()
   .catch((e) => {
     setBusy(false);
     onError(e);
-    empty(
-      $("overview"),
-      "暂时无法读取组织配置。可重新读取，或请有权负责人检查访问权限。"
-    );
+    empty($("overview"), "暂时无法读取你的工作。可重新读取，或请负责人检查访问权限。");
   });
 
 $("sign-out").addEventListener("click", async () => {

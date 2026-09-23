@@ -666,11 +666,38 @@ impl Store {
         let (mut tx, version, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
         let p = self.policy(&mut tx, now).await?;
+        let root_manager = Self::catalog_admin(&p, actor);
+        let configured = self.configured_grant_ids(&mut tx, None).await?;
+        // A person may read their own upcoming assignment before it grants any
+        // authority. The source delegation must still be valid now; no future
+        // grant is inserted into the execution policy.
+        let upcoming: Vec<(Uuid, Uuid)> = if actor.session_hash.is_some() {
+            sqlx::query_as("SELECT c.id,a.scope_id FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_agent_os.collaboration_roles r ON r.id=a.role_id JOIN qintopia_agent_os.collaboration_duties d ON d.id=c.duty_id WHERE c.tenant_key=$1 AND a.person_id=$2 AND c.status='active' AND a.status='active' AND r.status='active' AND d.status='active' AND a.valid_from>$3 AND (a.valid_until IS NULL OR a.valid_until>a.valid_from)")
+                .bind(&self.tenant).bind(actor.person).bind(now).fetch_all(&mut *tx).await?
+        } else {
+            vec![]
+        };
+        let upcoming: Vec<(Uuid, Uuid)> = upcoming
+            .into_iter()
+            .filter(|(id, _)| {
+                p.grants.iter().any(|g| {
+                    if g.collaboration != *id || !configured.contains(&g.id) {
+                        return false;
+                    }
+                    let mut readable = g.clone();
+                    readable.active = true;
+                    p.effective(&readable)
+                })
+            })
+            .collect();
         let visible: Vec<Uuid> = p
             .scopes
             .iter()
             .filter(|s| {
-                Self::catalog_admin(&p, actor)
+                // A global catalog manager also needs archived scopes for
+                // lifecycle maintenance. Partial-root managers remain scoped.
+                root_manager
+                    || upcoming.iter().any(|(_, scope)| *scope == s.id)
                     || p.grants.iter().any(|g| {
                         g.person == actor.person
                             && (actor.session_hash.is_some() || g.action == "manage")
@@ -689,9 +716,9 @@ impl Store {
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let scopes:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'parent',parent_scope_id,'label',label,'kind',kind,'version',version,'status',status) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2)")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;
-        let roles:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'available_actions',available_actions,'status',status,'version',version,'duty_ids',ARRAY(SELECT duty_id FROM qintopia_agent_os.collaboration_role_duties rd WHERE rd.tenant_key=r.tenant_key AND rd.role_id=r.id ORDER BY duty_id)) ORDER BY label,id),'[]') FROM qintopia_agent_os.collaboration_roles r WHERE tenant_key=$1")
+        let mut roles:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'available_actions',available_actions,'status',status,'version',version,'duty_ids',ARRAY(SELECT duty_id FROM qintopia_agent_os.collaboration_role_duties rd WHERE rd.tenant_key=r.tenant_key AND rd.role_id=r.id ORDER BY duty_id)) ORDER BY label,id),'[]') FROM qintopia_agent_os.collaboration_roles r WHERE tenant_key=$1")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
-        let duties:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'domain',domain_key,'available_actions',available_actions,'status',status,'version',version) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_duties WHERE tenant_key=$1")
+        let mut duties:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'domain',domain_key,'available_actions',available_actions,'status',status,'version',version) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_duties WHERE tenant_key=$1")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let relations:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',c.id,'appointment',a.id,'person',a.person_id,'role',a.role_id,'scope',a.scope_id,'agent',c.agent_key,'domain',c.domain_key,'duty',c.duty_id,'version',c.version,'replaces',c.replaces_id,'immutable',EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_grants g WHERE g.collaboration_id=c.id AND g.parent_grant_id IS NULL),'responsibility',c.responsibility_text,'status',CASE WHEN c.status<>'active' THEN c.status WHEN a.status<>'active' THEN a.status WHEN a.valid_until<=$3 THEN 'expired' WHEN a.valid_from>$3 THEN 'scheduled' ELSE 'active' END,'valid_from',a.valid_from,'valid_until',a.valid_until,'proxy_for',a.proxy_for_id) ORDER BY c.created_at),'[]') FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND a.scope_id=ANY($2)")
             .bind(&self.tenant).bind(&visible).bind(now).fetch_one(&mut *tx).await?;
@@ -699,8 +726,7 @@ impl Store {
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let bindings:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('scope',scope_id,'conversation',conversation_id) ORDER BY scope_id,conversation_id),'[]') FROM qintopia_agent_os.collaboration_scope_bindings WHERE tenant_key=$1 AND scope_id=ANY($2) AND revoked_at IS NULL")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;
-        let configured = self.configured_grant_ids(&mut tx, None).await?;
-        let grants:Vec<Value>=p.grants.iter().filter(|g|(g.person==actor.person && p.effective(g)) || p.can_inspect(actor.person,g.scope,&g.agent,&g.domain)).map(|g|json!({"id":g.id,"collaboration":g.collaboration,"person":g.person,"scope":g.scope,"agent":g.agent,"domain":g.domain,"duty":g.duty,"action":g.action,"mode":g.mode,"reviewer":g.reviewer,"effective":p.effective(g),"revocable":configured.contains(&g.id),"management_envelope":if g.action=="manage" && g.mode==PermissionMode::Autonomous{Some(&g.delegation)}else{None}})).collect();
+        let grants:Vec<Value>=p.grants.iter().filter(|g|(g.person==actor.person && (p.effective(g) || (configured.contains(&g.id) && upcoming.iter().any(|(id,_)|*id==g.collaboration)))) || p.can_inspect(actor.person,g.scope,&g.agent,&g.domain)).map(|g|json!({"id":g.id,"collaboration":g.collaboration,"person":g.person,"scope":g.scope,"agent":g.agent,"domain":g.domain,"duty":g.duty,"action":g.action,"mode":g.mode,"reviewer":g.reviewer,"effective":p.effective(g),"revocable":configured.contains(&g.id),"management_envelope":if g.action=="manage" && g.mode==PermissionMode::Autonomous{Some(&g.delegation)}else{None}})).collect();
         let mut relations: Vec<Value> = relations
             .as_array()
             .into_iter()
@@ -711,9 +737,10 @@ impl Store {
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .is_some_and(|scope| {
                         (r["person"] == json!(actor.person)
-                            && p.grants
-                                .iter()
-                                .any(|g| json!(g.collaboration) == r["id"] && p.effective(g)))
+                            && (upcoming.iter().any(|(id, _)| json!(id) == r["id"])
+                                || p.grants
+                                    .iter()
+                                    .any(|g| json!(g.collaboration) == r["id"] && p.effective(g))))
                             || p.can_inspect(
                                 actor.person,
                                 scope,
@@ -739,17 +766,9 @@ impl Store {
                 && g.mode == PermissionMode::Autonomous
                 && p.effective(g)
         });
-        let root_manager = p.scopes.iter().filter(|s| s.parent.is_none()).any(|s| {
-            p.manager(actor.person, s.id, "default", "organization", "manage")
-                .is_some()
-        });
         // History contains whole-tenant snapshots. A manager of one root or of
         // a root without descendants cannot use it to inspect other scopes.
-        let history_visible = root_manager
-            && p.scopes.iter().filter(|s| s.active).all(|s| {
-                p.manager(actor.person, s.id, "default", "organization", "manage")
-                    .is_some()
-            });
+        let history_visible = root_manager;
         let identity_history_visible = history_visible
             && p.scopes.iter().filter(|s| s.active).all(|s| {
                 p.manager(actor.person, s.id, "default", "organization", "identity")
@@ -811,8 +830,37 @@ impl Store {
                         .any(|r| r["role"] == pos["role_id"] && r["scope"] == pos["scope_id"])
                 });
         }
+        let personal = actor.session_hash.is_some() && !management_available;
+        if personal {
+            roles
+                .as_array_mut()
+                .unwrap()
+                .retain(|role| relations.iter().any(|r| r["role"] == role["id"]));
+            duties
+                .as_array_mut()
+                .unwrap()
+                .retain(|duty| relations.iter().any(|r| r["duty"] == duty["id"]));
+            for role in roles.as_array_mut().unwrap() {
+                role["duty_ids"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|id| duties.as_array().unwrap().iter().any(|d| d["id"] == *id));
+            }
+        }
+        let agents: Vec<_> = agents()
+            .into_iter()
+            .filter(|key| !personal || relations.iter().any(|r| r["agent"] == *key))
+            .collect();
+        let domains: Vec<_> = DOMAINS
+            .iter()
+            .filter(|key| !personal || relations.iter().any(|r| r["domain"] == **key))
+            .collect();
+        let actions: Vec<_> = ACTIONS
+            .iter()
+            .filter(|key| !personal || grants.iter().any(|g| g["action"] == **key))
+            .collect();
         Ok(
-            json!({"version":version,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents(),"domains":DOMAINS,"actions":ACTIONS,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":Self::catalog_admin(&p,actor),"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"mode":"synthetic","runtime_connected":false}),
+            json!({"version":version,"actor_person":actor.person,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":"synthetic","runtime_connected":false}),
         )
     }
 

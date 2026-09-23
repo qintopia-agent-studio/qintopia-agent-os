@@ -910,12 +910,15 @@ impl Store {
             Ok(serde_json::from_value(v["id"].clone())?)
         };
         let root = get("scopes", "秦托邦")?;
-        // Retire only the original synthetic demonstration connections before assigning this batch's subjects.
+        // This initializer runs once on the explicit empty synthetic fixture.
+        // End every replaceable demonstration connection, including the root
+        // community-management example held by the future house-one person.
+        // Keep the immutable bootstrap owner's authority and preserve history.
         for relation in state["relations"]
             .as_array()
             .into_iter()
             .flatten()
-            .filter(|r| r["agent"] == "erhua" && r["domain"] == "community_service")
+            .filter(|r| r["immutable"] == false && r["status"] == "active")
         {
             let version = self.state(actor).await?["version"].as_i64().unwrap();
             self.command(

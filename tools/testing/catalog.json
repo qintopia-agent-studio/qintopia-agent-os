@@ -1201,15 +1201,99 @@
         },
         {
           "id": "person-collaboration/ontology-ui",
-          "name": "组织界面的约束、任期、变更与登录边界",
+          "name": "组织界面的约束、任期、变更与登录边界 · scheduled_appointment_never_grants_early_and_invalid_dates_are_atomic",
           "aliases": [],
           "executor": "cargo",
           "target": {
             "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
             "manifest": "runtime/sidecar/Cargo.toml",
             "features": ["postgres-integration-tests"],
-            "filter": "person_collaboration::ontology_ui_tests::",
-            "args": ["--", "--include-ignored"],
+            "filter": "person_collaboration::ontology_ui_tests::scheduled_appointment_never_grants_early_and_invalid_dates_are_atomic",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/scheduled-permissions-remain-editable-and-revocable-without-early-authority",
+          "name": "组织界面的约束、任期、变更与登录边界 · scheduled_permissions_remain_editable_and_revocable_without_early_authority",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::scheduled_permissions_remain_editable_and_revocable_without_early_authority",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/ontology-explains-current-inherited-rules-without-other-buildings-or-live-claims",
+          "name": "组织界面的约束、任期、变更与登录边界 · ontology_explains_current_inherited_rules_without_other_buildings_or_live_claims",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::ontology_explains_current_inherited_rules_without_other_buildings_or_live_claims",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/history-records-actor-change-and-revocation-effect-without-mutating-on-preview",
+          "name": "组织界面的约束、任期、变更与登录边界 · history_records_actor_change_and_revocation_effect_without_mutating_on_preview",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::history_records_actor_change_and_revocation_effect_without_mutating_on_preview",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/ontology-http-reuses-password-scope-and-strict-write-boundaries",
+          "name": "组织界面的约束、任期、变更与登录边界 · ontology_http_reuses_password_scope_and_strict_write_boundaries",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::ontology_http_reuses_password_scope_and_strict_write_boundaries",
+            "args": ["--", "--include-ignored", "--exact"],
             "count_strategy": "cargo"
           },
           "requires": ["docker", "postgres", "rust", "python"],
@@ -1222,15 +1306,120 @@
         },
         {
           "id": "person-collaboration/identity-ui",
-          "name": "人员核验、撤销及旧权限不恢复",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_draft_review_is_explicit_preview_is_pure_and_receipt_is_idempotent",
           "aliases": [],
           "executor": "cargo",
           "target": {
             "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
             "manifest": "runtime/sidecar/Cargo.toml",
             "features": ["postgres-integration-tests"],
-            "filter": "person_collaboration::identity_ui_tests::",
-            "args": ["--", "--include-ignored"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_draft_review_is_explicit_preview_is_pure_and_receipt_is_idempotent",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-requires-password-session-and-root-identity-management",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_requires_password_session_and_root_identity_management",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_requires_password_session_and_root_identity_management",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-rejects-stale-configuration-link-and-gateway-versions",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_rejects_stale_configuration_link_and_gateway_versions",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_rejects_stale_configuration_link_and_gateway_versions",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-source-candidates-reject-shared-unobserved-unregistered-and-cross-tenant",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_source_candidates_reject_shared_unobserved_unregistered_and_cross_tenant",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_source_candidates_reject_shared_unobserved_unregistered_and_cross_tenant",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-revocation-ends-sessions-and-old-delegated-authority-cannot-revive",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_revocation_ends_sessions_and_old_delegated_authority_cannot_revive",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_revocation_ends_sessions_and_old_delegated_authority_cannot_revive",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-legacy-welcome-revocation-invalidates-reviewed-projection-and-authority",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_legacy_welcome_revocation_invalidates_reviewed_projection_and_authority",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_legacy_welcome_revocation_invalidates_reviewed_projection_and_authority",
+            "args": ["--", "--include-ignored", "--exact"],
             "count_strategy": "cargo"
           },
           "requires": ["docker", "postgres", "rust", "python"],
@@ -1243,15 +1432,57 @@
         },
         {
           "id": "person-collaboration/dynamic-audience",
-          "name": "动态在住与过往人员范围",
+          "name": "动态在住与过往人员范围 · ontology_audience_current_past_move_deduplicate_and_readonly",
           "aliases": [],
           "executor": "cargo",
           "target": {
             "path": "runtime/sidecar/src/person_collaboration/store/audience_tests.rs",
             "manifest": "runtime/sidecar/Cargo.toml",
             "features": ["postgres-integration-tests"],
-            "filter": "person_collaboration::store::organization::audience_tests::",
-            "args": ["--", "--include-ignored"],
+            "filter": "person_collaboration::store::organization::audience_tests::ontology_audience_current_past_move_deduplicate_and_readonly",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/dynamic-audience/ontology-audience-uncertain-identity-and-invalid-projections-fail-closed",
+          "name": "动态在住与过往人员范围 · ontology_audience_uncertain_identity_and_invalid_projections_fail_closed",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/store/audience_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::store::organization::audience_tests::ontology_audience_uncertain_identity_and_invalid_projections_fail_closed",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/dynamic-audience/ontology-audience-scope-gateway-and-configuration-authority-are-rechecked",
+          "name": "动态在住与过往人员范围 · ontology_audience_scope_gateway_and_configuration_authority_are_rechecked",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/store/audience_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::store::organization::audience_tests::ontology_audience_scope_gateway_and_configuration_authority_are_rechecked",
+            "args": ["--", "--include-ignored", "--exact"],
             "count_strategy": "cargo"
           },
           "requires": ["docker", "postgres", "rust", "python"],

@@ -6,6 +6,10 @@ function selectedOrg() {
   );
 }
 function renderOrganization() {
+  if (!state.management_available) {
+    renderPersonalWork();
+    return;
+  }
   const target = $("overview");
   target.replaceChildren();
   const layout = el("div", undefined, "qo-layout"),
@@ -281,6 +285,96 @@ function renderOrganization() {
   if (active(pos) && state.management_available)
     powers.append(actions(button("添加另一项协作", () => openWork(pos, null))));
   detail.append(powers, constraintsPanel(pos.scope_id));
+}
+function renderPersonalWork() {
+  const target = $("overview");
+  target.replaceChildren();
+  const own = state.relations.filter(
+    (r) => r.person === state.actor_person && ["active", "scheduled"].includes(r.status)
+  );
+  const name = state.actor_person ? personName(state.actor_person) : "当前账号";
+  target.append(titleRow("我的工作", `${name}，这里只显示与你有关的工作。`));
+  if (!own.length) {
+    empty(
+      target,
+      "你目前没有已安排的工作。请联系负责人安排岗位和范围；账号开通后不会自动获得工作权限。"
+    );
+    return;
+  }
+  for (const relation of own) {
+    const work = box(
+      `${labelOf("scopes", relation.scope)} · ${labelOf("roles", relation.role)}`
+    );
+    work.classList.add("qo-personal-work");
+    work.append(
+      el("p", relation.responsibility || labelOf("duties", relation.duty)),
+      sub(`与你协作：${agentName(relation.agent)}`)
+    );
+    if (relation.status === "scheduled") {
+      work.append(
+        el("p", `尚未开始 · ${displayTime(relation.valid_from)}起任职`, "qo-note"),
+        sub("到开始时间并且授权仍有效后，才能办理这项工作。")
+      );
+      target.append(work);
+      continue;
+    }
+    const grants = state.grants.filter(
+      (g) => g.collaboration === relation.id && g.effective && g.mode !== "denied"
+    );
+    const summary = el("div", undefined, "qo-personal-powers");
+    summary.append(
+      el("h4", "我能决定什么"),
+      helpTip(
+        "已有决定权",
+        "这些权限由负责人授予。你可以在权限内安排工作习惯和具体事项；查看此页不会新增权限，也不能把工作范围扩大到其他楼栋。"
+      )
+    );
+    const list = el("ul");
+    for (const grant of grants)
+      list.append(
+        el(
+          "li",
+          `${text(grant.action)}${grant.mode === "confirmation" ? `（需${personName(grant.reviewer)}确认）` : ""}`
+        )
+      );
+    if (grants.length) work.append(summary, list);
+    else work.append(sub("当前没有可用的决定权，请联系负责人核对安排。"));
+    const more = details("查看任期与工作依据", sub(termSummary(relation)));
+    more.addEventListener("toggle", () => {
+      if (more.open && !more.dataset.loaded) {
+        more.dataset.loaded = "true";
+        more.append(constraintsPanel(relation.scope));
+      }
+    });
+    work.append(more);
+    target.append(work);
+  }
+  const next = box("怎样开始工作");
+  next.append(
+    el(
+      "p",
+      "日常事项直接告诉与你协作的智能体。它应说明处理结果，或告诉你还缺什么条件。"
+    ),
+    sub("当前为本地合成体验，真实对话渠道尚未启用。")
+  );
+  if (own.some((r) => r.agent === "erhua" && r.status === "active"))
+    next.append(
+      sub(
+        "例如，对二花说“本栋有什么规则”或“把本栋厨房关闭时间改成晚上十点”。是否可以修改，仍按上面的决定权核验。"
+      )
+    );
+  if (
+    state.local_dialogue_available &&
+    own.some((r) => r.agent === "erhua" && r.status === "active")
+  ) {
+    const link = el("a", "体验与二花对话（本地）", "qo-primary qo-work-link");
+    link.href = "/foundation";
+    next.append(
+      actions(link),
+      sub("此入口用于本批合成体验，使用固定例句理解，只产生本地回执。")
+    );
+  }
+  target.append(next);
 }
 function openWork(pos, r) {
   selectedPosition = pos.id;
