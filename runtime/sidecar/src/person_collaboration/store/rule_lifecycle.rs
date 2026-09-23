@@ -13,6 +13,8 @@ pub(crate) struct RuleCommand {
     pub operation_id: Uuid,
     pub scope: Uuid,
     pub key: String,
+    #[serde(default = "rule_kind", skip_serializing_if = "is_rule")]
+    pub kind: String,
     pub expected_version: i64,
     pub change: RuleEdit,
 }
@@ -33,7 +35,29 @@ pub(crate) enum RuleEdit {
         revision_id: Uuid,
     },
 }
+fn is_rule(kind: &str) -> bool {
+    kind == "rule"
+}
+fn rule_kind() -> String {
+    "rule".into()
+}
+pub(super) fn input_action(input: &Value) -> &'static str {
+    match input.get("lifecycle").unwrap_or(input)["kind"]
+        .as_str()
+        .unwrap_or("rule")
+    {
+        "rule" | "principle" => "change_rules",
+        _ => "confirm_knowledge",
+    }
+}
 impl RuleCommand {
+    pub(super) fn permission(&self) -> &'static str {
+        if self.kind == "rule" {
+            "change_rules"
+        } else {
+            "confirm_knowledge"
+        }
+    }
     fn action(&self) -> &'static str {
         match self.change {
             RuleEdit::Save { .. } => "save",
@@ -61,7 +85,7 @@ async fn snapshot(
     scope: Uuid,
     key: &str,
 ) -> Result<Value> {
-    Ok(sqlx::query_scalar::<_, Option<Value>>("SELECT jsonb_build_object('key',i.knowledge_key,'version',i.version,'stopped_at',i.stopped_at,'revisions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'version',d.version,'content',d.definition->'content','effective_at',r.effective_at,'effective_until',r.effective_until,'withdrawn_at',r.withdrawn_at,'author',coalesce(p.preferred_name,p.display_name)) ORDER BY d.version DESC) FROM qintopia_agent_os.collaboration_knowledge_revisions r JOIN qintopia_agent_os.business_definition_versions d ON d.id=r.id LEFT JOIN qintopia_identity.persons p ON p.id=r.author_person_id WHERE r.item_id=i.id),'[]'::jsonb)) FROM qintopia_agent_os.collaboration_knowledge_items i WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key=$3 AND i.case_ref IS NULL")
+    Ok(sqlx::query_scalar::<_, Option<Value>>("SELECT jsonb_build_object('key',i.knowledge_key,'kind',i.kind,'version',i.version,'stopped_at',i.stopped_at,'revisions',COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id,'version',d.version,'content',d.definition->'content','effective_at',r.effective_at,'effective_until',r.effective_until,'withdrawn_at',r.withdrawn_at,'author',coalesce(p.preferred_name,p.display_name)) ORDER BY d.version DESC) FROM qintopia_agent_os.collaboration_knowledge_revisions r JOIN qintopia_agent_os.business_definition_versions d ON d.id=r.id LEFT JOIN qintopia_identity.persons p ON p.id=r.author_person_id WHERE r.item_id=i.id),'[]'::jsonb)) FROM qintopia_agent_os.collaboration_knowledge_items i WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key=$3 AND i.case_ref IS NULL")
         .bind(tenant).bind(scope).bind(key).fetch_optional(&mut **tx).await?.flatten().unwrap_or(Value::Null))
 }
 async fn validate(
@@ -78,6 +102,10 @@ async fn validate(
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b"_.-".contains(&c)),
         "invalid_knowledge_key"
     );
+    ensure!(
+        ["rule", "fact", "culture", "experience"].contains(&cmd.kind.as_str()),
+        "invalid_knowledge_kind"
+    );
     let inherited:bool=sqlx::query_scalar("WITH RECURSIVE ancestors AS (SELECT parent_scope_id FROM qintopia_agent_os.collaboration_scopes WHERE id=$2 AND tenant_key=$1 UNION ALL SELECT s.parent_scope_id FROM qintopia_agent_os.collaboration_scopes s JOIN ancestors a ON a.parent_scope_id=s.id WHERE s.tenant_key=$1) SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items i JOIN ancestors a ON a.parent_scope_id=i.scope_id WHERE i.tenant_key=$1 AND i.knowledge_key=$3 AND i.kind='principle' AND i.shared)")
         .bind(tenant).bind(cmd.scope).bind(&cmd.key).fetch_one(&mut **tx).await?;
     ensure!(!inherited, "inherited_principle_cannot_be_overridden");
@@ -90,7 +118,7 @@ async fn validate(
         .fetch_one(&mut **tx)
         .await?;
     if !before.is_null() {
-        let supported: bool = sqlx::query_scalar("SELECT kind='rule' AND NOT shared FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND knowledge_key=$3 AND case_ref IS NULL").bind(tenant).bind(cmd.scope).bind(&cmd.key).fetch_one(&mut **tx).await?;
+        let supported: bool = sqlx::query_scalar("SELECT kind=$4 AND NOT shared FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND knowledge_key=$3 AND case_ref IS NULL").bind(tenant).bind(cmd.scope).bind(&cmd.key).bind(&cmd.kind).fetch_one(&mut **tx).await?;
         let content = &before["revisions"][0]["content"];
         ensure!(
             supported
@@ -125,7 +153,7 @@ async fn validate(
                     .is_some_and(|o| o.keys().all(|k| ["text", "title"].contains(&k.as_str())))
                     && content["text"]
                         .as_str()
-                        .is_some_and(|v| !v.trim().is_empty() && v.chars().count() <= 2000)
+                        .is_some_and(|v| !v.trim().is_empty() && v.len() <= 12000)
                     && content["title"]
                         .as_str()
                         .is_some_and(|v| !v.trim().is_empty() && v.chars().count() <= 80),
@@ -167,7 +195,7 @@ impl Store {
             cmd.scope,
             "erhua",
             "community_service",
-            "change_rules",
+            cmd.permission(),
         )
         .await?;
         ensure!(auth.status != "denied", "scope_access_denied");
@@ -249,7 +277,7 @@ impl Store {
                     expected_version: cmd.expected_version,
                     scope: cmd.scope,
                     key: cmd.key.clone(),
-                    kind: "rule".into(),
+                    kind: cmd.kind.clone(),
                     shared: false,
                     case_ref: None,
                     content: content.clone(),
@@ -301,9 +329,20 @@ impl Store {
             "change_rules",
         )
         .await?;
-        let reviewer_name = reviewer_name(&mut tx, auth.reviewer).await?;
-        let context = json!({"scope":scope,"knowledge":rules,"permissions":[{"action":"change_rules","decision":{"status":auth.status,"reviewer":auth.reviewer,"reviewer_name":reviewer_name}}]});
-        let keys:Vec<String>=sqlx::query_scalar("SELECT knowledge_key FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND case_ref IS NULL AND kind='rule' AND NOT shared ORDER BY knowledge_key").bind(&self.tenant).bind(scope).fetch_all(&mut *tx).await?;
+        let rule_reviewer_name = reviewer_name(&mut tx, auth.reviewer).await?;
+        let knowledge_auth = authorize_current(
+            &mut tx,
+            &self.tenant,
+            actor.person,
+            scope,
+            "erhua",
+            "community_service",
+            "confirm_knowledge",
+        )
+        .await?;
+        let knowledge_reviewer = reviewer_name(&mut tx, knowledge_auth.reviewer).await?;
+        let context = json!({"scope":scope,"knowledge":rules,"permissions":[{"action":"change_rules","decision":{"status":auth.status,"reviewer":auth.reviewer,"reviewer_name":rule_reviewer_name}},{"action":"confirm_knowledge","decision":{"status":knowledge_auth.status,"reviewer":knowledge_auth.reviewer,"reviewer_name":knowledge_reviewer}}]});
+        let keys:Vec<String>=sqlx::query_scalar("SELECT knowledge_key FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND case_ref IS NULL AND kind IN ('rule','fact','culture','experience') AND NOT shared ORDER BY knowledge_key").bind(&self.tenant).bind(scope).fetch_all(&mut *tx).await?;
         let mut items = vec![];
         for key in keys {
             let mut item = snapshot(&mut tx, &self.tenant, scope, &key).await?;
@@ -349,6 +388,8 @@ impl Store {
         let rows=sqlx::query("SELECT w.id,w.status,w.payload,w.last_error,r.person_id,r.authority_grant_id,r.result,coalesce(p.preferred_name,p.display_name) AS preferred_name FROM qintopia_agent_os.collaboration_work_requests r JOIN qintopia_agent_os.work_items w ON w.id=r.work_item_id JOIN qintopia_identity.persons p ON p.id=r.person_id WHERE r.tenant_key=$1 AND r.scope_id=$2 AND w.capability_key='erhua.foundation_rule' ORDER BY w.created_at DESC LIMIT 100").bind(&self.tenant).bind(scope).fetch_all(&mut *tx).await?;
         let mut tasks = vec![];
         for row in rows {
+            let payload: Value = row.get("payload");
+            let permission = input_action(&payload["input"]);
             let person: Uuid = row.get("person_id");
             let auth = authorize_current(
                 &mut tx,
@@ -357,7 +398,7 @@ impl Store {
                 scope,
                 "erhua",
                 "community_service",
-                "change_rules",
+                permission,
             )
             .await?;
             let own = person == actor.person;
@@ -368,7 +409,7 @@ impl Store {
                 scope,
                 "erhua",
                 "community_service",
-                "change_rules",
+                permission,
             )
             .await?;
             let review = auth.status == "confirmation_required"
@@ -402,6 +443,7 @@ impl Store {
             ["approve", "reject", "cancel"].contains(&action),
             "unknown_action"
         );
+        let permission = input_action(&task["input"]);
         if ["completed", "failed", "cancelled"]
             .iter()
             .any(|s| task["status"] == *s)
@@ -447,7 +489,7 @@ impl Store {
                 scope,
                 "erhua",
                 "community_service",
-                "change_rules",
+                permission,
             )
             .await?;
             let mine = authorize_current(
@@ -457,7 +499,7 @@ impl Store {
                 scope,
                 "erhua",
                 "community_service",
-                "change_rules",
+                permission,
             )
             .await?;
             ensure!(

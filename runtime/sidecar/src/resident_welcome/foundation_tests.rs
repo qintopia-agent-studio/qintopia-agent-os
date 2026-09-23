@@ -43,7 +43,7 @@ async fn assign(
         })
         .map(|r| r["id"].clone());
     let assignment: Assignment = serde_json::from_value(
-        json!({"collaboration":prior,"person":person,"role":find(&state,"roles","舍长"),"duty":find(&state,"duties","居民服务"),"scope":scope,"agent":"erhua","domain":"community_service","responsibility":"合成欢迎居民服务","valid_until":null,"proxy_for":null,"permissions":[{"action":"change_rules","mode":"autonomous","reviewer":null},{"action":"review","mode":"autonomous","reviewer":null},{"action":"publish","mode":if confirm.is_some(){"confirmation"}else{"autonomous"},"reviewer":confirm}],"delegation":null}),
+        json!({"collaboration":prior,"person":person,"role":find(&state,"roles","舍长"),"duty":find(&state,"duties","居民服务"),"scope":scope,"agent":"erhua","domain":"community_service","responsibility":"合成欢迎居民服务","valid_until":null,"proxy_for":null,"permissions":[{"action":"designate","mode":"autonomous","reviewer":null},{"action":"confirm_knowledge","mode":"autonomous","reviewer":null},{"action":"change_rules","mode":"autonomous","reviewer":null},{"action":"review","mode":"autonomous","reviewer":null},{"action":"publish","mode":if confirm.is_some(){"confirmation"}else{"autonomous"},"reviewer":confirm}],"delegation":null}),
     )?;
     people
         .command(
@@ -772,3 +772,6 @@ async fn foundation_welcome_review_and_upper_confirmation_remain_separate() -> R
         .any(|w| w["approval_kind"] == "publish_confirmation"));
     Ok(())
 }
+
+#[path = "steward_tests.rs"]
+mod steward_tests;

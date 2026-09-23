@@ -17,7 +17,8 @@ JSON 一行，限 256 KiB，操作固定为 `person_foundation_tool`，协议版
 `{ok,result}` 或 `{ok:false,error:{code}}`。服务端还核验同 UID 与本地 token。
 
 业务工具包括
-`context`、`save_rule`、`remember`、`history`、`dispatch`、`task_status`。拒绝或传输故障均明确返回状态；写入结果未知不自动重试。
+`context`、`save_rule`、`remember`、`history`、`dispatch`、`task_status`，以及舍长工作台工具
+`workspace`、`change_knowledge`、`delegate_review`、`welcome_setting`、`welcome_approve`。拒绝或传输故障均明确返回状态；写入结果未知不自动重试。
 
 `dispatch` 成功仅说明持久受理，`task_status`
 的实际事件才说明后续执行状态。跨 Agent 只传 WorkItem 与受控 Artifact 引用。
@@ -25,6 +26,24 @@ JSON 一行，限 256 KiB，操作固定为 `person_foundation_tool`，协议版
 对话理解使用 Hermes 自有 `ctx.llm.acomplete`。本地测试的脚本 completion
 adapter 明确记录为
 `scripted_model`，不代表真实 LLM 理解通过。模型仅产生结构化意图；有歧义、建议、引用或未能确定的内容应返回澄清，不生成写入操作。持久结果返回后才可描述保存成功。
+
+## 舍长工作与页面同步
+
+先用私聊 `workspace`
+读取本范围真实知识版本、欢迎事项和当前在住代理候选，不能凭姓名猜 Person 或版本。`change_knowledge`
+使用与 UI 相同的生命周期命令，支持保存、停止、取消未来版本；`rule` 使用
+`change_rules`，设施事实、文化和经验使用
+`confirm_knowledge`。Markdown 正文只作为内容，不能授予权限或改变范围。
+
+`delegate_review` 必须指定当前在住候选与截止时间；更换或撤销携带 `expected_id`。省略
+`delegate`
+表示撤销。临时代理仅审核欢迎内容，原授权变化、代理过期、身份失效或退住时不再通过。代理不获得设置、发送或组织管理权限。
+
+`welcome_setting`
+明确区分仅本次（`case_ref`）与持续安排，支持期限和恢复先审。舍长的自主指令本身就是业务决定；上层发布确认、入住、入群和内容使用许可仍独立核验。此工具只保存，不发送。`welcome_approve`
+绑定展示过的产物、哈希、目标与版本。
+
+这些工具可供 Hermes 原生对话调用；当前可信 socket 仍为本地合成门禁，不代表生产微信已接线。Web 对话仍明确标注固定例句，MD 导入与临时代理有直接表单入口。验证工具注册和业务服务不等于验证真实模型理解。
 
 ## 验证与恢复
 

@@ -1639,6 +1639,132 @@
             "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
             "simulated": ["合成人员与本地知识；无模型或渠道"]
           }
+        },
+        {
+          "id": "person-collaboration/steward-knowledge-import-requires-knowledge-authority-and-stops-shared-context",
+          "name": "知识权限、MD内容与停止后的共享上下文",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::steward_knowledge_import_requires_knowledge_authority_and_stops_shared_context",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-delegation-routes-exact-review-and-revokes-old-approval",
+          "name": "代理审批路由与撤销后的旧批准失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_delegation_routes_exact_review_and_revokes_old_approval",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-delegation-rejects-nonresident-expiry-and-stale-source",
+          "name": "代理候选在住、期限和来源新鲜度",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_delegation_rejects_nonresident_expiry_and_stale_source",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-direct-setting-does-not-require-expired-delegate",
+          "name": "直接发布约定不需要过期代理审核",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_direct_setting_does_not_require_expired_delegate",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-delegate-checkout-and-owner-revocation-remove-access",
+          "name": "代理退住和原授权撤销终止访问",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_delegate_checkout_and_owner_revocation_remove_access",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-broker-and-http-share-knowledge-and-welcome-settings",
+          "name": "可信对话与页面共用知识和单次直发设置",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::steward_broker_and_http_share_knowledge_and_welcome_settings",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
         }
       ]
     },

@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-23 舍长标签工作台、知识与临时代理交接](2026-09-23-steward-workspace-completion.md)
+
 - [2026-09-23 本栋约定生命周期修复与本地交接](2026-09-23-rule-lifecycle-local-acceptance.md)
 - [2026-09-23 原组织框架内的本体 UI：本地验收](2026-09-23-ontology-ui-local-acceptance.md)
 - [2026-09-22 本体基础与欢迎闭环：第一批本地实现](2026-09-22-foundation-welcome-batch1.md)

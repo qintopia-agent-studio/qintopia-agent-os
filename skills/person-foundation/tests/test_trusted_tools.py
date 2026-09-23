@@ -92,6 +92,25 @@ class TrustedToolsTests(unittest.TestCase):
         result = self.module.invoke("remember", {}, agent_id="anan", session_provider=lambda: SESSION, transport=transport)
         self.assertEqual(result["error"]["code"], "agent_tool_denied")
 
+    def test_steward_tools_reject_forged_scope_and_preserve_business_commands(self):
+        captured=[]
+        identity="11111111-1111-4111-8111-111111111111"
+        commands={
+            "workspace": {},
+            "change_knowledge": {"operation_id":identity,"expected_version":2,"key":"kitchen","kind":"fact","change":{"action":"stop"}},
+            "delegate_review": {"operation_id":identity,"delegate":identity,"valid_until":"2026-09-24T12:00:00Z"},
+            "welcome_setting": {"operation_id":identity,"target_ref":identity,"expected_version":1,"mode":"direct","text_template":"欢迎 {name}","case_ref":identity},
+            "welcome_approve": {"operation_id":identity,"target_ref":identity,"artifact_ref":identity,"target_version":1,"content_hash":"a"*64,"approval_kind":"content_review"},
+        }
+        for name, args in commands.items():
+            with self.subTest(tool=name):
+                result=self.module.invoke(name,{**args,"scope":"forged"},agent_id="erhua",session_provider=lambda:SESSION,transport=lambda r:captured.append(r))
+                self.assertEqual(result["error"]["code"],"invalid_arguments")
+                result=self.module.invoke(name,args,agent_id="erhua",session_provider=lambda:SESSION,transport=lambda r:captured.append(r) or {"ok":True,"result":{"persisted":True}})
+                self.assertTrue(result["ok"])
+                self.assertEqual(captured[-1]["arguments"],args)
+        self.assertEqual(len(captured),len(commands))
+
     def test_unix_socket_uses_host_token_and_never_retries_lost_ack(self):
         with tempfile.TemporaryDirectory(prefix="foundation-") as directory:
             path = str(Path(directory) / "broker.sock")

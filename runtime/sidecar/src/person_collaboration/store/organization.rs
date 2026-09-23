@@ -695,10 +695,10 @@ impl Store {
     }
 }
 
-struct AudienceResolution {
-    people: Vec<Value>,
-    unresolved: Vec<Value>,
-    source_count: usize,
+pub(super) struct AudienceResolution {
+    pub(super) people: Vec<Value>,
+    pub(super) unresolved: Vec<Value>,
+    pub(super) source_count: usize,
 }
 #[derive(Default)]
 struct ResidentEvidence {
@@ -787,7 +787,7 @@ impl Store {
         )
     }
 
-    async fn resolve_audience(
+    pub(super) async fn resolve_audience(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         p: &Policy,

@@ -226,7 +226,13 @@ async fn foundation_consumer_shared_community_principle_cannot_be_overridden() -
         )
         .await
         .is_err());
-    assign(&store, &owner, assignment(&state, owner_person, root)).await?;
+    let mut community = assignment(&state, owner_person, root);
+    community.permissions.push(PermissionSetting {
+        action: "confirm_knowledge".into(),
+        mode: PermissionMode::Autonomous,
+        reviewer: None,
+    });
+    assign(&store, &owner, community).await?;
     assign(&store, &owner, assignment(&state, pa, one)).await?;
     assign(&store, &owner, assignment(&state, pb, two)).await?;
     let a = actor(&store, pa).await?;

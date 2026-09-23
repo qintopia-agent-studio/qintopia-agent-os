@@ -162,6 +162,10 @@ pub(super) async fn handle(
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-ontology.js"),
             )),
+            "/workbench-steward.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_str!("workbench-steward.js"),
+            )),
             "/workbench-organization.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-organization.js"),

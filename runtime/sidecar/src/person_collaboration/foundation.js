@@ -157,6 +157,15 @@
         $("scope-select").add(
           new Option(scope.label || scope.name || "已获准范围", scope.id)
         );
+      const chosen = new URLSearchParams(location.search).get("scope");
+      if (
+        chosen &&
+        Array.from($("scope-select").options).some((o) => o.value === chosen)
+      )
+        $("scope-select").value = chosen;
+      for (const d of state.configuration?.delegated_reviews || [])
+        if (!Array.from($("scope-select").options).some((o) => o.value === d.scope))
+          $("scope-select").add(new Option(`${d.label} · 临时审批`, d.scope));
       if (!$("scope-select").options.length)
         $("scope-select").add(new Option("暂无获准工作范围", ""));
       notice("当前身份与范围已读取，可开始对话验收。");

@@ -9,8 +9,8 @@ use super::{
     store::{create_work, Store},
 };
 use crate::person_collaboration::{
-    authorize_current, can_inspect_current, effective_knowledge_in, put_knowledge_in, Authority,
-    KnowledgeVersion, KnowledgeWrite,
+    authorize_current, can_inspect_current, content_reviewer, delegated_scopes_in,
+    effective_knowledge_in, put_knowledge_in, Authority, KnowledgeVersion, KnowledgeWrite,
 };
 use anyhow::{ensure, Result};
 use chrono::{Duration, Utc};
@@ -449,7 +449,7 @@ impl Store {
                 waiting.push(json!({"part":part,"reason":"content_required"}));
                 continue;
             };
-            let decision = decision(&mut tx, case, target_ref, phase, artifact).await;
+            let decision = decision(&self.pool, &mut tx, case, target_ref, phase, artifact).await;
             let basis = match decision {
                 Ok(b) => b,
                 Err(e) => {
@@ -481,7 +481,9 @@ impl Store {
                         )
                         .await?;
                         let reviewer = if kind == "content_review" {
-                            rule.author
+                            content_reviewer(&self.pool, &tenant, &mut tx, scope, rule.author)
+                                .await?
+                                .0
                         } else {
                             publisher
                                 .reviewer
@@ -629,15 +631,26 @@ impl Store {
         };
         let content_required = setting.mode == "review" || !setting.parts.iter().any(|p| p == part);
         let upper_required = publisher.status == "confirmation_required";
-        let kind = approval_kind.unwrap_or(if person == rule.author && content_required {
-            "content_review"
+        let content_authority = if content_required {
+            Some(content_reviewer(&self.pool, tenant, &mut tx, scope, rule.author).await?)
         } else {
-            "publish_confirmation"
-        });
+            None
+        };
+        let kind = approval_kind.unwrap_or(
+            if content_authority
+                .as_ref()
+                .is_some_and(|(p, _)| *p == person)
+                && content_required
+            {
+                "content_review"
+            } else {
+                "publish_confirmation"
+            },
+        );
         let (designated, action) = match kind {
             "content_review" => {
                 ensure!(content_required, "content_review_not_required");
-                (rule.author, "review")
+                (content_authority.as_ref().unwrap().0, "review")
             }
             "publish_confirmation" => {
                 ensure!(upper_required, "publish_confirmation_not_required");
@@ -651,16 +664,20 @@ impl Store {
             _ => anyhow::bail!("invalid_approval_kind"),
         };
         ensure!(person == designated, "designated_reviewer_required");
-        let auth = authorize_current(
-            &mut tx,
-            tenant,
-            person,
-            scope,
-            "erhua",
-            "community_service",
-            action,
-        )
-        .await?;
+        let auth = if kind == "content_review" {
+            content_authority.unwrap().1
+        } else {
+            authorize_current(
+                &mut tx,
+                tenant,
+                person,
+                scope,
+                "erhua",
+                "community_service",
+                action,
+            )
+            .await?
+        };
         ensure!(
             auth.status == "autonomous",
             if kind == "content_review" {
@@ -841,6 +858,7 @@ impl Store {
 
     pub async fn foundation_state(&self, tenant: &str, person: Uuid) -> Result<Value> {
         let mut tx = self.pool.begin().await?;
+        let delegated = delegated_scopes_in(&self.pool, tenant, &mut tx, person).await?;
         let targets=sqlx::query("SELECT t.*,f.scope_id FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id WHERE f.tenant_key=$1 ORDER BY t.display_name").bind(tenant).fetch_all(&mut *tx).await?;
         let mut result = vec![];
         for row in targets {
@@ -875,7 +893,8 @@ impl Store {
                 "publish",
             )
             .await?;
-            if permission.status == "denied"
+            if !delegated.iter().any(|d| d["scope"] == json!(scope))
+                && permission.status == "denied"
                 && publish.status == "denied"
                 && review.status == "denied"
                 && !can_inspect_current(
@@ -891,17 +910,51 @@ impl Store {
                 continue;
             }
             let target: Uuid = row.get("id");
-            let cases=sqlx::query("SELECT c.id,c.readiness_reasons,p.display_name FROM qintopia_agent_os.welcome_cases c LEFT JOIN qintopia_identity.persons p ON p.id=c.person_id JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id WHERE c.source_instance=$1 AND c.property_id=$2 AND ($3<>'building' OR v.projection->>'building'=$4)")
+            let cases=sqlx::query("SELECT c.id,c.version,c.readiness_reasons,p.display_name FROM qintopia_agent_os.welcome_cases c LEFT JOIN qintopia_identity.persons p ON p.id=c.person_id JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id WHERE c.source_instance=$1 AND c.property_id=$2 AND ($3<>'building' OR v.projection->>'building'=$4)")
                 .bind(row.get::<String,_>("source_instance")).bind(row.get::<String,_>("property_id")).bind(row.get::<String,_>("kind")).bind(row.get::<String,_>("building_code")).fetch_all(&mut *tx).await?;
             let actions:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('id',a.id,'case_ref',a.case_id,'part',a.part,'status',a.status,'artifact_ref',a.artifact_id,'basis',a.foundation_basis) FROM qintopia_agent_os.welcome_actions a WHERE a.target_id=$1 AND a.foundation_basis IS NOT NULL ORDER BY a.part").bind(target).fetch_all(&mut *tx).await?;
             let artifacts:Vec<Value>=sqlx::query_scalar("SELECT DISTINCT ON (b.case_id,a.artifact_type) jsonb_build_object('artifact_ref',a.id,'kind',a.artifact_type,'content_hash',a.content_hash,'text',a.content_text,'case_ref',b.case_id,'target_version',$3::bigint) FROM qintopia_agent_os.artifacts a JOIN qintopia_agent_os.welcome_artifact_bindings b ON b.artifact_id=a.id JOIN qintopia_agent_os.welcome_cases c ON c.id=b.case_id JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id WHERE c.source_instance=$1 AND c.property_id=$2 AND b.revoked_at IS NULL AND (b.target_id=$4 OR (b.target_id IS NULL AND a.artifact_type='welcome_card')) AND ($5<>'building' OR v.projection->>'building'=$6) ORDER BY b.case_id,a.artifact_type,a.created_at DESC,a.id DESC")
                 .bind(row.get::<String,_>("source_instance")).bind(row.get::<String,_>("property_id")).bind(row.get::<i64,_>("version")).bind(target).bind(row.get::<String,_>("kind")).bind(row.get::<String,_>("building_code")).fetch_all(&mut *tx).await?;
             let rule =
                 effective_knowledge_in(&mut tx, tenant, scope, "resident_welcome", None).await?;
-            let progress:Vec<Value>=sqlx::query_scalar("SELECT payload FROM qintopia_agent_os.work_items WHERE work_item_type='welcome_event' AND target_agent='anan' AND payload->>'target_ref'=$1").bind(target.to_string()).fetch_all(&mut *tx).await?;
+            let mut progress:Vec<Value>=sqlx::query_scalar("SELECT payload FROM qintopia_agent_os.work_items WHERE work_item_type='welcome_event' AND target_agent='anan' AND payload->>'target_ref'=$1").bind(target.to_string()).fetch_all(&mut *tx).await?;
+            // Re-resolve the review recipient on read: historical work payloads may name a revoked proxy.
+            for entry in &mut progress {
+                let case = entry["case_ref"]
+                    .as_str()
+                    .and_then(|s| Uuid::parse_str(s).ok());
+                if let Some(active) =
+                    effective_knowledge_in(&mut tx, tenant, scope, "resident_welcome", case).await?
+                {
+                    if let Some(waiting) = entry["waiting"].as_array_mut() {
+                        for pending in waiting {
+                            if pending["approval_kind"] == "content_review" {
+                                match content_reviewer(
+                                    &self.pool,
+                                    tenant,
+                                    &mut tx,
+                                    scope,
+                                    active.author,
+                                )
+                                .await
+                                {
+                                    Ok((reviewer, _)) => pending["reviewer"] = json!(reviewer),
+                                    Err(e) => {
+                                        pending["reviewer"] = Value::Null;
+                                        pending["reason"] = json!(
+                                            crate::person_collaboration::foundation_error_code(&e)
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             let latest:Option<i64>=sqlx::query_scalar("SELECT version::bigint FROM qintopia_agent_os.collaboration_knowledge_items WHERE tenant_key=$1 AND scope_id=$2 AND knowledge_key='resident_welcome' AND case_ref IS NULL").bind(tenant).bind(scope).fetch_optional(&mut *tx).await?;
-            let case_rules:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('case_ref',i.case_ref,'version',i.version,'content',v.definition->'content','id',v.id) FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.business_definition_versions v ON v.space_id=i.space_id AND v.definition_key=i.definition_key AND v.version=i.version WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key='resident_welcome' AND i.case_ref IS NOT NULL").bind(tenant).bind(scope).fetch_all(&mut *tx).await?;
-            result.push(json!({"progress":progress,"latest_rule_version":latest.unwrap_or(0),"case_rules":case_rules,"target_ref":target,"scope_ref":scope,"label":row.get::<String,_>("display_name"),"version":row.get::<i64,_>("version"),"change_rules":permission.status,"review":review.status,"publish":publish.status,"rule":rule.map(|r|json!({"id":r.id,"version":r.version,"content":r.content})),"cases":cases.iter().map(|c|json!({"case_ref":c.get::<Uuid,_>("id"),"name":c.get::<Option<String>,_>("display_name"),"reasons":c.get::<Value,_>("readiness_reasons")})).collect::<Vec<_>>(),"actions":actions,"artifacts":artifacts}));
+            let latest_rule:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('version',i.version,'content',v.definition->'content','id',v.id,'effective_at',r.effective_at,'effective_until',r.effective_until) FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.business_definition_versions v ON v.space_id=i.space_id AND v.definition_key=i.definition_key AND v.version=i.version JOIN qintopia_agent_os.collaboration_knowledge_revisions r ON r.id=v.id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key='resident_welcome' AND i.case_ref IS NULL").bind(tenant).bind(scope).fetch_optional(&mut *tx).await?;
+            let case_rules:Vec<Value>=sqlx::query_scalar("SELECT jsonb_build_object('case_ref',i.case_ref,'version',i.version,'content',v.definition->'content','id',v.id,'effective_at',r.effective_at,'effective_until',r.effective_until) FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.business_definition_versions v ON v.space_id=i.space_id AND v.definition_key=i.definition_key AND v.version=i.version JOIN qintopia_agent_os.collaboration_knowledge_revisions r ON r.id=v.id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.knowledge_key='resident_welcome' AND i.case_ref IS NOT NULL").bind(tenant).bind(scope).fetch_all(&mut *tx).await?;
+            result.push(json!({"progress":progress,"latest_rule_version":latest.unwrap_or(0),"latest_rule":latest_rule,"case_rules":case_rules,"target_ref":target,"scope_ref":scope,"label":row.get::<String,_>("display_name"),"version":row.get::<i64,_>("version"),"change_rules":permission.status,"review":review.status,"publish":publish.status,"rule":rule.map(|r|json!({"id":r.id,"version":r.version,"content":r.content,"effective_at":r.effective_at,"effective_until":r.effective_until})),"cases":cases.iter().map(|c|json!({"case_ref":c.get::<Uuid,_>("id"),"version":c.get::<i64,_>("version"),"name":c.get::<Option<String>,_>("display_name"),"reasons":c.get::<Value,_>("readiness_reasons")})).collect::<Vec<_>>(),"actions":actions,"artifacts":artifacts}));
         }
         tx.commit().await?;
         Ok(
@@ -912,6 +965,7 @@ impl Store {
 
 /// Called by claim and immediately before the durable sending boundary.
 pub(crate) async fn check_action(
+    pool: &sqlx::PgPool,
     tx: &mut Transaction<'_, Postgres>,
     row: &sqlx::postgres::PgRow,
 ) -> Result<()> {
@@ -924,6 +978,7 @@ pub(crate) async fn check_action(
         .ok_or_else(|| anyhow::anyhow!("action_authority_required"))?;
     require_executor(tx, &tenant, "erhua").await?;
     let current = decision(
+        pool,
         tx,
         row.get("case_id"),
         row.get("target_id"),
@@ -939,6 +994,7 @@ pub(crate) async fn check_action(
 }
 
 async fn decision(
+    pool: &sqlx::PgPool,
     tx: &mut Transaction<'_, Postgres>,
     case: Uuid,
     target_ref: Uuid,
@@ -1023,13 +1079,18 @@ async fn decision(
     ensure!(publish.status != "denied", "publish_authority_required");
     let upper = publish.status == "confirmation_required";
     let needs_content = setting.mode == "review" || !setting.parts.iter().any(|p| p == part);
+    let content_authority = if needs_content {
+        Some(content_reviewer(pool, &tenant, tx, scope, rule.author).await?)
+    } else {
+        None
+    };
     let mut content_approval = None;
     let mut publish_confirmation = None;
     for (required, kind, reviewer, action, missing) in [
         (
             needs_content,
             "content_review",
-            rule.author,
+            content_authority.as_ref().map_or(rule.author, |a| a.0),
             "review",
             "content_approval_required",
         ),
@@ -1044,16 +1105,20 @@ async fn decision(
         if !required {
             continue;
         }
-        let auth = authorize_current(
-            tx,
-            &tenant,
-            reviewer,
-            scope,
-            "erhua",
-            "community_service",
-            action,
-        )
-        .await?;
+        let auth = if kind == "content_review" {
+            content_authority.as_ref().unwrap().1.clone()
+        } else {
+            authorize_current(
+                tx,
+                &tenant,
+                reviewer,
+                scope,
+                "erhua",
+                "community_service",
+                action,
+            )
+            .await?
+        };
         ensure!(
             auth.status == "autonomous",
             if kind == "content_review" {

@@ -160,6 +160,18 @@ async fn business_snapshot(store: &Store) -> Result<Value> {
 #[ignore = "explicit task-isolated local database required"]
 async fn password_http_requires_credentials_and_rejects_csrf_and_actor_claims() -> Result<()> {
     let (store, owner, state, pass) = fixture().await?;
+    // Exercise the actual password server asset route, not the older fixture-only handler.
+    let (asset_status, asset, _) = request(
+        &store,
+        "GET",
+        "/workbench-steward.js",
+        None,
+        json!({}),
+        true,
+    )
+    .await?;
+    assert_eq!(asset_status, 200);
+    assert_eq!(asset, json!(include_str!("workbench-steward.js")));
     let before = business_snapshot(&store).await?;
     let (status, data, _) = request(&store, "GET", "/api/state", None, json!({}), true).await?;
     assert_eq!(status, 401);

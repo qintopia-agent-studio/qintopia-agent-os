@@ -198,7 +198,11 @@ pub async fn put_knowledge_in(
         write.scope,
         "erhua",
         "community_service",
-        "change_rules",
+        if write.kind == "rule" || write.kind == "principle" {
+            "change_rules"
+        } else {
+            "confirm_knowledge"
+        },
     )
     .await?;
     ensure!(
@@ -395,6 +399,7 @@ impl Store {
         if let Some((_, _, gateway_scope)) = actor.gateway {
             ensure!(scope == gateway_scope, "gateway_scope_mismatch");
         }
+        let kind:String=sqlx::query_scalar("SELECT i.kind FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.collaboration_knowledge_revisions r ON r.item_id=i.id WHERE r.id=$1 AND i.tenant_key=$2 AND i.scope_id=$3").bind(revision).bind(&self.tenant).bind(scope).fetch_one(&mut *tx).await?;
         let auth = authorize_current(
             &mut tx,
             &self.tenant,
@@ -402,7 +407,11 @@ impl Store {
             scope,
             "erhua",
             "community_service",
-            "change_rules",
+            if kind == "rule" || kind == "principle" {
+                "change_rules"
+            } else {
+                "confirm_knowledge"
+            },
         )
         .await?;
         ensure!(auth.status == "autonomous", "scope_access_denied");
@@ -503,7 +512,11 @@ impl Store {
             write.scope,
             "erhua",
             "community_service",
-            "change_rules",
+            if write.kind == "rule" || write.kind == "principle" {
+                "change_rules"
+            } else {
+                "confirm_knowledge"
+            },
         )
         .await?;
         ensure!(auth.status != "denied", "scope_access_denied");
@@ -663,7 +676,7 @@ impl Store {
     pub async fn foundation_approve_rule(&self, actor: &Actor, work: Uuid) -> Result<Value> {
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        let row=sqlx::query("SELECT r.*,w.status,w.capability_key FROM qintopia_agent_os.collaboration_work_requests r JOIN qintopia_agent_os.work_items w ON w.id=r.work_item_id WHERE r.tenant_key=$1 AND r.work_item_id=$2 FOR UPDATE OF r,w")
+        let row=sqlx::query("SELECT r.*,w.status,w.capability_key,w.payload FROM qintopia_agent_os.collaboration_work_requests r JOIN qintopia_agent_os.work_items w ON w.id=r.work_item_id WHERE r.tenant_key=$1 AND r.work_item_id=$2 FOR UPDATE OF r,w")
             .bind(&self.tenant).bind(work).fetch_one(&mut *tx).await?;
         if let Some((_, _, scope)) = actor.gateway {
             ensure!(
@@ -676,6 +689,8 @@ impl Store {
                 && row.get::<String, _>("capability_key") == "erhua.foundation_rule",
             "review_not_pending"
         );
+        let payload: Value = row.get("payload");
+        let permission = super::rule_lifecycle::input_action(&payload["input"]);
         let auth = authorize_current(
             &mut tx,
             &self.tenant,
@@ -683,7 +698,7 @@ impl Store {
             row.get("scope_id"),
             "erhua",
             "community_service",
-            "change_rules",
+            permission,
         )
         .await?;
         ensure!(
@@ -699,7 +714,7 @@ impl Store {
             row.get("scope_id"),
             "erhua",
             "community_service",
-            "change_rules",
+            permission,
         )
         .await?;
         ensure!(
@@ -757,7 +772,8 @@ impl Store {
             self.verify(&mut tx,&actor).await?;
             ensure!(row.get::<String,_>("target_agent")=="erhua","executor_identity_mismatch");
             if capability=="erhua.foundation_rule" {
-                let auth=authorize_current(&mut tx,&self.tenant,actor.person,scope,"erhua","community_service","change_rules").await?;
+                let permission=super::rule_lifecycle::input_action(&payload["input"]);
+                let auth=authorize_current(&mut tx,&self.tenant,actor.person,scope,"erhua","community_service",permission).await?;
                 ensure!(auth.status!="denied"&&auth.grant_id==Some(row.get("authority_grant_id")),"authority_changed_or_revoked");
                 if auth.status=="confirmation_required" {
                     ensure!(auth.reviewer==row.get::<Option<Uuid>,_>("approval_person_id") && row.get::<Option<String>,_>("approved_input_hash")==Some(row.get("request_hash")),"designated_confirmation_required");
@@ -769,7 +785,7 @@ impl Store {
                             self.verify_rule_request_account(&mut tx,hash,reviewer.person).await?;
                         }
                     }
-                    let current=authorize_current(&mut tx,&self.tenant,reviewer.person,scope,"erhua","community_service","change_rules").await?;
+                    let current=authorize_current(&mut tx,&self.tenant,reviewer.person,scope,"erhua","community_service",permission).await?;
                     ensure!(Some(reviewer.person)==auth.reviewer && current.status=="autonomous" && current.grant_id==serde_json::from_value::<Option<Uuid>>(proof["grant_id"].clone())?,"approval_authority_changed_or_revoked");
                 }
                 if payload["input"].get("lifecycle").is_some() {
@@ -1015,14 +1031,21 @@ impl Store {
                         valid_until: None,
                         proxy_for: None,
                         actions: vec![],
-                        permissions: ["train", "change_rules", "review", "publish"]
-                            .iter()
-                            .map(|a| PermissionSetting {
-                                action: a.to_string(),
-                                mode: PermissionMode::Autonomous,
-                                reviewer: None,
-                            })
-                            .collect(),
+                        permissions: [
+                            "train",
+                            "change_rules",
+                            "confirm_knowledge",
+                            "designate",
+                            "review",
+                            "publish",
+                        ]
+                        .iter()
+                        .map(|a| PermissionSetting {
+                            action: a.to_string(),
+                            mode: PermissionMode::Autonomous,
+                            reviewer: None,
+                        })
+                        .collect(),
                         delegation: None,
                     })),
                 },

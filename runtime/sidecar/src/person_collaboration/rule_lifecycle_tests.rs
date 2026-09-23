@@ -29,6 +29,7 @@ fn save(scope: Uuid, version: i64) -> RuleCommand {
         operation_id: Uuid::new_v4(),
         scope,
         key: "kitchen".into(),
+        kind: "rule".into(),
         expected_version: version,
         change: RuleEdit::Save {
             content: json!({"title":"厨房使用约定","text":"每天晚上九点关闭"}),
@@ -47,6 +48,91 @@ fn edit(scope: Uuid, version: i64, change: RuleEdit) -> RuleCommand {
 }
 fn id(value: &Value) -> Uuid {
     serde_json::from_value(value.clone()).unwrap()
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn steward_knowledge_import_requires_knowledge_authority_and_stops_shared_context(
+) -> Result<()> {
+    let (store, owner, state, scope) = setup().await?;
+    let mut doc = save(scope, 0);
+    doc.kind = "fact".into();
+    doc.key = "kitchen_guide".into();
+    if let RuleEdit::Save { content, .. } = &mut doc.change {
+        *content = json!({"title":"厨房指南.md","text":"# 厨房指南\n\n共享区域使用后请归位。\n<script>never execute</script>"});
+    }
+    assert!(
+        store.rule_command(&owner, &doc).await.is_err(),
+        "rule authority does not confer knowledge authority"
+    );
+    let legacy = super::KnowledgeWrite {
+        operation_id: Uuid::new_v4(),
+        expected_version: 0,
+        scope,
+        key: "legacy_guide".into(),
+        kind: "fact".into(),
+        shared: false,
+        case_ref: None,
+        content: json!({"text":"不能通过旧入口绕过知识权限"}),
+        effective_at: None,
+        effective_until: None,
+    };
+    assert!(store.knowledge_save(&owner, &legacy, false).await.is_err());
+    let current = store.state(&owner).await?;
+    let person = store.verified_person(&owner).await?;
+    let relation = current["relations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| {
+            r["person"] == json!(person) && r["scope"] == json!(scope) && r["agent"] == "erhua"
+        })
+        .unwrap();
+    let assignment = serde_json::from_value(
+        json!({"collaboration":relation["id"],"person":person,"role":find(&state,"roles","舍长"),"duty":find(&state,"duties","居民服务"),"scope":scope,"agent":"erhua","domain":"community_service","responsibility":"本栋知识维护","valid_until":null,"proxy_for":null,"permissions":[{"action":"confirm_knowledge","mode":"autonomous","reviewer":null},{"action":"change_rules","mode":"autonomous","reviewer":null}],"delegation":null}),
+    )?;
+    store
+        .command(
+            &owner,
+            &super::Command {
+                operation_id: Uuid::new_v4(),
+                expected_version: current["version"].as_i64().unwrap(),
+                change: super::Change::Assign(Box::new(assignment)),
+            },
+            true,
+        )
+        .await?;
+    store.rule_command(&owner, &doc).await?;
+    let context = store.foundation_context(&owner, scope, "general").await?;
+    assert!(context["knowledge"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|k| k["key"] == "kitchen_guide" && k["kind"] == "fact"));
+    let mut modified = doc.clone();
+    modified.operation_id = Uuid::new_v4();
+    assert!(
+        store.rule_command(&owner, &modified).await.is_err(),
+        "stale editor cannot overwrite"
+    );
+    modified.expected_version = 1;
+    modified.change = RuleEdit::Stop;
+    store.rule_command(&owner, &modified).await?;
+    assert!(
+        !store.foundation_context(&owner, scope, "general").await?["knowledge"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|k| k["key"] == "kitchen_guide")
+    );
+    assert_eq!(
+        store.rule_state(&owner, scope).await?["items"][0]["revisions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    Ok(())
 }
 async fn requester(store: &Store, owner: &Actor, state: &Value, scope: Uuid) -> Result<Actor> {
     let person = find(state, "people", "人员甲 · 合成样例 A");

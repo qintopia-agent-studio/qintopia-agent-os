@@ -1,6 +1,7 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
 pub mod auth_server;
 mod foundation_server;
+pub(crate) use foundation_server::error_code as foundation_error_code;
 pub mod local_server;
 mod model;
 mod store;
@@ -10,6 +11,7 @@ pub use store::foundation::{
     KnowledgeVersion, KnowledgeWrite,
 };
 pub(crate) use store::shared_reply_context;
+pub(crate) use store::steward::{content_reviewer, delegated_scopes_in};
 pub use store::{Actor, Store};
 pub use store::{IdentityCommand, QiweConversion};
 pub use store::{MemoryChange, MemoryCommand, MemoryEvidence, ReplyCondition, ReplyStyle};

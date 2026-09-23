@@ -85,6 +85,15 @@ pub(super) async fn dispatch(
             let r: ContextRequest = serde_json::from_slice(body)?;
             store.foundation_context(actor, r.scope, &r.topic).await
         }
+        "/api/foundation/review-delegation" => {
+            let r: ContextRequest = serde_json::from_slice(body)?;
+            store.review_delegation_state(actor, r.scope).await
+        }
+        "/api/foundation/review-delegation/change" => {
+            store
+                .review_delegation_change(actor, &serde_json::from_slice(body)?)
+                .await
+        }
         "/api/foundation/rules" => {
             let r: ContextRequest = serde_json::from_slice(body)?;
             store.rule_state(actor, r.scope).await
@@ -367,6 +376,7 @@ async fn scripted_rule_turn(
         .map(str::parse)
         .transpose()?;
     let command = RuleCommand {
+        kind: "rule".into(),
         operation_id: r.operation_id,
         scope: r.scope,
         key: item["key"].as_str().map(str::to_owned).unwrap_or_else(|| {
@@ -473,7 +483,7 @@ fn welcome_response(reply: String, result: Value, target: Option<&Value>) -> Val
 }
 
 async fn welcome_target_state(store: &Store, actor: &Actor, scope: Uuid) -> Result<Vec<Value>> {
-    store.foundation_assert_scope(actor, scope).await?;
+    store.welcome_assert_scope(actor, scope).await?;
     let person = store.verified_person(actor).await?;
     let state = crate::resident_welcome::store::Store {
         pool: store.pool.clone(),
@@ -796,8 +806,8 @@ async fn welcome(store: &Store, actor: &Actor, request: Value) -> Result<Value> 
             .await?
     } else if action == "render" {
         let case = parse("case_ref")?;
-        let rows:Vec<Uuid>=sqlx::query_scalar("SELECT f.scope_id FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id JOIN qintopia_agent_os.welcome_cases c ON c.source_instance=t.source_instance AND c.property_id=t.property_id WHERE f.tenant_key=$1 AND c.id=$2")
-            .bind(&store.tenant).bind(case).fetch_all(&store.pool).await?;
+        let rows:Vec<Uuid>=sqlx::query_scalar("SELECT f.scope_id FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id JOIN qintopia_agent_os.welcome_cases c ON c.source_instance=t.source_instance AND c.property_id=t.property_id JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id WHERE f.tenant_key=$1 AND c.id=$2 AND f.target_id=$3 AND (t.kind<>'building' OR v.projection->>'building'=t.building_code)")
+            .bind(&store.tenant).bind(case).bind(parse("target_ref")?).fetch_all(&store.pool).await?;
         let mut permitted = false;
         for scope in rows {
             if store.foundation_assert_scope(actor, scope).await.is_ok() {
@@ -820,7 +830,11 @@ async fn welcome(store: &Store, actor: &Actor, request: Value) -> Result<Value> 
         parse("target_ref")?
     };
     let scope:Uuid=sqlx::query_scalar("SELECT scope_id FROM qintopia_agent_os.welcome_foundation_targets WHERE tenant_key=$1 AND target_id=$2").bind(&store.tenant).bind(target).fetch_one(&store.pool).await?;
-    store.foundation_assert_scope(actor, scope).await?;
+    if action == "approve" {
+        store.welcome_assert_scope(actor, scope).await?;
+    } else {
+        store.foundation_assert_scope(actor, scope).await?;
+    }
     match action {
         "configure" => {
             let mut input = request.clone();
@@ -919,7 +933,7 @@ pub(super) async fn card(store: &Store, actor: &Actor, artifact: Uuid) -> Result
         .bind(&store.tenant).bind(artifact).fetch_all(&store.pool).await?;
     for row in rows {
         if store
-            .foundation_assert_scope(actor, row.get("scope_id"))
+            .welcome_assert_scope(actor, row.get("scope_id"))
             .await
             .is_ok()
         {
@@ -1092,6 +1106,104 @@ pub(super) async fn broker_invoke(
             }
             Ok(result)
         }
+        "workspace" => {
+            ensure!(
+                profile == "erhua" && t.chat_type == "direct",
+                "private_workspace_only"
+            );
+            only_keys(&a, &[])?;
+            let rules = match store.rule_state(&actor, scope).await {
+                Ok(v) => v,
+                Err(e) if e.to_string() == "scope_access_denied" => {
+                    json!({"unavailable":"scope_access_denied"})
+                }
+                Err(e) => return Err(e),
+            };
+            let delegation = match store.review_delegation_state(&actor, scope).await {
+                Ok(v) => v,
+                Err(e) if e.to_string() == "scope_access_denied" => {
+                    json!({"unavailable":"scope_access_denied"})
+                }
+                Err(e) => return Err(e),
+            };
+            let targets = welcome_target_state(store, &actor, scope).await?;
+            Ok(json!({"knowledge":rules,"delegation":delegation,"welcome":targets}))
+        }
+        "change_knowledge" => {
+            ensure!(profile == "erhua", "agent_tool_denied");
+            only_keys(
+                &a,
+                &["operation_id", "expected_version", "key", "kind", "change"],
+            )?;
+            let mut command = a;
+            command["scope"] = json!(scope);
+            store
+                .rule_command(&actor, &serde_json::from_value(command)?)
+                .await
+        }
+        "delegate_review" => {
+            ensure!(
+                profile == "erhua" && t.chat_type == "direct",
+                "private_workspace_only"
+            );
+            only_keys(
+                &a,
+                &[
+                    "operation_id",
+                    "expected_id",
+                    "delegate",
+                    "valid_from",
+                    "valid_until",
+                ],
+            )?;
+            let mut command = a;
+            command["scope"] = json!(scope);
+            store
+                .review_delegation_change(&actor, &serde_json::from_value(command)?)
+                .await
+        }
+        "welcome_setting" => {
+            ensure!(profile == "erhua", "agent_tool_denied");
+            only_keys(
+                &a,
+                &[
+                    "operation_id",
+                    "target_ref",
+                    "expected_version",
+                    "case_ref",
+                    "mode",
+                    "text_template",
+                    "effective_at",
+                    "effective_until",
+                ],
+            )?;
+            welcome(store,&actor,json!({"action":"configure","target_ref":a["target_ref"],"write":{
+                "operation_id":a["operation_id"],"expected_version":a["expected_version"],"scope":scope,
+                "key":"resident_welcome","kind":"rule","shared":false,"case_ref":a["case_ref"],
+                "content":{"mode":a["mode"],"parts":["text","image"],"phase":"formal","text_template":a["text_template"]},
+                "effective_at":a["effective_at"],"effective_until":a["effective_until"]}})).await
+        }
+        "welcome_approve" => {
+            ensure!(
+                profile == "erhua" && t.chat_type == "direct",
+                "private_workspace_only"
+            );
+            only_keys(
+                &a,
+                &[
+                    "operation_id",
+                    "target_ref",
+                    "artifact_ref",
+                    "target_version",
+                    "content_hash",
+                    "approval_kind",
+                ],
+            )?;
+            let mut command = a;
+            command["action"] = json!("approve");
+            command["phase"] = json!("formal");
+            welcome(store, &actor, command).await
+        }
         "history" => {
             ensure!(profile == "erhua", "agent_tool_denied");
             only_keys(&a, &["purpose"])?;
@@ -1179,7 +1291,7 @@ fn only_keys(value: &Value, keys: &[&str]) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn error_code(error: &anyhow::Error) -> String {
+pub(crate) fn error_code(error: &anyhow::Error) -> String {
     let value = error.to_string();
     if !value.is_empty()
         && value.len() <= 100

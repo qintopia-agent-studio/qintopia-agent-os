@@ -642,3 +642,64 @@ pre {
 #qt-org-scope .qo-personal-work > .qo-box {
   margin-top: 16px;
 }
+
+/* Scoped everyday work retains the organization workbench tokens. */
+.qo-work-tabs {
+  min-width: 0;
+}
+.qo-work-tabs > .qo-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 0;
+  background: transparent;
+}
+.qo-work-tabs > .qo-tabs button[aria-selected="true"] {
+  background: var(--qo-soft);
+  border-color: var(--qo-accent);
+}
+.qo-work-tabs > [role="tabpanel"] {
+  padding: 12px 0;
+  min-width: 0;
+}
+.qo-readable-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  padding: 14px;
+  background: var(--qo-bg);
+  border-radius: 7px;
+}
+.qo-review-image {
+  display: block;
+  max-width: min(100%, 360px);
+  height: auto;
+  border-radius: 8px;
+}
+.qo-work-tabs form {
+  margin: 16px 0;
+}
+.qo-work-tabs p {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .qo-work-tabs > .qo-tabs button {
+    flex: 1 1 40%;
+  }
+}
+
+.qo-work-tabs > .qo-box[role="tabpanel"] {
+  padding: 16px;
+}
+.qo-personal-powers {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+.qo-personal-powers ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.qo-work-tabs a {
+  color: var(--qo-accent);
+}

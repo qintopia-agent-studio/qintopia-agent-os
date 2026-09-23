@@ -206,7 +206,7 @@ impl Store {
             "action_not_claimable"
         );
         if row.get::<Option<Value>, _>("foundation_basis").is_some() {
-            super::foundation::check_action(&mut tx, &row).await?;
+            super::foundation::check_action(&self.pool, &mut tx, &row).await?;
         } else {
             check_eligibility(
                 &mut tx,
@@ -240,7 +240,7 @@ impl Store {
             "already_started"
         );
         if row.get::<Option<Value>, _>("foundation_basis").is_some() {
-            super::foundation::check_action(&mut tx, &row).await?;
+            super::foundation::check_action(&self.pool, &mut tx, &row).await?;
         } else {
             check_eligibility(
                 &mut tx,

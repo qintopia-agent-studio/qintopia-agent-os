@@ -8,6 +8,11 @@ description: >
   Qintopia Agent OS guardrails.
 author: Qintopia
 provides_tools:
+  - qintopia_person_workspace
+  - qintopia_person_change_knowledge
+  - qintopia_person_delegate_review
+  - qintopia_person_welcome_setting
+  - qintopia_person_welcome_approve
   - qintopia_person_context
   - qintopia_person_save_rule
   - qintopia_person_remember

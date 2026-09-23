@@ -1,5 +1,12 @@
 # Data Design Changelog
 
+## 2026-09-23.009 — Steward review delegation
+
+- Add scoped, time-bounded resident review assignments sourced from existing designate and review authority.
+- Recheck current occupancy, source authority and exact delegation at approval and send preparation.
+- Preserve assignment history and idempotent receipts; no production enablement.
+- Design: [steward review delegation](2026-09-23-steward-review-delegation.md).
+
 ## `2026-09-23.008`
 
 Migration: `migrations/202609230008_person_rule_lifecycle.sql`.

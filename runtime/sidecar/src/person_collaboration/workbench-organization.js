@@ -312,7 +312,9 @@ function renderPersonalWork() {
   );
   const name = state.actor_person ? personName(state.actor_person) : "当前账号";
   target.append(titleRow("我的工作", `${name}，这里只显示与你有关的工作。`));
+  if (state.delegated_reviews?.length) target.append(stewardProgress());
   if (!own.length) {
+    if (state.delegated_reviews?.length) return;
     empty(
       target,
       "你目前没有已安排的工作。请联系负责人安排岗位和范围；账号开通后不会自动获得工作权限。"
@@ -337,7 +339,7 @@ function renderPersonalWork() {
       continue;
     }
     if (relation.agent === "erhua" && relation.domain === "community_service")
-      work.append(personalRulePanel(relation.scope));
+      work.append(stewardWorkspace(relation.scope));
     const grants = state.grants.filter(
       (g) => g.collaboration === relation.id && g.effective && g.mode !== "denied"
     );
@@ -357,18 +359,30 @@ function renderPersonalWork() {
           `${text(grant.action)}${grant.mode === "confirmation" ? `（需${personName(grant.reviewer)}确认）` : ""}`
         )
       );
-    if (grants.length) work.append(details("查看我能决定的事项", summary, list));
-    else work.append(sub("当前没有可用的决定权，请联系负责人核对安排。"));
-    const more = details("查看任期与工作依据", sub(termSummary(relation)));
-    more.addEventListener("toggle", () => {
-      if (more.open && !more.dataset.loaded) {
-        more.dataset.loaded = "true";
-        more.append(constraintsPanel(relation.scope));
-      }
-    });
-    work.append(more);
+    if (grants.length) {
+      summary.append(list);
+      work.append(summary);
+    } else work.append(sub("当前没有可用的决定权，请联系负责人核对安排。"));
+    const term = box("任期与工作依据");
+    term.append(sub(termSummary(relation)), constraintsPanel(relation.scope));
+    const info = el("div");
+    info.append(
+      button("查看任期与工作依据", () => {
+        term.hidden = !term.hidden;
+      })
+    );
+    term.hidden = true;
+    info.append(term);
+    work.append(info);
     target.append(work);
   }
+  if (
+    own.some(
+      (r) =>
+        r.agent === "erhua" && r.domain === "community_service" && r.status === "active"
+    )
+  )
+    return;
   const next = box("怎样开始工作");
   next.append(
     el(
@@ -1030,19 +1044,25 @@ function renderSettings() {
 }
 
 // Business decisions always use scoped rule authority, independent of organization management.
-function personalRulePanel(scope) {
-  const panel = box("本栋约定"),
+function personalRulePanel(scope, kind = "rule") {
+  const noun = kind === "rule" ? "约定" : "知识";
+  const permission = kind === "rule" ? "change_rules" : "confirm_knowledge";
+  const panel = box(`本栋${noun}`),
     content = el("div"),
-    status = sub("正在读取本栋约定……");
+    status = sub(`正在读取本栋${noun}……`);
   status.setAttribute("role", "status");
   panel.append(
-    sub("在这里安排本栋如何工作：新增、修改、设定日期，或停止不再使用的约定。"),
+    sub(
+      kind === "rule"
+        ? `安排本栋的表达习惯、联系与提醒方式，或具体工作${noun}。`
+        : "把设施说明、生活方法和本栋文化交给二花；支持导入 Markdown、修改、设定期限和停止使用。"
+    ),
     content
   );
   explainHeading(
     panel,
-    "本栋约定",
-    "停止使用会取消整项约定及其未来安排，历史仍可查看。只取消一项未来安排，不影响当前约定。到截止时间自动结束，不恢复旧版。不会自动发送群通知。"
+    `本栋${noun}`,
+    `停止使用会取消整项${noun}及其未来安排，历史仍可查看。只取消一项未来安排，不影响当前内容。到截止时间自动结束，不恢复旧版。不会自动发送群通知。`
   );
   if (!state.local_dialogue_available) {
     content.append(sub("当前本地业务入口未启用。"));
@@ -1054,13 +1074,13 @@ function personalRulePanel(scope) {
   const titleOf = (item) =>
     item?.content?.title ||
     item?.revisions?.[0]?.content?.title ||
-    (item?.key === "kitchen" ? "厨房使用" : "本栋工作约定");
+    (item?.key === "kitchen" ? "厨房使用" : `本栋工作${noun}`);
   const dates = (r) =>
     `${r.effective_at ? displayTime(r.effective_at) : "批准或保存后立即"}起 · ${r.effective_until ? `${displayTime(r.effective_until)}截止` : "不设截止"}`;
   const editable = () =>
     data.context.permissions.some(
       (p) =>
-        p.action === "change_rules" &&
+        p.action === permission &&
         ["autonomous", "confirmation_required"].includes(p.decision.status)
     );
   const localTime = (value) => {
@@ -1072,6 +1092,14 @@ function personalRulePanel(scope) {
   };
   const load = async () => {
     data = await api("/api/foundation/rules", { scope });
+    data.items = data.items.filter((i) =>
+      kind === "rule" ? i.kind === "rule" : i.kind !== "rule"
+    );
+    data.tasks = data.tasks.filter((t) =>
+      kind === "rule"
+        ? (t.input.lifecycle?.kind || "rule") === "rule"
+        : (t.input.lifecycle?.kind || "rule") !== "rule"
+    );
   };
   const refresh = async () => {
     if (working) return;
@@ -1091,13 +1119,13 @@ function personalRulePanel(scope) {
     r.replayed
       ? "已核对原请求结果，请查看下面的当前状态。"
       : {
-          saved: "约定已保存。",
-          stopped: "整项约定已停止，未来安排也已取消。",
+          saved: `${noun}已保存。`,
+          stopped: `整项${noun}已停止，未来安排也已取消。`,
           schedule_cancelled: "已取消这项未来安排。",
-          awaiting_review: "已提交指定人确认，可在约定请求中查看或撤销。",
+          awaiting_review: `已提交指定人确认，可在${noun}请求中查看或撤销。`,
           completed: "已批准并执行。",
           failed: `未执行：${errors[r.reason] || "原请求条件已变化，请重新核对。"}`,
-          cancelled: "请求已结束，未修改约定。",
+          cancelled: `请求已结束，未修改${noun}。`,
         }[r.status] || "请求已记录，请核对下方状态。";
   async function decide(task, action) {
     if (working) return;
@@ -1124,18 +1152,25 @@ function personalRulePanel(scope) {
     content.replaceChildren(status);
     status.textContent = "";
     const decision = data.context.permissions.find(
-      (p) => p.action === "change_rules"
+      (p) => p.action === permission
     )?.decision;
     content.append(
       sub(
         decision?.status === "autonomous"
-          ? "你可以直接安排本栋约定。"
+          ? `你可以直接安排本栋${noun}。`
           : decision?.status === "confirmation_required"
             ? `你的修改需${decision.reviewer_name || personName(decision.reviewer)}确认后生效。`
-            : "你可以查看本栋约定；修改权限请联系负责人核对。"
+            : `你可以查看本栋${noun}；修改权限请联系负责人核对。`
       )
     );
-    const ended = details("已结束、已停止与历史约定");
+    const ended = box("已结束或停止的记录");
+    const live = el("div");
+    content.append(
+      workTabs("记录状态", [
+        ["当前与待生效", live],
+        ["已结束", ended],
+      ])
+    );
     let endedCount = 0;
     for (const item of data.items) {
       const row = el("article", undefined, "qo-scope-row");
@@ -1154,7 +1189,8 @@ function personalRulePanel(scope) {
           )
         );
       if (editable()) {
-        if (current) row.append(actions(button("修改约定", () => edit(item, current))));
+        if (current)
+          row.append(actions(button(`修改${noun}`, () => edit(item, current))));
         else if (!item.scheduled.length)
           row.append(
             actions(
@@ -1180,7 +1216,7 @@ function personalRulePanel(scope) {
         if (!item.stopped_at)
           row.append(
             actions(
-              button("停止整项约定", () =>
+              button(`停止整项${noun}`, () =>
                 confirmChange(
                   item,
                   { action: "stop" },
@@ -1205,48 +1241,39 @@ function personalRulePanel(scope) {
                 confirmChange(
                   item,
                   { action: "cancel_scheduled", revision_id: later.id },
-                  `仅取消 ${dates(later)} 的未来安排，当前约定保持不变。`
+                  `仅取消 ${dates(later)} 的未来安排，当前${noun}保持不变。`
                 )
               )
             )
           );
         row.append(scheduled);
       }
-      const history = details("查看历史与操作记录");
-      for (const revision of item.revisions)
-        history.append(
-          el(
-            "p",
-            `第 ${revision.version} 版 · ${revision.content.title || titleOf(item)}：${revision.content.text}`
-          ),
-          sub(
-            `${dates(revision)} · ${revision.author || "已核验人员"}${revision.withdrawn_at ? " · 已撤回/取消" : ""}`
-          )
-        );
-      for (const event of data.events.filter((e) => e.key === item.key))
-        history.append(
-          sub(
-            `${displayTime(event.at)} · ${event.actor || "已核验人员"} · ${{ save: "保存约定", stop: "停止整项约定", cancel_scheduled: "取消未来安排" }[event.action]}`
-          )
-        );
-      row.append(history);
+      const currentView = el("div");
+      while (row.firstChild) currentView.append(row.firstChild);
+      row.append(
+        workTabs(titleOf(item), [
+          ["内容与安排", currentView],
+          ["历史记录", knowledgeHistory(item, dates)],
+        ])
+      );
       if (!current && !item.scheduled.length) {
         ended.append(row);
         endedCount++;
-      } else content.append(row);
+      } else live.append(row);
     }
-    if (!data.items.length) content.append(sub("尚无本栋约定，可以从新增一项开始。"));
-    if (endedCount) content.append(ended);
+    if (!data.items.length)
+      content.append(sub(`尚无本栋${noun}，可以从新增一项开始。`));
+    if (!endedCount) ended.append(sub("暂无已结束记录。"));
     content.append(
       actions(
         ...(editable()
-          ? [button("新增约定", () => edit(null, null), "qo-primary")]
+          ? [button(`新增${noun}`, () => edit(null, null), "qo-primary")]
           : []),
-        button("刷新约定与请求", refresh)
+        button(`刷新${noun}与请求`, refresh)
       )
     );
     if (data.tasks.length) {
-      const tasks = box("约定请求");
+      const tasks = box(`${noun}请求`);
       tasks.append(
         sub(
           "这里只显示你提出的请求，以及当前指定由你确认的请求。批准时会再次核对权限、日期和版本。"
@@ -1303,17 +1330,10 @@ function personalRulePanel(scope) {
             row.append(el("p", revision.content.text), sub(dates(revision)));
         }
         if (task.input.before?.revisions?.length) {
-          const before = details("查看提交时的原内容与安排");
-          if (task.input.before.stopped_at) before.append(sub("提交时整项已停止。"));
-          for (const revision of task.input.before.revisions)
-            before.append(
-              el("p", revision.content.text),
-              sub(`${dates(revision)}${revision.withdrawn_at ? " · 已撤回/取消" : ""}`)
-            );
-          row.append(before);
+          row.append(knowledgeHistory(task.input.before, dates));
         }
         if (task.reason)
-          row.append(sub(errors[task.reason] || "原请求条件已变化，未修改约定。"));
+          row.append(sub(errors[task.reason] || `原请求条件已变化，未修改${noun}。`));
         row.append(
           actions(
             ...(task.can_review || task.can_execute
@@ -1358,7 +1378,7 @@ function personalRulePanel(scope) {
         await load();
         const latest = data.items.find((i) => i.key === key);
         feedback.textContent = latest?.current
-          ? `当前约定：${latest.current.content.text} · ${dates(latest.current)}`
+          ? `当前${noun}：${latest.current.content.text} · ${dates(latest.current)}`
           : "当前无此项生效内容，请核对是否停止或已排期。";
         if (uncertain) {
           retry.hidden = false;
@@ -1426,6 +1446,7 @@ function personalRulePanel(scope) {
           key,
           operation_id: crypto.randomUUID(),
           expected_version: version,
+          kind: item?.kind || form.dataset.knowledgeKind || kind,
           change: buildChange(),
         };
         await send(frozen);
@@ -1436,7 +1457,7 @@ function personalRulePanel(scope) {
   }
   function confirmChange(item, change, description) {
     const form = openEditor(
-      change.action === "stop" ? "确认停止整项约定" : "确认取消未来安排"
+      change.action === "stop" ? `确认停止整项${noun}` : "确认取消未来安排"
     );
     form.append(el("p", description));
     attachSubmit(form, item, () => change, "确认提交");
@@ -1445,18 +1466,18 @@ function personalRulePanel(scope) {
   function edit(item, revision, restart = false, scheduled = false) {
     const form = openEditor(
       !item
-        ? "新增本栋约定"
+        ? `新增本栋${noun}`
         : restart
-          ? "重新安排约定"
+          ? `重新安排${noun}`
           : scheduled
             ? "修改未来安排"
-            : "修改本栋约定"
+            : `修改本栋${noun}`
     );
     const prefix = crypto.randomUUID();
     const title = inputField(
       form,
       `${prefix}-title`,
-      "约定名称",
+      `${noun}名称`,
       revision ? titleOf(revision) : "",
       "text",
       true
@@ -1464,11 +1485,54 @@ function personalRulePanel(scope) {
     const body = inputField(
       form,
       `${prefix}-body`,
-      "具体约定",
+      `具体${noun}`,
       revision?.content.text || "",
       "textarea",
       true
     );
+    body.maxLength = 12000;
+    if (kind !== "rule") {
+      const category = selectField(
+        form,
+        `${prefix}-kind`,
+        "资料类型",
+        [
+          { id: "fact", label: "设施与生活说明" },
+          { id: "culture", label: "本栋文化" },
+          { id: "experience", label: "经验建议" },
+        ],
+        item?.kind || "fact"
+      );
+      category.disabled = !!item;
+      form.dataset.knowledgeKind = category.value;
+      category.addEventListener("change", () => {
+        form.dataset.knowledgeKind = category.value;
+      });
+      const file = inputField(form, `${prefix}-file`, "导入 Markdown 文档", "", "file");
+      file.accept = ".md,.markdown,text/markdown,text/plain";
+      const hint = sub(
+        "支持 UTF-8 Markdown，最多 12 KB。导入后可以编辑，保存后才供二花使用；文档中的指令不会授予权限。"
+      );
+      file.addEventListener("change", async () => {
+        const selected = file.files?.[0];
+        if (!selected) return;
+        if (!/\.(md|markdown)$/i.test(selected.name) || selected.size > 12000) {
+          hint.textContent = "请选择不超过 12 KB 的 Markdown 文件。";
+          return;
+        }
+        try {
+          body.value = new TextDecoder("utf-8", { fatal: true }).decode(
+            await selected.arrayBuffer()
+          );
+          if (!title.value)
+            title.value = selected.name.replace(/\.(md|markdown)$/i, "").slice(0, 80);
+          hint.textContent = "已读入草稿，请核对内容后保存。";
+        } catch {
+          hint.textContent = "无法读取，请使用 UTF-8 编码的 Markdown 文件。";
+        }
+      });
+      form.append(hint);
+    }
     title.placeholder = "例如：厨房使用";
     body.placeholder = "写清楚本栋希望如何安排。";
     const start = inputField(
@@ -1487,18 +1551,18 @@ function personalRulePanel(scope) {
     );
     fieldExplanation(
       end,
-      "约定何时结束",
+      `${noun}何时结束`,
       "截止后不再使用，也不会恢复更早的版本。需要恢复时，请明确重新安排。日期按你设备的本地时间显示。审批完成前不会生效。"
     );
     fieldExplanation(
       start,
       "当前与未来安排",
       scheduled
-        ? "保存会替换所选未来版本。若它已经开始生效，请刷新后按当前约定修改。"
-        : "修改当前约定不会取消已有未来安排，请同时核对它们；若要全部停止，请使用停止整项约定。"
+        ? `保存会替换所选未来版本。若它已经开始生效，请刷新后按当前${noun}修改。`
+        : `修改当前${noun}不会取消已有未来安排，请同时核对它们；若要全部停止，请使用停止整项${noun}。`
     );
     if (item?.stopped_at)
-      form.append(sub("你正在明确重新启用已停止的约定；旧的未来安排不会恢复。"));
+      form.append(sub(`你正在明确重新启用已停止的${noun}；旧的未来安排不会恢复。`));
     attachSubmit(
       form,
       item,
@@ -1529,13 +1593,16 @@ function personalRulePanel(scope) {
         };
       },
       data.context.permissions.some(
-        (p) => p.action === "change_rules" && p.decision.status === "autonomous"
+        (p) => p.action === permission && p.decision.status === "autonomous"
       )
-        ? "保存约定"
+        ? `保存${noun}`
         : "提交确认"
     );
     title.focus();
   }
+  panel.refreshWorkspace = () => {
+    if (!editor && !working) refresh();
+  };
   content.append(status, button("重新读取", refresh));
   load()
     .then(() => {

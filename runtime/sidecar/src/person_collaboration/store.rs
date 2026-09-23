@@ -11,6 +11,7 @@ pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
 pub(crate) mod foundation;
 mod rule_lifecycle;
+pub(crate) mod steward;
 pub(crate) use rule_lifecycle::{RuleCommand, RuleEdit};
 mod identity;
 mod ontology;
@@ -832,6 +833,8 @@ impl Store {
                         .any(|r| r["role"] == pos["role_id"] && r["scope"] == pos["scope_id"])
                 });
         }
+        let delegated_reviews =
+            steward::delegated_scopes_in(&self.pool, &self.tenant, &mut tx, actor.person).await?;
         let personal = actor.session_hash.is_some() && !management_available;
         if personal {
             roles
@@ -862,7 +865,7 @@ impl Store {
             .filter(|key| !personal || grants.iter().any(|g| g["action"] == **key))
             .collect();
         Ok(
-            json!({"version":version,"actor_person":actor.person,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":"synthetic","runtime_connected":false}),
+            json!({"version":version,"actor_person":actor.person,"delegated_reviews":delegated_reviews,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":"synthetic","runtime_connected":false}),
         )
     }
 

@@ -127,14 +127,20 @@ mod database {
             valid_until: None,
             proxy_for: None,
             actions: vec![],
-            permissions: ["change_rules", "review", "publish"]
-                .into_iter()
-                .map(|action| PermissionSetting {
-                    action: action.into(),
-                    mode: PermissionMode::Autonomous,
-                    reviewer: None,
-                })
-                .collect(),
+            permissions: [
+                "change_rules",
+                "confirm_knowledge",
+                "designate",
+                "review",
+                "publish",
+            ]
+            .into_iter()
+            .map(|action| PermissionSetting {
+                action: action.into(),
+                mode: PermissionMode::Autonomous,
+                reviewer: None,
+            })
+            .collect(),
             delegation: None,
         };
         store
@@ -167,6 +173,117 @@ mod database {
 
     async fn welcome_counts(store: &Store, case: Uuid) -> Result<Value> {
         Ok(sqlx::query_scalar("SELECT jsonb_build_array((SELECT count(*) FROM qintopia_agent_os.welcome_synthetic_effects e JOIN qintopia_agent_os.welcome_actions a ON a.id=e.action_id WHERE a.case_id=$1),(SELECT count(*) FROM qintopia_agent_os.welcome_approvals p JOIN qintopia_agent_os.welcome_artifact_bindings b ON b.artifact_id=p.artifact_id WHERE b.case_id=$1))").bind(case).fetch_one(&store.pool).await?)
+    }
+
+    #[tokio::test]
+    #[ignore = "explicit isolated database required"]
+    async fn steward_broker_and_http_share_knowledge_and_welcome_settings() -> Result<()> {
+        let (store, actor, scope, case) = welcome_fixture().await?;
+        let (event, _) = message(&store, "direct", "synthetic-chat", true).await?;
+        let workspace = invoke(
+            &store,
+            request("workspace", "direct", "synthetic-chat", &event, json!({})),
+        )
+        .await?;
+        assert_eq!(workspace["delegation"]["can_designate"], true);
+        let write = json!({"operation_id":Uuid::new_v4(),"expected_version":0,"key":"living_guide","kind":"fact","change":{"action":"save","content":{"title":"生活指南","text":"# 厨房\n使用后归位"},"effective_at":null,"effective_until":null}});
+        let result = invoke(
+            &store,
+            request(
+                "change_knowledge",
+                "direct",
+                "synthetic-chat",
+                &event,
+                write.clone(),
+            ),
+        )
+        .await?;
+        assert_eq!(result["status"], "saved");
+        assert_eq!(
+            invoke(
+                &store,
+                request(
+                    "change_knowledge",
+                    "direct",
+                    "synthetic-chat",
+                    &event,
+                    write.clone()
+                )
+            )
+            .await?["replayed"],
+            true
+        );
+        let http = dispatch(
+            &store,
+            &actor,
+            "/api/foundation/rules",
+            &serde_json::to_vec(&json!({"scope":scope}))?,
+        )
+        .await?;
+        assert!(http["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["key"] == "living_guide"
+                && i["current"]["content"]["text"] == "# 厨房\n使用后归位"));
+        let target = workspace["welcome"][0]["target_ref"].clone();
+        let other_case:Uuid=sqlx::query_scalar("SELECT c.id FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id JOIN qintopia_agent_os.welcome_targets t ON t.source_instance=c.source_instance AND t.property_id=c.property_id JOIN qintopia_agent_os.welcome_foundation_targets f ON f.target_id=t.id WHERE f.tenant_key=$1 AND v.projection->>'building'='二栋' LIMIT 1").bind(&store.tenant).fetch_one(&store.pool).await?;
+        let cross_scope = json!({"action":"render","target_ref":target,"case_ref":other_case,"material":{"display_name":"跨栋","description":"不得处理","welcome_text":"不得处理"}});
+        assert_eq!(
+            dispatch(
+                &store,
+                &actor,
+                "/api/foundation/welcome",
+                &serde_json::to_vec(&cross_scope)?
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+            "scope_access_denied"
+        );
+        let setting = json!({"operation_id":Uuid::new_v4(),"target_ref":target,"expected_version":0,"case_ref":case,"mode":"direct","text_template":"欢迎 {name}"});
+        invoke(
+            &store,
+            request(
+                "welcome_setting",
+                "direct",
+                "synthetic-chat",
+                &event,
+                setting,
+            ),
+        )
+        .await?;
+        let welcome = crate::resident_welcome::store::Store {
+            pool: store.pool.clone(),
+        }
+        .foundation_state(&store.tenant, store.verified_person(&actor).await?)
+        .await?;
+        let saved = welcome["targets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["target_ref"] == target)
+            .unwrap();
+        assert_eq!(saved["case_rules"][0]["content"]["mode"], "direct");
+        assert!(
+            saved["rule"].is_null(),
+            "one-case setting must not change standing rules"
+        );
+        let mut spoofed = write;
+        spoofed["scope"] = json!(Uuid::new_v4());
+        assert!(invoke(
+            &store,
+            request(
+                "change_knowledge",
+                "direct",
+                "synthetic-chat",
+                &event,
+                spoofed
+            )
+        )
+        .await
+        .is_err());
+        Ok(())
     }
 
     #[tokio::test]
