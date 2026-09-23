@@ -633,3 +633,12 @@ pre {
     width: 44px;
   }
 }
+
+#qt-org-scope .qo-work-editor {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--qo-line);
+}
+#qt-org-scope .qo-personal-work > .qo-box {
+  margin-top: 16px;
+}

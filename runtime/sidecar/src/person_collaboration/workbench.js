@@ -9,6 +9,9 @@ let ledgerKind = "agent",
   ledgerSelection = null,
   ledgerSearch = "";
 const errors = {
+  knowledge_version_conflict: "约定已被更新。草稿已保留，请重新读取并核对后再保存。",
+  scope_access_denied: "当前账号没有修改这个范围的权限，请联系负责人核对授权。",
+  foundation_disabled: "本地业务入口未启用，暂时无法保存。",
   command_already_processed_refresh_state:
     "该操作已处理，请重新读取当前状态核对；未重复保存。",
   configuration_version_conflict: "配置已被其他窗口更新。重新读取后，核对并再次预览。",
@@ -191,7 +194,7 @@ function updateWorkspaceNavigation() {
     item.hidden = !availablePage(item.dataset.page);
   $("workspace-boundary").textContent = manager
     ? "登记不自动授予权限；解除关联不删除对象。"
-    : "这里只展示你的工作；可决定的事项以当前授权为准。";
+    : "只处理你的工作范围；保存时会核验当前授权。";
   if (!availablePage(page)) {
     page = "overview";
     editing = null;

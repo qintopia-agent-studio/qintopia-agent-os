@@ -318,6 +318,8 @@ function renderPersonalWork() {
       target.append(work);
       continue;
     }
+    if (relation.agent === "erhua" && relation.domain === "community_service")
+      work.append(personalRulePanel(relation.scope));
     const grants = state.grants.filter(
       (g) => g.collaboration === relation.id && g.effective && g.mode !== "denied"
     );
@@ -337,7 +339,7 @@ function renderPersonalWork() {
           `${text(grant.action)}${grant.mode === "confirmation" ? `（需${personName(grant.reviewer)}确认）` : ""}`
         )
       );
-    if (grants.length) work.append(summary, list);
+    if (grants.length) work.append(details("查看我能决定的事项", summary, list));
     else work.append(sub("当前没有可用的决定权，请联系负责人核对安排。"));
     const more = details("查看任期与工作依据", sub(termSummary(relation)));
     more.addEventListener("toggle", () => {
@@ -1007,4 +1009,258 @@ function renderSettings() {
       form
     );
   });
+}
+
+// Business settings use the existing rule service, never organization edit authority.
+function personalRulePanel(scope) {
+  const panel = box("本栋约定"),
+    content = el("div");
+  panel.append(sub("你可以在已有权限内修改本栋规则，或新增一项工作约定。"), content);
+  explainHeading(
+    panel,
+    "本栋约定",
+    "只影响当前楼栋。保存后由二花读取；上层共同约束仍适用。保存不会自动通知群，也不会改变你的岗位和权限。"
+  );
+  if (!state.local_dialogue_available) {
+    content.append(sub("当前本地业务入口未启用，暂时无法读取和保存约定。"));
+    return panel;
+  }
+  const prefix = `work-rule-${crypto.randomUUID()}`;
+  let context,
+    editor = null;
+  const ruleTitle = (rule) =>
+    rule.content?.title || (rule.key === "kitchen" ? "厨房使用" : "本栋工作约定");
+  const editable = (rule) =>
+    rule.scope === scope &&
+    rule.kind === "rule" &&
+    !rule.shared &&
+    rule.content &&
+    typeof rule.content.text === "string" &&
+    Object.keys(rule.content).every((key) => ["text", "title"].includes(key));
+  const status = el("p", "正在读取本栋约定……", "qo-sub");
+  status.setAttribute("role", "status");
+  content.append(status);
+  async function load() {
+    context = await api("/api/foundation/context", { scope });
+  }
+  function draw() {
+    content.replaceChildren(status);
+    status.textContent = "";
+    const rules = context.knowledge.filter(editable);
+    for (const rule of rules) {
+      const row = el("article", undefined, "qo-scope-row");
+      row.append(
+        el("h4", ruleTitle(rule)),
+        el("p", rule.content.text),
+        sub(
+          `当前生效 · ${displayTime(rule.effective_at)}${rule.effective_until ? ` · 截至 ${displayTime(rule.effective_until)}` : ""}`
+        )
+      );
+      content.append(row);
+    }
+    if (!rules.length)
+      content.append(sub("目前没有可直接编辑的文本约定，可以从新增一项开始。"));
+    const later = context.later_revisions.filter(editable);
+    for (const rule of later)
+      content.append(
+        sub(
+          `待生效：${ruleTitle(rule)} · ${displayTime(rule.effective_at)} · ${rule.content.text}`
+        )
+      );
+    const rights = context.permissions.filter((p) => p.action === "change_rules");
+    const canWrite = rights.some((p) =>
+      ["autonomous", "confirmation_required"].includes(p.decision.status)
+    );
+    if (!canWrite) {
+      content.append(sub("当前没有修改本栋约定的决定权，请联系负责人核对授权。"));
+      return;
+    }
+    content.append(
+      sub(
+        rights.some((p) => p.decision.status === "autonomous")
+          ? "你可自主保存本栋约定。"
+          : "你可以提出修改，需授权中指定的人确认后生效。"
+      )
+    );
+    const bar = actions(
+      ...rules.map((rule) => button(`修改${ruleTitle(rule)}`, () => edit(rule))),
+      button("新增约定", () => edit(null), "qo-primary")
+    );
+    content.append(bar);
+    const link = el("a", "向二花交代其他事项", "qo-work-link");
+    link.href = "/foundation";
+    content.append(
+      actions(link),
+      sub("具体事项和交流偏好也可以告诉二花；当前对话入口仅支持列出的本地例句。")
+    );
+  }
+  function edit(rule) {
+    editor?.remove();
+    const form = el("form", undefined, "qo-work-editor");
+    editor = form;
+    const key = rule?.key || `local_${crypto.randomUUID()}`;
+    let until = rule?.effective_until || null;
+    let version =
+      context.knowledge_items.find((r) => r.key === key)?.latest_version || 0;
+    form.append(
+      el("h4", rule ? `修改${ruleTitle(rule)}` : "新增本栋约定"),
+      sub(`仅用于${labelOf("scopes", scope)}，不改变其他楼栋。`)
+    );
+    const title = inputField(
+      form,
+      `${prefix}-title`,
+      "约定名称",
+      rule ? ruleTitle(rule) : "",
+      "text",
+      true
+    );
+    title.placeholder = "例如：公共空间使用";
+    const body = inputField(
+      form,
+      `${prefix}-body`,
+      "具体约定",
+      rule?.content.text || "",
+      "textarea",
+      true
+    );
+    body.placeholder = "写清楚你希望如何安排，二花会读取保存后的约定。";
+    const time = inputField(
+      form,
+      `${prefix}-time`,
+      "开始生效时间（留空即保存后生效）",
+      "",
+      "datetime-local"
+    );
+    fieldExplanation(
+      time,
+      "生效时间",
+      "未来生效前仍使用当前约定。已有待生效版本不会被这次修改删除，请先核对上面的待生效内容。若需指定人确认，批准前不会生效。"
+    );
+    const current = sub(rule ? `本次依据：${rule.content.text}` : "这是新增约定。");
+    if (rule?.effective_until)
+      current.textContent += ` 原截止时间 ${displayTime(rule.effective_until)} 保留。`;
+    const feedback = el("p", "", "qo-sub");
+    feedback.setAttribute("role", "status");
+    const save = el("button", "保存本栋约定", "qo-primary");
+    save.type = "submit";
+    const reload = button("重新读取并核对（保留草稿）", async () => {
+      panel.inert = true;
+      try {
+        await load();
+        version =
+          context.knowledge_items.find((r) => r.key === key)?.latest_version || 0;
+        const latest = context.knowledge.find(
+          (r) => r.key === key && r.scope === scope
+        );
+        current.textContent = latest
+          ? `当前已生效：${latest.content.text}`
+          : "当前没有此项已生效的约定。";
+        until = latest?.effective_until || null;
+        if (until) current.textContent += ` 原截止时间 ${displayTime(until)} 保留。`;
+        const pending = context.later_revisions.filter((r) => r.key === key);
+        if (pending.length)
+          current.textContent +=
+            " 待生效：" +
+            pending
+              .map((r) => `${displayTime(r.effective_at)}：${r.content.text}`)
+              .join("；");
+        save.disabled = !context.permissions.some(
+          (p) =>
+            p.action === "change_rules" &&
+            ["autonomous", "confirmation_required"].includes(p.decision.status)
+        );
+        feedback.textContent = save.disabled
+          ? "修改权限已收回，草稿保留供你核对。"
+          : "草稿已保留。请与当前约定核对；如已保存，无需再次提交。";
+      } catch (error) {
+        feedback.textContent = error.message;
+      } finally {
+        panel.inert = false;
+      }
+    });
+    reload.hidden = true;
+    form.append(
+      current,
+      actions(
+        save,
+        button("取消", () => {
+          form.remove();
+          editor = null;
+        })
+      ),
+      feedback,
+      reload
+    );
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (busy || save.disabled || panel.inert) return;
+      if (!title.value.trim() || !body.value.trim()) {
+        feedback.textContent = "请填写约定名称和具体内容。";
+        return;
+      }
+      if (time.value && new Date(time.value).getTime() <= Date.now()) {
+        feedback.textContent = "请选择未来时间，或留空表示保存后生效。";
+        return;
+      }
+      if (
+        until &&
+        (time.value ? new Date(time.value).getTime() : Date.now()) >=
+          new Date(until).getTime()
+      ) {
+        feedback.textContent = "开始时间须早于这项约定原有的截止时间。";
+        return;
+      }
+      panel.inert = true;
+      let saved = false;
+      try {
+        const result = await api("/api/foundation/rule", {
+          scope,
+          operation_id: crypto.randomUUID(),
+          expected_version: version,
+          key,
+          kind: "rule",
+          shared: false,
+          content: { title: title.value.trim(), text: body.value.trim() },
+          effective_at: time.value ? new Date(time.value).toISOString() : null,
+          effective_until: until,
+        });
+        saved = true;
+        await load();
+        draw();
+        status.textContent =
+          result.status === "saved"
+            ? `已保存并重新读取。${time.value ? `${displayTime(result.knowledge.effective_at)}开始生效。` : "现在开始生效。"}未发送群通知。`
+            : "修改已提交，等待指定人员确认；当前约定保持不变。";
+        editor = null;
+      } catch (error) {
+        save.disabled = true;
+        reload.hidden = false;
+        feedback.textContent = saved
+          ? "已取得保存回执，但回读失败。请重新读取核对，不要重复提交。"
+          : error.message;
+      } finally {
+        panel.inert = false;
+      }
+    });
+    content.append(form);
+    title.focus();
+  }
+  load()
+    .then(() => {
+      if (panel.isConnected) draw();
+    })
+    .catch((error) => {
+      status.textContent = error.message;
+      content.append(
+        button("重新读取本栋约定", () => {
+          status.textContent = "正在重新读取……";
+          load()
+            .then(draw)
+            .catch((e) => {
+              status.textContent = e.message;
+            });
+        })
+      );
+    });
+  return panel;
 }
