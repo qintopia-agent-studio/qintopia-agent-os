@@ -18,6 +18,27 @@ class PluginTests(unittest.TestCase):
                 plugin.validate('prepare',{'binding':'b','operation':'pms.command.CREATE_ORDER','input':data,'reason':{'code':'C','note':''}})
         with self.assertRaises(ValueError): plugin.validate('read',{'binding':'b','query':'unlisted'})
 
+    def test_event_collection_requires_actual_matching_available_payment(self):
+        args = {'binding':'b','operation':'pms.command.RECORD_COLLECTION','work_item':'w',
+                'input':{'orderId':'o','method':'WECOM','transactionReference':'ref','amountMinor':100},
+                'reason':{'code':'CUSTOMER_PAYMENT','note':''}}
+        for override in ({'status':'MATCHED'}, {'reference':'other'}, {'amountMinor':200}, {'id':'other'}):
+            calls=[]
+            class Pms:
+                def read(self,kind,prop,filters):
+                    self.called=(kind,prop,filters)
+                    return {'items':[dict(id='bill',status='AVAILABLE',kind='COLLECTION',reference='ref',amountMinor=100) | override]}
+            def broker(request):
+                calls.append(request['tool'])
+                return {'ok':True,'result':{'bill_id':'bill','property':'property_a'}}
+            pms=Pms()
+            op=plugin.Operations(pms,broker,lambda:{})
+            with self.assertRaises(ValueError): op.prepare(args)
+            self.assertEqual(calls,['pms_event_context'])
+            self.assertEqual(pms.called,('payments','property_a',{'billId':'bill','limit':1}))
+        with self.assertRaises(ValueError):
+            plugin.validate('prepare',dict(args,source_payment={'status':'AVAILABLE'}))
+
     def test_receipt_order_readback_uses_trusted_input_property(self):
         class Pms:
             def read(self,kind,prop,resource):

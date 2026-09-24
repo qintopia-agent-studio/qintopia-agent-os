@@ -131,3 +131,54 @@ Cargo 命令均指定 `--manifest-path runtime/sidecar/Cargo.toml`，测试栈�
   本线仅接住宿事实、可靠申请引用和既有 WorkItem，等待明确公共接口；欢迎内容确认不授予 PMS 操作权限。
 
 - 真实 Livecool 模型、专属 Bot、主动工作群能力、实际操作者权限、生产 PMS、欢迎发布与 T14 均未验收。当前未 SSH、读取生产凭据、发布、部署、合并或外发。
+
+## 阶段 3：本地支付接收切片
+
+新增独立
+`202609240002_business_payment_event_ingress.sql`；001 未改，003 归欢迎线。应用前回读001成功、002未应用、checkpoint/inbox为空；应用后001与002均成功。首次误查public下迁移表报不存在，改查实际qintopia_messages
+schema，未重建数据库。
+
+固定支付HMAC入口与host-only补拉已接入；原verify仅抽取authenticate阶段，旧解码、作用域、签名字节及错误语义保持。模型operation不能进入host-only分支。Actor/Grant、个人身份解析与欢迎UI未改。
+
+关联事件事项前，插件实际读取PMS
+billId并核对可用状态、流水、金额和WECOM方式。共同服务仍要求当前人员的精确收款权限及当笔确认。事件不制造批准或财务动作。
+
+| 验证                           | 实际结果                                             |
+| ------------------------------ | ---------------------------------------------------- |
+| person_collaboration PG        | 82 passed / 0 ignored，含5项支付专项                 |
+| resident_welcome PG            | 24 passed / 0 ignored，按原runner环境及串行参数运行  |
+| Python客户端、插件、宿主补拉   | 22 passed                                            |
+| all-features Rust              | 866 passed / 136 ignored；支付PG用例已在上层实际执行 |
+| no-default/all-features Clippy | 两组all-targets禁止警告均通过                        |
+| 业务目录harness                | 8 passed                                             |
+| 普通本地sidecar构建            | 通过                                                 |
+| 独立联合配置初始化             | 1 passed，不重置PMS、不生成付款                      |
+
+支付专项覆盖非零H=42、并发首次初始化、重启不覆盖、push/feed同回执、缺口整页回滚、MATCHED先到、退款不建催办、跨来源/物业拒绝、签名持久ACK、关联权限和无确认拒绝。
+
+保留的本地失败及修复：测试曾直接访问Actor私有字段，已改用verified_person
+API。扩大PG回归曾遗漏原runner的串行参数，账户状态前后仅local_dialogue_available不同，原因是其他测试并发改变进程开关；未改断言，按原串行命令复跑82项通过。
+
+欢迎回归首次只配置WELCOME前置，14项跨模块foundation用例拒绝缺少通用harness开关。按原runner完整环境补跑24项通过，保留payment-welcome-env-failure.log。这些环境失败不改写为首次全绿；既有图像apply
+smoke的固定URL限制仍未解决。
+
+### 联合服务与基线
+
+18449本地receiver已启动；固定事件路径GET返回404，禁止泛用CSRF绕过。宿主真实调用发送方PMS
+head并同事务保存baseline/checkpoint，独立SQL回读结果为：
+
+- sourceInstance：`synthetic-pms-joint-20260924`
+- propertyId：`prop_qintopia_demo`
+- bindingVersion：1
+- baselineCursor与cursor：均为0
+
+证据位于忽略目录joint/baseline-initialize.log与joint/baseline-readback.json。本次真实空流基线与非零H=42专项分别记录；冻结前未通知发送方discover。模拟配置与密钥不进入Git，旧5432、PMS联合库及其他任务实例未改动。
+
+发送方实际联合工具版本为`357f9cea044a1343332e6806cef1fda05899d408`；对方报告PR
+51 已合入 main，merge为`e7f77163eb6d4cbc0142b356f96087b0a399458c`。HTTPS签名投递、丢ACK重试及人确认后的真实本地收款链仍待联合执行。
+
+为避免磁盘耗尽，仅清理本任务5个未使用的旧增量编译缓存目录，未删除源码、日志、数据库或其他任务目录。
+
+阶段3 `pnpm check:light`
+全部通过（退出0），包括登记、秘密扫描、部署runner和时钟回归。既有PG apply
+smoke仍受固定URL门禁限制；适用总检查未全通过，不宣称auto全绿。

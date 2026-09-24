@@ -4,3 +4,9 @@
 async fn real_broker_pms_journey() -> anyhow::Result<()> {
     crate::person_collaboration::business_tests::business_real_broker_pms_journey().await
 }
+
+#[tokio::test]
+#[ignore = "explicit owned payment joint environment and new output file required"]
+async fn payment_joint_setup() -> anyhow::Result<()> {
+    crate::person_collaboration::business_tests::payment_joint_setup().await
+}

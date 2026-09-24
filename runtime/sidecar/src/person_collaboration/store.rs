@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 mod auth;
 pub(crate) mod business;
+pub(crate) mod business_events;
 pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
 pub(crate) mod foundation;

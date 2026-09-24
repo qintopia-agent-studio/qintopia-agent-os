@@ -15,6 +15,9 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-24.002`:
+  [Payment event ingress](2026-09-24-business-payment-event-ingress.md)
+
 - `2026-09-24.001`:
   [Business operation execution](2026-09-24-business-operation-execution.md)
 

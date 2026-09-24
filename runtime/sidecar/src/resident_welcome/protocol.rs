@@ -227,6 +227,25 @@ pub fn verify(
     keys: &[SigningKey],
     now: i64,
 ) -> Result<VerifiedEvent, Rejection> {
+    let key = authenticate(raw, headers, keys, now)?;
+    VerifiedEvent::from_feed(raw, &key.source_instance, decode(raw)?.property_id.as_str()).and_then(
+        |e| {
+            if key.properties.contains(&e.envelope.property_id) {
+                Ok(e)
+            } else {
+                Err(reject(403, "property_forbidden"))
+            }
+        },
+    )
+}
+
+/// Shared exact-byte authentication; each protocol keeps its own envelope and scope validation.
+pub(crate) fn authenticate<'a>(
+    raw: &[u8],
+    headers: &BTreeMap<String, String>,
+    keys: &'a [SigningKey],
+    now: i64,
+) -> Result<&'a SigningKey, Rejection> {
     if raw.len() > MAX_BODY {
         return Err(reject(413, "body_too_large"));
     }
@@ -274,13 +293,5 @@ pub fn verify(
     mac.update(message.as_bytes());
     mac.verify_slice(&bytes)
         .map_err(|_| reject(401, "invalid_signature"))?;
-    VerifiedEvent::from_feed(raw, &key.source_instance, decode(raw)?.property_id.as_str()).and_then(
-        |e| {
-            if key.properties.contains(&e.envelope.property_id) {
-                Ok(e)
-            } else {
-                Err(reject(403, "property_forbidden"))
-            }
-        },
-    )
+    Ok(key)
 }

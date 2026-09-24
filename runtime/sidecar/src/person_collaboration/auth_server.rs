@@ -32,10 +32,14 @@ pub async fn bootstrap(person: Uuid, username: &str) -> Result<()> {
 pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> Result<()> {
     let mut r = match request(stream, port).await {
         Ok(r) => r,
-        Err(_) => {
+        Err(error) => {
             return respond(
                 stream,
-                400,
+                if error.to_string() == "body_too_large" {
+                    413
+                } else {
+                    400
+                },
                 "application/json",
                 br#"{"code":"invalid_request"}"#,
                 None,
@@ -43,6 +47,27 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
             .await
         }
     };
+    // A single independently signed ingress, never a cookie/CSRF bypass for UI routes.
+    if r.path == crate::resident_welcome::protocol::PATH {
+        let response = match super::business_ingress::Config::local() {
+            Ok(config) => {
+                super::business_ingress::receive(store, &config, &r, chrono::Utc::now().timestamp())
+                    .await
+            }
+            Err(_) => crate::resident_welcome::ingress::Response {
+                status: 503,
+                body: json!({"code":"payment_ingress_unavailable"}),
+            },
+        };
+        return respond(
+            stream,
+            response.status,
+            "application/json",
+            &serde_json::to_vec(&response.body)?,
+            None,
+        )
+        .await;
+    }
     // Exact Origin + strict cookies + JSON-only writes; includes login CSRF protection.
     if r.method == "POST"
         && (r.headers.get("origin") != Some(&format!("http://127.0.0.1:{port}"))
