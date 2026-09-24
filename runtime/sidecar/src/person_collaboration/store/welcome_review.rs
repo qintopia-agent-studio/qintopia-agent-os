@@ -31,7 +31,7 @@ pub(crate) enum WelcomeSubject {
     },
 }
 impl WelcomeSubject {
-    fn reference(&self) -> SubjectRef {
+    pub(super) fn reference(&self) -> SubjectRef {
         match self {
             Self::Group { subject, .. } => subject.reference(),
             Self::Person(a) => SubjectRef::Person(a.person),
@@ -361,7 +361,11 @@ async fn identity_link_snapshot(
     )
 }
 
-fn identity_relations_valid(snapshot: &Value, application: Uuid, person: Option<Uuid>) -> bool {
+pub(super) fn identity_relations_valid(
+    snapshot: &Value,
+    application: Uuid,
+    person: Option<Uuid>,
+) -> bool {
     let Some(person) = person else { return false };
     let r = &snapshot["relations"];
     let person = json!(person);
@@ -566,9 +570,34 @@ impl Store {
             ensure!(receipt.get::<String,_>("request_hash")==hash && receipt.get::<String,_>("subject_kind")==reference.kind() && receipt.get::<Uuid,_>("subject_id")==reference.id(),"idempotency_conflict");
             return Ok(receipt.get("result"));
         }
+        let mut decision_basis = "manual_source";
         if let Some(id) = presentation {
-            self.welcome_presentation_current(&mut tx, scope, r.work_item, id)
+            let presented = self
+                .welcome_presentation_current(&mut tx, scope, r.work_item, id, false)
                 .await?;
+            let text: Option<String> = sqlx::query_scalar(
+                "SELECT text FROM qintopia_messages.messages WHERE id=$1 AND tenant_id=$2",
+            )
+            .bind(r.operation_id)
+            .bind(&self.tenant)
+            .fetch_optional(&mut *tx)
+            .await?
+            .flatten();
+            let manual = text
+                .as_deref()
+                .is_some_and(|s| s.split_whitespace().any(|w| w == "人工核对"));
+            if super::welcome_host::contact_dependency(&presented, r, manual) {
+                self.verify_contact_confirmation(
+                    &mut tx,
+                    scope,
+                    row.get("application_id"),
+                    id,
+                    r.operation_id,
+                    &presented["contacts"],
+                )
+                .await?;
+                decision_basis = "phone_rechecked";
+            }
         }
         ensure!(
             row.get::<i64, _>("version") == r.expected_version,
@@ -769,7 +798,7 @@ impl Store {
         let result = json!({"created_person":created_person,"work_item":r.work_item,"version":r.expected_version+1,"status":status,"identity_confirmed":identity_receipt.is_some(),"channel_confirmed":channel.is_some(),"content_confirmed":content_receipt.is_some(),"published":false});
         sqlx::query("UPDATE qintopia_agent_os.welcome_review_items SET version=version+1,status=$2,snapshot=$3,confirmed_person=$4,confirmed_channel=$5,identity_receipt=$6,content_receipt=$7 WHERE work_item_id=$1")
             .bind(r.work_item).bind(status).bind(after).bind(person).bind(channel).bind(identity_receipt).bind(content_receipt).execute(&mut *tx).await?;
-        let effect_record = json!({"created_person":created_person,"source_link":if created_person.is_some(){current["occupant_source"]["id"].clone()}else{Value::Null},"person":person,"channel":channel,"application_stay":r.confirm_application_stay,"channel_person":r.confirm_channel_person,"content":r.confirm_content,"decision":r.decision,"publish":false,"previous_application_person":previous_application_person});
+        let effect_record = json!({"identity_basis":decision_basis,"created_person":created_person,"source_link":if created_person.is_some(){current["occupant_source"]["id"].clone()}else{Value::Null},"person":person,"channel":channel,"application_stay":r.confirm_application_stay,"channel_person":r.confirm_channel_person,"content":r.confirm_content,"decision":r.decision,"publish":false,"previous_application_person":previous_application_person});
         sqlx::query("INSERT INTO qintopia_agent_os.welcome_review_receipts(id,tenant_key,work_item_id,subject_kind,subject_id,subject_version,grant_id,request_hash,effects,result,subject_proof) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
             .bind(r.operation_id).bind(&self.tenant).bind(r.work_item).bind(reference.kind()).bind(reference.id()).bind(subject.version()).bind(grant).bind(hash).bind(&effect_record).bind(&result).bind(subject.proof()).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO qintopia_agent_os.work_item_events(work_item_id,event_type,actor_type,actor_id,data) VALUES($1,'welcome_operations_decision',$2,$3,$4)").bind(r.work_item).bind(reference.kind()).bind(reference.id().to_string()).bind(effect_record).execute(&mut *tx).await?;

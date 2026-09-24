@@ -15,6 +15,7 @@ mod business_manual;
 pub(crate) mod business_reminders;
 mod business_sources;
 pub(crate) mod welcome_candidates;
+pub(crate) mod welcome_contacts;
 pub(crate) mod welcome_host;
 pub(crate) mod welcome_pages;
 pub(crate) mod welcome_review;

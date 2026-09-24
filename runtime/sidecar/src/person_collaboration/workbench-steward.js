@@ -1056,7 +1056,9 @@ function operationsWorkspace(scope) {
               });
               found.replaceChildren();
               found.append(
-                sub(`${data.phone_hint || "申请未提供手机号"}；未按手机号自动认人。`)
+                sub(
+                  `${data.phone_hint || "申请未提供手机号"}；${data.phone_scan_complete ? "已完成逐人电话核对，按电话线索优先列出" : "电话资料尚未完整核对，当前列表仅供人工核对"}。候选仍需确认。`
+                )
               );
               for (const c of data.candidates) {
                 const candidate = box(`${c.label} · ${c.building || "楼栋待核对"}`);

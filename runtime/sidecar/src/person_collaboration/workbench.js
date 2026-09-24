@@ -9,6 +9,13 @@ let ledgerKind = "agent",
   ledgerSelection = null,
   ledgerSearch = "";
 const errors = {
+  contact_confirmation_refresh_required: "需要重新读取入住资料，本次确认已保留。",
+  contact_confirmation_basis_changed:
+    "电话或入住候选已变化，请核对岸岸重新整理的事项。",
+  contact_read_stale: "本次电话核对资料已过期，请重新读取。",
+  current_source_projection_required: "申请资料需要重新读取，请让岸岸刷新来源。",
+  candidate_scope_too_large: "当前核对范围内入住记录过多，请先缩小办理范围。",
+  presentation_stale: "事项或候选已有变化，请核对最新版本。",
   welcome_effect_not_authorized: "你当前没有这项确认权限，请联系负责人安排。",
   welcome_authority_revoked: "原授权已失效，请负责人重新安排确认人。",
   welcome_settings_required: "请先设置办理群和有权确认的人。",

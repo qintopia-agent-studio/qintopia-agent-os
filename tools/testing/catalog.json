@@ -2311,6 +2311,174 @@
             "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
             "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
           }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-complete-pool-phone-first-and-private-metadata",
+          "name": "完整候选池电话优先与私有元数据",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_complete_pool_phone_first_and_private_metadata",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-failures-replay-revision-and-null-removal",
+          "name": "失败重放版本与空值更正",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_failures_replay_revision_and_null_removal",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-same-basis-original-confirmation-once",
+          "name": "相同依据刷新后原确认只执行一次",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_same_basis_original_confirmation_once",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-changed-basis-rejects-and-manual-basis-remains-available",
+          "name": "变化拒绝及独立人工核对",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_changed_basis_rejects_and_manual_basis_remains_available",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-exact-set-strict-dto-and-shared-numbers",
+          "name": "完整入住人集合严格输入与共享电话",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_exact_set_strict_dto_and_shared_numbers",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-original-message-binding-and-independent-effects",
+          "name": "原消息绑定与独立效果",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_original_message_binding_and_independent_effects",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-source-changes-and-existing-identity-are-independent",
+          "name": "来源变化与既有身份独立",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_source_changes_and_existing_identity_are_independent",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-contacts-independent-relation-requires-exact-application-and-source",
+          "name": "既有关系须精确对应本申请与有效入住人来源",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_independent_relation_requires_exact_application_and_source",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
+            "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
+          }
         }
       ]
     },

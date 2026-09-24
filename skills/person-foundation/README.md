@@ -76,15 +76,27 @@ QINTOPIA_FOUNDATION_SMOKE_ENABLE=1 python3 skills/person-foundation/tests/local_
 `welcome_host.py` 的 `WelcomeHost(broker, SimulatedTransport(), local_enabled=True)`
 接受岸岸宿主注入的 broker 调用函数；没有生产发送器、凭据加载或模型工具注册。`deliver(work_item)`
 先准备并持久领取呈现，再使用内存模拟传输，最后登记回执。未知结果通过
-`recover(presentation, claim)` 回读原传输，不重发；`callback()`
-只触发服务端读取已认证持久群消息。
+`recover(presentation, claim)` 回读原传输，不重发；`callback(refresh_contacts=...)`
+先由服务端识别已认证持久群消息的确认依据；依赖电话时调用岸岸注入的固定只读函数，再沿原消息确认。
 
 沿用 Unix 协议 `schema_version:1`、`agent:anan`、`trusted_context`，操作为
 `person_foundation_ingress`，须独立 HOST_TOKEN。工具 `welcome_group_host`
-的 action 为 pending、prepare、claim、receipt、status、callback；来源投影使用
+的 action 为 pending、prepare、claim、receipt、status、confirmation_context、callback；来源投影使用
 `welcome_source_projection`。DTO 与字段规范见[本地补齐契约](../../docs/plans/active/welcome-local-completion.md)及
 [005数据设计](../../runtime/postgres/docs/data-design/2026-09-24-welcome-source-and-group-projection.md)。
 
 群内使用明确事项引用及编号，例如“确认 W-… 人员1 账号1 关联住宿 关联账号 内容”，也可仅确认已核对的段。普通“同意”不产生批准。首次建档使用“建档 W-…”，姓名来自已验证申请投影。UI 与群共用确认收据、当前版本与授权，列表和办理记录分页；不新增独立欢迎导航分类。
 
 工作账号确认的个人链接须有匹配的持久收据和具体账号/人员效果，二花普通群聊与私聊才可复用。改昵称不改变链接；撤销后旧身份失效。工作账号本身不成为自然人，PMS 的 gateway_actor 保持原门禁。早期收据缺少具体关联效果时不能自动升级成个人会话证明，须重新核对。
+
+## 逐人电话证据与原确认复用
+
+私有 `welcome_stay_contacts`
+的 open/save/failed/status 以现有申请 WorkItem 为锚，完整读取当前范围内最多200个有效逐人入住候选后排序，不能先截姓名前20。电话只在服务内比较，不进入模型、群消息或事项元数据；页面只显示尾号、匹配状态及原因，仍需明确确认。相同号码、缺失、无效格式、读取失败与来源待同步分别表示。同行人的号码不可用主住客号码代替。
+
+`WelcomeHost.callback(*, refresh_contacts=None)`
+调用 confirmation_context 后，仅在 requires_contacts 为true时调用
+`refresh_contacts(work_item,presentation)`。该固定宿主函数由岸岸包提供，返回完整状态后才调用原消息 callback。刷新generation只约束token，不进入人类决定依据；同依据可一次确认，真实依据变化拒绝旧确认。已成功消息重放回原收据；仅账号/内容效果、既有独立关系及明确“人工核对”不依赖电话读取。无完整电话依据的既有人工路径保留。详见[冻结接口](../../docs/plans/active/welcome-phone-evidence.md)。
+
+原自动工程检查的部署apply
+smoke要求受支持数据库白名单；动态本地PG端口被拒绝时记录失败，不改白名单、不把它算作通过，部署验证仍须使用原受支持环境。
