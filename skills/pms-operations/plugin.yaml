@@ -15,6 +15,7 @@ provides_tools:
   - qintopia_pms_cancel
   - qintopia_pms_handoff
   - qintopia_pms_reconcile
+  - qintopia_pms_link
 provides_hooks:
   - pre_gateway_dispatch
 optional_env:

@@ -34,6 +34,11 @@ pub(super) async fn invoke(store: &Store, arguments: Value) -> Result<Value> {
                 .application_read_open(binding, &alias, &request.record)
                 .await
         }
+        "reconcile_welcome" if request.read_token.is_none() && request.observation.is_none() => {
+            store
+                .application_reconcile_welcome(binding, &alias, &request.record)
+                .await
+        }
         "save" => {
             store
                 .application_read_save(

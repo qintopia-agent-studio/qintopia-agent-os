@@ -336,5 +336,236 @@ read_token 拒绝旧读响应；
 
 来源 A→B→A 不恢复被 B 清除的申请 Person 或案例关联。helper 的 Some 仅证明当前回读内容一致，不代替关联成立、许可或旧确认收据仍有效。
 
-四老师新能力沿既有业务目录登记为默认关闭；按总指挥明确同意，仅同步原 builtin 与 operations
+四老师新能力沿既有业务目录登记为默认关闭，仅同步原 builtin 与 operations
 smoke 的目录数量断言14→15。未改检查入口、CI条件或生产权限门禁。
+
+### 欢迎基础线首次整合
+
+正常本地合入欢迎冻结6c6548b，提交daaaccf。唯一冲突为data-design
+CHANGELOG同位置追加，保留003/004两项；共享mod/store、broker分支及业务目录保留双方。没有覆盖个人身份解析或改写已应用SQL。
+
+独立新建本地PG17/52322，顺序应用001→002→003→004；SQLx账本全部success，逐项SHA384与源码一致，安装顺序已回读。
+
+原52316支付环境及ed0接收进程未重启；冻结二进制已按原SHA256保留。整合后all-features共同PG100项通过，欢迎PG25项通过。日志为integration/person-tests.log、welcome-tests.log、migration-readback.json。
+
+基础线精确身份快照切片仍在推进，以上为首次整合结果。
+
+目录数量随动是现有业务测试预期更新，适用guardrails“沿用现有契约的业务实现和测试用例不因此变成修改CI的授权请求”。没有另一次用户CI批准，不将总指挥调度写成新增门禁授权；URL
+allowlist提案仍未获批。
+
+### 申请调用侧欢迎交接与测试进程隔离
+
+成功来源回读后，从共同服务现存申请/案例/Person/PMS
+occupant 关系及当前有效住宿投影派生独立
+`welcome_event`，精确绑定 tenant/scope/case/application，再调用公共
+`welcome_review_open_task`。不从支付或办理事项冒充，不修改基础线 snapshot/open_task；未配置或无可靠关联时保持等待，重复回读不重建事项，已有引用冲突拒绝覆盖，manual_hold 保留。
+
+本切片申请 PostgreSQL
+7 项通过，含真实签名 Bridge→HTTP→broker→PG 联测及新增欢迎交接。新增覆盖无关联、不完整人员关联、无运营配置、精确 payload、重复回读、人工暂停、身份链接撤销、冲突 payload 保留、跨范围、PMS 投影失效和来源撤回。Python
+31 项通过，包含欢迎交接失败后必须重新读取来源再重试。日志为
+`integration/application-welcome-final.log`、`integration/application-python.log`。
+
+签名 Bridge 测试原先临时修改共享进程环境，已单独提交 `7249ce7`
+改为当前测试二进制的独立子进程，原链路及断言保留，专项通过。首次新欢迎测试因夹具重复初始化租户失败，改为读取既有 fixture
+operator 后通过。
+
+默认并行共同回归实际为 100 passed / 1
+failed，不能视为全绿：唯一失败仍是账户生命周期的完整 state 比较，`local_dialogue_available`
+从 false 变 true。继续定位到基础线 `foundation_server::enable_test_http()`
+首次初始化同一全局环境变量；无 `#[test]` 的 PMS 专用旅程未被本轮选择器调用。原失败日志
+`integration/person-parallel-tests.log` 保留，基础线负责既有 HTTP
+fixture 初始化修复，再承接稳定 SHA 做并行回归。没有删除字段断言、降低授权检查或改共享 CI/runner。
+
+all-features 与 no-default-features 的 all-targets Clippy（`-D warnings`）均通过，日志为
+`integration/application-welcome-clippy.log` 和
+`integration/application-welcome-clippy-default.log`。
+
+生产默认关闭、真实飞书和群消息未执行，原支付服务与数据库未重启或覆盖。
+
+### 精确欢迎最终整合
+
+调用侧冻结 `5a37c288877bb8c7650556cafd88387d0f594edc`，随后正常合入基础线
+`ac43412f52c3f3d3845a544a3ca84806dc077dec`。最终 merge 为
+`145f6fbddd179678c347ed533b4ae8408cc7e3bc`，双亲即这两个提交；代码无冲突，首次提交标题因 Conventional
+Commits 类型无效被拒绝，使用允许的 `fix` 类型后正常提交，未跳过 hooks。
+
+合并后 all-features 共同 PostgreSQL 按默认并行执行 **104 passed / 0 failed / 0
+ignored**，包含签名 Bridge 子进程、完整账户状态断言和新申请欢迎交接；resident_welcome 为
+**25 passed / 0 failed / 0
+ignored**。两组共 129 项，子进程内部的同一 Bridge 测试不重复计数。日志为
+`integration/precise-person-parallel.log` 和
+`integration/precise-welcome-tests.log`。新增交接场景沿既有 catalog 登记，test:list 可发现，test:harness
+8 项通过；未修改共享执行器或 CI 门禁。
+
+基础线的精确快照现已纳入：普通内容变动保留仍有效认人依据、内容需重审；A→B→A 中途未重开也不恢复旧 receipt，摘要不变但真实关系失效同样撤销旧批准。003/004源码未变，不重复改写迁移。原支付联合验收不重跑，ed0接收进程和证据保留。
+
+本次仍不等于真实人员候选、群内可信交互、真实飞书修改/撤回、真人或生产验收。原最终 apply
+smoke 的 URL hash
+allowlist 阻断不变，未获得新 CI 提案批准；不能把这两组定向回归称为全部仓库门禁全绿。整条 PMS 业务范围的申请事项与后续办理动作汇合、跨营业日缩住/正常退房/未来取消成功路径仍是独立待收口项，不能由欢迎接线通过代替。
+
+### 来源汇合与剩余 PMS 成功路径
+
+继续原授权的 §6/§7.2/T05/T06/T08/T11；本节更新上一切片的待收口项。
+
+- 申请原事项可承接对话业务动作；同事项订房或同 quote 并发/换消息/重启复用原动作。UNKNOWN、执行中或已完成不能通过换 quote 偷建新单；确定 NOT_EXECUTED 后允许新修订动作。
+- 当前调用人范围权限仍先校验，其他主体/会话不能借重复请求取得旧动作。
+- 新 link 工具实际 GET 宿主指定订单，绑定来源修订、订单版本、操作者和会话后展示摘要。自然“确认关联”仅批准当前唯一提议，版本改变需重审，“取消关联”只取消自己的当前待确认关联。
+- 模型不能传 readback、批准或原文；精确版本 UUID 句式仅供本地兼容，不要求员工复制内部 ID。
+- 同事务锁定来源与目标，原申请/支付 inbox 保留，metadata 保存可靠归属并记一次审计。
+- 后续阶段核对同订单，支付仍单独读 bill 和确认，不从代付款人、姓名、金额自动合并。已含独立动作的来源拒绝迁移。无新迁移，001—004及欢迎 snapshot 未修改。
+
+两项新增 PG 场景首轮通过，扩入默认并行共同回归 **106 passed / 0 failed / 0
+ignored**。覆盖申请修订、并发、重启、UNKNOWN、更换 quote 拒绝、确定未执行后的合法修订、撤权、旧订单版本确认失效、申请/支付来源关联、一次审计、跨订单拒绝和独立财务确认。日志
+`integration/source-pg.log`、`integration/source-person-regression.log`；Python
+32 项通过，日志 `integration/source-python.log`。
+
+真实 PMS 全链最新 **1 passed / 0 ignored**，包含正式 Hermes
+PluginContext/registry、可信宿主、实际 Unix broker、共同 PG 和实际 PMS
+HTTP。PMS 源码为只读 `0254fbabdda0b76b56370248f2ad24e44e4e950a`，未跨仓修改。最终 Agent
+OS PG17 使用独立 `52322`，PMS PG17 为测试锁保护的
+`52319`；模拟人员、申请、时钟与 HTTP 人工接手不是浏览器点击或真人渠道验收。
+
+| 成功路径              | PMS 回执                                                           | 实际订单与回读                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| 跨营业日 SHORTEN_STAY | `receipt_cb0872e9-6090-4de7-961a-4cbd00a8fce9`，EXECUTED/committed | `order_313a9088-f852-41d5-a536-121b7be75eb0`，9月23入住，缩至9月25离店；SQL仅1个缩住 amendment                                  |
+| 到期 CHECK_OUT        | `receipt_b2ffe50a-89bd-42e2-bf78-3c32ca87ebca`，EXECUTED/committed | 同上订单，实际回读 CHECKED_OUT                                                                                                  |
+| 未来 CANCEL_ORDER     | `receipt_098ae25a-c2e8-4b27-9cbd-f65f88d7c250`，EXECUTED/committed | `order_ea8a058c-1858-42cd-a53b-2708f4469fa7`，9月26—27独立住宿，模拟员工HTTP接手后CANCELLED；岸岸manual_completed，重复执行拒绝 |
+
+全链同时验证同名住客的另次未来住宿保留不同订单/事项，以及来源申请关联原对话订单后继续收款。日志
+`integration/pms-success-paths-verified.log`，SQL证据
+`integration/pms-success-receipts.json`。原支付联合5事件/2事项/1完成动作/cursor5账本与原最终证据逐字段相等；回读证据
+`integration/payment-preservation-check.json`，未重启ed0或重新投递。
+
+失败证据全部保留：
+
+1. 缩住服务时钟推至明天，但 SQL `qintopia_stage10_property_today` 按数据库当天，
+   `pricing_revisions_stage10_date_matrix` 拒绝，真实回执 NOT_EXECUTED。
+2. 将全链起点改昨天又触发改期 `stage11_date_change_state_matrix`
+   拒绝。参照 PMS 原测试，改为独立昨天建单/入住，到数据库当天缩住；不改约束或订单状态。
+3. 最初未来区间报价 422
+   `PRICING_POLICY_UNCONFIGURED`；同原键恢复得到 NOT_EXECUTED，未建单。改用既有夹具可定价的9月26—27区间后成功；未改价规或放宽 API 校验。
+4. 新一轮 auto 首先发现新增文档 MD013 行长，已分段修复；不调整 Markdown 门禁。
+
+前期试验沿历史本地脚本向52316新增了独立模拟租户，违反本轮不向保留库新增测试写入的隔离要求。
+
+原支付绑定/记录未变不等于该操作符合隔离约束；保留新增租户和日志，不清库。已把该脚本的 Agent
+OS 目标切至52322，最终成功联测不向保留支付库写入。日期失败、报价诊断和 SQL 快照分别保留在
+`integration/pms-success-paths-run.log`、
+`pms-success-paths-clock-aligned.log`、`pms-success-paths-diagnostic.log`、
+`pms-shortening-first-failure.json`、`pms-reschedule-clock-failure.json`，不覆盖原支付证据。
+
+### T01—T14 分层核对
+
+| 项目                       | 本地证据与状态                                                            | 真实渠道/生产边界或剩余本地限制                                                 |
+| -------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| T01 对话独立办理           | 正式插件→broker→PMS查房/报价/建单/回读通过，无事件前置                    | 真实模型/专属Bot尚未验收                                                        |
+| T02 缺信息/同名/多次住宿   | 无按名/金额自动合并；同名另次住宿不同订单/事项已通过                      | 真实自然对话澄清质量尚未验收                                                    |
+| T03 身份/范围/伪造/撤权    | 当前精确授权、跨范围/伪造/父撤权PG与插件边界通过                          | 真实工作群成员及岗位配置未接线                                                  |
+| T04 方案变化/过期/库存冲突 | 旧预览/确认失效与真实PMS拒绝保留，重审新方案                              | 不把原预览或缓存房态作为保证；真实并发客服流程未验收                            |
+| T05 重复/重启/并发         | 来源事项/quote订房防重复及同阶段并发、重启PG通过                          | 不自动合并两次不同业务                                                          |
+| T06 丢响应/UNKNOWN         | 真实PMS Confirm成功丢响应沿原键恢复；UNKNOWN换quote拒绝                   | 未确定结果不换键，不声称生产故障恢复已验收                                      |
+| T07 多种付款               | 两笔独立当笔确认、部分收款、代付款来源关联；到账不入住                    | 两个合法作用域同时运行尚未联合演练                                              |
+| T08 入住及住宿变更         | 实际改期/续住/换房、跨日缩住、到期退房、未来取消成功回读                  | 真实操作人/生产未验收                                                           |
+| T09 暂停/取消/人工接手     | 暂停恢复新预览；真实HTTP模拟入住/取消接手后manual_completed不重放         | 历史精确核验、现金事实确认及CREATE_ORDER人工方案采纳已补齐；真人UI/渠道仍未验收 |
+| T10 事件基线/乱序/补拉     | 原支付联合5事件全accepted、断点与push/feed先后顺序通过                    | 原结果不等于生产sender配置验收                                                  |
+| T11 三来源可靠汇合         | 申请原事项防重订房；申请/支付明确关联同对话订单PG通过；申请+真实PMS链通过 | 不依据同人/同名/金额或单候选自动关联；真实飞书触发未验收                        |
+| T12 注入/凭据/URL          | 模型字段白名单、可信宿主、固定loopback、脱敏、redirect拒绝通过            | 本地同UID隔离不等于生产强隔离                                                   |
+| T13 群提醒/欢迎交接        | 可靠关系→独立welcome_event→公共确认，默认关闭；缺工作约定不启动催办       | 真实候选、群可信交互、提醒实际送达及欢迎发布未验收；缺真实配置仍等待            |
+| T14 Runtime/Profile        | 正式Hermes SDK/插件加载及本地专用环境通过                                 | Livecool实际模型、专属Bot、生产配置、真实操作效果均未验收                       |
+
+本轮完成上述来源汇合和三条成功路径；剩余本地限制与真实验收没有相互替代。保留 PR 草稿，不自动推送、远端合并、发布、部署或外发。
+
+来源汇合阶段提交前补充：最后收紧精确句式的 proposal hash/消息时间后，专项 PG
+2 项再次通过（`integration/source-pg-final.log`）。106 项共同回归与 Clippy 在该小修之前通过，不能当作小修后的全套结果。PR 正文检查和
+`pr:doctor` 通过，尚无 upstream 且保持本地草稿。综合检查最新默认 Rust 851 passed / 2
+ignored，sidecar smoke 仍在运行，后续结果另记，不提前认定总门禁通过。
+
+### T09 最终本地收口
+
+来源汇合已提交
+`af38f1d0d3dc9829fa6ded4e9a9de8244da2b9cc`。本节更新此前 T09 本地缺口，不将来源、欢迎或模拟结果当作生产验收。总指挥依据既有 T09 授权确定具体实施路径，没有新增人员权限类别或 PMS 接口。
+
+人工接手先保存实际订单版本和已有收款事实 ID；登记时间与 manual_handoff 在同一 SQL 更新中取得，基线读取与登记之间发生的人工记录不会被旧时间误认。重复接手保留第一次基线。人工接手后禁止通过暂停/恢复绕回自动执行，UNKNOWN/在途仍先沿原键恢复。
+
+- 入住、退房、取消、改期、续住、缩住、换房：按接手之后的唯一 amendment 核验完整 payload、命令、时间及版本，且它仍须是当前最新订单版本。状态相同、旧历史、后来改动和多义记录均不能代替具体效果。
+- 有流水收款：原流水、订单、方式、金额、币种及新 fact/command 一致，且未冲正或转出。无流水现金先展示具体事实，有权人自然确认后再次 GET，仅记录原等待人工完成；完整可信回报准确指明同笔事实则直接采用。
+- CREATE_ORDER：模型可从授权订单查询中选候选，宿主实际 GET 并展示原方案、订单、必要住客辨识、房间/日期/渠道/合同金额及差异。有权人采纳后重新回读；旧版本、缺事实、越权、多提议和其他事项冲突拒绝。
+
+  原完整可信回报已覆盖具体简单订单和差异时不重复确认，不要求员工手输 UUID。
+
+- 审计区分 exact_pms_effect、human_collection_adoption 和 human_order_adoption。人工采纳保留原 preview 和版本、订单事实、确认人/时间/决定，原 result 仍为空，不伪造原执行回执，不自动确认身份、收款或到店。
+- 人工采纳订房也可再明确关联有效支付/申请来源，继续原事项。新 PG 组合验证无原 PMS
+  result/receipt 仍能合法关联，但缺采纳依据、错订单、当前撤权均拒绝；关联后 CREATE_ORDER 拒绝，收款仍独立等待人类批准。
+
+最终验证（仅受影响范围）：
+
+| 验证                                           | 实际结果                                       | 证据                                                         |
+| ---------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| 业务 PG，all-features、默认并行                | 23 passed / 0 failed / 0 ignored               | `integration/t09-final-business-pg.log`                      |
+| 最后补齐人工采纳后来源关联组合                 | 3 passed / 0 failed / 0 ignored                | `integration/t09-final-source-link-pg.log`                   |
+| 官方 Hermes→Unix broker→共同 PG→实际 PMS HTTP  | 1 passed / 0 failed / 0 ignored                | `integration/t09-complete-pms-final.log`                     |
+| Python 插件/宿主/客户端                        | 33 passed                                      | `integration/t09-final-python.log`                           |
+| all-features / all-targets Clippy，-D warnings | 通过；最后仅扩展 PG 断言，Rust 编译/专项另通过 | `integration/t09-final-clippy.log`                           |
+| 业务目录发现、harness                          | 新3场景可发现；8 passed                        | `integration/t09-catalog.log`、`integration/t09-harness.log` |
+
+PG 子进程的单项回显已包含在23项中，不另外累计。实际 PMS 全链包含7类住宿人工接手、有流水收款、现金事实确认及人工采用不同住客方案的建单。模拟员工经实际 HTTP
+Preview/Confirm 操作，不宣称浏览器点击或真人操作验收。PMS 源码仍为只读
+`0254fbabdda0b76b56370248f2ad24e44e4e950a`。
+
+最新实际回执示例：
+
+- 现金事实：`receipt_db49fe3b-9368-43c2-a23a-e36b0c5de853`。
+- 人工 CREATE_ORDER：`receipt_1016c42a-8ab8-4936-a7b3-f956819d69de`。这是 PMS 员工执行回执；岸岸原订房动作保存人工采纳依据，未将该回执冒充自己的执行结果。
+- 缩住：`receipt_16e35da2-8ef3-4a24-9a4d-13d8b56fa5ba`。
+- 正常退房：`receipt_87855b68-2ebb-4dbc-b92c-afda1345cb44`。
+
+最小账本证据 `integration/t09-final-ledger.json`
+保留动作、阶段、订单、回执或人工证据种类，不保存原始历史正文或凭据。
+
+### 检查归属、失败与隔离
+
+本次 `source-pr-auto-verified.log` 的最后 apply smoke 仍因
+`database URL hash is not in the reviewed allowlist`
+失败，随后 JSON 解析失败是其连带结果。未修改 allowlist 或共享 CI；既有测试指南已记录该阻断及未批准提案。
+
+该次 auto 与 T09 初次源码写入存在混合窗口，不整体归为 af38f1d：
+
+1. 已在首次 T09 写入之前完成并收取结果的默认 Rust 851/0/2、两项 sidecar
+   smoke 保留原阶段归属。
+2. all-features
+   Clippy 及后续 PostgreSQL 各命令与源码写入/恢复窗口有交叠或无法精确确定读取时刻，统一只保留诊断证据，不将其106项/24项回显冒称某个稳定版本通过。
+3. 22:46:33（Asia/Shanghai）已将 T09 差异保存为
+   `integration/t09-pending.patch`、`business_manual.rs.pending`，恢复受检源码到 HEAD。22:49:26
+   auto 结束后才重新应用差异继续实现。日志没有每条命令的精确起止时间，不补造时间；以上按工具结果顺序及文件时间记录。
+4. 最终 T09 稳定业务源码另做上述23项业务 PG、Clippy 和实际链；最后只扩展人工采纳来源关联断言，再跑3项专项。不为旧阶段追求全绿而重复欢迎或其他无关重型层。
+
+保留两次增量联测失败：
+
+- `integration/t09-complete-pms.log`：现金输入缺 PMS 必填的收款人说明，Preview 返回400
+  VALIDATION_ERROR，随后 handoff 被终态保护拒绝。修复测试输入的 note，并在 handoff 前断言 awaiting_confirmation；未改 PMS 校验。
+- `integration/t09-complete-pms-verified.log`：现金已成功；测试误读人工建单回执的 result.id，实际契约是 result.orderId。修正测试字段后最终全链通过；无业务重试回放。
+
+独立测试脚本保留在 `.local-workspace/anan/run-full-chain.sh`。固定 Agent PG52322、PMS
+PG52319，解析 URL 并实际 SELECT 核对库名/端口。外部故意传52316且 ANAN_PREFLIGHT_ONLY=1 的检查仍使用52322/52319，在 reset 和锁库入口之前退出，无写入；证据
+`integration/t09-readonly-preflight.log`。前期向52316新增模拟租户的隔离偏差继续保留，不清库或掩盖。
+
+### T01—T14 最终状态边界
+
+上表 T01—T14 的证据仍有效，T09 已按本节补齐可行本地路径。
+
+T01/T04/T05/T06/T08/T09/T11/T12 已有对应本地业务、恢复和边界证据。
+
+剩余验证按性质保留：
+
+- T02：真实澄清质量；T03：真实工作群身份配置。
+- T07：双合法作用域联合演练。
+- T10：生产 sender 配置和实际投递。
+- T13：真实候选、群可信交互、提醒及欢迎实际送达。
+- T14：Livecool 模型、专属 Bot 和 Profile。
+
+双作用域联合演练是明确的验证缺口，不描述为已执行；生产配置缺失也不描述为本地代码失败。
+
+保留 PR 本地草稿，未 push、创建远端 PR、合并、发布、部署或发送真实业务消息。本地模拟进程与资料为后续验收保留；001—004及欢迎 snapshot 不改写。
+
+最终格式、Markdown、协作规则及 diff 检查已按修改范围收尾。PR 正文校验和 pr:doctor 通过；无 upstream 是保留本地草稿的预期状态。正常提交钩子结果保留在
+`integration/t09-commit.log`。

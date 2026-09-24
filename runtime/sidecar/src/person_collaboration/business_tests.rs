@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 #[path = "application_tests.rs"]
 mod application_tests;
+#[path = "business_manual_tests.rs"]
+mod business_manual_tests;
 
 struct Fixture {
     store: Store,
@@ -214,7 +216,7 @@ async fn business_restart_unknown_reuses_key_and_preserves_independent_results()
         )
         .await?;
     assert_eq!(recovered["execution_key"], claim["execution_key"]);
-    let completed=f.call("confirm","pms_save_result",json!({"action":a["action"],"claim":claim["claim"],"result":{"executionStatus":"EXECUTED","businessCommitted":true,"receiptId":"receipt_1","commandId":"command_1"}})).await?;
+    let completed=f.call("confirm","pms_save_result",json!({"action":a["action"],"claim":claim["claim"],"result":{"executionStatus":"EXECUTED","businessCommitted":true,"receiptId":"receipt_1","commandId":"command_1"},"readback":{"order":{"id":"order_1","property_id":"property_a","version":1}}})).await?;
     assert_eq!(completed["phase"], "completed");
     assert!(f
         .call(
@@ -394,6 +396,28 @@ pub(crate) async fn business_real_broker_pms_journey() -> Result<()> {
             .bind(&f.store.tenant).bind(read).bind(f.binding).bind(key).bind(f.store.verified_person(&f.actor).await?).execute(&f.store.pool).await?;
     }
     let dir = tempfile::tempdir()?;
+    let application_record = format!("rec{}", Uuid::new_v4().simple());
+    let opened = f
+        .store
+        .application_read_open(f.binding, "resident-application", &application_record)
+        .await?;
+    f.store
+        .application_read_save(
+            f.binding,
+            "resident-application",
+            &application_record,
+            serde_json::from_value(opened["read_token"].clone())?,
+            &super::store::applications::Observation {
+                identity_hash: "a".repeat(64),
+                field_hash: "b".repeat(64),
+                valid: true,
+                consent_active: true,
+                source_version: Some("1".into()),
+            },
+        )
+        .await?;
+    let application_work:Uuid=sqlx::query_scalar("SELECT anan_work_id FROM qintopia_agent_os.application_intake_states WHERE tenant_key=$1 AND record_ref=$2")
+        .bind(&f.store.tenant).bind(&application_record).fetch_one(&f.store.pool).await?;
     let socket = dir.path().join("foundation.sock");
     // This ignored test is launched alone; never mutates a running service's environment.
     for (key, value) in [
@@ -415,6 +439,10 @@ pub(crate) async fn business_real_broker_pms_journey() -> Result<()> {
         ("QINTOPIA_PMS_LOCAL_ENABLE", "1".into()),
         ("ANAN_PMS_TEST_BINDING", f.binding.to_string()),
         ("ANAN_PMS_TEST_SENDER", f.sender.clone()),
+        (
+            "ANAN_PMS_TEST_APPLICATION_WORK",
+            application_work.to_string(),
+        ),
     ] {
         std::env::set_var(key, value);
     }

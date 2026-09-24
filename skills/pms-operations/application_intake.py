@@ -138,8 +138,10 @@ def synchronize(record, client, host_call):
     context = host_call({"action": "open", "record": record})
     # Read only after claiming the current observation. A CAS conflict needs a fresh GET.
     observed = client.read(record)
-    return host_call({"action": "save", "record": record,
-                      "read_token": context["read_token"], "observation": observed})
+    saved = host_call({"action": "save", "record": record,
+                       "read_token": context["read_token"], "observation": observed})
+    welcome = host_call({"action": "reconcile_welcome", "record": record})
+    return {**saved, "welcome": welcome}
 
 
 def readback_one(resource_alias, record):
