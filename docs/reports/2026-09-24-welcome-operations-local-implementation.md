@@ -140,7 +140,7 @@ response；仅重启本任务实例后恢复。原因未获充分证据，不归
 
 岸岸在004冻结前补充：已应用迁移保持原样，不增加 `observed_revision` /
 `observed_field_hash` 列。后续欢迎侧使用独立只读
-`Store::application_identity_basis(scope, application) -> Result<Option<String>>`，不重复实现来源哈希协议，不接受模型自报身份hash。
+`Store::application_identity_basis(&self, tx: &mut Transaction<Postgres>, scope, application) -> Result<Option<String>>`，不重复实现来源哈希协议，不接受模型自报身份hash。
 
 接口由来源适配侧核对当前租户、范围、绑定、source/property/resource_alias/record_ref及申请引用；绑定必须仍为active且版本一致。它使用当前
 `welcome_applications` 的字段与既有state证据重建规范Observation，对照已提交的
@@ -153,3 +153,6 @@ response；仅重启本任务实例后恢复。原因未获充分证据，不归
 接入回归须覆盖：相同身份但普通内容更新、身份字段变化、其他来源入口更新申请导致摘要不一致、绑定撤销/换版本、来源或租户不符、state缺失、重复回读和无写入副作用。当前仅记录契约，接口位置和实际行为须按岸岸稳定SHA核对后实现；本线源码仍是保守版本失效，未声称004精确兼容已完成。
 
 总指挥此前提出的已观察revision/hash一致性要求，与新只读接口的completed_hash校验是否完整等价，须以冻结实现和“其他入口更新申请”的反例测试证明；当前未证明等价，不据此放宽现有保守规则。
+
+冻结前源码已核对接口位于
+`person_collaboration/store/applications.rs`，使用调用方事务，不再begin或另开连接。后续公共snapshot接入还须核对与来源写入的行锁顺序，避免嵌套锁或交叉锁等待；这次只读核对不替代稳定SHA上的整合回归。
