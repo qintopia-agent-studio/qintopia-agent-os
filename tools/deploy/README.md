@@ -48,6 +48,13 @@ Validate the production deploy request runner contracts:
 pnpm deploy:runner:check
 ```
 
+The release-result collector also runs from local checkout paths containing spaces or
+non-ASCII characters. Its CLI entry check decodes the module file URL before comparing
+the executable path; importing its parsing helpers must not run the CLI.
+`node tools/deploy/test-collect-release-deploy-results.mjs` verifies both the normal
+entry and a copied executable under an encoded fixture path using local log files. No
+GitHub or server connection is needed for this check.
+
 The deploy runner is the server-side pull model for manual production deployments:
 GitHub writes a schema-validated request to COS, and the server runner promotes reviewed
 artifacts into `release/current`.

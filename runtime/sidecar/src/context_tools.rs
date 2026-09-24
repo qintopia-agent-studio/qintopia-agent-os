@@ -390,7 +390,7 @@ async fn qintopia_answer_context_prepare(
     let message_text = clean_text(&request.message_text, 1000);
     let speaker_identity =
         resolve_answer_context_person_id_by_channel(pool, &platform, &chat_id, &sender_id).await?;
-    let speaker_context = member_safe_context(
+    let mut speaker_context = member_safe_context(
         pool,
         &platform,
         &chat_id,
@@ -403,6 +403,20 @@ async fn qintopia_answer_context_prepare(
         speaker_identity.member_safe_identity_row_scope(),
     )
     .await?;
+    if let Some(context) = &mut speaker_context {
+        if let Some(person) = context.person_id {
+            let preference = crate::person_collaboration::shared_reply_context(
+                pool, person, &platform, &chat_id, &sender_id,
+            )
+            .await?;
+            if preference["version"].as_i64().unwrap_or(0) > 0 {
+                // Only the current speaker receives self-service preference context.
+                // Conditions stay explicit for the existing model to select; no
+                // string heuristic invents a fee discussion or a new preference.
+                context.communication_style = json!({"self_reply_preference":preference});
+            }
+        }
+    }
     let referenced_identity = if referenced_sender_id.is_empty() {
         AnswerContextIdentityResolution::unresolved()
     } else {
@@ -690,6 +704,20 @@ async fn qintopia_erhua_training_note_submit(
         &target_member_name,
     )
     .await?;
+    if foundation_managed_context(
+        pool,
+        &platform,
+        &chat_id,
+        &[trainer_user_id.as_str(), target_channel_user_id.as_str()],
+        target_person_id,
+    )
+    .await?
+    {
+        return Ok(json!({
+            "success":false,"accepted":false,"status":"rejected",
+            "reason":"foundation_shared_authority_required","training_id":null
+        }));
+    }
     let source_kind = training_source_kind(
         &training_type,
         &chat_id,
@@ -1201,6 +1229,18 @@ async fn member_safe_context(
               AND s.profile_kind = 'reply_context'
               AND s.status = 'active'
               AND (s.valid_until IS NULL OR s.valid_until > now())
+              AND NOT EXISTS (SELECT 1 FROM qintopia_identity.person_memory_state m WHERE m.person_id=p.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM qintopia_identity.source_identity_links l
+                JOIN qintopia_identity.person_identity_gateways g
+                  ON g.namespace=l.namespace AND g.subject_type=l.subject_type
+                WHERE l.person_id=p.id
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b
+                JOIN qintopia_messages.conversations c ON c.id=b.conversation_id
+                WHERE c.platform=$2 AND c.chat_id=$3
+              )
             ORDER BY s.generated_at DESC
             LIMIT 1
         ) s ON true
@@ -1625,6 +1665,12 @@ async fn active_training_guidance(
     sender_id: &str,
     person_id: Option<Uuid>,
 ) -> Result<Value> {
+    if foundation_managed_context(pool, platform, chat_id, &[sender_id], person_id).await? {
+        return Ok(json!({
+            "persona_overlays":[],"member_guidance":[],"reply_examples":[],
+            "rules":{"use_shared_foundation_authority":true,"legacy_guidance_suppressed":true}
+        }));
+    }
     let persona_rows = sqlx::query(
         r#"
         SELECT overlay_text
@@ -1654,6 +1700,7 @@ async fn active_training_guidance(
         WHERE status = 'active'
           AND revoked_at IS NULL
           AND platform = $1
+          AND NOT EXISTS (SELECT 1 FROM qintopia_identity.person_memory_state m WHERE m.person_id=$2)
           AND (
             ($2::uuid IS NOT NULL AND target_person_id = $2)
             OR ($3 <> '' AND target_channel_user_id = $3)
@@ -1720,6 +1767,41 @@ async fn active_training_guidance(
             "chat_id": chat_id
         }
     }))
+}
+
+/// Adoption is persistent: active/confirmed checks here would reopen old writes
+/// immediately after revocation. Identity authentication belongs to the new service;
+/// this legacy endpoint must not interpret a model supplied trainer id as an Actor.
+async fn foundation_managed_context(
+    pool: &PgPool,
+    platform: &str,
+    chat_id: &str,
+    channel_users: &[&str],
+    person: Option<Uuid>,
+) -> Result<bool> {
+    sqlx::query_scalar(
+        r#"SELECT
+          EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b
+            JOIN qintopia_messages.conversations c ON c.id=b.conversation_id
+            WHERE c.platform=$1 AND c.chat_id=$2)
+          OR EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l
+            JOIN qintopia_identity.person_identity_gateways g
+              ON g.namespace=l.namespace AND g.subject_type=l.subject_type
+            LEFT JOIN qintopia_identity.channel_identities ci ON ci.id=l.channel_identity_id
+            WHERE ($4::uuid IS NOT NULL AND l.person_id=$4)
+              OR ($1='qiwe' AND l.subject_type='qiwe_sender' AND l.source_ref=ANY($3))
+              OR (ci.platform=$1 AND ci.channel_user_id=ANY($3)))
+          OR EXISTS(SELECT 1 FROM qintopia_identity.person_memory_state WHERE person_id=$4)
+          OR EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_appointments WHERE person_id=$4)
+        "#,
+    )
+    .bind(platform)
+    .bind(chat_id)
+    .bind(channel_users)
+    .bind(person)
+    .fetch_one(pool)
+    .await
+    .context("resolve legacy training foundation boundary")
 }
 
 async fn resolve_training_target_person_id(

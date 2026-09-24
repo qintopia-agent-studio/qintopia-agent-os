@@ -205,3 +205,28 @@ runner 或 heavy tier。因此既不能将隔离定向通过记为全量通过�
 
 二花接入切片开始业务验证前，按测试指南准备 Rust
 1.96.0 与隔离 PostgreSQL，并按需补齐报告依赖。现有同名、范围与撤权测试可复用；规则版本及实际工具执行链仍有独立缺口。
+
+## Staging smoke 共享夹具隔离修复
+
+第一批本地开发的 `pnpm check:pr:auto` 再次在 deploy
+runner 内失败；本次是 upload 前置检查成功后，执行前复核报打包二进制或目录可写，位置为
+`test-qiwe-image-staging-smoke.mjs:287`。本批日志保存在忽略目录的
+`.local-workspace/foundation-batch1/check-pr-auto.log`。
+
+使用本批相同环境（Python
+3.12、Rust 路径、Java 和本地数据库设置）串行运行原定向测试，以及只增加阶段前后文件 mode、uid、mtime、ctime 记录的私有副本，两次都通过。诊断观测中源码根为
+`0755`，正常 preflight、upload、callback 前后二进制及父目录均为
+`0555`。故障注入阶段主动改成 `0755`
+后仍被拒绝。没有证据将原始变化归因为Python/PATH、数据库设置或并发；此前完整检查通过也不能证明它不会再发生。
+
+修复范围限定为测试夹具：为每次调用建立独占临时源码根，逐字复制实际 staging
+shell 和 evidence
+checker，在私有根下创建合成 sidecar。保留全部原断言，包括固定发布根拒绝、缺失文件拒绝、只读权限、执行前篡改拒绝和敏感回调输出隔离；生产脚本没有修改。
+
+修改后同环境定向测试退出 0；同一 checkout 下同时启动两进程，两者均退出 0，stderr 为空。
+
+执行结束后共享 checkout 没有 `sidecar/`，原 staging shell 与 evidence
+checker 的 SHA256 前后一致。JavaScript 语法与 `git diff --check`
+通过；并发证据保存在忽略目录
+`.local-workspace/foundation-batch1/qiwe-staging-isolation-results.json`。这验证了夹具之间不再共享打包路径；完整广验由本批继续执行，其最终结果另见
+[第一批实现报告](2026-09-22-foundation-welcome-batch1.md)。

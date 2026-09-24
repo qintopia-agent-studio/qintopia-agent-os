@@ -9,7 +9,18 @@ use uuid::Uuid;
 mod auth;
 pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
+pub(crate) mod foundation;
+mod rule_lifecycle;
+pub(crate) mod steward;
+pub(crate) use rule_lifecycle::{RuleCommand, RuleEdit};
+mod identity;
+mod ontology;
+pub(crate) use identity::IdentityUiCommand;
 mod organization;
+pub use identity::{IdentityCommand, QiweConversion};
+mod memory;
+pub(crate) use memory::reply_context as shared_reply_context;
+pub use memory::{MemoryChange, MemoryCommand, MemoryEvidence, ReplyCondition, ReplyStyle};
 
 pub struct Store {
     pub(super) pool: PgPool,
@@ -21,6 +32,8 @@ pub struct Actor {
     link: Uuid,
     person: Uuid,
     identity_version: i64,
+    identity_namespace: String,
+    gateway: Option<(String, i64, Uuid)>,
     session_hash: Option<String>,
     tenant: String,
 }
@@ -65,17 +78,29 @@ impl Store {
             session_hash: None,
             person: row.get("person_id"),
             identity_version: row.get("version"),
+            identity_namespace: self.tenant.clone(),
+            gateway: None,
             tenant: self.tenant.clone(),
         })
     }
 
     async fn verify(&self, tx: &mut Transaction<'_, Postgres>, actor: &Actor) -> Result<()> {
         ensure!(actor.tenant == self.tenant, "tenant_mismatch");
+        if let Some((gateway, version, scope)) = &actor.gateway {
+            let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.version=$3 AND g.scope_id=$4 AND g.namespace=$5 AND g.active AND g.account_kind<>'shared' AND s.status='active' AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.id=$6 AND l.namespace=g.namespace AND l.subject_type=g.subject_type))")
+                .bind(&self.tenant).bind(gateway).bind(version).bind(scope).bind(&actor.identity_namespace).bind(actor.link).fetch_one(&mut **tx).await?;
+            ensure!(active, "gateway_changed_or_revoked");
+        } else {
+            ensure!(
+                actor.identity_namespace == self.tenant,
+                "identity_namespace_unbound"
+            );
+        }
         if let Some(hash) = &actor.session_hash {
             self.verify_session(tx, hash, actor.person).await?;
         }
         let row=sqlx::query("SELECT l.person_id,l.version,l.status,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL FOR SHARE OF l,p")
-            .bind(actor.link).bind(&self.tenant).fetch_optional(&mut **tx).await?
+            .bind(actor.link).bind(&actor.identity_namespace).fetch_optional(&mut **tx).await?
             .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
         ensure!(
             row.get::<Uuid, _>("person_id") == actor.person
@@ -92,49 +117,18 @@ impl Store {
         tx: &mut Transaction<'_, Postgres>,
         now: DateTime<Utc>,
     ) -> Result<Policy> {
-        let rows=sqlx::query("SELECT id,parent_scope_id,status FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1")
-            .bind(&self.tenant).fetch_all(&mut **tx).await?;
-        let scopes = rows
-            .iter()
-            .map(|r| Scope {
-                id: r.get("id"),
-                parent: r.get("parent_scope_id"),
-                active: r.get::<String, _>("status") == "active",
-            })
-            .collect();
-        let rows=sqlx::query("SELECT g.*,a.person_id,a.scope_id,c.agent_key,c.domain_key,c.duty_id,(g.status='active' AND c.status='active' AND a.status='active' AND p.status='active' AND role.status='active' AND (c.duty_id IS NULL OR duty.status='active') AND a.valid_from<=$2 AND (a.valid_until IS NULL OR a.valid_until>$2) AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.person_id=a.person_id AND l.namespace=$1 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL)) AS effective_now FROM qintopia_agent_os.collaboration_grants g JOIN qintopia_agent_os.agent_collaborations c ON c.id=g.collaboration_id JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_identity.persons p ON p.id=a.person_id JOIN qintopia_agent_os.collaboration_roles role ON role.id=a.role_id LEFT JOIN qintopia_agent_os.collaboration_duties duty ON duty.id=c.duty_id WHERE g.tenant_key=$1")
-            .bind(&self.tenant).bind(now).fetch_all(&mut **tx).await?;
-        let mut grants: Vec<Grant> = rows
-            .iter()
-            .map(|r| Grant {
-                id: r.get("id"),
-                collaboration: r.get("collaboration_id"),
-                person: r.get("person_id"),
-                scope: r.get("scope_id"),
-                agent: r.get("agent_key"),
-                domain: r.get("domain_key"),
-                action: r.get("action_key"),
-                duty: r.get("duty_id"),
-                mode: r
-                    .get::<String, _>("decision_mode")
-                    .parse()
-                    .unwrap_or(PermissionMode::Denied),
-                reviewer: r.get("reviewer_person_id"),
-                parent: r.get("parent_grant_id"),
-                descendants: r.get("include_descendants"),
-                active: r.get("effective_now"),
-                delegation: Delegation {
-                    agents: r.get("managed_agents"),
-                    domains: r.get("managed_domains"),
-                    actions: r.get("managed_actions"),
-                    depth: r.get("delegation_depth"),
-                },
-            })
-            .collect();
-        // Postgres may return the same rows in a different physical order after a rollback.
-        // Keep policy selection and serialized configuration stable across readbacks.
-        grants.sort_by_key(|grant| grant.id);
-        Ok(Policy { scopes, grants })
+        foundation::load_policy(tx, &self.tenant, now).await
+    }
+
+    // Persisted permissions must remain editable/revocable before their term starts.
+    // Grant.active is current execution eligibility, not the stored grant lifecycle.
+    async fn configured_grant_ids(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        collaboration: Option<Uuid>,
+    ) -> Result<Vec<Uuid>> {
+        Ok(sqlx::query_scalar("SELECT id FROM qintopia_agent_os.collaboration_grants WHERE tenant_key=$1 AND status='active' AND ($2::uuid IS NULL OR collaboration_id=$2)")
+            .bind(&self.tenant).bind(collaboration).fetch_all(&mut **tx).await?)
     }
 
     pub async fn allowed(
@@ -242,18 +236,17 @@ impl Store {
             "configuration_version_conflict"
         );
         let policy = self.policy(&mut tx, now).await?;
-        let before = self
-            .configuration_snapshot(&mut tx, &command.change, None)
-            .await?;
+        let before = self.audit_snapshot(&mut tx, &command.change, None).await?;
         let mut result = self
             .change(&mut tx, actor, &policy, &command.change, now)
             .await?;
         let after = self
-            .configuration_snapshot(
+            .audit_snapshot(
                 &mut tx,
                 &command.change,
                 result
                     .get("id")
+                    .or_else(|| result.get("collaboration"))
                     .and_then(|v| serde_json::from_value(v.clone()).ok()),
             )
             .await?;
@@ -261,6 +254,25 @@ impl Store {
             result["before"] = json!(before);
             result["after"] = json!(after);
         }
+        let actor_label: String = sqlx::query_scalar("SELECT coalesce(preferred_name,display_name) FROM qintopia_identity.persons WHERE id=$1")
+            .bind(actor.person).fetch_one(&mut *tx).await?;
+        result["actor_label"] = json!(actor_label);
+        result["impact"] = json!(match &command.change {
+            Change::EndAppointment { .. } =>
+                vec!["结束这项任职及其工作连接，后续操作不再沿用原权限。"],
+            Change::EndCollaboration { .. } => vec!["结束所选协作及其授权；其他独立工作保留。"],
+            Change::RevokeGrant { .. } =>
+                vec!["收回这项权限及依赖它的转授，待执行事项会重新核验。"],
+            Change::ConfigureWork { assignment, .. }
+                if assignment.valid_from.is_some_and(|t| t > now) =>
+                vec![
+                    "已安排未来开始；到开始时间前不产生可执行权限。",
+                    "真正执行时仍核对届时有效的任职和授权。"
+                ],
+            Change::ConfigureWork { .. } | Change::Assign(_) =>
+                vec!["只变更所选工作安排；没有启用真实消息或上传。"],
+            _ => vec!["保存配置与历史记录；登记或恢复对象不自动增加业务权限。"],
+        });
         let result = json!({"persisted":apply,"version":if apply{version+1}else{version},"change":result,"replayed":false,"runtime_connected":false});
         if !apply {
             tx.rollback().await?;
@@ -432,7 +444,7 @@ impl Store {
                         && p.in_scope(*scope, root.id, true),
                     "group_binding_management_required"
                 );
-                let count:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND id=ANY($2) AND status='active' AND chat_type='group' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active')")
+                let count:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND id=ANY($2) AND status='active' AND chat_type='group' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items k WHERE k.tenant_key=$1 AND k.space_id=c.id) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active')")
                     .bind(&self.tenant).bind(conversations).fetch_one(&mut **tx).await?;
                 ensure!(count == conversations.len() as i64, "group_outside_tenant");
                 sqlx::query("UPDATE qintopia_agent_os.collaboration_scope_bindings SET revoked_at=$3,version=version+1 WHERE tenant_key=$1 AND scope_id=$2 AND revoked_at IS NULL")
@@ -460,7 +472,7 @@ impl Store {
         a.validate(now)?;
         self.check_organization_assignment(tx, a).await?;
         if let Some(id) = a.collaboration {
-            let old = sqlx::query("SELECT a.person_id,a.role_id,a.scope_id,a.valid_until,a.proxy_for_id,c.agent_key,c.domain_key,c.duty_id FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND c.id=$2 AND c.status='active'")
+            let old = sqlx::query("SELECT a.person_id,a.role_id,a.scope_id,a.valid_from,a.valid_until,a.proxy_for_id,c.agent_key,c.domain_key,c.duty_id FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND c.id=$2 AND c.status='active'")
                 .bind(&self.tenant).bind(id).fetch_optional(&mut **tx).await?
                 .ok_or_else(|| anyhow::anyhow!("collaboration_not_active"))?;
             let unchanged = old.get::<Uuid, _>("person_id") == a.person
@@ -469,13 +481,24 @@ impl Store {
                 && old.get::<String, _>("agent_key") == a.agent
                 && old.get::<String, _>("domain_key") == a.domain
                 && old.get::<Option<Uuid>, _>("duty_id") == a.duty
-                && old.get::<Option<DateTime<Utc>>, _>("valid_until") == a.valid_until
+                && a.valid_from.is_none_or(|start| {
+                    start.timestamp_micros()
+                        == old.get::<DateTime<Utc>, _>("valid_from").timestamp_micros()
+                })
+                && old
+                    .get::<Option<DateTime<Utc>>, _>("valid_until")
+                    .map(|t| t.timestamp_micros())
+                    == a.valid_until.map(|t| t.timestamp_micros())
                 && old.get::<Option<Uuid>, _>("proxy_for_id") == a.proxy_for;
             if !unchanged {
                 self.end_connection(tx, actor, p, id, now).await?;
                 let updated_policy = self.policy(tx, now).await?;
                 let mut replacement = a.clone();
                 replacement.collaboration = None;
+                replacement.valid_from = a
+                    .valid_from
+                    .or(Some(old.get::<DateTime<Utc>, _>("valid_from")))
+                    .filter(|start| *start > now);
                 let mut result =
                     Box::pin(self.assign(tx, actor, &updated_policy, &replacement, now)).await?;
                 let replacement_id: Uuid = serde_json::from_value(result["collaboration"].clone())?;
@@ -558,28 +581,33 @@ impl Store {
         }
         sqlx::query("UPDATE qintopia_agent_os.collaboration_appointments SET status='ended',ended_at=$5,version=version+1 WHERE tenant_key=$1 AND person_id=$2 AND role_id=$3 AND scope_id=$4 AND status='active' AND valid_until<=$5")
             .bind(&self.tenant).bind(a.person).bind(a.role).bind(a.scope).bind(now).execute(&mut **tx).await?;
-        let existing=sqlx::query("SELECT id,valid_until,proxy_for_id FROM qintopia_agent_os.collaboration_appointments WHERE tenant_key=$1 AND person_id=$2 AND role_id=$3 AND scope_id=$4 AND status='active'")
+        let existing=sqlx::query("SELECT id,valid_from,valid_until,proxy_for_id FROM qintopia_agent_os.collaboration_appointments WHERE tenant_key=$1 AND person_id=$2 AND role_id=$3 AND scope_id=$4 AND status='active'")
             .bind(&self.tenant).bind(a.person).bind(a.role).bind(a.scope).fetch_optional(&mut **tx).await?;
         let appointment = if let Some(r) = existing {
             ensure!(
-                r.get::<Option<DateTime<Utc>>, _>("valid_until") == a.valid_until
+                a.valid_from.is_none_or(|start| start.timestamp_micros()
+                    == r.get::<DateTime<Utc>, _>("valid_from").timestamp_micros())
+                    && r.get::<Option<DateTime<Utc>>, _>("valid_until")
+                        .map(|t| t.timestamp_micros())
+                        == a.valid_until.map(|t| t.timestamp_micros())
                     && r.get::<Option<Uuid>, _>("proxy_for_id") == a.proxy_for,
                 "existing_term_differs"
             );
             r.get::<Uuid, _>("id")
         } else {
+            ensure!(
+                a.valid_from.is_none_or(|start| start >= now),
+                "term_start_in_past"
+            );
             sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_appointments(tenant_key,person_id,role_id,scope_id,valid_from,valid_until,proxy_for_id) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id")
-                .bind(&self.tenant).bind(a.person).bind(a.role).bind(a.scope).bind(now).bind(a.valid_until).bind(a.proxy_for).fetch_one(&mut **tx).await?
+                .bind(&self.tenant).bind(a.person).bind(a.role).bind(a.scope).bind(a.valid_from.unwrap_or(now)).bind(a.valid_until).bind(a.proxy_for).fetch_one(&mut **tx).await?
         };
         let relation = if let Some(id) = a.collaboration {
             let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.agent_collaborations WHERE tenant_key=$1 AND id=$2 AND appointment_id=$3 AND agent_key=$4 AND domain_key=$5 AND status='active')")
                 .bind(&self.tenant).bind(id).bind(appointment).bind(&a.agent).bind(&a.domain).fetch_one(&mut **tx).await?;
             ensure!(valid, "collaboration_dimensions_changed");
-            for g in p
-                .grants
-                .iter()
-                .filter(|g| g.collaboration == id && g.active)
-            {
+            let configured = self.configured_grant_ids(tx, Some(id)).await?;
+            for g in p.grants.iter().filter(|g| configured.contains(&g.id)) {
                 ensure!(
                     p.manager(actor.person, g.scope, &g.agent, &g.domain, &g.action)
                         .is_some(),
@@ -596,6 +624,7 @@ impl Store {
             sqlx::query_scalar("INSERT INTO qintopia_agent_os.agent_collaborations(tenant_key,appointment_id,agent_key,domain_key,responsibility_text,duty_id) VALUES($1,$2,$3,$4,$5,$6) RETURNING id")
                 .bind(&self.tenant).bind(appointment).bind(&a.agent).bind(&a.domain).bind(&a.responsibility).bind(a.duty).fetch_one(&mut **tx).await?
         };
+        let configured = self.configured_grant_ids(tx, Some(relation)).await?;
         let mut grants = Vec::new();
         for (setting, parent) in settings.iter().zip(parents) {
             let action = &setting.action;
@@ -613,7 +642,7 @@ impl Store {
             if let Some(old) = p
                 .grants
                 .iter()
-                .find(|g| g.collaboration == relation && g.action == *action && g.active)
+                .find(|g| g.action == *action && configured.contains(&g.id))
             {
                 if p.effective(old)
                     && old.mode == setting.mode
@@ -647,11 +676,38 @@ impl Store {
         let (mut tx, version, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
         let p = self.policy(&mut tx, now).await?;
+        let root_manager = Self::catalog_admin(&p, actor);
+        let configured = self.configured_grant_ids(&mut tx, None).await?;
+        // A person may read their own upcoming assignment before it grants any
+        // authority. The source delegation must still be valid now; no future
+        // grant is inserted into the execution policy.
+        let upcoming: Vec<(Uuid, Uuid)> = if actor.session_hash.is_some() {
+            sqlx::query_as("SELECT c.id,a.scope_id FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_agent_os.collaboration_roles r ON r.id=a.role_id JOIN qintopia_agent_os.collaboration_duties d ON d.id=c.duty_id WHERE c.tenant_key=$1 AND a.person_id=$2 AND c.status='active' AND a.status='active' AND r.status='active' AND d.status='active' AND a.valid_from>$3 AND (a.valid_until IS NULL OR a.valid_until>a.valid_from)")
+                .bind(&self.tenant).bind(actor.person).bind(now).fetch_all(&mut *tx).await?
+        } else {
+            vec![]
+        };
+        let upcoming: Vec<(Uuid, Uuid)> = upcoming
+            .into_iter()
+            .filter(|(id, _)| {
+                p.grants.iter().any(|g| {
+                    if g.collaboration != *id || !configured.contains(&g.id) {
+                        return false;
+                    }
+                    let mut readable = g.clone();
+                    readable.active = true;
+                    p.effective(&readable)
+                })
+            })
+            .collect();
         let visible: Vec<Uuid> = p
             .scopes
             .iter()
             .filter(|s| {
-                Self::catalog_admin(&p, actor)
+                // A global catalog manager also needs archived scopes for
+                // lifecycle maintenance. Partial-root managers remain scoped.
+                root_manager
+                    || upcoming.iter().any(|(_, scope)| *scope == s.id)
                     || p.grants.iter().any(|g| {
                         g.person == actor.person
                             && (actor.session_hash.is_some() || g.action == "manage")
@@ -670,17 +726,17 @@ impl Store {
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let scopes:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'parent',parent_scope_id,'label',label,'kind',kind,'version',version,'status',status) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2)")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;
-        let roles:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'available_actions',available_actions,'status',status,'version',version,'duty_ids',ARRAY(SELECT duty_id FROM qintopia_agent_os.collaboration_role_duties rd WHERE rd.tenant_key=r.tenant_key AND rd.role_id=r.id ORDER BY duty_id)) ORDER BY label,id),'[]') FROM qintopia_agent_os.collaboration_roles r WHERE tenant_key=$1")
+        let mut roles:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'available_actions',available_actions,'status',status,'version',version,'duty_ids',ARRAY(SELECT duty_id FROM qintopia_agent_os.collaboration_role_duties rd WHERE rd.tenant_key=r.tenant_key AND rd.role_id=r.id ORDER BY duty_id)) ORDER BY label,id),'[]') FROM qintopia_agent_os.collaboration_roles r WHERE tenant_key=$1")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
-        let duties:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'domain',domain_key,'available_actions',available_actions,'status',status,'version',version) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_duties WHERE tenant_key=$1")
+        let mut duties:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'domain',domain_key,'available_actions',available_actions,'status',status,'version',version) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_duties WHERE tenant_key=$1")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
-        let relations:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',c.id,'appointment',a.id,'person',a.person_id,'role',a.role_id,'scope',a.scope_id,'agent',c.agent_key,'domain',c.domain_key,'duty',c.duty_id,'version',c.version,'replaces',c.replaces_id,'immutable',EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_grants g WHERE g.collaboration_id=c.id AND g.parent_grant_id IS NULL),'responsibility',c.responsibility_text,'status',CASE WHEN c.status<>'active' THEN c.status WHEN a.status<>'active' THEN a.status WHEN a.valid_until<=$3 THEN 'expired' ELSE 'active' END,'valid_until',a.valid_until,'proxy_for',a.proxy_for_id) ORDER BY c.created_at),'[]') FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND a.scope_id=ANY($2)")
+        let relations:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',c.id,'appointment',a.id,'person',a.person_id,'role',a.role_id,'scope',a.scope_id,'agent',c.agent_key,'domain',c.domain_key,'duty',c.duty_id,'version',c.version,'replaces',c.replaces_id,'immutable',EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_grants g WHERE g.collaboration_id=c.id AND g.parent_grant_id IS NULL),'responsibility',c.responsibility_text,'status',CASE WHEN c.status<>'active' THEN c.status WHEN a.status<>'active' THEN a.status WHEN a.valid_until<=$3 THEN 'expired' WHEN a.valid_from>$3 THEN 'scheduled' ELSE 'active' END,'valid_from',a.valid_from,'valid_until',a.valid_until,'proxy_for',a.proxy_for_id) ORDER BY c.created_at),'[]') FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND a.scope_id=ANY($2)")
             .bind(&self.tenant).bind(&visible).bind(now).fetch_one(&mut *tx).await?;
-        let groups:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',display_name) ORDER BY display_name),'[]') FROM qintopia_messages.conversations WHERE tenant_id=$1 AND chat_type='group' AND status='active'")
+        let groups:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',display_name) ORDER BY display_name),'[]') FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND chat_type='group' AND status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items k WHERE k.tenant_key=$1 AND k.space_id=c.id)")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let bindings:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('scope',scope_id,'conversation',conversation_id) ORDER BY scope_id,conversation_id),'[]') FROM qintopia_agent_os.collaboration_scope_bindings WHERE tenant_key=$1 AND scope_id=ANY($2) AND revoked_at IS NULL")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;
-        let grants:Vec<Value>=p.grants.iter().filter(|g|(g.person==actor.person && p.effective(g)) || p.can_inspect(actor.person,g.scope,&g.agent,&g.domain)).map(|g|json!({"id":g.id,"collaboration":g.collaboration,"person":g.person,"scope":g.scope,"agent":g.agent,"domain":g.domain,"duty":g.duty,"action":g.action,"mode":g.mode,"reviewer":g.reviewer,"effective":p.effective(g),"revocable":g.active,"management_envelope":if g.action=="manage" && g.mode==PermissionMode::Autonomous{Some(&g.delegation)}else{None}})).collect();
+        let grants:Vec<Value>=p.grants.iter().filter(|g|(g.person==actor.person && (p.effective(g) || (configured.contains(&g.id) && upcoming.iter().any(|(id,_)|*id==g.collaboration)))) || p.can_inspect(actor.person,g.scope,&g.agent,&g.domain)).map(|g|json!({"id":g.id,"collaboration":g.collaboration,"person":g.person,"scope":g.scope,"agent":g.agent,"domain":g.domain,"duty":g.duty,"action":g.action,"mode":g.mode,"reviewer":g.reviewer,"effective":p.effective(g),"revocable":configured.contains(&g.id),"management_envelope":if g.action=="manage" && g.mode==PermissionMode::Autonomous{Some(&g.delegation)}else{None}})).collect();
         let mut relations: Vec<Value> = relations
             .as_array()
             .into_iter()
@@ -691,9 +747,10 @@ impl Store {
                     .and_then(|s| Uuid::parse_str(s).ok())
                     .is_some_and(|scope| {
                         (r["person"] == json!(actor.person)
-                            && p.grants
-                                .iter()
-                                .any(|g| json!(g.collaboration) == r["id"] && p.effective(g)))
+                            && (upcoming.iter().any(|(id, _)| json!(id) == r["id"])
+                                || p.grants
+                                    .iter()
+                                    .any(|g| json!(g.collaboration) == r["id"] && p.effective(g))))
                             || p.can_inspect(
                                 actor.person,
                                 scope,
@@ -719,10 +776,14 @@ impl Store {
                 && g.mode == PermissionMode::Autonomous
                 && p.effective(g)
         });
-        let root_manager = p.scopes.iter().filter(|s| s.parent.is_none()).any(|s| {
-            p.manager(actor.person, s.id, "default", "organization", "manage")
-                .is_some()
-        });
+        // History contains whole-tenant snapshots. A manager of one root or of
+        // a root without descendants cannot use it to inspect other scopes.
+        let history_visible = root_manager;
+        let identity_history_visible = history_visible
+            && p.scopes.iter().filter(|s| s.active).all(|s| {
+                p.manager(actor.person, s.id, "default", "organization", "identity")
+                    .is_some()
+            });
         let groups: Vec<Value> = groups
             .as_array()
             .into_iter()
@@ -738,7 +799,13 @@ impl Store {
             .cloned()
             .collect();
         let mut organization = self
-            .organization_state(&mut tx, &visible, root_manager)
+            .organization_state(
+                &mut tx,
+                &visible,
+                root_manager,
+                history_visible,
+                identity_history_visible,
+            )
             .await?;
         // Scope visibility alone does not expose another Agent's contact configuration.
         organization["audiences"]
@@ -773,8 +840,39 @@ impl Store {
                         .any(|r| r["role"] == pos["role_id"] && r["scope"] == pos["scope_id"])
                 });
         }
+        let delegated_reviews =
+            steward::delegated_scopes_in(&self.pool, &self.tenant, &mut tx, actor.person).await?;
+        let personal = actor.session_hash.is_some() && !management_available;
+        if personal {
+            roles
+                .as_array_mut()
+                .unwrap()
+                .retain(|role| relations.iter().any(|r| r["role"] == role["id"]));
+            duties
+                .as_array_mut()
+                .unwrap()
+                .retain(|duty| relations.iter().any(|r| r["duty"] == duty["id"]));
+            for role in roles.as_array_mut().unwrap() {
+                role["duty_ids"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|id| duties.as_array().unwrap().iter().any(|d| d["id"] == *id));
+            }
+        }
+        let agents: Vec<_> = agents()
+            .into_iter()
+            .filter(|key| !personal || relations.iter().any(|r| r["agent"] == *key))
+            .collect();
+        let domains: Vec<_> = DOMAINS
+            .iter()
+            .filter(|key| !personal || relations.iter().any(|r| r["domain"] == **key))
+            .collect();
+        let actions: Vec<_> = ACTIONS
+            .iter()
+            .filter(|key| !personal || grants.iter().any(|g| g["action"] == **key))
+            .collect();
         Ok(
-            json!({"version":version,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents(),"domains":DOMAINS,"actions":ACTIONS,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":Self::catalog_admin(&p,actor),"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"mode":"synthetic","runtime_connected":false}),
+            json!({"version":version,"actor_person":actor.person,"delegated_reviews":delegated_reviews,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":"synthetic","runtime_connected":false}),
         )
     }
 

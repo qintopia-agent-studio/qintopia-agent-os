@@ -1,14 +1,36 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
 pub mod auth_server;
+mod foundation_server;
+pub(crate) use foundation_server::error_code as foundation_error_code;
 pub mod local_server;
 mod model;
 mod store;
 pub use model::{Assignment, Change, Command, Delegation};
+pub use store::foundation::{
+    authorize_current, can_inspect_current, effective_knowledge_in, put_knowledge_in, Authority,
+    KnowledgeVersion, KnowledgeWrite,
+};
+pub(crate) use store::shared_reply_context;
+pub(crate) use store::steward::{content_reviewer, delegated_scopes_in};
 pub use store::{Actor, Store};
+pub use store::{IdentityCommand, QiweConversion};
+pub use store::{MemoryChange, MemoryCommand, MemoryEvidence, ReplyCondition, ReplyStyle};
 #[cfg(test)]
 mod auth_tests;
 #[cfg(test)]
 mod duty_store_tests;
+#[cfg(test)]
+mod foundation_consumer_tests;
+#[cfg(test)]
+mod foundation_review_tests;
+#[cfg(test)]
+mod foundation_server_tests;
+#[cfg(test)]
+mod identity_memory_tests;
+#[cfg(test)]
+mod identity_ui_tests;
+#[cfg(test)]
+mod ontology_ui_tests;
 #[cfg(test)]
 mod tests;
 
@@ -42,3 +64,6 @@ async fn connect_local(input: &str) -> Result<PgPool> {
         .await
         .map_err(|_| anyhow::anyhow!("local_database_unavailable"))
 }
+
+#[cfg(test)]
+mod rule_lifecycle_tests;

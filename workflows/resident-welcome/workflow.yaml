@@ -32,7 +32,6 @@ tags:
   - identity
   - resident-welcome
 next_actions:
-  - Complete PMS projection contract and synthetic interoperability before live
-    integration.
+  - Complete owner acceptance of the combined local foundation and welcome UI.
   - Audit and migrate the legacy renderer after read-only source access is restored.
   - Production deployment and channel activation require separate authorization.

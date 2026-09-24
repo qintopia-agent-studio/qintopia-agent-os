@@ -8,6 +8,7 @@ const names = {
   wenyuange: "文渊阁",
   guanerye: "关二爷",
   huabaosi: "阿靓",
+  anan: "岸岸",
   train: "指导智能体改进服务",
   confirm_knowledge: "确认可用于回答的知识",
   change_rules: "决定职责范围内的运营规则",
@@ -33,6 +34,10 @@ const statusNames = {
   retired: "已停用",
   ended: "已结束",
   expired: "已到期",
+  scheduled: "尚未开始",
+  confirmed: "已核验",
+  pending: "待核验",
+  revoked: "已撤销",
 };
 const text = (key) => names[key] || key;
 const active = (x) => !x.status || x.status === "active";
@@ -80,8 +85,10 @@ function titleRow(title, caption, ...buttons) {
   return e;
 }
 function selectField(parent, id, label, items, value = "", empty) {
-  const row = el("label", label, "qo-field"),
+  const row = el("div", undefined, "qo-field"),
+    caption = el("label", label),
     input = el("select");
+  caption.htmlFor = id;
   input.id = id;
   if (empty !== undefined) input.add(new Option(empty, ""));
   items.forEach((i) => {
@@ -90,13 +97,15 @@ function selectField(parent, id, label, items, value = "", empty) {
     input.add(o);
   });
   input.value = value;
-  row.append(input);
+  row.append(caption, input);
   parent.append(row);
   return input;
 }
 function inputField(parent, id, label, value = "", type = "text", required = false) {
-  const row = el("label", label, "qo-field"),
+  const row = el("div", undefined, "qo-field"),
+    caption = el("label", label),
     input = el(type === "textarea" ? "textarea" : "input");
+  caption.htmlFor = id;
   input.id = id;
   if (type !== "textarea") input.type = type;
   else input.rows = 3;
@@ -104,7 +113,7 @@ function inputField(parent, id, label, value = "", type = "text", required = fal
   input.required = required;
   if (["text", "textarea"].includes(type))
     input.maxLength = type === "text" ? 80 : 2000;
-  row.append(input);
+  row.append(caption, input);
   parent.append(row);
   return input;
 }
@@ -157,7 +166,10 @@ function personOptions() {
 }
 function currentRelations(pos) {
   return state.relations.filter(
-    (r) => r.role === pos.role_id && r.scope === pos.scope_id && r.status === "active"
+    (r) =>
+      r.role === pos.role_id &&
+      r.scope === pos.scope_id &&
+      ["active", "scheduled"].includes(r.status)
   );
 }
 function audienceOf(r) {

@@ -83,6 +83,19 @@ Read tools must not return:
 
 Every member-context read must write `qintopia_identity.member_context_audit`.
 
+### Foundation adoption boundary
+
+Once a conversation scope or Person has a foundation Gateway binding, the legacy trainer
+allowlist cannot authorize changes for that scope or person. The old training tool
+rejects the write before persisting a note, fact, snapshot, or persona overlay; callers
+must use the trusted foundation service. Revoking a binding or appointment does not
+reopen the legacy path. Existing unmanaged scopes retain their old gates.
+
+Legacy context reads for an adopted scope/person omit trainer guidance and ungoverned
+whole-profile snapshots. Current self preferences come from the shared memory service
+and require a currently valid channel/source link. No production Gateway is enabled by
+these checks, and an unavailable governance lookup fails closed.
+
 ## Write Boundary
 
 `qintopia_erhua_training_note_submit` is the only write-capable tool in this capability.

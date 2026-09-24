@@ -22,11 +22,21 @@ pub async fn run(port: u16, init_fixture: bool) -> Result<()> {
         std::env::var("QINTOPIA_COLLABORATION_LOCAL_ENABLE").as_deref() == Ok("1"),
         "collaboration_local_disabled"
     );
+    let observe_fixture =
+        std::env::var("QINTOPIA_FOUNDATION_FIXTURE_OBSERVE").as_deref() == Ok("1");
+    ensure!(
+        !observe_fixture || std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1"),
+        "foundation_fixture_observation_requires_local_foundation"
+    );
     let database = std::env::var("QINTOPIA_COLLABORATION_LOCAL_DATABASE_URL")
         .map_err(|_| anyhow::anyhow!("explicit_local_database_required"))?;
     let tenant =
         std::env::var("QINTOPIA_COLLABORATION_LOCAL_TENANT").unwrap_or_else(|_| TENANT.into());
     let store = Store::local(&database, &tenant).await?;
+    if std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1") {
+        // Store::local has already validated the explicitly isolated loopback database.
+        crate::db::run_migrations(&store.pool).await?;
+    }
     if init_fixture {
         crate::db::run_migrations(&store.pool).await?;
         store
@@ -35,11 +45,57 @@ pub async fn run(port: u16, init_fixture: bool) -> Result<()> {
             .map_err(|_| anyhow::anyhow!("fixture_initialization_failed_or_already_exists"))?;
         let actor = store.actor(store.fixture_operator().await?).await?;
         store.organization_fixture(&actor).await?;
+        if std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1") {
+            let password = zeroize::Zeroizing::new(
+                std::env::var("QINTOPIA_FOUNDATION_FIXTURE_PASSWORD")
+                    .map_err(|_| anyhow::anyhow!("explicit_fixture_password_required"))?,
+            );
+            store
+                .bootstrap_foundation_consumers(&actor, &password)
+                .await?;
+        }
+    }
+    if std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1")
+        && std::env::var_os("QINTOPIA_FOUNDATION_SOCKET").is_some()
+    {
+        let broker_store = Store::local(&database, &tenant).await?;
+        tokio::spawn(async move {
+            if let Err(error) = super::foundation_server::broker(broker_store).await {
+                eprintln!(
+                    "Foundation local broker stopped: {}",
+                    super::foundation_server::error_code(&error)
+                );
+            }
+        });
     }
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+    let mut observations = observe_fixture.then(|| {
+        let mut timer = tokio::time::interval(std::time::Duration::from_secs(20));
+        timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        timer
+    });
     println!("Collaboration local settings: http://127.0.0.1:{port}/");
     loop {
-        let (mut stream, peer) = listener.accept().await?;
+        let accepted = tokio::select! {
+            accepted = listener.accept() => accepted,
+            _ = async {
+                if let Some(timer) = &mut observations {
+                    timer.tick().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                let fixture = crate::resident_welcome::store::Store { pool: store.pool.clone() };
+                // No business execution, retries, or admission. An uncertain result stops
+                // this development observer for the remainder of the listener lifetime.
+                if fixture.refresh_foundation_fixture(&store.tenant).await.is_err() {
+                    observations = None;
+                    eprintln!("Foundation synthetic fixture observation stopped: fixture_refresh_failed_no_retry");
+                }
+                continue;
+            }
+        };
+        let (mut stream, peer) = accepted?;
         if !peer.ip().is_loopback() {
             continue;
         }
@@ -102,6 +158,14 @@ pub(super) async fn handle(
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-catalog.js"),
             )),
+            "/workbench-ontology.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_str!("workbench-ontology.js"),
+            )),
+            "/workbench-steward.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_str!("workbench-steward.js"),
+            )),
             "/workbench-organization.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-organization.js"),
@@ -146,6 +210,43 @@ pub(super) async fn dispatch(
     let result: Result<Value> = async {
         match (r.method.as_str(), r.path.as_str()) {
             ("GET", "/api/state") => store.state(actor).await,
+            ("GET", path) if path.starts_with("/api/ontology?scope=") => {
+                let scope = Uuid::parse_str(path.trim_start_matches("/api/ontology?scope="))
+                    .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                store.ontology(actor, scope).await
+            }
+            ("GET", path)
+                if path == "/api/identities" || path.starts_with("/api/identities?person=") =>
+            {
+                let person = if path == "/api/identities" {
+                    None
+                } else {
+                    Some(
+                        Uuid::parse_str(path.trim_start_matches("/api/identities?person="))
+                            .map_err(|_| anyhow::anyhow!("invalid_command"))?,
+                    )
+                };
+                store.identities(actor, person).await
+            }
+            ("POST", "/api/identities/preview" | "/api/identities/save") => {
+                let command: super::store::IdentityUiCommand = serde_json::from_slice(&r.body)
+                    .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                if r.path.ends_with("/preview") {
+                    store.preview_identity(actor, &command).await
+                } else {
+                    store.save_identity(actor, &command).await
+                }
+            }
+            ("POST", "/api/audience-preview") => {
+                #[derive(serde::Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Preview {
+                    collaboration: Uuid,
+                }
+                let command: Preview = serde_json::from_slice(&r.body)
+                    .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                store.audience_preview(actor, command.collaboration).await
+            }
             ("POST", "/api/contact-decision") => {
                 #[derive(serde::Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -254,6 +355,23 @@ pub(super) async fn dispatch(
                 | "unknown_agent_or_domain"
                 | "invalid_actions"
                 | "expired_term"
+                | "invalid_term_range"
+                | "term_start_in_past"
+                | "identity_management_denied"
+                | "identity_version_conflict"
+                | "identity_operation_conflict"
+                | "identity_gateway_conflict"
+                | "identity_namespace_conflict"
+                | "gateway_not_active"
+                | "identity_gateway_version_conflict"
+                | "identity_observation_required"
+                | "revoke_person_mismatch"
+                | "revoke_conflicting_link_first"
+                | "person_outside_tenant"
+                | "audience_management_denied"
+                | "audience_authority_revoked"
+                | "identity_scope_unbound"
+                | "shared_account_person_unknown"
                 | "delegation_envelope_required"
                 | "invalid_delegation" => message.as_str(),
                 _ => "configuration_not_saved",
@@ -263,7 +381,10 @@ pub(super) async fn dispatch(
                     401
                 } else if matches!(
                     code,
-                    "scope_access_denied" | "management_denied" | "catalog_management_required"
+                    "scope_access_denied"
+                        | "management_denied"
+                        | "catalog_management_required"
+                        | "identity_management_denied"
                 ) {
                     403
                 } else {

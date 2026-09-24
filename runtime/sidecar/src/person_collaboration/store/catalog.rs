@@ -3,10 +3,13 @@ use super::*;
 
 impl Store {
     pub(super) fn catalog_admin(p: &Policy, actor: &Actor) -> bool {
-        p.scopes.iter().filter(|s| s.parent.is_none()).any(|s| {
-            p.manager(actor.person, s.id, "default", "organization", "manage")
-                .is_some()
-        })
+        // Catalogs apply to the whole tenant. Managing one root (or only the
+        // root itself) must not expose or edit other roots and descendants.
+        p.scopes.iter().any(|s| s.active && s.parent.is_none())
+            && p.scopes.iter().filter(|s| s.active).all(|s| {
+                p.manager(actor.person, s.id, "default", "organization", "manage")
+                    .is_some()
+            })
     }
 
     pub(super) async fn end_connection(
@@ -27,11 +30,8 @@ impl Store {
             p.can_inspect(actor.person, scope, &agent, &domain),
             "management_denied"
         );
-        for g in p
-            .grants
-            .iter()
-            .filter(|g| g.collaboration == id && g.active)
-        {
+        let configured = self.configured_grant_ids(tx, Some(id)).await?;
+        for g in p.grants.iter().filter(|g| configured.contains(&g.id)) {
             ensure!(g.parent.is_some(), "bootstrap_relation_cannot_be_rewritten");
             ensure!(
                 p.manager(actor.person, scope, &agent, &domain, &g.action)

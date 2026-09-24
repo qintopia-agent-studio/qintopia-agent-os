@@ -42,6 +42,31 @@ transport 与真实模型评估是后续专项场景，当前不自动启动。�
 17。数据库测试通过 `QINTOPIA_SIDECAR_DATABASE_URL` 指向本次本地实例，运行资料目录通过
 `QINTOPIA_TEST_RUN_DIR` 传给子进程；两者都由运行器生成和保护，不能指向线上资源。
 
+`operations-control-plane-apply-smoke.sh`
+支持显式指定的随机本地 PostgreSQL 端口。脚本在执行任何数据库命令前，要求 literal-loopback、显式非特权端口和
+`qintopia_test`，拒绝连接覆盖参数；仅允许
+`sslmode=disable`。脚本将确切连接串的 SHA-256 传给双测试 feature 的 Huabaosi 分支，该分支再次核对地址和 hash。
+
+这项绑定只在 `postgres-integration-tests`、`huabaosi-staging-adapter`
+和 apply-smoke 显式开关同时存在时有效。普通 staging 和生产仍使用原审批及数据库边界；不把随机测试连接加入 reviewed
+allowlist。子命令失败会立即终止 smoke，不继续解析空 JSON。
+
+### 本地数据库时钟异常恢复
+
+若刚创建的即时任职间歇性报无权限，先检查隔离库的身份和授权链，再跨连接连续采样
+`clock_timestamp()`。事务版本递增而记录时间倒退可帮助定位，但须用直接时钟采样确认，不能只靠事务开始时间推断。
+
+2026-09-23 的 Docker 合成库曾反复回拨约 100 毫秒，真实任期判断按预期拒绝。恢复方式为：
+
+1. 关闭本任务演示写入，将合成库备份至权限受限的忽略目录，保留原容器和失败日志。
+2. 使用已安装且具备 pgvector 的独立本机 PostgreSQL，创建私有数据目录、随机回环端口和
+   `qintopia_test`，再恢复备份。`initdb` 与 `postgres`
+   必须来自同一服务端安装目录；仅有 libpq 客户端的目录不够。
+3. 只更新本任务显式数据库绑定，保持原数据库名称、回环地址及测试开关门禁。重新采样时钟、复验失败场景，再执行完整 PostgreSQL 检查阶段。
+
+不放宽未来任期或过期授权判断，不修改真实配置时间来掩盖环境问题。恢复证据见
+[本体 UI 验收记录](../reports/2026-09-23-ontology-ui-local-acceptance.md)。
+
 本地确定性测试不需要生产凭证，也不向真实 channel 发送消息。报告中的“发送成功”只表示模拟 channel 收到了符合契约的请求并返回了脚本响应，不表示真实用户已收到消息。真实模型质量、平台权限和实际送达属于单独的评估或受控线上验证。
 
 框架分为四层：包内单元/契约测试、跨模块业务场景、进程和传输专项、真实模型评估。现有 Rust
@@ -80,11 +105,16 @@ Allure 报告按业务和场景展示状态、步骤、耗时、预期/实际结
 新增场景时必须明确哪些代码真实执行、哪些外部边界被模拟，以及哪些能力仍未覆盖。详细字段和断言规则见
 [测试编写规范](authoring.md)。
 
-新增 `person-collaboration` 的 11 个 PostgreSQL 场景与 `resident-welcome`
-的 3 个场景，覆盖授权生命周期、持久欢迎流程及恢复边界。可通过
+人员与欢迎业务的 PostgreSQL 场景覆盖授权生命周期、身份与记忆、知识确认、持久欢迎流程及恢复边界。
+`person-foundation` 另登记二花可信工具 SDK、岸岸独立注册和真实合成 PNG 渲染。可通过
 `pnpm test:business -- --feature person-collaboration` 或
-`pnpm test:business -- --feature resident-welcome`
-定向运行；这不证明真实身份接入或真实消息送达。
+`pnpm test:business -- --feature resident-welcome` 定向运行；SDK 和渲染器可运行
+`pnpm test:business -- --feature person-foundation`。这不证明真实模型理解、真实身份接入或真实消息送达。
+
+欢迎卡片渲染依赖 Pillow，由 `pnpm test:setup`
+安装到专用测试环境。运行器将该环境的 Python 路径通过 `QINTOPIA_WELCOME_RENDER_PYTHON`
+注入子进程，不继承外部同名变量。本地仍须安装可用字体；macOS 使用系统中文字体，Linux 推荐 Noto
+CJK。
 
 ## 本地可视化
 
@@ -98,11 +128,16 @@ Allure 报告按业务和场景展示状态、步骤、耗时、预期/实际结
 - 场景详情：早报案例展示实际步骤、断言失败和 JSON/请求附件。
 - 旧测试以测试组展示，原生用例数量和原始输出在步骤/附件中；报告组数不等于原生用例数。
 
-`pnpm test:business` 表示清单中全部 30 个场景/测试组，不代表仓库所有业务已有覆盖。
+`pnpm test:business` 表示当前清单中全部已登记场景/测试组，不代表仓库所有业务已有覆盖。
 `pnpm test:list` 同时列出缺口。协作方参考
 [早报案例说明](../../workflows/erhua-morning-brief/tests/business/README.md)。
 
 Docker 镜像下载失败时先检查本机 Docker 网络，恢复后重跑；运行器不会改 daemon 配置。每次运行使用随机端口和独立卷，场景间核对数据库归属后重新执行 migration；首轮 Rust 编译较慢，后续复用编译缓存。
+
+若业务测试已通过而 Allure 报告提示找不到 Java，先核对已安装 JDK 17 的路径，并将
+`JAVA_HOME` 和该 JDK 的 `bin`
+加入运行命令环境。不要重复安装已有 JDK，也不要把报告生成失败标成整次运行通过；保留原运行状态，可用其已有
+`allure-results` 重新生成报告。
 
 本机默认 Rust 与 CI 不同时，先执行 `rustup toolchain install 1.96.0`，再通过
 `RUSTUP_TOOLCHAIN=1.96.0 pnpm test:business` 或
@@ -125,11 +160,10 @@ Docker 镜像下载失败时先检查本机 Docker 网络，恢复后重跑；�
 
 ## Staging smoke 测试的路径隔离
 
-`tools/deploy/test-qiwe-image-staging-smoke.mjs` 在当前 checkout 的 `sidecar/`
-创建合成打包路径；同一 checkout 不应并发执行该套件。单独设置 `TMPDIR`
-不能隔离该路径，勿修改仓库或系统目录权限来绕过安全检查。
+`tools/deploy/test-qiwe-image-staging-smoke.mjs` 在每次调用独占的临时源码根创建
+`sidecar/` 合成打包路径，并逐字复制当前 checkout 的 staging shell 和 evidence
+checker。它不再修改共享 checkout 的
+`sidecar/`。临时源码根仍包含空格；路径、文件类型、属主、只读权限、内容哈希及执行前重新核验继续由未修改的 staging
+shell 检查。
 
-若 upload 通过而 callback 报打包文件或父目录可写，保留原始错误，记录实际路径与权限。可在独占临时源码根复制未修改的测试、evidence
-checker 和 staging shell，核对内容哈希后定向复验；只清理本次临时资料。
-
-2026-09-22 两组隔离复验均通过，但首次完整检查的具体权限变化原因仍未确定；不将隔离通过记为全套通过。详见[验证记录](../reports/2026-09-22-community-business-model-validation.md#pr-准备时的-staging-smoke-权限检查失败)。
+若 upload 或 callback 报路径可写，保留原始错误和当时具体路径的 mode、uid、时间戳。不要改仓库或系统目录权限来绕过检查，也不要把定向通过记作完整广验通过。原共享夹具中的权限变化来源尚未确定；隔离修复消除了共享路径耦合，不证明原失败由并发导致。详见[原始失败与隔离修复记录](../reports/2026-09-22-community-business-model-validation.md#staging-smoke-共享夹具隔离修复)。

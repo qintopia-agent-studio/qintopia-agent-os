@@ -15,9 +15,30 @@ The owner-authorized first batch combines baseline preparation, C, and D into on
 development batch with one combined product acceptance. Engineering dependencies and
 checks remain sequential where required. Use the
 [combined handoff](person-agent-foundation-parallel-handoff.md#8-合并交接共同底座二花接入与欢迎闭环);
-the owner requested a new project conversation for implementation. Handoff is ready, but
-the current tools cannot create that conversation, so execution has not been confirmed.
+the local implementation is on `codex/person-foundation-welcome-batch1`. The
+[batch report](../../reports/2026-09-22-foundation-welcome-batch1.md) records consumer,
+memory, welcome, browser and integration evidence for combined manual acceptance. Real
+model/channel acceptance and the unavailable legacy card script remain explicit
+follow-ups. The owner corrected the UI boundary during local acceptance: keep the
+existing organization page for managers, use Erhua conversation for house-leader work,
+and keep the local dialogue harness outside business navigation. Welcome is an
+individual authorized matter, with no dedicated product page or permission category.
 This authorization does not enable production actions.
+
+The owner then authorized ontology UI completion inside the preserved organization
+framework. See the
+[UI acceptance record](../../reports/2026-09-23-ontology-ui-local-acceptance.md) for
+inherited constraints, reviewed identity links, future terms, capability states, actual
+resident audiences, readable history and accessible help icons. The earlier batch
+report's UI gap table is historical.
+
+Engineering closeout (2026-09-23): foundation/welcome implementation is committed in
+`19957ef`, and the completed ontology UI is committed in `70abd52`. The owner requested
+local commits without waiting for manual acceptance. A new development conversation owns
+front-desk interaction collection; both parts will receive joint manual acceptance on
+the morning of 2026-09-24 (Asia/Shanghai). Follow the
+[closeout handoff](../../reports/2026-09-23-ontology-ui-local-acceptance.md#工程交付与次日验收2026-09-23)
+for the fixed code, preserved local evidence and outstanding real integrations.
 
 The
 [Erhua and Anan history review](../../reports/2026-09-22-erhua-anan-history-review.md)

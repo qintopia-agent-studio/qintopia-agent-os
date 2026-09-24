@@ -44,14 +44,15 @@ Every Agent package should declare:
 
 ## Current Agent Boundaries
 
-| Agent     | Boundary                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------- |
-| Erhua     | Group-facing public-safe replies, consultation capture, trainer-guided memory, escalation |
-| Xiaoman   | Activity signal and content-source preparation                                            |
-| Huabaosi  | Internal visual material drafts and artifact production                                   |
-| Wenyuange | Knowledge lookup, evidence grading, disclosure filtering                                  |
-| Silaoshi  | Operations SOP, activity planning, service follow-up, review templates                    |
-| Guanerye  | Engineering automation and validation support                                             |
+| Agent     | Boundary                                                                                     |
+| --------- | -------------------------------------------------------------------------------------------- |
+| Erhua     | Group-facing public-safe replies, consultation capture, trainer-guided memory, escalation    |
+| Anan      | Independent local-only room Agent; welcome orchestration through governed work and artifacts |
+| Xiaoman   | Activity signal and content-source preparation                                               |
+| Huabaosi  | Internal visual material drafts and artifact production                                      |
+| Wenyuange | Knowledge lookup, evidence grading, disclosure filtering                                     |
+| Silaoshi  | Operations SOP, activity planning, service follow-up, review templates                       |
+| Guanerye  | Engineering automation and validation support                                                |
 
 Xiaoqin is not part of the current implementation scope. A future Xiaoqin package must
 be designed as a new non-WorkTool Agent integration and reviewed before registration.

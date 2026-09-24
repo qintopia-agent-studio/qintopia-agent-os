@@ -119,6 +119,38 @@ try {
   if (boundedIds !== "2,3") {
     throw new Error(`expected latest two release runs, got ${boundedIds}`);
   }
+
+  // CLI execution must not silently become a no-op when its module URL encodes
+  // spaces, non-ASCII characters or the fragment marker in a checkout directory.
+  const encodedDirectory = path.join(
+    fs.realpathSync(tempDir),
+    "checkout with spaces # 本地"
+  );
+  fs.mkdirSync(encodedDirectory);
+  const copiedCollector = path.join(encodedDirectory, "collector.mjs");
+  const encodedOutput = path.join(encodedDirectory, "collected results.json");
+  fs.copyFileSync(
+    new URL("./collect-release-deploy-results.mjs", import.meta.url),
+    copiedCollector
+  );
+  execFileSync(
+    process.execPath,
+    [
+      copiedCollector,
+      "--workflow-runs-file",
+      runsFile,
+      "--log-dir",
+      logsDir,
+      "--max-release-runs",
+      "2",
+      "--output",
+      encodedOutput,
+    ],
+    { stdio: "pipe" }
+  );
+  if (fs.readFileSync(encodedOutput, "utf8") !== fs.readFileSync(outputFile, "utf8")) {
+    throw new Error("encoded checkout path changed the collected release results");
+  }
 } finally {
   fs.rmSync(tempDir, { recursive: true, force: true });
 }

@@ -45,6 +45,10 @@ transport。替身对未声明请求必须失败，不能返回默认成功。�
 ID 唯一，executor 只能是
 `pytest`、`unittest`、`cargo`、`node`，目标和 argv 必须是仓库内固定值且能被选择器发现。不要创建只会通过的占位测试。
 
+Cargo 场景须逐个登记完整测试函数名并带
+`--exact`；不要用模块前缀代替单个场景。新增或修改目录后先运行 `pnpm test:list` 和
+`pnpm test:harness`，确认目录能被发现且不会因零匹配误报通过。原生模块回归仍可单独使用模块过滤，证据须与统一目录的执行区分。
+
 ### 4. 运行测试
 
 先运行目标范围，再根据风险扩大。命令入口和 `run.mjs` 子命令一一对应：
@@ -102,3 +106,21 @@ pnpm test:report
 若含空格的工作目录在 `test-collect-release-deploy-results.mjs` 出现 `results.json`
 缺失，核对收集脚本的 CLI 入口是否错误比较 URL 编码路径；不要通过跳过该断言或更改用户工作目录宣称总检查通过。记录总检查失败，继续运行受影响模块的原生验证。详见
 [2026-09-18 本地检查记录](../reports/2026-09-18-workbench-password-login.md)。
+
+复用演示库不能代替一次性全仓 PostgreSQL 环境。若 Space 配置测试报告
+`administrator set exceeds the supported ceiling`，先只读核对 `person_memberships` 中
+`qintopia` 的活跃 `owner/admin`
+数量；历史合成 fixtures 可能累积超过 32。保留演示库、权限上限和失败证据，使用新的本机实例与
+`qintopia_test`
+重跑完整数据库 tier，不删除旧成员或放宽权限校验。见[2026-09-23 约定生命周期检查记录](../reports/2026-09-23-rule-lifecycle-local-acceptance.md)。
+
+## 欢迎渲染与跨平台任期回归
+
+PostgreSQL 欢迎集成使用业务包固定 PNG 夹具，继续执行真实进程协议、产物登记、审批与版本失效检查，不依赖 Pillow 或字库，不声称验证了实际排版。业务测试自行准备本地 HTTP 开关；生产默认门禁不变。
+
+手工验证合成排版时，按 `workflows/resident-welcome/requirements-visual.txt`
+安装依赖，并运行该包的 `visual-tests`；本地演示继续显式设置
+`QINTOPIA_WELCOME_RENDER_PYTHON`
+为装有 Pillow 的绝对解释器路径。真实制卡能力仍属于四老师，迁给阿靓需独立联调。
+
+任期精度回归使用固定纳秒输入，覆盖 PostgreSQL 微秒读回后的编辑行为。

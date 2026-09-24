@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 const repoRoot = process.cwd();
 
@@ -185,7 +186,7 @@ const main = () => {
   );
 };
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     main();
   } catch (error) {

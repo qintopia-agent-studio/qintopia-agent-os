@@ -1,0 +1,9 @@
+# Local scripted welcome protocol participants; never a production deploy registry.
+schema_version: 1
+entries:
+  - id: agents/anan
+    script: fixtures/agents/anan/welcome_runtime.py
+  - id: agents/huabaosi
+    script: fixtures/agents/huabaosi/welcome_runtime.py
+  - id: agents/erhua
+    script: fixtures/agents/erhua/welcome_runtime.py

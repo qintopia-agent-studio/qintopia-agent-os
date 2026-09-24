@@ -80,6 +80,7 @@ _QINTOPIA_WEATHER_PLUGIN = None
 _KNOWLEDGE_RETRIEVAL_PLUGIN = None
 _ERHUA_CSV_PLUGIN = None
 _SPACE_TURN_POLICY_PLUGIN = None
+_PERSON_FOUNDATION_PLUGIN = None
 
 SPACE_TURN_TOOL_CAPABILITIES = {
     "qintopia_kb_search": "erhua.knowledge.public",
@@ -185,6 +186,15 @@ def _space_turn_policy_plugin():
         _SPACE_TURN_POLICY_PLUGIN = module
         return module
     raise _SkillPluginUnavailable("QiWe Space turn policy package unavailable")
+
+
+def _person_foundation_plugin():
+    global _PERSON_FOUNDATION_PLUGIN
+    if _PERSON_FOUNDATION_PLUGIN is None:
+        _PERSON_FOUNDATION_PLUGIN = _load_skill_plugin(
+            "person-foundation", "qintopia_person_foundation"
+        )
+    return _PERSON_FOUNDATION_PLUGIN
 
 
 _OPERATIONS_INTAKE_PLUGIN = None
@@ -3014,6 +3024,19 @@ def check_xiaoman_activity_requirements() -> bool:
 
 
 def register(ctx) -> None:
+    if _qintopia_profile_id() == "erhua":
+        try:
+            foundation = _person_foundation_plugin()
+        except _SkillPluginUnavailable:
+            # A partial legacy bundle must not make unrelated tools disappear or
+            # fall back to an ungoverned write. Foundation tools remain absent.
+            foundation = None
+        if foundation is not None:
+            foundation.register(
+                ctx,
+                agent_id="erhua",
+                session_provider=lambda: _space_turn_policy_plugin().trusted_qiwe_turn_session(),
+            )
     ctx.register_tool(
         name="qintopia_kb_search",
         toolset="qintopia",

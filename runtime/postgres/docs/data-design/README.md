@@ -15,6 +15,27 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-23.009`: [Steward review delegation](2026-09-23-steward-review-delegation.md)
+
+- `2026-09-23.008`: [Scoped text-rule lifecycle](2026-09-23-person-rule-lifecycle.md)
+
+- `2026-09-23.007`:
+  [Building history registration and replay-safe installation](2026-09-23-ontology-audience.md)
+
+- `2026-09-23.006`:
+  [Observed building history and dynamic contact audiences](2026-09-23-ontology-audience.md)
+
+- `2026-09-22.005`: [Synthetic turn replay](2026-09-22-person-foundation-consumers.md)
+
+- `2026-09-22.004`: [Welcome local executors](2026-09-22-foundation-welcome.md)
+
+- `2026-09-22.003`: [Shared foundation welcome](2026-09-22-foundation-welcome.md)
+
+- `2026-09-22.002`: [Person identity and memory](2026-09-22-person-memory.md)
+
+- `2026-09-22.001`:
+  [Person foundation consumers](2026-09-22-person-foundation-consumers.md)
+
 - `2026-09-18.001`: [Workbench accounts](2026-09-18-workbench-accounts.md)
 
 - `2026-09-11.001`:

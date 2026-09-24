@@ -97,6 +97,27 @@ Do not change production behavior casually. Explicitly call out whether the PR t
 Server edits must go through reviewed artifacts and runbooks. Do not hot-edit server
 code, docs, `.hermes` files, or systemd units.
 
+## CI Change Approval Rule
+
+负责人于 2026-09-24 确认：CI 可以演进，但不能由智能体自行修改。修改前必须逐项评审以下原则，向负责人汇报结论、具体改动及影响，并给出建议；获得明确同意后才能实施。
+
+1. 为什么要加或修改，解决什么实际问题？
+2. 加几个：明确新增或修改的 job、步骤、规则、依赖和配置数量。
+3. 依据是什么：提供现有代码、失败证据或已确认需求。
+4. 有没有过度设计，是否引入不必要的机制与维护成本？
+5. 现有 CI 为什么不满足需求，能否通过业务代码或测试自身适配解决？
+6. 是否满足最小可用原则，能否缩小修改范围？
+7. 不增加针对单项业务、智能体、测试或迁移的门禁特例。
+8. 不把非部署相关的任务引入生产部署流程。
+9. 如果确需增加，新增机制能否在后续流程中继续复用？
+
+范围包括 CI
+workflow、检查入口和条件、契约检查器、共享测试框架，以及影响 CI 或生产发布的部署归属与门禁。沿用现有契约的业务实现和测试用例不因此变成修改 CI 的授权请求。
+
+“开始开发”“修好检查”“合并 PR”不代替对具体 CI 调整的同意。已明确批准的对象、范围和影响未变时沿用原授权，不重复询问；若需要扩大范围，先说明新增差异并再次取得同意。不得通过改名、迁移检查位置或降低断言绕过此规则。
+
+记录批准内容、理由、验证结果及剩余影响。CI 通过不等于已经获得修改 CI 的授权，也不等于获得发布或部署授权。
+
 ## PR Review Automation Rule
 
 PR-Agent is an advisory reviewer only.

@@ -286,6 +286,7 @@ fn assignment(state: &Value, person: &str) -> Assignment {
         agent: "erhua".into(),
         domain: "community_service".into(),
         responsibility: "合成测试的居民服务职责".into(),
+        valid_from: None,
         valid_until: None,
         proxy_for: None,
         actions: vec![],

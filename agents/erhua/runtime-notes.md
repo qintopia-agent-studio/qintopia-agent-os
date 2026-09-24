@@ -20,3 +20,13 @@ canonical forecast-first `morning_broadcast` and performs no send. The live 07:0
 the current broadcast script hash, and `qintopia-erhua-weather-context.py` remain
 runtime-only evidence pending a read-only inventory; do not infer or overwrite their
 contents from this note.
+
+## Local welcome task runtime
+
+`welcome_runtime.py` registers this Agent's bounded welcome tools with
+`workflows/resident-welcome/scripts/local_agent_runtime.py`. The host supplies the
+locked WorkItem and business input through one stdin pipe; model arguments must be
+empty. Tool output is consumed by the governed Rust workflow and tied to call/task,
+input/output hashes and the exact plugin source hash. The child exposes no database,
+network or direct-send tools. This is `local_scripted_agent_runtime` evidence, not real
+Hermes or LLM execution and not production activation.

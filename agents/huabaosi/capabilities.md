@@ -9,6 +9,15 @@
   before creating the visual brief.
 - Return artifacts for human review.
 
+## Local Welcome Consumer
+
+- Produce a real, versioned synthetic welcome PNG for `anan` through the local welcome
+  executor, with bounded display name and description and no real member photos.
+- Return the Artifact and controlled application-attachment test receipt; building
+  policy and Erhua govern the subsequent welcome review and delivery.
+- The local Pillow layout does not prove legacy script migration, real-model generation
+  or real attachment upload. It does not enable production adapters.
+
 ## Requires Human Approval
 
 - Any external use, posting, sending, or publication.

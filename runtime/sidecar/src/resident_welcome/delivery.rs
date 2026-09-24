@@ -26,6 +26,30 @@ impl Store {
     /// Periodic recovery and every source/review/membership wakeup call the same
     /// convergence function. Preparation does not execute an external effect.
     pub async fn reconcile_case(&self, case: Uuid) -> Result<Vec<Uuid>> {
+        let foundation_targets:Vec<Uuid>=sqlx::query_scalar("SELECT t.id FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id JOIN qintopia_agent_os.welcome_cases c ON c.source_instance=t.source_instance AND c.property_id=t.property_id WHERE c.id=$1")
+            .bind(case).fetch_all(&self.pool).await?;
+        if !foundation_targets.is_empty() {
+            self.evaluate(case).await?;
+            let mut actions = vec![];
+            for target in foundation_targets {
+                for phase in ["formal", "preview"] {
+                    match self.foundation_prepare(case, target, phase).await {
+                        Ok(result) => {
+                            for action in result["actions"].as_array().into_iter().flatten() {
+                                if let Some(id) =
+                                    action.as_str().and_then(|v| Uuid::parse_str(v).ok())
+                                {
+                                    actions.push(id);
+                                }
+                            }
+                        }
+                        Err(e) if e.downcast_ref::<sqlx::Error>().is_some() => return Err(e),
+                        Err(_) => (),
+                    }
+                }
+            }
+            return Ok(actions);
+        }
         // Persist invalidation even when prepare/claim fails closed and rolls
         // back its own transaction. Success and unknown are never reset here.
         let mut tx = self.pool.begin().await?;
@@ -181,13 +205,17 @@ impl Store {
                         .is_some_and(|t| t <= Utc::now()),
             "action_not_claimable"
         );
-        check_eligibility(
-            &mut tx,
-            row.get("case_id"),
-            row.get("approval_id"),
-            row.get("publish_grant_id"),
-        )
-        .await?;
+        if row.get::<Option<Value>, _>("foundation_basis").is_some() {
+            super::foundation::check_action(&self.pool, &mut tx, &row).await?;
+        } else {
+            check_eligibility(
+                &mut tx,
+                row.get("case_id"),
+                row.get("approval_id"),
+                row.get("publish_grant_id"),
+            )
+            .await?;
+        }
         let claim = DeliveryClaim {
             action,
             worker,
@@ -211,13 +239,17 @@ impl Store {
             row.get::<String, _>("status") == "claimed",
             "already_started"
         );
-        check_eligibility(
-            &mut tx,
-            row.get("case_id"),
-            row.get("approval_id"),
-            row.get("publish_grant_id"),
-        )
-        .await?;
+        if row.get::<Option<Value>, _>("foundation_basis").is_some() {
+            super::foundation::check_action(&self.pool, &mut tx, &row).await?;
+        } else {
+            check_eligibility(
+                &mut tx,
+                row.get("case_id"),
+                row.get("approval_id"),
+                row.get("publish_grant_id"),
+            )
+            .await?;
+        }
         let source=sqlx::query("SELECT s.mode,s.execution_epoch FROM qintopia_agent_os.welcome_sources s JOIN qintopia_agent_os.welcome_cases c ON c.source_instance=s.source_instance AND c.property_id=s.property_id WHERE c.id=$1 FOR SHARE OF s")
             .bind(row.get::<Uuid,_>("case_id")).fetch_one(&mut *tx).await?;
         ensure!(
@@ -225,15 +257,18 @@ impl Store {
                 && source.get::<i64, _>("execution_epoch") == row.get::<i64, _>("execution_epoch"),
             "execution_epoch_or_mode_denied"
         );
-        let grant_version: i64 =
-            sqlx::query_scalar("SELECT version FROM qintopia_agent_os.welcome_grants WHERE id=$1")
-                .bind(row.get::<Uuid, _>("publish_grant_id"))
-                .fetch_one(&mut *tx)
-                .await?;
-        ensure!(
-            grant_version == row.get::<i64, _>("publish_grant_version"),
-            "publish_grant_stale"
-        );
+        if row.get::<Option<Value>, _>("foundation_basis").is_none() {
+            let grant_version: i64 = sqlx::query_scalar(
+                "SELECT version FROM qintopia_agent_os.welcome_grants WHERE id=$1",
+            )
+            .bind(row.get::<Uuid, _>("publish_grant_id"))
+            .fetch_one(&mut *tx)
+            .await?;
+            ensure!(
+                grant_version == row.get::<i64, _>("publish_grant_version"),
+                "publish_grant_stale"
+            );
+        }
         sqlx::query("UPDATE qintopia_agent_os.welcome_actions SET status='sending',version=version+1 WHERE id=$1").bind(claim.action).execute(&mut *tx).await?;
         audit(
             &mut tx,
@@ -332,6 +367,20 @@ async fn lock_claim(
 }
 
 async fn lock_action_case(tx: &mut Transaction<'_, Postgres>, action: Uuid) -> Result<()> {
+    let tenant: Option<String> = sqlx::query_scalar(
+        "SELECT foundation_basis->>'tenant' FROM qintopia_agent_os.welcome_actions WHERE id=$1",
+    )
+    .bind(action)
+    .fetch_one(&mut **tx)
+    .await?;
+    if let Some(tenant) = tenant {
+        sqlx::query(
+            "SELECT 1 FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1 FOR UPDATE",
+        )
+        .bind(tenant)
+        .fetch_one(&mut **tx)
+        .await?;
+    }
     sqlx::query("SELECT c.id FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_actions a ON a.case_id=c.id WHERE a.id=$1 FOR UPDATE OF c").bind(action).fetch_one(&mut **tx).await?;
     Ok(())
 }
@@ -342,6 +391,9 @@ async fn check_eligibility(
     approval: Uuid,
     publish: Uuid,
 ) -> Result<()> {
+    let shared:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_approvals a JOIN qintopia_agent_os.welcome_foundation_targets f ON f.target_id=a.target_id WHERE a.id=$1)")
+        .bind(approval).fetch_one(&mut **tx).await?;
+    ensure!(!shared, "shared_authority_required");
     ensure!(evaluate_tx(tx, case).await?.card_ready, "case_not_ready");
     let row=sqlx::query("SELECT ap.phase,ap.target_id,t.kind,t.building_code,c.person_id,v.projection FROM qintopia_agent_os.welcome_approvals ap JOIN qintopia_agent_os.welcome_artifact_bindings b ON b.artifact_id=ap.artifact_id JOIN qintopia_agent_os.artifacts ar ON ar.id=b.artifact_id JOIN qintopia_agent_os.welcome_cases c ON c.id=b.case_id JOIN qintopia_agent_os.welcome_applications app ON app.id=c.application_id JOIN qintopia_agent_os.welcome_targets t ON t.id=ap.target_id AND t.source_instance=c.source_instance AND t.property_id=c.property_id JOIN qintopia_agent_os.welcome_grants rg ON rg.id=ap.grant_id JOIN qintopia_agent_os.welcome_grants pg ON pg.id=$3 JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id WHERE ap.id=$2 AND c.id=$1 AND ap.revoked_at IS NULL AND b.revoked_at IS NULL AND ar.review_status='approved' AND ar.content_hash=ap.content_hash AND b.case_version=c.version AND b.application_revision=app.revision AND b.consent_version=app.consent_version AND t.version=ap.target_version AND t.enabled AND rg.action='review' AND rg.person_id=ap.approved_by AND rg.target_id=t.id AND rg.version=ap.grant_version AND pg.action='publish' AND pg.target_id=t.id AND pg.source_instance=c.source_instance AND pg.property_id=c.property_id AND rg.source_instance=c.source_instance AND rg.property_id=c.property_id AND rg.revoked_at IS NULL AND pg.revoked_at IS NULL AND rg.valid_from<=now() AND pg.valid_from<=now() AND rg.expires_at>now() AND pg.expires_at>now() AND NOT EXISTS (SELECT 1 FROM qintopia_agent_os.welcome_grants g LEFT JOIN qintopia_identity.person_memberships m ON m.id=g.membership_id JOIN qintopia_identity.persons p ON p.id=g.person_id WHERE g.id IN (rg.id,pg.id) AND (p.status<>'active' OR (g.membership_id IS NOT NULL AND (m.id IS NULL OR m.person_id<>g.person_id OR m.status<>'active' OR m.started_at>now() OR m.ended_at<=now())))) FOR SHARE OF ap,b,ar,app,t,rg,pg")
         .bind(case).bind(approval).bind(publish).fetch_optional(&mut **tx).await?;

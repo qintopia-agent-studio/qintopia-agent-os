@@ -99,6 +99,7 @@ impl Store {
             agent: "silaoshi".into(),
             domain: "organization".into(),
             responsibility: "管理社区服务领域的人员安排；管理权不等于亲自执行全部业务。".into(),
+            valid_from: None,
             valid_until: None,
             proxy_for: None,
             actions: vec![],
@@ -327,7 +328,7 @@ impl Store {
                         }
                         "group" => {
                             let group = Uuid::parse_str(reference.as_deref().unwrap_or(""))?;
-                            let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_messages.conversations WHERE tenant_id=$1 AND id=$2 AND chat_type='group' AND status='active')")
+                            let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_messages.conversations c WHERE tenant_id=$1 AND id=$2 AND chat_type='group' AND status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_knowledge_items k WHERE k.tenant_key=$1 AND k.space_id=c.id))")
                                 .bind(&self.tenant).bind(group).fetch_one(&mut **tx).await?;
                             ensure!(known, "group_not_verified");
                             (group.to_string(), true)
@@ -557,7 +558,7 @@ impl Store {
         sqlx::query("INSERT INTO qintopia_agent_os.collaboration_audiences(tenant_key,collaboration_id,configuration) VALUES($1,$2,$3) ON CONFLICT(collaboration_id) DO UPDATE SET configuration=EXCLUDED.configuration,version=collaboration_audiences.version+1")
             .bind(&self.tenant).bind(id).bind(configuration).execute(&mut **tx).await?;
         Ok(
-            json!({"kind":"set_audience","collaboration":id,"dynamic_membership":"requires_pms_resolution","external_effects":false}),
+            json!({"kind":"set_audience","collaboration":id,"dynamic_membership":"resolved_on_preview_and_decision","external_effects":false}),
         )
     }
 
@@ -566,6 +567,8 @@ impl Store {
         tx: &mut Transaction<'_, Postgres>,
         visible: &[Uuid],
         admin: bool,
+        history_visible: bool,
+        identity_history_visible: bool,
     ) -> Result<Value> {
         let positions:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(to_jsonb(x)-'tenant_key' ORDER BY x.label,x.id),'[]') FROM qintopia_agent_os.collaboration_positions x WHERE tenant_key=$1 AND scope_id=ANY($2)")
             .bind(&self.tenant).bind(visible).fetch_one(&mut **tx).await?;
@@ -573,16 +576,18 @@ impl Store {
             .bind(&self.tenant).bind(visible).bind(admin).fetch_one(&mut **tx).await?;
         let audiences:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('collaboration',x.collaboration_id,'configuration',x.configuration) ORDER BY x.collaboration_id),'[]') FROM qintopia_agent_os.collaboration_audiences x JOIN qintopia_agent_os.agent_collaborations c ON c.id=x.collaboration_id JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE x.tenant_key=$1 AND a.scope_id=ANY($2)")
             .bind(&self.tenant).bind(visible).fetch_one(&mut **tx).await?;
-        let history: Value = if admin {
-            sqlx::query_scalar("SELECT coalesce(jsonb_agg(x),'[]') FROM (SELECT created_at,result->'change' AS change FROM qintopia_agent_os.collaboration_commands WHERE tenant_key=$1 ORDER BY created_at DESC LIMIT 50) x")
-            .bind(&self.tenant).fetch_one(&mut **tx).await?
+        let history: Value = if history_visible {
+            // Old identity commands used only link_ref; new UI receipts also
+            // carry identity_change. Both require identity-specific authority.
+            sqlx::query_scalar("SELECT coalesce(jsonb_agg(x),'[]') FROM (SELECT c.created_at,coalesce(c.result->'change',c.result) AS change,coalesce(c.result->'change'->>'actor_label',c.result->>'actor_label',p.preferred_name,p.display_name) AS actor_label,coalesce(c.result->'change'->'before',c.result->'before') AS before,coalesce(c.result->'change'->'after',c.result->'after') AS after,coalesce(c.result->'change'->'impact',c.result->'impact') AS impact FROM qintopia_agent_os.collaboration_commands c JOIN qintopia_identity.persons p ON p.id=c.actor_person_id WHERE c.tenant_key=$1 AND ($2 OR NOT (coalesce(c.result->'change'->>'kind',c.result->>'kind','')='identity_change' OR (coalesce(c.result->'change',c.result) ? 'link_ref'))) ORDER BY c.created_at DESC,c.id DESC LIMIT 50) x")
+            .bind(&self.tenant).bind(identity_history_visible).fetch_one(&mut **tx).await?
         } else {
             json!([])
         };
         Ok(json!({"positions":positions,"ledger":ledger,"audiences":audiences,"history":history}))
     }
 
-    /// Configuration evaluation only. No provider call, membership assertion or reusable execution ticket.
+    /// Current configuration and scoped PMS evaluation. No provider call or reusable execution ticket.
     pub async fn contact_decision(
         &self,
         actor: &Actor,
@@ -607,15 +612,7 @@ impl Store {
         let scope: Uuid = row.get("scope_id");
         let agent: String = row.get("agent_key");
         let domain: String = row.get("domain_key");
-        ensure!(
-            (row.get::<Uuid, _>("person_id") == actor.person
-                && (actor.session_hash.is_none()
-                    || p.grants
-                        .iter()
-                        .any(|g| g.collaboration == id && p.effective(g))))
-                || p.can_inspect(actor.person, scope, &agent, &domain),
-            "scope_access_denied"
-        );
+        self.authorize_audience_view(&p, actor, scope, row.get("person_id"), &agent, &domain)?;
         self.known_person(&mut tx, row.get("person_id")).await?;
         let active_source:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_agent_os.collaboration_roles r ON r.id=a.role_id JOIN qintopia_agent_os.collaboration_duties d ON d.id=c.duty_id WHERE c.tenant_key=$1 AND c.id=$2 AND r.status='active' AND d.status='active') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger WHERE tenant_key=$1 AND kind='agent' AND object_ref=$3 AND status<>'active')")
             .bind(&self.tenant).bind(id).bind(&agent).fetch_one(&mut *tx).await?;
@@ -638,11 +635,24 @@ impl Store {
         } else if kind == "person" {
             self.known_person(&mut tx, target).await?;
             if !a.people.contains(&target) {
-                return Ok(denied(if a.residents == "none" {
-                    "target_outside_scope"
-                } else {
-                    "pms_membership_resolution_required"
-                }));
+                if a.residents == "none" {
+                    return Ok(denied("target_outside_scope"));
+                }
+                let resolved = self.resolve_audience(&mut tx, &p, scope, &a, now).await?;
+                let selected = resolved
+                    .people
+                    .iter()
+                    .find(|person| person["person_ref"] == json!(target));
+                if !selected.is_some_and(|person| person["selected"] == true) {
+                    let reason = if selected.is_some_and(|person| person["status"] == "unknown")
+                        || resolved.source_count == 0
+                    {
+                        "pms_membership_resolution_required"
+                    } else {
+                        "target_outside_scope"
+                    };
+                    return Ok(denied(reason));
+                }
             }
         } else {
             let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.conversation_id=$3 AND b.revoked_at IS NULL AND c.status='active') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger WHERE tenant_key=$1 AND kind='group' AND object_ref=$3::text AND status<>'active')")
@@ -684,3 +694,270 @@ impl Store {
         )
     }
 }
+
+pub(super) struct AudienceResolution {
+    pub(super) people: Vec<Value>,
+    pub(super) unresolved: Vec<Value>,
+    pub(super) source_count: usize,
+}
+#[derive(Default)]
+struct ResidentEvidence {
+    label: String,
+    current: bool,
+    history: bool,
+    explicit: bool,
+    reasons: std::collections::BTreeSet<String>,
+}
+
+impl Store {
+    fn authorize_audience_view(
+        &self,
+        p: &Policy,
+        actor: &Actor,
+        scope: Uuid,
+        person: Uuid,
+        agent: &str,
+        domain: &str,
+    ) -> Result<()> {
+        if let Some((_, _, gateway_scope)) = actor.gateway {
+            ensure!(gateway_scope == scope, "gateway_scope_mismatch");
+        }
+        ensure!(
+            person == actor.person
+                || p.manager(actor.person, scope, agent, domain, "publish")
+                    .is_some(),
+            "scope_access_denied"
+        );
+        ensure!(
+            p.scopes.iter().any(|s| s.id == scope && s.active),
+            "scope_not_active"
+        );
+        // The active appointment was checked by the caller; viewing its contact
+        // configuration does not grant any execution permission to its owner.
+        Ok(())
+    }
+
+    pub async fn audience_preview(&self, actor: &Actor, collaboration: Uuid) -> Result<Value> {
+        let (mut tx, version, now) = self.begin().await?;
+        self.verify(&mut tx, actor).await?;
+        let p = self.policy(&mut tx, now).await?;
+        let row=sqlx::query("SELECT c.agent_key,c.domain_key,a.person_id,a.scope_id,s.label AS scope_label,x.configuration FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_agent_os.collaboration_scopes s ON s.id=a.scope_id AND s.tenant_key=c.tenant_key JOIN qintopia_agent_os.collaboration_roles r ON r.id=a.role_id JOIN qintopia_agent_os.collaboration_duties d ON d.id=c.duty_id JOIN qintopia_agent_os.collaboration_audiences x ON x.collaboration_id=c.id AND x.tenant_key=c.tenant_key WHERE c.tenant_key=$1 AND c.id=$2 AND c.status='active' AND a.status='active' AND a.valid_from<=$3 AND (a.valid_until IS NULL OR a.valid_until>$3) AND s.status='active' AND r.status='active' AND d.status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=c.tenant_key AND l.kind='agent' AND l.object_ref=c.agent_key AND l.status<>'active')")
+            .bind(&self.tenant).bind(collaboration).bind(now).fetch_optional(&mut *tx).await?.ok_or_else(||anyhow::anyhow!("contact_configuration_not_active"))?;
+        let scope: Uuid = row.get("scope_id");
+        self.authorize_audience_view(
+            &p,
+            actor,
+            scope,
+            row.get("person_id"),
+            row.get("agent_key"),
+            row.get("domain_key"),
+        )?;
+        self.known_person(&mut tx, row.get("person_id")).await?;
+        let mut configuration: Value = row.get("configuration");
+        let authority = configuration
+            .as_object_mut()
+            .and_then(|v| v.remove("authority_grant"))
+            .and_then(|v| serde_json::from_value::<Uuid>(v).ok());
+        ensure!(
+            authority.is_some_and(|id| p.grants.iter().any(|g| g.id == id && p.effective(g))),
+            "contact_authority_revoked"
+        );
+        let audience: Audience = serde_json::from_value(configuration)?;
+        let resolved = self
+            .resolve_audience(&mut tx, &p, scope, &audience, now)
+            .await?;
+        let mut counts = json!({"current":0,"past":0,"unknown":0,"explicit":0,"selected":0});
+        for person in &resolved.people {
+            let category = person["status"].as_str().unwrap();
+            counts[category] = json!(counts[category].as_u64().unwrap_or(0) + 1);
+            if person["selected"] == true {
+                counts["selected"] = json!(counts["selected"].as_u64().unwrap() + 1);
+            }
+        }
+        let completeness = if audience.residents != "none" && resolved.source_count == 0 {
+            "unavailable"
+        } else if !resolved.unresolved.is_empty() || counts["unknown"].as_u64().unwrap() > 0 {
+            "partial"
+        } else {
+            "complete"
+        };
+        tx.commit().await?;
+        Ok(
+            json!({"collaboration_ref":collaboration,"scope_ref":scope,"scope_label":row.get::<String,_>("scope_label"),"residents":audience.residents,"configuration_version":version,"observed_at":now,"people":resolved.people,"unresolved":resolved.unresolved,"counts":counts,"completeness":completeness,"external_effects":false}),
+        )
+    }
+
+    pub(super) async fn resolve_audience(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        p: &Policy,
+        scope: Uuid,
+        audience: &Audience,
+        now: DateTime<Utc>,
+    ) -> Result<AudienceResolution> {
+        use crate::resident_welcome::state::{Snapshot, StayState};
+        use std::collections::{BTreeMap, BTreeSet};
+        let mut people: BTreeMap<Uuid, ResidentEvidence> = BTreeMap::new();
+        let mut unresolved: BTreeMap<String, usize> = BTreeMap::new();
+        for person in &audience.people {
+            let name:Option<String>=sqlx::query_scalar("SELECT coalesce(p.preferred_name,p.display_name) FROM qintopia_identity.persons p WHERE p.id=$2 AND p.status='active' AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.namespace=$1 AND l.person_id=p.id AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND coalesce(l.adapter_metadata->>'account_kind','personal')<>'shared') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='person' AND l.object_ref=p.id::text AND l.status<>'active')")
+                .bind(&self.tenant).bind(person).fetch_optional(&mut **tx).await?;
+            if let Some(label) = name {
+                people.entry(*person).or_default().label = label;
+                people.entry(*person).or_default().explicit = true;
+            } else {
+                *unresolved.entry("identity_unconfirmed".into()).or_default() += 1;
+            }
+        }
+        let mut mappings: BTreeMap<(String, String), Option<BTreeSet<String>>> = BTreeMap::new();
+        if audience.residents != "none" {
+            let rows=sqlx::query("SELECT f.scope_id,t.source_instance,t.property_id,t.kind,t.building_code,s.kind AS scope_kind FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id JOIN qintopia_agent_os.collaboration_scopes s ON s.id=f.scope_id AND s.tenant_key=f.tenant_key WHERE f.tenant_key=$1 AND t.enabled AND s.status='active'")
+                .bind(&self.tenant).fetch_all(&mut **tx).await?;
+            for row in rows {
+                if !p.in_scope(row.get("scope_id"), scope, true) {
+                    continue;
+                }
+                let key = (
+                    row.get::<String, _>("source_instance"),
+                    row.get::<String, _>("property_id"),
+                );
+                if row.get::<String, _>("kind") == "community"
+                    && row.get::<String, _>("scope_kind") == "community"
+                {
+                    mappings.insert(key, None);
+                } else if row.get::<String, _>("kind") == "building" {
+                    let building: String = row.get("building_code");
+                    if building.is_empty() {
+                        continue;
+                    }
+                    if let Some(buildings) =
+                        mappings.entry(key).or_insert_with(|| Some(BTreeSet::new()))
+                    {
+                        buildings.insert(building);
+                    }
+                }
+            }
+        }
+        if audience.residents != "none" && mappings.is_empty() {
+            unresolved.insert("pms_source_not_bound".into(), 1);
+        }
+        let source_count = mappings.len();
+        let mut rejected = BTreeSet::new();
+        for ((source, property), buildings) in mappings {
+            let rows=sqlx::query("SELECT h.stay_id,h.occupant_id,h.order_id,h.building_code,v.projection,v.invalidated,v.conflicted,s.enabled,s.rebuilding,s.mode,l.person_id,l.status AS link_status,l.evidence_ref,l.confirmed_by,l.adapter_metadata,p.status AS person_status,coalesce(p.preferred_name,p.display_name) AS label, EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links t WHERE t.namespace=$3 AND t.person_id=p.id AND t.status='confirmed' AND t.evidence_ref IS NOT NULL AND t.confirmed_by IS NOT NULL AND coalesce(t.adapter_metadata->>'account_kind','personal')<>'shared') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger t WHERE t.tenant_key=$3 AND t.kind='person' AND t.object_ref=p.id::text AND t.status<>'active') AS tenant_person, EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g WHERE g.namespace=l.namespace AND g.subject_type=l.subject_type AND g.active AND g.account_kind='shared') AS shared_gateway FROM qintopia_identity.person_stay_building_history h JOIN qintopia_agent_os.welcome_sources s ON s.source_instance=h.source_instance AND s.property_id=h.property_id LEFT JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=h.source_instance AND v.property_id=h.property_id AND v.aggregate_type='order' AND v.aggregate_id=h.order_id LEFT JOIN qintopia_identity.source_identity_links l ON l.namespace=('pms/'||h.source_instance||'/'||h.property_id||'/occupant') AND l.subject_type='pms_occupant' AND l.source_ref=h.occupant_id LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE h.source_instance=$1 AND h.property_id=$2")
+                .bind(&source).bind(&property).bind(&self.tenant).fetch_all(&mut **tx).await?;
+            for row in rows {
+                let history_building: String = row.get("building_code");
+                if buildings
+                    .as_ref()
+                    .is_some_and(|b| !b.contains(&history_building))
+                {
+                    continue;
+                }
+                let occupant: String = row.get("occupant_id");
+                let identity_reason = if row.get::<bool, _>("shared_gateway")
+                    || row
+                        .get::<Option<Value>, _>("adapter_metadata")
+                        .is_some_and(|v| v["account_kind"] == "shared")
+                {
+                    Some("shared_account_person_unknown")
+                } else if row.get::<Option<String>, _>("link_status").as_deref()
+                    != Some("confirmed")
+                    || row.get::<Option<Uuid>, _>("evidence_ref").is_none()
+                    || row.get::<Option<Uuid>, _>("confirmed_by").is_none()
+                    || row.get::<Option<String>, _>("person_status").as_deref() != Some("active")
+                {
+                    Some("identity_unconfirmed")
+                } else if !row.get::<bool, _>("tenant_person") {
+                    Some("person_outside_tenant")
+                } else {
+                    None
+                };
+                if let Some(reason) = identity_reason {
+                    if rejected.insert((
+                        source.clone(),
+                        property.clone(),
+                        occupant.clone(),
+                        reason.to_string(),
+                    )) {
+                        *unresolved.entry(reason.into()).or_default() += 1;
+                    }
+                    continue;
+                }
+                let person: Uuid = row.get("person_id");
+                let person = people.entry(person).or_default();
+                person.label = row.get("label");
+                person.history = true;
+                let snapshot = row
+                    .get::<Option<Value>, _>("projection")
+                    .and_then(|v| serde_json::from_value::<Snapshot>(v).ok());
+                let reason =
+                    if !row.get::<bool, _>("enabled") || row.get::<String, _>("mode") == "live" {
+                        Some("pms_source_unavailable")
+                    } else if row.get::<bool, _>("rebuilding") {
+                        Some("pms_source_rebuilding")
+                    } else if row.get::<Option<bool>, _>("invalidated").unwrap_or(true) {
+                        Some("pms_projection_invalidated")
+                    } else if row.get::<Option<bool>, _>("conflicted").unwrap_or(true) {
+                        Some("pms_projection_conflicted")
+                    } else if snapshot.as_ref().is_none_or(|s| {
+                        s.source != source
+                            || s.property != property
+                            || s.order != row.get::<String, _>("order_id")
+                    }) {
+                        Some("pms_projection_unconfirmed")
+                    } else if snapshot.as_ref().is_some_and(|s| {
+                        s.observed_at < now - chrono::Duration::seconds(60)
+                            || s.observed_at > now + chrono::Duration::seconds(5)
+                    }) {
+                        Some("pms_projection_stale")
+                    } else if snapshot.as_ref().is_some_and(|s| {
+                        s.state == StayState::InHouse
+                            && (!s.current_arrangement || s.building.trim().is_empty())
+                    }) {
+                        Some("pms_arrangement_unconfirmed")
+                    } else {
+                        None
+                    };
+                if let Some(reason) = reason {
+                    person.reasons.insert(reason.into());
+                    continue;
+                }
+                let snapshot = snapshot.unwrap();
+                let current_building = buildings
+                    .as_ref()
+                    .is_none_or(|b| b.contains(&snapshot.building));
+                person.current |= snapshot.state == StayState::InHouse
+                    && snapshot.current_arrangement
+                    && current_building
+                    && snapshot
+                        .occupants
+                        .iter()
+                        .any(|o| o.id == occupant && o.active);
+            }
+        }
+        let mut result=people.into_iter().map(|(id,p)|{
+            let status=if p.current{"current"}else if !p.reasons.is_empty(){"unknown"}else if p.history{"past"}else{"explicit"};
+            let selected=p.explicit || matches!((audience.residents.as_str(),status),("all","current"|"past")|("current","current")|("past","past"));
+            json!({"person_ref":id,"label":p.label,"status":status,"selected":selected,"reasons":if p.current {Vec::<String>::new()}else{p.reasons.into_iter().collect()}})
+        }).collect::<Vec<_>>();
+        result.sort_by(|a, b| {
+            a["label"]
+                .as_str()
+                .cmp(&b["label"].as_str())
+                .then(a["person_ref"].as_str().cmp(&b["person_ref"].as_str()))
+        });
+        Ok(AudienceResolution {
+            people: result,
+            unresolved: unresolved
+                .into_iter()
+                .map(|(reason, count)| json!({"reason":reason,"count":count}))
+                .collect(),
+            source_count,
+        })
+    }
+}
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+#[path = "audience_tests.rs"]
+mod audience_tests;

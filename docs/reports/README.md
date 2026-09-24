@@ -1,5 +1,12 @@
 # Reports
 
+- [2026-09-24 PR #720 跨平台 CI 修复](2026-09-24-pr720-ci-repair.md)
+
+- [2026-09-23 舍长标签工作台、知识与临时代理交接](2026-09-23-steward-workspace-completion.md)
+
+- [2026-09-23 本栋约定生命周期修复与本地交接](2026-09-23-rule-lifecycle-local-acceptance.md)
+- [2026-09-23 原组织框架内的本体 UI：本地验收](2026-09-23-ontology-ui-local-acceptance.md)
+- [2026-09-22 本体基础与欢迎闭环：第一批本地实现](2026-09-22-foundation-welcome-batch1.md)
 - [2026-09-22 二花与岸岸历史对话合并评审](2026-09-22-erhua-anan-history-review.md)
 - [2026-09-22 早期 QinTopia Agent OS 总指挥归档评审](2026-09-22-early-agent-os-command-review.md)
 - [2026-09-22 Agent OS 总指挥交接核对](2026-09-22-agent-os-command-handoff-review.md)

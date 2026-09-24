@@ -753,6 +753,1018 @@
               "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
             ]
           }
+        },
+        {
+          "id": "person-collaboration/memory-revision-stop-replay",
+          "name": "本人记忆更正、停止与旧消息不恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_memory_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_memory_tests::memory_self_revision_stop_replay_and_real_answer_consumer",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实身份、记忆、当前回复消费者和 PostgreSQL"],
+            "simulated": ["合成人员、消息证据和住宿事实；不使用真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/gateway-identity-scope-revocation",
+          "name": "跨入口统一身份与范围、撤权隔离",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_memory_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_memory_tests::gateway_identity_same_person_scope_shared_unknown_and_revocation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实身份、记忆、当前回复消费者和 PostgreSQL"],
+            "simulated": ["合成人员、消息证据和住宿事实；不使用真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/stay-history-and-return",
+          "name": "住宿历史、离住再来与迟到事实",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_memory_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_memory_tests::memory_stay_history_return_checkout_reorder_and_unknown",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实身份、记忆、当前回复消费者和 PostgreSQL"],
+            "simulated": ["合成人员、消息证据和住宿事实；不使用真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/source-pair-confirmation",
+          "name": "双来源身份匹配的指定确认与撤销历史",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_memory_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_memory_tests::identity_source_pair_requires_scoped_confirmation_and_retains_revoke_history",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实身份、记忆、当前回复消费者和 PostgreSQL"],
+            "simulated": ["合成人员、消息证据和住宿事实；不使用真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-review-rollback",
+          "name": "知识确认失败时事务完整回滚",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_review_tests::foundation_review_failed_write_rolls_back_new_item_and_space",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识服务、指定确认、范围授权和 PostgreSQL"],
+            "simulated": ["合成网关、岗位和知识；不连接真实渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-review-scope",
+          "name": "确认与管理操作遵守当前网关范围",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_review_tests::foundation_review_gateway_scope_limits_management_and_approval",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识服务、指定确认、范围授权和 PostgreSQL"],
+            "simulated": ["合成网关、岗位和知识；不连接真实渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-legacy-trainer-isolation",
+          "name": "旧 trainer allowlist 不绕过接管或撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_memory_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_memory_tests::legacy_trainer_allowlist_cannot_bypass_adopted_or_revoked_foundation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信工具入口、消息来源核验和实际消费者", "PostgreSQL事务"],
+            "simulated": ["合成消息、身份和权限；不连接真实渠道或模型"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-broker-duplicate-keys",
+          "name": "broker 在反序列化前拒绝重复键",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::foundation_broker_parser_rejects_duplicate_keys_before_value_deserialization",
+            "args": ["--", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信工具入口、消息来源核验和实际消费者"],
+            "simulated": ["合成消息、身份和权限；不连接真实渠道或模型"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-broker-source-evidence",
+          "name": "无匹配可信消息证据时拒绝读写",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_broker_missing_or_unverified_message_has_no_write_side_effects",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信工具入口、消息来源核验和实际消费者", "PostgreSQL事务"],
+            "simulated": ["合成消息、身份和权限；不连接真实渠道或模型"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-broker-private-history",
+          "name": "本人无需岗位、群聊不披露私有历史",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_broker_self_context_needs_no_job_but_history_is_private",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信工具入口、消息来源核验和实际消费者", "PostgreSQL事务"],
+            "simulated": ["合成消息、身份和权限；不连接真实渠道或模型"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-consumer-rules",
+          "name": "同名人员分栋规则与生效版本消费者",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_consumer_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_consumer_tests::foundation_consumer_same_names_scopes_rules_refresh_and_versions",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、持久分派、执行前重验和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-consumer-shared-principle",
+          "name": "社区共享原则不可被本栋覆盖",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_consumer_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_consumer_tests::foundation_consumer_shared_community_principle_cannot_be_overridden",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、持久分派、执行前重验和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-consumer-deferred-revocation",
+          "name": "延迟执行前重验规则作者权限",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_consumer_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_consumer_tests::foundation_consumer_deferred_rule_rechecks_revocation_before_any_write",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、持久分派、执行前重验和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-consumer-dispatch",
+          "name": "管理分派持久任务、恢复与权限复核",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_consumer_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_consumer_tests::foundation_consumer_management_dispatch_persists_recovers_and_rechecks_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、持久分派、执行前重验和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-consumer-withdrawal",
+          "name": "未来与现行规则撤回保留历史和幂等回执",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_consumer_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_consumer_tests::foundation_consumer_future_and_current_withdrawal_preserve_history_and_receipts",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、HTTP入口或授权验证和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-review-reappointment",
+          "name": "同一确认人重新任命不恢复旧批准",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_review_tests::foundation_rule_approval_does_not_revive_when_same_reviewer_is_reappointed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、HTTP入口或授权验证和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-http-memory-replay",
+          "name": "HTTP脚本记忆重放不恢复停止偏好",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_http_scripted_memory_replay_cannot_revive_stopped_preference",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、HTTP入口或授权验证和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-http-rule-replay",
+          "name": "HTTP脚本规则重放保留原始版本",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_http_scripted_rule_replay_keeps_original_revision",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、HTTP入口或授权验证和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-http-duplicate-keys",
+          "name": "HTTP嵌套重复键拒绝且无写副作用",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_http_duplicate_value_keys_have_no_write_side_effects",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享知识当前消费者、HTTP入口或授权验证和PostgreSQL事务"],
+            "simulated": ["合成人员、知识和本地执行器；不连接真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-dialogue-direct",
+          "name": "二花事项对话直接路径与固定请求重放",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_http_welcome_conversation_direct_and_replay_preserve_exact_effects",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "密码会话后的对话分派、当前共享授权、持久请求和具体版本、三个本地插件进程与PNG"
+            ],
+            "simulated": ["固定例句理解、合成来源及上传/外发；不证明真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/foundation-dialogue-review",
+          "name": "二花事项对话具体版本批准与未知回执",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::foundation_http_welcome_conversation_requires_exact_reviews_and_preserves_unknown",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "密码会话后的对话分派、当前共享授权、持久请求和具体版本、三个本地插件进程与PNG"
+            ],
+            "simulated": ["固定例句理解、合成来源及上传/外发；不证明真实模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui",
+          "name": "组织界面的约束、任期、变更与登录边界 · scheduled_appointment_never_grants_early_and_invalid_dates_are_atomic",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::scheduled_appointment_never_grants_early_and_invalid_dates_are_atomic",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/scheduled-permissions-remain-editable-and-revocable-without-early-authority",
+          "name": "组织界面的约束、任期、变更与登录边界 · scheduled_permissions_remain_editable_and_revocable_without_early_authority",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::scheduled_permissions_remain_editable_and_revocable_without_early_authority",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/ontology-explains-current-inherited-rules-without-other-buildings-or-live-claims",
+          "name": "组织界面的约束、任期、变更与登录边界 · ontology_explains_current_inherited_rules_without_other_buildings_or_live_claims",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::ontology_explains_current_inherited_rules_without_other_buildings_or_live_claims",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/history-records-actor-change-and-revocation-effect-without-mutating-on-preview",
+          "name": "组织界面的约束、任期、变更与登录边界 · history_records_actor_change_and_revocation_effect_without_mutating_on_preview",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::history_records_actor_change_and_revocation_effect_without_mutating_on_preview",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/ontology-ui/ontology-http-reuses-password-scope-and-strict-write-boundaries",
+          "name": "组织界面的约束、任期、变更与登录边界 · ontology_http_reuses_password_scope_and_strict_write_boundaries",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/ontology_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::ontology_ui_tests::ontology_http_reuses_password_scope_and_strict_write_boundaries",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_draft_review_is_explicit_preview_is_pure_and_receipt_is_idempotent",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_draft_review_is_explicit_preview_is_pure_and_receipt_is_idempotent",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-requires-password-session-and-root-identity-management",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_requires_password_session_and_root_identity_management",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_requires_password_session_and_root_identity_management",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-rejects-stale-configuration-link-and-gateway-versions",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_rejects_stale_configuration_link_and_gateway_versions",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_rejects_stale_configuration_link_and_gateway_versions",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-source-candidates-reject-shared-unobserved-unregistered-and-cross-tenant",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_source_candidates_reject_shared_unobserved_unregistered_and_cross_tenant",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_source_candidates_reject_shared_unobserved_unregistered_and_cross_tenant",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-ui-revocation-ends-sessions-and-old-delegated-authority-cannot-revive",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_ui_revocation_ends_sessions_and_old_delegated_authority_cannot_revive",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_ui_revocation_ends_sessions_and_old_delegated_authority_cannot_revive",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/identity-ui/identity-legacy-welcome-revocation-invalidates-reviewed-projection-and-authority",
+          "name": "人员核验、撤销及旧权限不恢复 · identity_legacy_welcome_revocation_invalidates_reviewed_projection_and_authority",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/identity_ui_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::identity_ui_tests::identity_legacy_welcome_revocation_invalidates_reviewed_projection_and_authority",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/dynamic-audience",
+          "name": "动态在住与过往人员范围 · ontology_audience_current_past_move_deduplicate_and_readonly",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/store/audience_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::store::organization::audience_tests::ontology_audience_current_past_move_deduplicate_and_readonly",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/dynamic-audience/ontology-audience-uncertain-identity-and-invalid-projections-fail-closed",
+          "name": "动态在住与过往人员范围 · ontology_audience_uncertain_identity_and_invalid_projections_fail_closed",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/store/audience_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::store::organization::audience_tests::ontology_audience_uncertain_identity_and_invalid_projections_fail_closed",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/dynamic-audience/ontology-audience-scope-gateway-and-configuration-authority-are-rechecked",
+          "name": "动态在住与过往人员范围 · ontology_audience_scope_gateway_and_configuration_authority_are_rechecked",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/store/audience_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::store::organization::audience_tests::ontology_audience_scope_gateway_and_configuration_authority_are_rechecked",
+            "args": ["--", "--include-ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["可信密码会话、现行授权、预览与保存、隔离PostgreSQL和来源投影"],
+            "simulated": ["合成人员、来源及本地配置；不启用真实渠道、模型或发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-expiry-never-restores-old-content",
+          "name": "到期不恢复旧内容",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_expiry_never_restores_old_content",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-schedule-replace-cancel-and-stop",
+          "name": "未来替换取消停止与明确重启",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_schedule_replace_cancel_and_stop",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-review-approve-reject-cancel-and-replay",
+          "name": "完整审核拒绝撤销与回执重放",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_review_approve_reject_cancel_and_replay",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-stopped-rule-rejects-older-approved-request",
+          "name": "停止后旧审批不能恢复约定",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_stopped_rule_rejects_older_approved_request",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-scope-conflicts-and-revocation-fail-closed",
+          "name": "跨栋版本冲突与撤权阻断",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_scope_conflicts_and_revocation_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-dialogue-reports-content-preserves-dates-and-replays",
+          "name": "对话查询实际内容保留日期及幂等",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_dialogue_reports_content_preserves_dates_and_replays",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/rule-lifecycle-review-survives-logout-but-not-account-reset",
+          "name": "请求与审批跨退出持久生效但账号停用重置仍失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::rule_lifecycle_review_survives_logout_but_not_account_reset",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["约定生命周期、审核、对话分派和 PostgreSQL"],
+            "simulated": ["合成人员与本地知识；无模型或渠道"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-knowledge-import-requires-knowledge-authority-and-stops-shared-context",
+          "name": "知识权限、MD内容与停止后的共享上下文",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/rule_lifecycle_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::rule_lifecycle_tests::steward_knowledge_import_requires_knowledge_authority_and_stops_shared_context",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-delegation-routes-exact-review-and-revokes-old-approval",
+          "name": "代理审批路由与撤销后的旧批准失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_delegation_routes_exact_review_and_revokes_old_approval",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-delegation-rejects-nonresident-expiry-and-stale-source",
+          "name": "代理候选在住、期限和来源新鲜度",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_delegation_rejects_nonresident_expiry_and_stale_source",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-direct-setting-does-not-require-expired-delegate",
+          "name": "直接发布约定不需要过期代理审核",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_direct_setting_does_not_require_expired_delegate",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-delegate-checkout-and-owner-revocation-remove-access",
+          "name": "代理退住和原授权撤销终止访问",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/steward_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::steward_tests::steward_delegate_checkout_and_owner_revocation_remove_access",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
+        },
+        {
+          "id": "person-collaboration/steward-broker-and-http-share-knowledge-and-welcome-settings",
+          "name": "可信对话与页面共用知识和单次直发设置",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server_tests::database::steward_broker_and_http_share_knowledge_and_welcome_settings",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共用业务服务、权限与 PostgreSQL"],
+            "simulated": ["合成人员、住宿、模型及渠道；无生产外发"]
+          }
         }
       ]
     },
@@ -828,6 +1840,313 @@
             "simulated": [
               "合成身份、PMS 事件和交付结果；不连接真实渠道或 Agent runtime"
             ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-direct-review-recovery",
+          "name": "欢迎直发、先审与分项未知结果恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_direct_review_real_agents_and_partial_unknown_recovery",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-setting-versions",
+          "name": "单次优先、未来生效、到期与内容版本",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_single_overrides_future_expiry_and_content_versions",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-live-scope",
+          "name": "执行前重查来源时效、现行权限与范围",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_timing_permission_change_and_scope_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-upper-confirmation",
+          "name": "上层指定确认与执行器保留",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_upper_confirmation_and_executor_retention",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-case-review",
+          "name": "每月审核不复用上次入住批准",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_month_review_never_reuses_previous_case_approval",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-content-consent",
+          "name": "内容修改、展示许可与旧路径绕过拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_content_revision_consent_and_legacy_bypass_rejected",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-publish-only-confirmer",
+          "name": "直发上层确认人只需发布权，无须内容审核权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_direct_upper_confirmation_needs_publish_without_review",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-separate-approvals",
+          "name": "内容审核与上层发布确认分别生效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_review_and_upper_confirmation_remain_separate",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "真实共享规则、岸岸/阿靓/二花本地执行器、PNG Artifact 与 PostgreSQL"
+            ],
+            "simulated": [
+              "合成入住和成员来源、申请附件与发送适配器；不调用真实模型、不上传或发送"
+            ]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-synthetic-observation",
+          "name": "本地合成来源观测保持状态及拒绝混合来源",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_fixture.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_fixture::tests::foundation_fixture_observation_preserves_state_and_rejects_mixed_sources",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL范围/来源模式校验、观测事务、订单与成员状态保持"],
+            "simulated": ["本地合成来源；不连接真实PMS或群成员接口"]
+          }
+        },
+        {
+          "id": "resident-welcome/foundation-approval-replay",
+          "name": "审批已保存后的准备失败重试，不重复发送",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_approval_replay_recovers_preparation_without_resending",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["审批持久化、幂等重试恢复准备、动作去重"],
+            "simulated": ["固定图片与本地执行器；不调用真实制卡或发送"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "person-foundation",
+      "name": "共同基础运行时接入",
+      "aliases": ["共同基础", "二花共同基础"],
+      "scenarios": [
+        {
+          "id": "person-foundation/trusted-tools",
+          "name": "二花可信会话 SDK 与失去回执不重试",
+          "aliases": [],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/person-foundation/tests",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["二花真实工具注册、schema 和 Unix socket 客户端"],
+            "simulated": ["本地 socket 服务端、Hermes completion；不证明真实模型理解"]
+          }
+        },
+        {
+          "id": "person-foundation/anan-registration",
+          "name": "岸岸独立注册与生产隔离",
+          "aliases": [],
+          "executor": "unittest",
+          "target": {
+            "path": "fixtures/agents/anan/tests",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["岸岸测试替身、注册接口和生产隔离"],
+            "simulated": ["Hermes tool host；不启动生产 Profile"]
+          }
+        },
+        {
+          "id": "person-foundation/synthetic-card-renderer",
+          "name": "欢迎 Agent 插件真实执行与合成 PNG",
+          "aliases": [],
+          "executor": "unittest",
+          "target": {
+            "path": "workflows/resident-welcome/tests",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": [
+              "岸岸、阿靓、二花插件注册和进程执行",
+              "可信任务协议与输入输出源码哈希",
+              "固定 PNG 产物、输入摘要和内容边界"
+            ],
+            "simulated": ["虚构任务与姓名简介；无真实资料、Hermes、网络或模型"]
           }
         }
       ]

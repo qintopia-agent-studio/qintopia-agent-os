@@ -1,5 +1,94 @@
 # Data Design Changelog
 
+## 2026-09-23.009 — Steward review delegation
+
+- Add scoped, time-bounded resident review assignments sourced from existing designate and review authority.
+- Recheck current occupancy, source authority and exact delegation at approval and send preparation.
+- Preserve assignment history and idempotent receipts; no production enablement.
+- Design: [steward review delegation](2026-09-23-steward-review-delegation.md).
+
+## `2026-09-23.008`
+
+Migration: `migrations/202609230008_person_rule_lifecycle.sql`.
+Design note: `docs/data-design/2026-09-23-person-rule-lifecycle.md`.
+
+Adds explicit lifecycle state and operation audit for scoped text agreements.
+Managed agreements expire without resurrecting older versions; stop cancels all
+remaining revisions while retaining history and invalidating stale queued writes.
+
+## `2026-09-23.007`
+
+Migration: `migrations/202609230007_person_stay_building_history_registration.sql`.
+Design note: `docs/data-design/2026-09-23-ontology-audience.md`.
+
+Registers migrations 006 and 007 in the schema change log and installs the building
+history table, conservative backfill, capture function and trigger idempotently.
+Migration 006 was already applied during local validation; this additive repair
+preserves its original checksum and existing observations without rewriting the
+applied migration record or enabling external effects.
+
+## `2026-09-23.006`
+
+Migration: `migrations/202609230006_person_stay_building_history.sql`.
+Design note: `docs/data-design/2026-09-23-ontology-audience.md`.
+
+Preserves actual occupancy observations for each building across moves within one
+stay. Legacy history backfills only its recorded last building, with unknown
+observation times left empty. Dynamic contact audiences reuse current verified PMS
+projections and confirmed tenant-scoped Person links; historical observations alone
+do not prove current membership or authorize sending.
+
+## `2026-09-22.005`
+
+Migration: `migrations/202609220005_foundation_turn_input.sql`.
+Design note: `docs/data-design/2026-09-22-person-foundation-consumers.md`.
+
+Adds original typed-command and semantic-hash columns to synthetic turn sources, so
+acknowledgement-loss retries preserve their initial expected version. No real message
+text or external effects are introduced.
+
+## `2026-09-22.004`
+
+Migration: `migrations/202609220004_welcome_local_executors.sql`.
+Design note: `docs/data-design/2026-09-22-foundation-welcome.md`.
+
+Extends the existing synthetic executor availability table to the registered Anan and
+Huabaosi identities alongside Erhua. It neither creates an execution queue nor enables
+a production profile, capability or channel.
+
+## `2026-09-22.003`
+
+Migration: `migrations/202609220003_foundation_welcome.sql`.
+Design note: `docs/data-design/2026-09-22-foundation-welcome.md`.
+
+Binds welcome targets to shared authorization scopes and immutable rule versions.
+Direct delivery records effective authority without fabricating human approval;
+reviewed delivery retains exact content and current reviewer authority. Existing
+actions, artifacts and upload intents remain authoritative. Local artifact bytes and
+synthetic provider effects support preview and unknown-outcome readback without real
+uploads or sends.
+
+## `2026-09-22.002`
+
+Migration: `migrations/202609220002_person_memory.sql`.
+Design note: `docs/data-design/2026-09-22-person-memory.md`.
+
+Adds trusted Gateway identity bindings, sourced reply preferences and stop/replay
+protection, and observed stay history derived from verified PMS projections. Person
+identity and facts reuse the existing shared tables. Unknown identity and optional
+memory do not create staff work or disclosure permission.
+
+## `2026-09-22.001`
+
+Migration: `migrations/202609220001_person_foundation_consumers.sql`.
+Design note: `docs/data-design/2026-09-22-person-foundation-consumers.md`.
+
+Adds scope/time mappings around existing Space knowledge versions, durable tool
+receipts and governed WorkItem requests. Execution shares the current appointment and
+grant authority under the tenant lock; future rules preserve the active version and
+case overrides expire back to the current default. No production grants or scheduler
+activation are included.
+
 ## `2026-09-18.001`
 
 Migration: `migrations/202609180001_workbench_accounts.sql`.

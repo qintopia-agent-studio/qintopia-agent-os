@@ -7,8 +7,13 @@ import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 
-const repoRoot = process.cwd();
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-qiwe-staging-"));
+const sourceRoot = process.cwd();
+const tmpRoot = fs.realpathSync(
+  fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-qiwe-staging-"))
+);
+// Each invocation owns its complete fixture. Keep production path/permission checks
+// intact without creating or changing read-only files in the shared checkout.
+const repoRoot = path.join(tmpRoot, "source checkout with spaces");
 const script = path.join(
   repoRoot,
   "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh"
@@ -40,6 +45,14 @@ const writeExecutable = (filePath, content) => {
 };
 
 try {
+  for (const relative of [
+    "deploy/sidecar/scripts/qiwe-image-send-staging-smoke.sh",
+    "tools/deploy/check-qiwe-image-staging-evidence.mjs",
+  ]) {
+    const destination = path.join(repoRoot, relative);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.copyFileSync(path.join(sourceRoot, relative), destination);
+  }
   if (!createdPackagedSidecarDir || fs.existsSync(packagedSidecar)) {
     throw new Error("unexpected packaged sidecar path exists in source checkout");
   }

@@ -14,9 +14,9 @@ prompts, caption drafts, and related creative artifacts.
   `image_generation_request`; a real image is still blocked on the dedicated provider
   and media-storage approval gate.
 
-## Resident welcome responsibility (confirmed design, not yet wired)
+## Resident welcome responsibility (local integration; production not enabled)
 
-The room Agent, tentatively named 岸岸, requests the welcome card
+The independent room Agent 岸岸 (`anan`) requests the welcome card
 from 阿靓 (`huabaosi`), who produces it from approved, purpose-filtered inputs and
 returns the versioned Artifact and controlled attachment reference. Welcome cards belong
 in the application Base's welcome-card attachment, not the ordinary design-output Base.
@@ -26,10 +26,13 @@ The room workflow then applies each building's policy. A single-item or standing
 authorization that explicitly covers the full welcome card and text permits that
 target's Erhua to forward them without per-item human review; a review-required policy
 waits for the responsible human's approval. Artifact availability alone authorizes
-neither path. This planned welcome-specific alternative is defined in
+neither path. This welcome-specific contract is defined in
 [welcome §6.4](../../docs/plans/active/unified-person-welcome-v1-contract.md#64-欢迎编排制卡与楼栋转发职责负责人纠偏2026-09-22).
-It does not enable the runtime or change the existing activity-poster review and
-provider gates described elsewhere in this package.
+The local executor now creates a real PNG from bounded synthetic material and returns
+its versioned Artifact and an application-attachment test receipt. Its Pillow renderer
+is a local layout fixture; it does not establish migration of the unavailable legacy
+`generate_card_v10.py`, real-model generation or real Feishu attachment writes. Existing
+activity-poster review and provider gates remain in force; production is not enabled.
 
 ## Boundaries
 
@@ -584,3 +587,6 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   installation evidence now exist, but the no-network preflight remains fail-closed
   because provider/media configuration is not provisioned; the timer must remain
   disabled until that gate passes.
+
+本地欢迎的脚本测试替身位于
+`fixtures/agents/huabaosi/welcome_runtime.py`，不代表真实 Hermes 接线或正式制卡能力。

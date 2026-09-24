@@ -106,6 +106,19 @@ impl Store {
         Ok(())
     }
 
+    // A durable rule request survives logout/expiry, not account reset or disable.
+    pub(super) async fn verify_rule_request_account(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        hash: &str,
+        person: Uuid,
+    ) -> Result<()> {
+        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_sessions s JOIN qintopia_agent_os.collaboration_accounts a ON a.id=s.account_id AND a.tenant_key=s.tenant_key JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE s.token_hash=$1 AND s.tenant_key=$2 AND a.person_id=$3 AND a.status='active' AND s.account_version=a.version AND s.identity_version=l.version AND l.person_id=a.person_id AND l.namespace=a.tenant_key)")
+            .bind(hash).bind(&self.tenant).bind(person).fetch_one(&mut **tx).await?;
+        ensure!(valid, "request_account_changed_or_disabled");
+        Ok(())
+    }
+
     pub(crate) async fn session_actor(&self, token: &str) -> Result<Actor> {
         ensure!(
             token.len() == 64 && token.bytes().all(|b| b.is_ascii_hexdigit()),
@@ -119,6 +132,8 @@ impl Store {
             link: row.get("identity_link_id"),
             person: row.get("person_id"),
             identity_version: row.get("identity_version"),
+            identity_namespace: self.tenant.clone(),
+            gateway: None,
             tenant: self.tenant.clone(),
             session_hash: Some(hash),
         };
@@ -238,7 +253,9 @@ impl Store {
             Self::account_admin(&self.policy(&mut tx, now).await?, actor),
             "account_management_denied"
         );
-        let accounts:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',a.id,'person',a.person_id,'username',a.username,'status',a.status,'label',coalesce(p.preferred_name,p.display_name)) ORDER BY a.username),'[]') FROM qintopia_agent_os.collaboration_accounts a JOIN qintopia_identity.persons p ON p.id=a.person_id WHERE a.tenant_key=$1")
+        // Availability mirrors login's current identity and ledger predicates.
+        // It is a read-only explanation, never a login ticket or account mutation.
+        let accounts:Value=sqlx::query_scalar("WITH current_accounts AS (SELECT a.id,a.person_id AS person,a.username,a.status,coalesce(p.preferred_name,p.display_name) AS label,CASE WHEN a.status<>'active' THEN 'disabled' WHEN l.id IS NULL OR l.namespace<>a.tenant_key OR l.person_id IS DISTINCT FROM a.person_id OR l.status<>'confirmed' OR l.evidence_ref IS NULL OR l.confirmed_by IS NULL THEN 'identity_invalid' WHEN p.status<>'active' THEN 'person_inactive' WHEN EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=a.tenant_key AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active') THEN 'person_unavailable' ELSE 'ready' END AS login_state FROM qintopia_agent_os.collaboration_accounts a JOIN qintopia_identity.persons p ON p.id=a.person_id LEFT JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE a.tenant_key=$1) SELECT coalesce(jsonb_agg(to_jsonb(a)||jsonb_build_object('login_available',a.login_state='ready') ORDER BY a.username),'[]') FROM current_accounts a")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
         let people:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(x ORDER BY x->>'label'),'[]') FROM (SELECT DISTINCT jsonb_build_object('id',p.id,'label',coalesce(p.preferred_name,p.display_name)) x FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE l.namespace=$1 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_accounts a WHERE a.tenant_key=$1 AND a.person_id=p.id) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=$1 AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active')) s")
             .bind(&self.tenant).fetch_one(&mut *tx).await?;
@@ -321,6 +338,8 @@ impl Store {
             link: row.get("id"),
             person,
             identity_version: row.get("version"),
+            identity_namespace: self.tenant.clone(),
+            gateway: None,
             tenant: self.tenant.clone(),
             session_hash: None,
         };

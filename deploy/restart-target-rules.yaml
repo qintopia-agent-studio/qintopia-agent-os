@@ -82,6 +82,7 @@ rules:
       Erhua profile, QiWe consultation, context MCP, weather, and Erhua plugin behavior.
     paths:
       - "agents/erhua/**"
+      - "skills/person-foundation/**"
       - "runtime/hermes/migrate_erhua_livecool_env.py"
       - "runtime/hermes/profile_transaction.py"
       - "runtime/hermes/render_profile_overlay.py"

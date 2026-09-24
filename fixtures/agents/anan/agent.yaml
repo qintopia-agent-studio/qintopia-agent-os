@@ -1,0 +1,38 @@
+id: agents/anan
+type: agent
+name: 岸岸
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Local-only room Agent contract for persisted resident welcome orchestration.
+source:
+  path: docs/plans/active/person-agent-foundation-parallel-handoff.md
+  reference: confirmed-local-batch-2026-09-22-section-8
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: false
+runtime:
+  restart_target: hermes-anan
+  systemd_user_service: hermes-gateway-anan.service
+validation:
+  commands:
+    - pnpm agents:check
+    - pnpm registry:check
+    - pnpm agents:profile-bundles:check
+    - pnpm deploy:runner:check
+    - python3 -m unittest discover -s fixtures/agents/anan/tests -v
+dependencies:
+  - workflows/resident-welcome
+  - skills/person-foundation
+  - runtime/sidecar
+tags:
+  - agent
+  - hospitality
+  - local-only
+next_actions:
+  - Complete combined local welcome acceptance before any production proposal.
+  - Add reviewed profile migration and rollback before enabling a production runtime.
