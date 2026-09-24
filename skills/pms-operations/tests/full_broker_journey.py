@@ -50,6 +50,29 @@ def prepare(command,input,work=None):
     if result['phase']=='unknown': result=invoke('recover',{'action':result['action']})
     return result
 
+def staff_finish(command, action, inputs):
+    assert action['phase']=='awaiting_confirmation',(command,action)
+    invoke('handoff',{'action':action['action']})
+    # Independent staff Preview/Confirm, followed by the host's real order-history GET.
+    key='manual_'+command.lower()+'_'+str(turn)
+    preview=client.preview(command,{'propertyId':demo['propertyId'],**inputs},key=key+'_preview',correlation=key)['preview']
+    preview['propertyId']=demo['propertyId']
+    receipt=client.confirm(preview,{'code':'AGENT_HTTP_ACCEPTANCE','note':'Synthetic human request'},key=key,correlation=key)
+    assert receipt['executionStatus']=='EXECUTED',receipt
+    capture('已在PMS办理这个方案，订单号'+inputs['orderId'])
+    done=invoke('reconcile',{'action':action['action']})
+    if done['phase']=='manual_handoff':
+        assert inputs['method']=='CASH' and done['manual_fact']['amountMinor']==inputs['amountMinor'],done
+        capture('确认这笔人工收款是本事项的办理结果')
+        done=invoke('reconcile',{'action':action['action']})
+    assert done['phase']=='manual_completed',done
+    assert not any(k in done['readback'] for k in ('amendments','collectionFacts','manual_evidence'))
+    try: invoke('execute',{'action':action['action']})
+    except ValueError: pass
+    else: raise AssertionError('manual effect replayed: '+command)
+    print('Manual PMS history verified: '+command+' command='+receipt['commandId']+' receipt='+receipt['receiptId'])
+    return done
+
 today=datetime.datetime.now(ZoneInfo('Asia/Shanghai')).date()
 arrival,departure=today.isoformat(),(today+datetime.timedelta(days=2)).isoformat()
 capture('请查询可售房源和价格')
@@ -87,8 +110,8 @@ try: invoke('execute',{'action':collection['action']})
 except ValueError: pass
 else: raise AssertionError('missing human confirmation accepted')
 capture('确认登记这笔收款')
-collected=invoke('execute',{'action':collection['action']})
-assert collected['phase']=='completed' and collected['readback']['order']['id']==order_id,collected
+collected=staff_finish('RECORD_COLLECTION',collection,{'orderId':order_id,'amountMinor':12000,'method':'BANK_TRANSFER','transactionReference':'SYNTHETIC-BROKER-ONE'})
+assert collected['phase']=='manual_completed' and collected['readback']['order']['id']==order_id,collected
 assert collected['readback']['order']['status']!='CHECKED_IN'
 # A lost Confirm response must preserve the successful booking and recover only this collection.
 capture(f'请为订单「{order_id}」登记银行转账收款120.00元，流水号「SYNTHETIC-BROKER-TWO」。')
@@ -108,7 +131,7 @@ assert recovered['phase']=='completed' and recovered['readback']['order']['id']=
 capture('请准备改期')
 reschedule=prepare('RESCHEDULE_STAY',{'orderId':order_id,'newArrivalDate':arrival,'newDepartureDate':(today+datetime.timedelta(days=3)).isoformat()})
 capture('确认改期')
-assert invoke('execute',{'action':reschedule['action']})['phase']=='completed'
+staff_finish('RESCHEDULE_STAY',reschedule,{'orderId':order_id,'newArrivalDate':arrival,'newDepartureDate':(today+datetime.timedelta(days=3)).isoformat()})
 
 # Simulate a staff member taking over through the same PMS HTTP boundary used by UI.
 capture('办理这位住客入住')
@@ -136,8 +159,8 @@ for command,params,text in [
         continue
     assert change['phase']=='awaiting_confirmation',(command,change)
     capture(text)
-    changed=invoke('execute',{'action':change['action']})
-    assert changed['phase']=='completed' and changed['readback']['order']['id']==order_id,changed
+    changed=staff_finish(command,change,{'orderId':order_id,**params})
+    assert changed['phase']=='manual_completed' and changed['readback']['order']['id']==order_id,changed
 
 # Early normal checkout is rejected by PMS; original preview key is resolved before cancelling.
 capture('请核对现在是否可普通退房')
@@ -172,15 +195,19 @@ capture('请在次营业日缩短此住宿')
 shortened=prepare('SHORTEN_STAY',{'orderId':short_order,'newDepartureDate':short_departure})
 assert shortened['phase']=='awaiting_confirmation',shortened
 capture('确认缩短住宿')
-shortened=invoke('execute',{'action':shortened['action']})
-assert shortened['phase']=='completed' and shortened['readback']['order']['id']==short_order,shortened
+shortened=staff_finish('SHORTEN_STAY',shortened,{'orderId':short_order,'newDepartureDate':short_departure})
+assert shortened['phase']=='manual_completed' and shortened['readback']['order']['id']==short_order,shortened
+capture('请核对客服在PMS登记的模拟现金，不自动登记')
+cash_input={'orderId':short_order,'amountMinor':100,'method':'CASH','note':'模拟现金收款人'}
+cash=prepare('RECORD_COLLECTION',cash_input)
+staff_finish('RECORD_COLLECTION',cash,cash_input)
 advance(short_departure)
 capture('请在到期日办理正常退房')
 normal=prepare('CHECK_OUT',{'orderId':short_order})
 assert normal['phase']=='awaiting_confirmation',normal
 capture('确认办理退房')
-normal=invoke('execute',{'action':normal['action']})
-assert normal['phase']=='completed' and normal['readback']['order']['status']=='CHECKED_OUT',normal
+normal=staff_finish('CHECK_OUT',normal,{'orderId':short_order})
+assert normal['phase']=='manual_completed' and normal['readback']['order']['status']=='CHECKED_OUT',normal
 
 # A later stay for the same named guest is a separate order and matter.
 advance(today.isoformat())
@@ -191,9 +218,21 @@ future_quote=invoke('prepare',{'binding':binding,'operation':'pms.quote','input'
 if future_quote['phase'] in ('unknown','previewing'): future_quote=invoke('recover',{'action':future_quote['action']})
 assert future_quote['phase']=='completed',future_quote
 future=prepare('CREATE_ORDER',{**order_input,'quoteId':future_quote['result']['result']['quote']['quoteId']})
-capture('确认预订')
-future_result=invoke('execute',{'action':future['action']})
-future_id=future_result['readback']['order']['id']
+invoke('handoff',{'action':future['action']})
+staff_input={**order_input,'propertyId':demo['propertyId'],'quoteId':future_quote['result']['result']['quote']['quoteId'],'primaryGuest':{'fullName':'Synthetic Staff Choice','nickname':'人工选择的住客'}}
+staff_preview=client.preview('CREATE_ORDER',staff_input,key='staff_future_booking_preview',correlation='staff_future_booking')['preview']
+staff_preview['propertyId']=demo['propertyId']
+staff_receipt=client.confirm(staff_preview,{'code':'CREATE_STANDARD_ORDER','note':''},key='staff_future_booking',correlation='staff_future_booking')
+assert staff_receipt['executionStatus']=='EXECUTED',staff_receipt
+future_id=staff_receipt['result']['orderId']
+capture('请核对客服已在PMS选择的订单与原方案差异')
+adoption=invoke('reconcile',{'action':future['action'],'order':future_id})
+assert adoption['phase']=='manual_handoff' and '住客辨识' in adoption['differences'],adoption
+capture('确认此订单承接原订房事项')
+future_result=invoke('reconcile',{'action':future['action']})
+assert future_result['phase']=='manual_completed' and future_result['completion_basis']=='human_order_adoption',future_result
+assert invoke('status',{'action':future['action']})['result'] is None
+print('Manual CREATE_ORDER adoption verified: '+staff_receipt['receiptId'])
 assert future_id!=order_id and invoke('status',{'action':future['action']})['work_item']!=invoke('status',{'action':prepared['action']})['work_item']
 capture('取消这次未来预订，由客服直接在PMS接手')
 cancel=prepare('CANCEL_ORDER',{'orderId':future_id})

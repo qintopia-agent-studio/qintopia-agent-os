@@ -82,7 +82,7 @@ impl Store {
         let payment:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND binding_id=$2 AND binding_version=$3 AND work_item_id=$4 AND source_instance=$5 AND property_id=$6 AND feed='pms.payments.v1' AND NOT baseline)")
             .bind(&self.tenant).bind(auth.binding).bind(auth.binding_version).bind(source).bind(&auth.source).bind(&auth.property).fetch_one(&mut **tx).await?;
         ensure!(application || payment, "business_work_denied");
-        let row=sqlx::query("SELECT work_item_id,readback,result FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND id=$2 AND binding_id=$3 AND binding_version=$4 AND operation_key='pms.command.CREATE_ORDER' AND phase='completed'")
+        let row=sqlx::query("SELECT work_item_id,readback,result,phase,confirmed_by FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND id=$2 AND binding_id=$3 AND binding_version=$4 AND operation_key='pms.command.CREATE_ORDER' AND phase IN ('completed','manual_completed')")
             .bind(&self.tenant).bind(action).bind(auth.binding).bind(auth.binding_version).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("completed_booking_required"))?;
         let work: Uuid = row.get("work_item_id");
         sqlx::query(
@@ -92,13 +92,18 @@ impl Store {
         .fetch_all(&mut **tx)
         .await?;
         let readback: Value = row.get("readback");
-        let result: Value = row.get("result");
+        let result: Value = row.get::<Option<Value>, _>("result").unwrap_or(Value::Null);
         let order = readback["order"]["id"]
             .as_str()
             .filter(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("booking_readback_required"))?;
         ensure!(
-            result["executionStatus"] == "EXECUTED" && result["businessCommitted"] == true,
+            (row.get::<String, _>("phase") == "completed"
+                && result["executionStatus"] == "EXECUTED"
+                && result["businessCommitted"] == true)
+                || (row.get::<String, _>("phase") == "manual_completed"
+                    && row.get::<Option<Uuid>, _>("confirmed_by").is_some()
+                    && readback["manual_evidence"]["kind"] == "human_order_adoption"),
             "completed_booking_required"
         );
         ensure!(source != work, "source_already_canonical");

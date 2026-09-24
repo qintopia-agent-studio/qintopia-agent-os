@@ -2912,6 +2912,69 @@
               "PMS预览及回执、支付事件和申请资料；实际PMS路径另有专用锁库联测"
             ]
           }
+        },
+        {
+          "id": "anan-pms/manual-amendments-reject-old-racing-changed-and-ambiguous-effects",
+          "name": "人工住宿历史精确核验、竞态与重启并发",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_manual_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_manual_tests::manual_amendments_reject_old_racing_changed_and_ambiguous_effects",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务人工接手基线、具体事实确认、事务和不重放"],
+            "simulated": ["PMS历史与收款事实；实际PMS另由本地全链验证"]
+          }
+        },
+        {
+          "id": "anan-pms/manual-collection-requires-unique-new-unreversed-reference",
+          "name": "人工收款唯一事实及现金确认、冲正与旧确认拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_manual_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_manual_tests::manual_collection_requires_unique_new_unreversed_reference",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务人工接手基线、具体事实确认、事务和不重放"],
+            "simulated": ["PMS历史与收款事实；实际PMS另由本地全链验证"]
+          }
+        },
+        {
+          "id": "anan-pms/manual-booking-adoption-distinguishes-decision-and-rejects-stale-or-conflicting-orders",
+          "name": "人工采纳具体订单、差异确认、旧版本与冲突拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_manual_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_manual_tests::manual_booking_adoption_distinguishes_decision_and_rejects_stale_or_conflicting_orders",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务人工接手基线、具体事实确认、事务和不重放"],
+            "simulated": ["PMS历史与收款事实；实际PMS另由本地全链验证"]
+          }
         }
       ]
     }

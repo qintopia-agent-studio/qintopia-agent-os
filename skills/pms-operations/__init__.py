@@ -58,7 +58,7 @@ def transport(request, *, host=False):
 
 
 # Output uses positive field selection: free text, notes, source bodies and credentials are omitted.
-PUBLIC_FIELDS = set("schemaVersion events eventId eventType sequence action work_item phase operation version method transactionReference pricing pricingDecision pricingBasis policyBaseAmount targetCurrentContractAmount differenceFromPolicy manualAdjustmentMinor differenceExceedsThreshold cashLines cashRemainder coverageSet serviceDate minorUnits inventoryUnit stayType unitKind bookingChannelCode roomId buildingCode roomTypeCode occupancyCapacity unit_code effectiveDate newArrivalDate newDepartureDate newInventoryUnitId settlement currentStatus previousStatus newStatus preview result readback previewId commandType propertyId effectHash effect expiresAt receiptId commandId executionStatus businessCommitted resourceRefs factRefs committedAt order orders quote quoteId totalAmountMinor amountMinor currentContractAmount currentContractAmountMinor collectionDifference netRecordedCollection arrivalDate departureDate inventoryUnitId unitKind units id code name status nickname fullName primaryGuest members memberId property_id inventory_unit_id arrival_date departure_date current_contract_amount_minor net_recorded_collection_minor collection_difference_minor items kind reference occurredAt orderId enabled lastSyncedAt synchronizationError hasMore nextBeforeId nextCursor businessDate available capacity currency pricingPolicyVersionId nights guestCount totals stay stays occupants billId confirmation_hint confirmation_reused pms_reversed replayed linked source_summary".split())
+PUBLIC_FIELDS = set("schemaVersion events eventId eventType sequence action work_item phase operation version method transactionReference pricing pricingDecision pricingBasis policyBaseAmount targetCurrentContractAmount differenceFromPolicy manualAdjustmentMinor differenceExceedsThreshold cashLines cashRemainder coverageSet serviceDate minorUnits inventoryUnit stayType unitKind bookingChannelCode roomId buildingCode roomTypeCode occupancyCapacity unit_code effectiveDate newArrivalDate newDepartureDate newInventoryUnitId settlement currentStatus previousStatus newStatus preview result readback previewId commandType propertyId effectHash effect expiresAt receiptId commandId executionStatus businessCommitted resourceRefs factRefs committedAt order orders quote quoteId totalAmountMinor amountMinor currentContractAmount currentContractAmountMinor collectionDifference netRecordedCollection arrivalDate departureDate inventoryUnitId unitKind units id code name status nickname fullName primaryGuest members memberId property_id inventory_unit_id arrival_date departure_date current_contract_amount_minor net_recorded_collection_minor collection_difference_minor items kind reference occurredAt orderId enabled lastSyncedAt synchronizationError hasMore nextBeforeId nextCursor businessDate available capacity currency pricingPolicyVersionId nights guestCount totals stay stays occupants billId confirmation_hint confirmation_reused pms_reversed replayed linked source_summary manual_fact original_plan current_order differences segments completion_basis".split())
 
 
 SAFE_ERRORS = {"payment_readback_required", "payment_effect_mismatch","invalid_arguments", "pms_disabled", "pms_property_denied", "pms_command_denied",
@@ -68,7 +68,7 @@ SAFE_ERRORS = {"payment_readback_required", "payment_effect_mismatch","invalid_a
     "business_binding_changed", "business_conversation_mismatch", "business_not_awaiting_confirmation",
     "business_agent_not_registered", "trusted_message_evidence_required", "foundation_unavailable",
     "human_manual_reference_required", "business_manual_reference_mismatch", "manual_effect_not_observed",
-    "manual_effect_verification_required", "business_handoff_required", "agent_tool_denied",
+    "manual_effect_verification_required", "business_handoff_required", "manual_order_conflict", "agent_tool_denied",
     "trusted_context_unavailable", "unsupported_command"}
 GROUP_PRIVATE = {"primaryGuest", "members", "member", "occupants", "fullName", "nickname"}
 
@@ -189,10 +189,39 @@ class Operations:
         result = self.pms.recover(c["property"], command, c["execution_key"], resolve_key=c["resolution_key"], correlation=c["correlation"])
         return self._finish(c["action"], c["claim"], result, c["input"])
 
+    @staticmethod
+    def _manual_readback(observed):
+        # Host-only projection: preserve exact effects for comparison, never public history/notes.
+        fields = {
+            "amendments": "id order_id sequence amendment_type prior_version new_version payload command_id created_at".split(),
+            "collectionFacts": "fact_id order_id fact_type amount_minor net_effect_minor currency references_fact_id reverses_fact_id method transaction_reference command_id created_at transfer note".split(),
+        }
+        result = {"order": {k: observed.get("order", {}).get(k) for k in ("id", "property_id", "version", "status")}}
+        for name, allowed in fields.items():
+            if isinstance(observed.get(name), list):
+                result[name] = [{k: row[k] for k in allowed if k in row} for row in observed[name]]
+        order=observed.get("order", {})
+        segment=observed.get("currentSegment", {})
+        unit=next((u for u in observed.get("referencedInventoryUnits", []) if u.get("id")==segment.get("inventoryUnitId")), {})
+        guest=order.get("current_primary_guest") or order.get("primary_guest_snapshot") or {}
+        creation=next((h for h in observed.get("amendments",[]) if h.get("amendment_type")=="CREATE_ORDER"),{})
+        result["booking"]={"quoteId":creation.get("payload",{}).get("quoteId"),"id":order.get("id"),"propertyId":order.get("property_id"),"version":order.get("version"),"status":order.get("status"),
+            "primaryGuest":{k:guest[k] for k in ("fullName","nickname") if k in guest},
+            "inventoryUnitId":segment.get("inventoryUnitId"),"unit_code":unit.get("code"),"arrivalDate":order.get("arrival_date"),"departureDate":order.get("departure_date"),
+            "bookingChannelCode":order.get("booking_channel_code"),"amountMinor":order.get("current_contract_amount_minor"),"currency":order.get("currency"),"stayType":order.get("stay_type"),"memberId":order.get("member_id"),
+            "segments":[{"inventoryUnitId":s.get("inventory_unit_id"),"arrivalDate":s.get("arrival_date"),"departureDate":s.get("departure_date")} for s in observed.get("segments",[])],
+            "occupants":[{k:o[k] for k in ("fullName","nickname","role") if k in o} for o in observed.get("occupants",[])]}
+        return result
+
+    def handoff(self, args):
+        context = self.call("pms_handoff_context", args)
+        observed = self.pms.read("order", context["property"], resource=context["order_ref"]) if context.get("order_ref") else {}
+        return self.call("pms_handoff", {"action": args["action"], "readback": self._manual_readback(observed)})
+
     def reconcile(self, args):
         context = self.call("pms_manual_context", args)
         observed = self.pms.read("order", context["property"], resource=context["order_ref"])
-        return self.call("pms_save_manual", {"action": args["action"], "readback": public(observed)})
+        return self.call("pms_save_manual", {"action": args["action"], "readback": self._manual_readback(observed)})
 
     def link(self, args):
         context = self.call("pms_link_context", {"action": args["action"]})
@@ -207,6 +236,7 @@ class Operations:
         elif name == "recover": result = self.recover(args)
         elif name == "resume": result = self.resume(args)
         elif name == "reconcile": result = self.reconcile(args)
+        elif name == "handoff": result = self.handoff(args)
         elif name == "link": result = self.link(args)
         else: result = self.call("pms_" + name, args)
         return {"ok": True, "result": public(result, group=self.context().get("chat_type") == "group")}
@@ -225,7 +255,8 @@ SCHEMAS = {
                     "input": {"type": "object"}, "reason": obj({"code": TEXT, "note": {"type": "string", "maxLength": 2000}}, ["code", "note"]),
                     "work_item": TEXT}, ["binding", "operation", "input", "reason"]),
     "link": obj({"action": TEXT, "work_item": TEXT}, ["action", "work_item"]),
-    **{key: ACTION for key in ("execute", "recover", "status", "pause", "resume", "cancel", "handoff", "reconcile")},
+    **{key: ACTION for key in ("execute", "recover", "status", "pause", "resume", "cancel", "handoff")},
+    "reconcile": obj({"action":TEXT,"order":TEXT}, ["action"]),
 }
 
 

@@ -10,6 +10,30 @@ plugin = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(plugin)
 
 class PluginTests(unittest.TestCase):
+    def test_manual_history_is_host_only_and_handoff_reads_before_registration(self):
+        for name in ('handoff','reconcile'):
+            with self.assertRaises(ValueError): plugin.validate(name,{'action':'a','readback':{}})
+        calls=[]
+        observed={'order':{'id':'o','property_id':'p','version':4,'phone':'private'},
+            'amendments':[{'id':'h','payload':{'exact':'effect'},'reason_note':'private','actor':{'displayName':'private'}}],
+            'collectionFacts':[{'fact_id':'f','order_id':'o','transaction_reference':'ref','raw':'private'}]}
+        class Pms:
+            def read(self,kind,prop,resource):
+                calls.append(('read',kind,prop,resource));return observed
+        def broker(r):
+            calls.append(r['tool'])
+            if r['tool'].endswith('_context'): return {'ok':True,'result':{'property':'p','order_ref':'o'}}
+            self.assertEqual(r['arguments']['readback']['amendments'],[{'id':'h','payload':{'exact':'effect'}}])
+            return {'ok':True,'result':{'phase':'manual_completed','readback':r['arguments']['readback']}}
+        op=plugin.Operations(Pms(),broker,lambda:{})
+        for name in ('handoff','reconcile'):
+            calls.clear()
+            result=op.invoke(name,{'action':'a'})
+            self.assertEqual(calls[1],('read','order','p','o'))
+            self.assertNotIn('amendments',result['result']['readback'])
+            self.assertNotIn('collectionFacts',result['result']['readback'])
+            self.assertNotIn('phone',result['result']['readback']['order'])
+
     def test_link_reads_host_selected_current_order_and_rejects_model_authority(self):
         for extra in ({'readback':{}},{'approved':True},{'text':'确认关联'}):
             with self.assertRaises(ValueError):
