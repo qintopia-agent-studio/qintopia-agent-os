@@ -328,6 +328,23 @@ async fn application_model_ingress_and_unowned_projection_are_rejected() -> Resu
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "explicit task-isolated local database required"]
 async fn application_signed_bridge_http_and_broker_persist_actual_readbacks() -> Result<()> {
+    // The broker reads process-wide configuration. Run this journey alone in a
+    // child test process so its local enablement cannot alter sibling snapshots.
+    const CHILD: &str = "ANAN_APPLICATION_BRIDGE_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "person_collaboration::business_tests::application_tests::application_signed_bridge_http_and_broker_persist_actual_readbacks",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(CHILD, "1")
+            .status()?;
+        anyhow::ensure!(status.success(), "application_bridge_child_failed");
+        return Ok(());
+    }
     let f = Fixture::new().await?;
     let record = record();
     let dir = tempfile::Builder::new()
