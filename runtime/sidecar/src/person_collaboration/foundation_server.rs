@@ -1147,6 +1147,13 @@ pub(super) async fn broker_invoke(
             );
             return super::application_ingress::invoke(store, r.arguments).await;
         }
+        if r.tool == "pms_reminder" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway && t.platform == "host",
+                "agent_tool_denied"
+            );
+            return super::store::business_reminders::invoke(store, gateway, r.arguments).await;
+        }
         if r.tool == "pms_payment_feed" {
             ensure!(
                 profile == "anan" && t.gateway_id == gateway,

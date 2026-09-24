@@ -117,7 +117,7 @@ async fn sync_work(tx: &mut Transaction<'_, Postgres>, tenant: &str, work: Uuid)
 }
 
 /// Both authorization trees must remain valid: organizational grant and exact operation grant.
-async fn operation_in(
+pub(super) async fn operation_in(
     tx: &mut Transaction<'_, Postgres>,
     tenant: &str,
     policy: &Policy,
@@ -467,6 +467,7 @@ impl Store {
         );
         let allowed: &[&str] = match tool {
             "pms_authorize" => &["binding", "operation"],
+            "pms_reminder_snooze" => &["binding", "work_item", "until"],
             "pms_start" => &[
                 "binding",
                 "operation",
@@ -503,6 +504,48 @@ impl Store {
             .business_evidence_in(&mut tx, actor, gateway, message, chat)
             .await?;
         let policy = super::foundation::load_policy(&mut tx, &self.tenant, now).await?;
+        if tool == "pms_reminder_snooze" {
+            let binding = parse("binding")?;
+            let work = parse("work_item")?;
+            let context = self.reminder_context_in(&mut tx, binding, work).await?;
+            let scope = serde_json::from_value(context["scope"].clone())?;
+            ensure!(
+                actor.gateway.as_ref().is_some_and(|(_, _, s)| *s == scope),
+                "gateway_scope_mismatch"
+            );
+            let auth = super::foundation::authorize_current(
+                &mut tx,
+                &self.tenant,
+                actor.person,
+                scope,
+                "anan",
+                "hospitality",
+                "execute_business",
+            )
+            .await?;
+            ensure!(auth.status == "autonomous", "business_authority_denied");
+            ensure!(
+                context["merged_into"].is_null(),
+                "reminder_use_canonical_work"
+            );
+            let until: DateTime<Utc> = serde_json::from_value(a["until"].clone())?;
+            ensure!(
+                until > now && until <= now + chrono::Duration::days(366),
+                "invalid_reminder_snooze"
+            );
+            sqlx::query("UPDATE qintopia_agent_os.work_items SET metadata=jsonb_set(metadata,'{pms_reminder}',coalesce(metadata->'pms_reminder','{}') || jsonb_build_object('snooze_until',$2::text,'snoozed_by',$3::text)),updated_at=clock_timestamp() WHERE id=$1")
+                .bind(work).bind(until.to_rfc3339()).bind(actor.person).execute(&mut *tx).await?;
+            super::foundation::work_event(
+                &mut tx,
+                work,
+                "pms_reminder_snoozed",
+                "human",
+                &json!({"person":actor.person,"until":until,"evidence":evidence}),
+            )
+            .await?;
+            tx.commit().await?;
+            return Ok(json!({"work_item":work,"snooze_until":until,"external_effects":false}));
+        }
         if matches!(tool, "pms_authorize" | "pms_start" | "pms_event_context") {
             let key = a["operation"]
                 .as_str()

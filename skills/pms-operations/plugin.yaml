@@ -16,6 +16,7 @@ provides_tools:
   - qintopia_pms_handoff
   - qintopia_pms_reconcile
   - qintopia_pms_link
+  - qintopia_pms_reminder_snooze
 provides_hooks:
   - pre_gateway_dispatch
 optional_env:

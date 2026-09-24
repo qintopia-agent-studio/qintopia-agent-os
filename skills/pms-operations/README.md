@@ -162,3 +162,98 @@ CREATE_ORDER 允许人工采用不同合法方案。
 审计明确区分原效果的历史核验、人工采纳具体收款与人工采纳订单，不伪造原 PMS 回执，不从订单承接推导身份、收款或到店确认。
 
 停用仍保留基线、原预览、执行键与人工决定；不删除后重放。
+
+## 阶段5本地工作提醒契约
+
+提醒沿现有客房 WorkItem，状态保存在 metadata，尝试写入 work_events；不新建日程、业务事实库或迁移。Hermes
+cron 只唤醒单次有界宿主入口，不由模型调用，也不安装或启用真实 cron。
+
+有效约定使用既有知识规则键 `anan.pms.reminders`，限定当前物业绑定作用域。
+
+规则显式提供跟进类别、必需申请字段、群受众、星期与每日时段、UTC 偏移、首次等待、重复间隔及可选升级时限与升级群。
+
+未配置、规则失效或当前授权不足时仅保留待办。
+
+规则不提供任意渠道地址；
+
+目标必须同时属于岸岸有效主动受众和当前作用域群绑定。
+
+宿主协议为
+`context/observe/claim/validate/settle`：context 返回当前范围内事项及可信来源引用；
+
+observe 接收宿主实际回读，核对订单/物业或申请来源版本；
+
+claim 合并同一事项仍待办类别，并持久取得唯一发送权；
+
+validate 在模拟发送前重验规则、事项、受众及内容摘要；
+
+settle 只接受原 claim 的具体模拟回执。
+
+丢失回执或宿主退出留下 UNKNOWN，不自动重发或换键。
+
+缺信息只来自可信申请回读与规则必需字段交集；待收款只按 PMS 当前合同与净实收差额；待到店只按实际订单状态和规则规定时间，到账不能证明入住。来源被可靠关联后沿 canonical
+WorkItem 汇合；无可靠关联不猜测合并。完成、撤回或取消停止相应提醒；办理暂停及明确暂缓抑制提醒，恢复需再次实际回读。提醒完成不伪造 PMS 业务完成。
+
+首批只提供显式本地模拟渠道，身份固定 `anan`，不回退其他 Profile、不调用真实发送。
+
+群内容只列待办类别与事项引用，不含住客姓名、电话、证件或金额。
+
+停止宿主入口即可停用，保留事项、暂缓、尝试与 UNKNOWN。
+
+共同服务 PG 测试、插件测试及本地模拟适配证据分别记录，真实群与模型验收另行授权。
+
+### 宿主配置与规则形状
+
+`QINTOPIA_PMS_REMINDERS_LOCAL_ENABLE=1`、`QINTOPIA_PMS_REMINDER_BINDING`
+固定当前绑定；同时要求既有 PMS/Foundation 本地开关。`QINTOPIA_PMS_REMINDER_SIMULATED_OUTBOX`
+是仅属主访问的绝对目录，适配器以原 claim 排他创建模拟消息和回执，不接受网络发送配置。入口
+`python reminder_host.py`
+每次最多轮转扫描100个既有事项；扫描位置记在同一 WorkItem，崩溃不会永远饿死后续事项。不注册新计时器，不创建真实 Hermes
+job。
+
+规则 content 使用下列明确字段，无默认周期或目标群：
+
+- `collaboration`：当前有效岸岸 hospitality 工作连接，需 `read_business`
+  与自主 proactive 受众；读订单还须精确 `pms.read.order` 授权。
+- `group`、`kinds`、`required_fields`：群引用、`missing_information/collection/arrival`
+  的子集及所需申请字段（name/nickname/arrival/nights/room_type/occupation/interests）。手机号新提交必填不转为历史提醒；本入口不接受 phone 催补规则。
+- `weekdays`：1—7；`start_minute/end_minute`：本地日内左闭右开时段；`utc_offset_minutes`：明确固定偏移；`arrival_due_minute`：到店日期开始催办的分钟。
+- `initial_delay_seconds/repeat_seconds`：从首次观察到当前待办开始等待、成功发送后的最小间隔；`escalation`
+  为 null 或 `{after_seconds,group}`，升级群也重新核对受众。
+
+`qintopia_pms_reminder_snooze`
+使用当前可信人员的客房办理授权，参数为当前 binding、原 work_item 和明确 until；
+
+它只延后提醒，不取消订单。
+
+合并来源保留原回执，继承暂缓与最后发送时间；
+
+来源尚有未知发送时 canonical 事项不另发同类提醒。
+
+规则修订、物业绑定变化、撤权或目标群变化均不能复用旧发送计划。
+
+### 申请候选投影薄接线
+
+同一次可信 HTTP 读取可在宿主内保留规范化白名单 values；先将不含 values 的原 Observation 保存到004，再以独立 HOST_TOKEN 调
+`welcome_source_projection`：封套
+`schema_version=1`，arguments 只有宿主固定 binding、本次保存返回的 application 与 fields。
+
+随后照常 reconcile_welcome。
+
+候选投影失败或回执不明返回 projection_unconfirmed，已保存申请与岸岸/四老师原事项不回滚、不伪称保存失败；
+
+无有效许可或已撤回不上传资料。
+
+响应不含个人字段，候选存储不代表已确认身份。
+
+最终资料决定为新申请手机号必填、手机号为主要匹配依据，姓名昵称辅助；
+
+历史不追补、不催补、不阻断已有业务。
+
+共享手机号及冲突继续走既有确认，不自动合并人员。
+
+取消此前中间证件方案，不新增证件字段、不改004摘要或普通工具脱敏。
+
+当前入口是回读已提交资料，不能把首次回读误作新提交并追罚历史；
+
+新申请表单必填由来源提交端另行落实。
