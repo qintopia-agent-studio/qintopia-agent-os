@@ -612,3 +612,126 @@ warnings）通过，日志 `integration/t07-clippy.log`。既有目录新增场�
 `integration/t07-catalog.log`、`integration/t07-harness.log`。本轮只增加边界测试，没有重跑已通过的 PMS 全链或无关重型层。
 
 T13 提醒的“未配置不启动”不是实现完成的证明；阶段5/§7.3 的有效约定、执行、停止及受众校验仍需下一有界切片按实际代码审计，不能一概归为外部验收。
+
+## 阶段5提醒与申请候选薄接线（2026-09-25）
+
+本轮从 `ca21709` 干净工作树继续。
+
+已读入口 README、路线图、变更路由、编程护栏、Sidecar 规则、PMS/Foundation 包及 §7.3/T13，审计证实原 PMS 只有“缺约定不催办”的说明，缺实际执行与持久停止；
+
+现有群 worker 固定二花，不适合借身份发送岸岸提醒。
+
+新增独立 business_reminders 与 reminder_host，复用当前规则版本、工作连接、主动受众、物业/群绑定、原 WorkItem.metadata 及 work_item_events。
+
+主管当前有效规则决定目标、类别、时段、首次等待、重复间隔及升级；
+
+无规则仅待办。
+
+没有新增迁移、计时器、事实库或生产发送。
+
+- 每次有界轮转100个事项；102事项测试证明后续事项可被扫描，不把每次只取前100条当完整消费者。
+- 同一原事项合并缺信息/待收款/待到店；已可靠关联来源沿 canonical 事项，继承暂缓及最近发送时间；来源未知发送会阻止另发。没有可靠关联不按姓名或金额猜合并。
+- 申请信息只由当前可信回读与004字段摘要核验；订单按实际当前合同额、净实收和入住状态，支付事件不能推断入住。完成停止对应提醒；暂停/人工接手/在途先保留等待。
+- claim 与 validate 都重验规则、当前职责授权、精确读订单授权、主动受众、当前群绑定、事实与内容摘要。只有 validate 才一次性提交 UNKNOWN 发送边界，之后只能登记原 claim 的具体模拟回执，不能重发。
+- 暂缓沿当前人员的客房办理授权和可信当次消息，记录人、期限和原证据，不改订单。模拟渠道固定 anan，无二花/default
+  fallback。
+- 申请候选薄接线保留同次规范化 HTTP
+  values，004保存后才调用独立 HOST_TOKEN 的 welcome_source_projection，再调用原 reconcile_welcome。
+
+候选不等于身份确认；
+
+投影失败与源保存成功分开。
+
+公共候选服务仍由欢迎基础线交付，尚未在本切片整合005或声称服务端PG端到端通过。
+
+最终资料规则为新申请手机号必填、主要按手机号匹配，姓名昵称辅助；
+
+历史不追补、不催补、不阻断旧业务。
+
+取消中间证件方案；
+
+无证件字段新增、不放通普通脱敏、不改004摘要。
+
+回读不能把首次观察当新提交，来源表单必填另属提交端；
+
+提醒不接受 phone 催补规则，避免把新要求追施历史。
+
+### 本地证据与失败修复
+
+证据根仍为忽略目录 `.local-workspace/anan/`。
+
+| 范围                                         | 结果                            | 证据                                                         |
+| -------------------------------------------- | ------------------------------- | ------------------------------------------------------------ |
+| 只读库预检                                   | Agent52322、PMS52319；禁止52316 | `integration/t13-preflight-verified.log`                     |
+| 提醒共同服务/PG                              | 5 passed / 0 failed / 0 ignored | `integration/t13-pg-isolated-final.log`                      |
+| Python包回归与候选/适配契约                  | 41 passed                       | `integration/t13-python-second.log`                          |
+| all-features/all-targets Clippy，-D warnings | 通过                            | `integration/t13-clippy-final.log`                           |
+| 统一目录新增5场景、harness                   | 可发现；8 passed                | `integration/t13-catalog.log`、`integration/t13-harness.log` |
+
+PG五项中已包含真实 Unix broker→Python 宿主/PMS
+HTTP客户端→共同服务/PG→本地记录渠道，不另计一次。PMS HTTP和渠道均为模拟；
+
+只产生1条模拟消息，settle丢失后读取原回执而不重发，实际模拟事实变为收齐且 CHECKED_IN 后持久 stopped。
+
+其余测试覆盖两类合并、缺规则、暂缓及到期、申请修订/补齐、可靠来源关系、时段、并发唯一 claim、重启 UNKNOWN、错误回执、撤销受众/群及跨范围拒绝。
+
+来源关系测试预置已经确认的关联，来源关联命令本身由前轮专测负责，不冒充此轮重新验证。
+
+保留失败：初次直接执行无执行位的本地预检脚本返回126，改用 sh 后只读预检成功；
+
+PG第一轮重复调用 bootstrap 导致租户主键冲突，第二轮规则职责未配置导致 scope_access_denied，均只修测试 fixture，不放宽授权。
+
+第四轮完整宿主测试的模拟HTTP误写订单 query 路径，真实客户端原路径正确；
+
+修外部模拟后通过。
+
+见 t13-preflight.log、t13-pg-first/second/fourth.log、t13-broker-second.log。
+
+已有广泛 auto 检查的 apply smoke URL hash
+allowlist 阻断仍按前述记录处理，不改 CI 门禁。最终本地PR/综合检查结果在本节追加，未通过者不包装为通过。
+
+### 仍未完成的层级
+
+提醒已有本地执行，不再把它整体列为“未实现”；真实 Hermes
+cron 安装、专属 Bot/Profile、群消息送达与模型自然交互仍未启用/验收。
+
+本轮不涉及生产、SSH、真实外发、PMS源码、远端PR或合并。
+
+欢迎共享候选/创建人员/群确认及旧入口接入仍待基础线稳定提交与统一整合；
+
+申请客户端测试不能代替那部分服务端验收。
+
+停用宿主即可停止扫描，保留所有事项、暂缓、尝试和 UNKNOWN，不删除重放。
+
+最后自查修复了申请 Bridge 的恢复遗漏：过去顶层 accepted/duplicate 会直接清除唤醒，忽略已经保存后的候选/欢迎技术失败。
+
+现在只对 projection_unconfirmed/handoff_unconfirmed 保留既有唤醒和退避，持久 followup_pending；
+
+不把004源保存改报失败，不把无许可/缺可靠住宿关联/人工确认等待变成技术重试。
+
+Bridge 原生18项通过（含两种失败后恢复、新唤醒不丢、旧job不执行），见
+`integration/t13-bridge.log`。
+
+本轮首次 check:pr:auto 在 Markdown 长行检查失败，未进入重型层；仅修新增文档分段，不修改检查配置。保留
+`integration/t13-pr-auto.log`，随后复跑另列结果。
+
+最终隔离自查将 broker 用例放入独立子进程，避免 HOST_TOKEN/Profile 开关污染 native 整组后续用例。
+
+父测试按一项计数，子进程不重复计数。专项按默认并行复验；业务源码未因测试便利放宽。
+
+第三次 auto 在 quick 层主动停止以修此测试隔离，未进入旧T07/T09/支付链；日志为
+`integration/t13-pr-auto-verified.log`（文件名不表示通过）。
+
+按协调要求不重复旧链，最终只完成 quick 层及本轮专项；既有 heavy/apply smoke
+allowlist 阻断仍未解决，未修改任何CI门禁。
+
+最终收口：`pnpm check:pr:quick` 通过，见 `integration/t13-pr-quick.log`。
+
+稳定源码的专项为5 passed / 0 failed / 0
+ignored，已含独立broker子进程，不另加1；最终all-features/all-targets Clippy通过。
+
+本地 PR 正文与 doctor 通过，见
+`integration/t13-pr-body.log`、`integration/t13-pr-doctor.log`；doctor提示未设upstream及提交前脏树，不是检查失败。
+
+Bridge18项对应本提交的 run_application_one
+followup_pending 分支和参数化恢复测试，既有退避、队列及旧job路径不变。没有新远端PR、push、合并、生产操作或005变更。

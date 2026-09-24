@@ -399,6 +399,14 @@ def run_application_one(conn: sqlite3.Connection, intake: dict[str, Any], curren
         result = application_readback(intake["resource_alias"], record)
         if not isinstance(result, dict) or result.get("status") not in {"accepted", "duplicate"}:
             raise BridgeError("application readback not committed")
+        projection = result.get("candidate_projection")
+        welcome = result.get("welcome")
+        if (isinstance(projection, dict) and projection.get("status") == "projection_unconfirmed"
+                or isinstance(welcome, dict) and welcome.get("status") == "handoff_unconfirmed"):
+            conn.execute("""UPDATE application_wakes SET last_error_code='followup_pending'
+                WHERE resource_alias=? AND record_ref=?""", (intake["resource_alias"], record))
+            conn.commit()
+            return True
         conn.execute("""UPDATE application_wakes SET completed_version=max(completed_version,?),
             attempts=0,last_error_code=NULL WHERE resource_alias=? AND record_ref=?""",
             (version, intake["resource_alias"], record))

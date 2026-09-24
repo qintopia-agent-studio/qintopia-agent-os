@@ -227,6 +227,31 @@ class ScriptActionBridgeTest(unittest.TestCase):
             self.bridge.run_one(self.conn, self.cfg, now=1000)
             self.assertEqual(self.conn.execute("SELECT requested_version,completed_version FROM application_wakes").fetchone(), (2, 1))
 
+    def test_committed_source_followup_pending_retries_without_losing_new_wake(self):
+        for key, state in [("candidate_projection", "projection_unconfirmed"),
+                           ("welcome", "handoff_unconfirmed")]:
+            with self.subTest(state=state):
+                self.conn.execute("DELETE FROM application_wakes")
+                self.conn.execute("DELETE FROM jobs")
+                self.conn.commit()
+                self.bridge.enqueue(self.conn, self.envelope(), now=999)
+                with self.application_mode():
+                    self.bridge.enqueue(self.conn, self.envelope(), now=1000, cfg=self.cfg)
+                    with patch.object(self.bridge, "application_readback", return_value={"status": "accepted", key: {"status": state}}):
+                        self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1000))
+                        self.assertFalse(self.bridge.run_one(self.conn, self.cfg, now=1001))
+                    self.assertEqual(self.conn.execute("SELECT requested_version,completed_version,last_error_code FROM application_wakes").fetchone(), (1, 0, "followup_pending"))
+                    def recovered(*_):
+                        self.bridge.enqueue(self.conn, self.envelope(), now=1031, cfg=self.cfg)
+                        return {"status": "duplicate", "candidate_projection": {"stored": True}, "welcome": {"status": "awaiting_reliable_stay_link"}}
+                    with patch.object(self.bridge, "application_readback", side_effect=recovered):
+                        self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1030))
+                    self.assertEqual(self.conn.execute("SELECT requested_version,completed_version,last_error_code FROM application_wakes").fetchone(), (2, 1, None))
+                    with patch.object(self.bridge, "application_readback", return_value={"status": "duplicate", "candidate_projection": {"status": "not_eligible"}, "welcome": {"status": "awaiting_confirmation"}}):
+                        self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1031))
+                    self.assertEqual(self.conn.execute("SELECT requested_version,completed_version FROM application_wakes").fetchone(), (2, 2))
+                    self.assertEqual(self.conn.execute("SELECT status,attempts FROM jobs").fetchone(), ("queued", 0))
+
     def test_new_intake_uses_only_configured_reference_and_stores_no_payload(self):
         payload = {"record_id": "recABCDEFGH", "person": "private-person", "withdrawn": True, "approved": True}
         with self.application_mode():

@@ -64,7 +64,7 @@ def cell(value):
     require(False)
 
 
-def projection(raw, record, config):
+def projection(raw, record, config, *, include_fields=False):
     require(raw.get("code") == 0)
     row = raw.get("data", {}).get("record", {})
     require(row.get("record_id") == record and isinstance(row.get("fields"), dict))
@@ -86,10 +86,13 @@ def projection(raw, record, config):
     identity = {key: values[key] for key in IDENTITY_FIELDS}
     source_version = row.get("last_modified_time")
     require(source_version is None or type(source_version) is int and source_version >= 0)
-    return {"identity_hash": fingerprint(identity),
+    result = {"identity_hash": fingerprint(identity),
             "field_hash": fingerprint({"fields": values, "valid": valid, "consent_active": consent}),
             "valid": valid, "consent_active": consent,
             "source_version": None if source_version is None else str(source_version)}
+    if include_fields:
+        result["fields"] = values
+    return result
 
 
 class LocalApplicationClient:
@@ -114,7 +117,7 @@ class LocalApplicationClient:
     def __repr__(self):
         return "<ApplicationClient local-only>"
 
-    def read(self, record):
+    def read(self, record, *, include_fields=False):
         record_ref(record)
         config = self.config
         path = ("/open-apis/bitable/v1/apps/" + quote(config["base_token"], safe="")
@@ -126,22 +129,53 @@ class LocalApplicationClient:
             raw = response.read(MAX_BYTES + 1)
             # 404/403/redirect are failed observations, never a withdrawn application.
             require(response.status == 200 and len(raw) <= MAX_BYTES)
-            return projection(decode(raw), record, config)
+            return projection(decode(raw), record, config, include_fields=include_fields)
         except Exception:
             raise ValueError("application_readback_unavailable") from None
         finally:
             connection.close()
 
 
-def synchronize(record, client, host_call):
+def candidate_fields(values):
+    require(isinstance(values, dict) and set(values) <= set(FIELDS)
+            and {*IDENTITY_FIELDS, "consent"} <= set(values))
+    for key, value in values.items():
+        require(value is None or type(value) in (bool, int) or isinstance(value, str)
+                and "\x00" not in value and len(value) <=
+                (120 if key in ("name", "nickname") else 40 if key in ("phone", "arrival") else 2048))
+    return values
+
+
+def synchronize(record, client, host_call, *, project_candidates=None):
     record_ref(record)
     context = host_call({"action": "open", "record": record})
     # Read only after claiming the current observation. A CAS conflict needs a fresh GET.
-    observed = client.read(record)
+    observed = (client.read(record, include_fields=True) if project_candidates else client.read(record))
+    fields = observed.pop("fields", None)
     saved = host_call({"action": "save", "record": record,
                        "read_token": context["read_token"], "observation": observed})
-    welcome = host_call({"action": "reconcile_welcome", "record": record})
-    return {**saved, "welcome": welcome}
+    projection_result = None
+    if project_candidates:
+        projection_result = {"stored": False, "identity_confirmed": False,
+                             "status": "not_eligible"}
+        if observed["valid"] and observed["consent_active"]:
+            try:
+                result = project_candidates(saved["application"], candidate_fields(fields))
+                require(result == {"stored": True, "identity_confirmed": False})
+                projection_result = result
+            except Exception:
+                # The source save and both original work items already committed.
+                # A rejection/lost acknowledgement is not a failed source save.
+                projection_result = {"stored": None, "identity_confirmed": False,
+                                     "status": "projection_unconfirmed"}
+    try:
+        welcome = host_call({"action": "reconcile_welcome", "record": record})
+    except Exception:
+        if not project_candidates:
+            raise
+        welcome = {"status": "handoff_unconfirmed"}
+    return {**saved, "welcome": welcome,
+            **({"candidate_projection": projection_result} if project_candidates else {})}
 
 
 def readback_one(resource_alias, record):
@@ -165,4 +199,14 @@ def readback_one(resource_alias, record):
         require(response.get("ok") is True)
         return response["result"]
 
-    return synchronize(record, client, host_call)
+    def project_candidates(application, fields):
+        response = plugin.transport({"operation": "person_foundation_ingress", "schema_version": 1,
+            "agent": "anan", "tool": "welcome_source_projection",
+            "arguments": {"binding": os.environ["QINTOPIA_APPLICATION_BINDING"],
+                          "application": application, "fields": fields},
+            "trusted_context": {"gateway_id": os.environ["QINTOPIA_FOUNDATION_GATEWAY_ID"],
+                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}}, host=True)
+        require(response.get("ok") is True)
+        return response["result"]
+
+    return synchronize(record, client, host_call, project_candidates=project_candidates)

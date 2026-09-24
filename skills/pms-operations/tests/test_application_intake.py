@@ -141,6 +141,72 @@ class ApplicationReadbackTests(unittest.TestCase):
             server.server_close()
             thread.join()
 
+    def test_candidate_projection_uses_same_normalized_read_after_committed_save(self):
+        calls = []
+        fixture = self
+        class Client:
+            def read(inner, record, *, include_fields=False):
+                calls.append("GET")
+                return adapter.projection(fixture.raw, record, fixture.config, include_fields=include_fields)
+        def host(arguments):
+            calls.append(arguments["action"])
+            if arguments["action"] == "open": return {"read_token": "token"}
+            if arguments["action"] == "save":
+                self.assertNotIn("fields", arguments["observation"])
+                return {"status": "accepted", "application": "saved-application"}
+            return {"status": "awaiting_reliable_stay_link"}
+        def project(application, fields):
+            calls.append("projection")
+            self.assertEqual(application, "saved-application")
+            self.assertEqual(fields["phone"], "synthetic-contact")
+            self.assertNotIn("arrival", fields)
+            self.assertNotIn("照片", fields)
+            return {"stored": True, "identity_confirmed": False}
+        result = adapter.synchronize("recSyntheticOne", Client(), host, project_candidates=project)
+        self.assertEqual(calls, ["open", "GET", "save", "projection", "reconcile_welcome"])
+        self.assertEqual(result["candidate_projection"], {"stored": True, "identity_confirmed": False})
+        self.assertNotIn("synthetic-contact", json.dumps(result))
+
+    def test_candidate_projection_failure_preserves_saved_source_and_dispatch(self):
+        fixture = self
+        class Client:
+            def read(inner, record, *, include_fields=False):
+                return adapter.projection(fixture.raw, record, fixture.config, include_fields=include_fields)
+        def host(a):
+            if a["action"] == "open": return {"read_token": "token"}
+            if a["action"] == "save": return {"status": "accepted", "application": "saved", "work_items": ["anan", "silaoshi"]}
+            raise ValueError("unknown_handoff")
+        def fail(*_): raise ValueError("unknown_projection")
+        result = adapter.synchronize("recSyntheticOne", Client(), host, project_candidates=fail)
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["work_items"], ["anan", "silaoshi"])
+        self.assertIsNone(result["candidate_projection"]["stored"])
+        self.assertEqual(result["welcome"]["status"], "handoff_unconfirmed")
+
+    def test_candidate_projection_skips_withdrawn_or_unconsented_source(self):
+        fixture = self
+        class Client:
+            def read(inner, record, *, include_fields=False):
+                return adapter.projection(fixture.raw, record, fixture.config, include_fields=include_fields)
+        def host(a):
+            if a["action"] == "open": return {"read_token": "token"}
+            if a["action"] == "save": return {"status": "accepted", "application": "saved"}
+            return {"status": "awaiting_reliable_stay_link"}
+        def forbidden(*_): self.fail("ineligible candidate must not be uploaded")
+        self.raw["data"]["record"]["fields"]["展示"] = "未同意"
+        result = adapter.synchronize("recSyntheticOne", Client(), host, project_candidates=forbidden)
+        self.assertEqual(result["candidate_projection"]["status"], "not_eligible")
+        self.raw["data"]["record"]["fields"]["展示"] = "同意"
+        self.raw["data"]["record"]["fields"]["状态"] = "已撤回"
+        self.assertFalse(adapter.synchronize("recSyntheticOne", Client(), host, project_candidates=forbidden)["candidate_projection"]["stored"])
+
+    def test_candidate_field_constraints_do_not_rewrite_accepted_values(self):
+        values = adapter.projection(self.raw, "recSyntheticOne", self.config, include_fields=True)["fields"]
+        self.assertIs(adapter.candidate_fields(values), values)
+        for key, invalid in [("name", "长" * 121), ("phone", "1" * 41), ("interests", "x\x00y")]:
+            with self.assertRaises(ValueError):
+                adapter.candidate_fields({**values, key: invalid})
+
     def test_remote_source_and_unconfigured_local_source_are_rejected(self):
         for url, enabled in [("https://open.feishu.cn", True), ("http://127.0.0.1:1234", False),
                              ("http://localhost:1234", True), ("http://127.0.0.1:1234?url=x", True)]:

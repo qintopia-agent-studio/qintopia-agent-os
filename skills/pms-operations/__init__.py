@@ -255,6 +255,7 @@ SCHEMAS = {
                     "input": {"type": "object"}, "reason": obj({"code": TEXT, "note": {"type": "string", "maxLength": 2000}}, ["code", "note"]),
                     "work_item": TEXT}, ["binding", "operation", "input", "reason"]),
     "link": obj({"action": TEXT, "work_item": TEXT}, ["action", "work_item"]),
+    "reminder_snooze": obj({"binding": TEXT, "work_item": TEXT, "until": TEXT}, ["binding", "work_item", "until"]),
     **{key: ACTION for key in ("execute", "recover", "status", "pause", "resume", "cancel", "handoff")},
     "reconcile": obj({"action":TEXT,"order":TEXT}, ["action"]),
 }

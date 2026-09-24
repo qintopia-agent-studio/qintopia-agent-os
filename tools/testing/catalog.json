@@ -2998,6 +2998,114 @@
             ],
             "simulated": ["物业、来源、付款事件及PMS预览；无PMS HTTP或真实渠道操作"]
           }
+        },
+        {
+          "id": "anan-pms/reminder-rules-merge-stop-snooze-and-unknown-are-durable",
+          "name": "有效约定、合并提醒、暂缓、完成停止与UNKNOWN恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_reminder_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_reminder_tests::reminder_rules_merge_stop_snooze_and_unknown_are_durable",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务规则、权限、事项元数据、尝试及PG事务"],
+            "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/reminder-rechecks-rule-audience-scope-and-current-facts",
+          "name": "发送前当前事实、受众与范围复核",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_reminder_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_reminder_tests::reminder_rechecks_rule_audience_scope_and_current_facts",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务规则、权限、事项元数据、尝试及PG事务"],
+            "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/reminder-application-completion-merge-and-rule-windows",
+          "name": "申请补齐、可靠来源汇合与规则时段",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_reminder_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_reminder_tests::reminder_application_completion_merge_and_rule_windows",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务规则、权限、事项元数据、尝试及PG事务"],
+            "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/reminder-real-broker-python-host-and-simulated-channel",
+          "name": "真实宿主broker与模拟渠道丢失回执恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_reminder_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_reminder_tests::reminder_real_broker_python_host_and_simulated_channel",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "共同服务规则、权限、事项元数据、尝试及PG事务",
+              "Unix broker与Python宿主/HTTP客户端"
+            ],
+            "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/reminder-bounded-scans-do-not-starve-later-work",
+          "name": "提醒单次有界扫描不饿死后续事项",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_reminder_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_reminder_tests::reminder_bounded_scans_do_not_starve_later_work",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务规则、权限、事项元数据、尝试及PG事务"],
+            "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
+          }
         }
       ]
     }

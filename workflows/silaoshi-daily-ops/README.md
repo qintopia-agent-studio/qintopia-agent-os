@@ -51,6 +51,13 @@ broker. Failed readback keeps the wake pending with bounded backoff; a newer wak
 processing remains pending. Only references and counters enter this queue. Content
 dedupe and revision fencing belong to the shared PostgreSQL service.
 
+An accepted/duplicate source save can still have an unconfirmed candidate projection or
+welcome handoff. The two explicit technical states `projection_unconfirmed` and
+`handoff_unconfirmed` retain the existing wake and backoff as `followup_pending`; they
+do not relabel the committed source as failed. A fresh readback resumes that same
+source. Ineligible candidates, missing reliable stay links and human review waits are
+business states, not technical retries. No private fields enter this queue.
+
 This branch is local-only, not an installed replacement for the real Feishu Workflow.
 Source callbacks do not authorize booking, payment, identity linking or welcome sends.
 Silaoshi's `application_review` is an operating follow-up, not mandatory order approval.
