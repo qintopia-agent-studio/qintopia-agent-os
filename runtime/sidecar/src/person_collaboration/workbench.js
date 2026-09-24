@@ -9,6 +9,28 @@ let ledgerKind = "agent",
   ledgerSelection = null,
   ledgerSearch = "";
 const errors = {
+  welcome_effect_not_authorized: "你当前没有这项确认权限，请联系负责人安排。",
+  welcome_authority_revoked: "原授权已失效，请负责人重新安排确认人。",
+  welcome_settings_required: "请先设置办理群和有权确认的人。",
+  configured_operations_group_required: "请选择当前范围内已登记的运营工作群。",
+  welcome_subject_changed_or_revoked: "工作账号或来源已变更，请重新核对安排。",
+  welcome_version_conflict: "这条事项已有更新，请刷新后核对新版。",
+  welcome_content_version_conflict: "入住资料或内容已有更新，旧确认不能用于新版。",
+  operations_confirmation_required: "等待小客服或主管确认本次资料与卡片。",
+  operations_content_changed: "已确认的资料发生变化，请重新确认。",
+  operations_approval_authority_changed: "原确认人的授权已变化，请重新安排确认。",
+  identity_segments_required:
+    "请先确认申请、实际入住人和聊天账号的对应关系，也可以勾选后一并提交。",
+  explicit_effect_required: "请勾选你已经核对、希望确认的内容。",
+  person_selection_required: "请选择你核对过的人员候选。",
+  channel_selection_required: "请选择这位居民对应的微信或企微账号。",
+  candidate_selection_required: "请从当前候选中选择；无法确定时保留待办。",
+  welcome_content_not_ready: "内容或展示许可尚未齐备，可以先保存人员关联。",
+  welcome_matter_closed: "这条事项已退回或撤销，需要岸岸重新整理后再确认。",
+  identity_conflict_revoke_first:
+    "已有身份关联与本次选择冲突，请先核对并撤销错误关联。",
+  welcome_intake_denied: "当前没有在此范围整理确认事项的权限。",
+
   pms_refresh_required: "住宿信息需要可信来源刷新，当前不能继续发送。",
   current_target_membership_required: "尚未确认居民已加入这个目标群。",
   content_required: "还没有可用内容，请先完成制卡和文案准备。",

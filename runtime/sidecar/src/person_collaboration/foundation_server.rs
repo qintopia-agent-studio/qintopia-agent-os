@@ -69,6 +69,9 @@ pub(super) async fn dispatch(
             crate::strict_json::registry_json_limits(256 * 1024),
         )?;
     }
+    if path.starts_with("/api/foundation/operations/") {
+        return super::store::welcome_review::http_dispatch(store, actor, path, body).await;
+    }
     match path {
         "/api/foundation/business/authorize" => {
             let a: Value = serde_json::from_slice(body)?;
@@ -960,18 +963,18 @@ pub(super) async fn card(store: &Store, actor: &Actor, artifact: Uuid) -> Result
             return Ok(row.get("content"));
         }
     }
-    anyhow::bail!("scope_access_denied")
+    store.welcome_review_card(actor, artifact).await
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TrustedContext {
-    platform: String,
-    chat_type: String,
-    chat_id: String,
-    sender_id: String,
-    message_id: String,
-    gateway_id: String,
+pub(super) struct TrustedContext {
+    pub(super) platform: String,
+    pub(super) chat_type: String,
+    pub(super) chat_id: String,
+    pub(super) sender_id: String,
+    pub(super) message_id: String,
+    pub(super) gateway_id: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1098,6 +1101,17 @@ pub(super) async fn broker_invoke(
         "agent_tool_denied"
     );
     let t = r.trusted_context;
+    if r.operation == "person_foundation_tool" && r.tool.starts_with("welcome_operations_") {
+        return super::store::welcome_review::broker_invoke(
+            store,
+            gateway,
+            profile,
+            t,
+            &r.tool,
+            r.arguments,
+        )
+        .await;
+    }
     if r.operation == "person_foundation_ingress" {
         ensure!(
             profile == "anan" && r.tool == "pms_capture" && t.gateway_id == gateway,

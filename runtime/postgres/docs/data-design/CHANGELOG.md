@@ -1,5 +1,11 @@
 # Data Design Changelog
 
+## 2026-09-24.003 — Welcome subject confirmation
+
+- Add scoped work-account subjects, operations confirmation and identity attribution.
+- Preserve personal/PMS authority and building publication rules.
+- Design: [welcome subject confirmation](2026-09-24-welcome-subject-confirmation.md).
+
 ## 2026-09-24.001 — Business operation execution
 
 - New exact operation grants, trusted host turn evidence and independent PMS action records on WorkItems.

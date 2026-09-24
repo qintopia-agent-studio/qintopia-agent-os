@@ -1010,6 +1010,10 @@ async fn decision(
 ) -> Result<Value> {
     let (tenant, scope) = target(tx, target_ref).await?;
     check_case_target(tx, case, target_ref).await?;
+    crate::person_collaboration::assert_welcome_operations_review(
+        pool, tx, &tenant, scope, case, artifact,
+    )
+    .await?;
     ensure!(
         current_artifact(tx, case, target_ref, artifact).await?,
         "content_version_changed"

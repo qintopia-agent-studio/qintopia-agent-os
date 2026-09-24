@@ -70,3 +70,5 @@ Agent OS data layer.
 - `2026-08-08.001`: `2026-08-08-xiaoman-daily-case-report-auto-publish.md`
 - `2026-08-14.001`: `2026-08-14-erhua-conversational-self-extension.md`
 - `2026-08-15.001`: `2026-08-15-space-execution-runner-contract.md`
+
+- [Welcome subject confirmation](2026-09-24-welcome-subject-confirmation.md).
