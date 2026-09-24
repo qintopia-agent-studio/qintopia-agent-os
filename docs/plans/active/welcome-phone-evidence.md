@@ -1,6 +1,6 @@
 # 手机号候选：固定读取与确认前复验契约
 
-本增量承接用户最终决定：新申请手机号必填、手机号主要匹配、姓名昵称辅助；历史不追补。首次关联仍需明确确认，电话不证明聊天账号归属，也不授予 PMS/财务权限。本文件为服务端与岸岸宿主共享契约，尚未实现部分须以实施报告为准。
+本增量承接用户最终决定：新申请手机号必填、手机号主要匹配、姓名昵称辅助；历史不追补。首次关联仍需明确确认，电话不证明聊天账号归属，也不授予 PMS/财务权限。本文件为服务端与岸岸宿主共享契约，接口已冻结；服务端与群宿主增量尚待本地实现，实际完成状态以实施报告为准。
 
 ## 唯一入口与存储
 
@@ -75,3 +75,16 @@ save校验完整order/property/version及逐人集合和当前投影一致。新
 
 群宿主可由岸岸注入固定 `refresh_contacts(work_item,presentation)`
 函数，负责上述open/GET/save。该函数是宿主私有回调，不注册模型工具，不接受自选URL，也不发送真实群消息。
+
+## 固定宿主挂点与复验结果
+
+`WelcomeHost.callback(*, refresh_contacts=None)` 先调用
+`broker({action:"confirmation_context"})`。响应固定为
+`{requires_contacts:boolean,work_item:UUID|null,presentation:UUID,replayed:boolean}`。当requires_contacts为true，调用注入的
+`refresh_contacts(work_item,presentation)`，要求返回上述status响应且
+`status=="complete" && scan_complete==true`，随后仍以同一broker、原可信消息调用
+`broker({action:"callback"})`。刷新失败保留原事项；不编造消息、不另造operation键。该注入函数由岸岸实现，只做open(refresh=true,presentation)→逐订单真实GET/save或failed→status，不用返回任何手机号。确认宿主不自造通用路由。
+
+服务端依据呈现中保存的电话建议以及当前明确效果决定requires_contacts；申请住宿关联或按申请建档才可能依赖电话。仅账号、内容、撤销、退回及原已独立确认的申请住宿关系不受电话刷新阻断。显式命令“确认 W-... 人员1 关联住宿 人工核对”或“建档 W-... 人工核对”记录人工原始资料核对，保留已有授权与版本校验，不能冒称电话复验。
+
+读取generation只防止旧token写入。稳定比较依据包含申请/绑定/完整候选池版本及逐人比较内容，不包含generation、token或读取时间。原可信消息内刷新后稳定依据相同，原确认继续执行一次；真实依据变更或授权过期拒绝并重新呈现。已成功的原消息重放先回原收据，不重新刷新或重复写关联。验收覆盖同依据刷新、真实变化拒绝、重放、独立人工核对和私有metadata不外泄。
