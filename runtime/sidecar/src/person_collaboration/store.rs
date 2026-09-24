@@ -11,6 +11,7 @@ pub(crate) mod applications;
 mod auth;
 pub(crate) mod business;
 pub(crate) mod business_events;
+mod business_sources;
 pub(crate) mod welcome_review;
 pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;

@@ -10,6 +10,25 @@ plugin = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(plugin)
 
 class PluginTests(unittest.TestCase):
+    def test_link_reads_host_selected_current_order_and_rejects_model_authority(self):
+        for extra in ({'readback':{}},{'approved':True},{'text':'确认关联'}):
+            with self.assertRaises(ValueError):
+                plugin.validate('link',{'action':'a','work_item':'s',**extra})
+        calls=[]
+        class Pms:
+            def read(self,kind,prop,resource):
+                self.seen=(kind,prop,resource)
+                return {'order':{'id':resource,'property_id':prop,'version':3,'phone':'private'}}
+        def broker(r):
+            calls.append(r)
+            if r['tool']=='pms_link_context': return {'ok':True,'result':{'property':'p','order_ref':'trusted-order'}}
+            return {'ok':True,'result':{'phase':'awaiting_confirmation'}}
+        pms=Pms()
+        result=plugin.Operations(pms,broker,lambda:{}).link({'action':'a','work_item':'s'})
+        self.assertEqual(pms.seen,('order','p','trusted-order'))
+        self.assertEqual(calls[-1]['arguments']['readback'],{'order':{'id':'trusted-order','property_id':'p','version':3}})
+        self.assertEqual(result['phase'],'awaiting_confirmation')
+
     def test_model_cannot_supply_authority_or_wrong_shapes(self):
         for args in ({'action':'x','approved':True}, {'action':{}}, {'action':''}):
             with self.assertRaises(ValueError): plugin.validate('execute',args)

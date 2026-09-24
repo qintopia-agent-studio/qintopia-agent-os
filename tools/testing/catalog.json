@@ -2866,6 +2866,52 @@
             "real": ["申请回读、现存关系校验、独立welcome_event和公共欢迎确认入口"],
             "simulated": ["人员、PMS住宿投影和运营群；不执行渲染或外发"]
           }
+        },
+        {
+          "id": "anan-pms/application-booking-stage-survives-revision-parallel-and-unknown",
+          "name": "申请订房阶段并发修订与未知结果不重放",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_business_tests::application_booking_stage_survives_revision_parallel_and_unknown",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务权限、事务、来源映射、版本确认与分阶段动作账本"],
+            "simulated": [
+              "PMS预览及回执、支付事件和申请资料；实际PMS路径另有专用锁库联测"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/application-link-requires-current-human-proposal-and-preserves-stages",
+          "name": "申请付款对话汇合须当前人类确认且分阶段记账",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_business_tests::application_link_requires_current_human_proposal_and_preserves_stages",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务权限、事务、来源映射、版本确认与分阶段动作账本"],
+            "simulated": [
+              "PMS预览及回执、支付事件和申请资料；实际PMS路径另有专用锁库联测"
+            ]
+          }
         }
       ]
     }

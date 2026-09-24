@@ -2,6 +2,8 @@
 use super::*;
 use crate::person_collaboration::store::applications::Observation;
 
+#[path = "application_business_tests.rs"]
+mod application_business_tests;
 #[path = "application_welcome_tests.rs"]
 mod application_welcome_tests;
 

@@ -111,6 +111,8 @@ fn intent_covers_booking(intent: &Value, input: &Value, effect: &Value) -> bool 
 async fn sync_work(tx: &mut Transaction<'_, Postgres>, tenant: &str, work: Uuid) -> Result<()> {
     sqlx::query("UPDATE qintopia_agent_os.work_items SET status=(SELECT CASE WHEN bool_or(phase IN ('executing','previewing','unknown')) THEN 'processing' WHEN bool_or(phase IN ('awaiting_confirmation','paused','manual_handoff')) THEN 'awaiting_review' WHEN bool_or(phase='draft') THEN 'queued' WHEN bool_or(phase IN ('not_executed','preview_rejected')) THEN 'failed' WHEN bool_or(phase IN ('completed','manual_completed')) THEN 'completed' ELSE 'cancelled' END FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND work_item_id=$2),updated_at=clock_timestamp() WHERE id=$2")
         .bind(tenant).bind(work).execute(&mut **tx).await?;
+    sqlx::query("UPDATE qintopia_agent_os.work_items s SET status=c.status,updated_at=clock_timestamp() FROM qintopia_agent_os.work_items c WHERE c.id=$1 AND s.metadata->>'business_work_ref'=c.id::text AND s.status<>'cancelled'")
+        .bind(work).execute(&mut **tx).await?;
     Ok(())
 }
 
@@ -355,7 +357,7 @@ impl Store {
                 confirmation = Some(candidates[0].clone());
             }
         }
-        let intent = explicit_booking_intent(&turn.text)
+        let mut intent = explicit_booking_intent(&turn.text)
             .or_else(|| explicit_collection_intent(&turn.text))
             .or_else(|| {
                 let order = turn
@@ -369,6 +371,17 @@ impl Store {
                         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-'))
                 .then(|| json!({"manual_order":order}))
             });
+        if turn.text.trim() == "确认关联" {
+            let proposals:Vec<String>=sqlx::query_scalar("SELECT metadata->'business_link_proposal'->>'hash' FROM qintopia_agent_os.work_items WHERE metadata->'business_link_proposal'->>'tenant'=$1 AND metadata->'business_link_proposal'->>'person'=$2 AND metadata->'business_link_proposal'->>'gateway'=$3 AND metadata->'business_link_proposal'->>'chat'=$4 AND (metadata->'business_link_proposal'->>'expires')::timestamptz>clock_timestamp()")
+                .bind(&self.tenant).bind(actor.person.to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
+            if proposals.len() == 1 {
+                intent = Some(json!({"source_link":proposals[0]}));
+            }
+        }
+        if turn.text.trim() == "取消关联" {
+            sqlx::query("UPDATE qintopia_agent_os.work_items SET metadata=metadata-'business_link_proposal' WHERE metadata->'business_link_proposal'->>'tenant'=$1 AND metadata->'business_link_proposal'->>'person'=$2 AND metadata->'business_link_proposal'->>'gateway'=$3 AND metadata->'business_link_proposal'->>'chat'=$4")
+                .bind(&self.tenant).bind(actor.person.to_string()).bind(gateway).bind(&chat_hash).execute(&mut *tx).await?;
+        }
         if let Some(r)=sqlx::query("SELECT id,person_id,content_hash,chat_hash FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3")
             .bind(&self.tenant).bind(gateway).bind(&message_hash).fetch_optional(&mut *tx).await? {
             ensure!(r.get::<Uuid,_>("person_id")==actor.person && r.get::<String,_>("content_hash")==content_hash && r.get::<String,_>("chat_hash")==chat_hash,"trusted_message_conflict");
@@ -439,6 +452,8 @@ impl Store {
             "pms_save_result" => &["action", "claim", "result", "readback"],
             "pms_save_manual" => &["action", "readback"],
             "pms_manual_context" => &["action"],
+            "pms_link" => &["action", "work_item", "readback"],
+            "pms_link_context" => &["action"],
             "pms_status" | "pms_claim_preview" | "pms_claim_execute" | "pms_recovery"
             | "pms_pause" | "pms_resume" | "pms_cancel" | "pms_handoff" => &["action"],
             _ => anyhow::bail!("unknown_tool"),
@@ -486,7 +501,16 @@ impl Store {
                         );
                         json!({"bill_id":row.get::<String,_>("subject_ref"),"property":auth.property})
                     }
-                    None => Value::Null,
+                    None => {
+                        if self
+                            .application_business_source(&mut tx, &auth, parse("work_item")?)
+                            .await?
+                        {
+                            json!({"source_kind":"application","property":auth.property})
+                        } else {
+                            Value::Null
+                        }
+                    }
                 };
                 tx.commit().await?;
                 return Ok(result);
@@ -548,12 +572,45 @@ impl Store {
                 } else {
                     false
                 };
-                ensure!(owned || event_owned, "business_work_denied");
-                work
+                let application_owned = self
+                    .application_business_source(&mut tx, &auth, work)
+                    .await?;
+                if application_owned && key == "pms.command.CREATE_ORDER" {
+                    let linked:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.application_intake_states i JOIN qintopia_agent_os.welcome_cases c ON c.application_id=i.application_id AND c.source_instance=i.source_instance AND c.property_id=i.property_id WHERE i.tenant_key=$1 AND i.anan_work_id=$2)")
+                        .bind(&self.tenant).bind(work).fetch_one(&mut *tx).await?;
+                    ensure!(!linked, "application_order_already_linked");
+                }
+                ensure!(
+                    owned || event_owned || application_owned,
+                    "business_work_denied"
+                );
+                self.canonical_business_work(&mut tx, work, &input, key)
+                    .await?
             } else {
                 sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload,metadata) VALUES('business_operation','queued','anan','anan','anan.pms','客房办理','synthetic_business',$1,$1,'{}','{\"local_only\":true}') RETURNING id")
                     .bind(format!("business/{}/{evidence}/{hash}",self.tenant)).fetch_one(&mut *tx).await?
             };
+            // Quote identity and an explicitly selected source matter survive new
+            // messages and process restarts. Do not replace an unknown booking.
+            if key == "pms.command.CREATE_ORDER" {
+                let prior=sqlx::query("SELECT id,request_hash,actor_person_id,source_evidence_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND phase NOT IN ('cancelled','preview_rejected','not_executed') AND (work_item_id=$4 OR input->>'quoteId'=$5) ORDER BY created_at LIMIT 1")
+                    .bind(&self.tenant).bind(auth.binding).bind(key).bind(work).bind(input["quoteId"].as_str()).fetch_optional(&mut *tx).await?;
+                if let Some(prior) = prior {
+                    let same_origin:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2 AND gateway_key=$3 AND chat_hash=$4)")
+                        .bind(&self.tenant).bind(prior.get::<Uuid,_>("source_evidence_id")).bind(gateway).bind(digest(chat.as_bytes())).fetch_one(&mut *tx).await?;
+                    ensure!(
+                        same_origin && prior.get::<Uuid, _>("actor_person_id") == actor.person,
+                        "business_conversation_mismatch"
+                    );
+                    ensure!(
+                        prior.get::<String, _>("request_hash") == hash,
+                        "booking_stage_already_exists"
+                    );
+                    let id: Uuid = prior.get("id");
+                    // A new ad-hoc task has no actions and is rolled back here.
+                    return Ok(json!({"action":id,"replayed":true}));
+                }
+            }
             let id = Uuid::new_v4();
             sqlx::query("INSERT INTO qintopia_agent_os.business_actions(id,tenant_key,work_item_id,binding_id,binding_version,operation_key,actor_person_id,actor_identity_id,identity_version,source_evidence_id,authority_operation_id,request_hash,input,phase,preview_key,execution_key,resolution_key,correlation_id,confirmation_code,reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16,$17,$18,$19)")
                 .bind(id).bind(&self.tenant).bind(work).bind(auth.binding).bind(auth.binding_version).bind(key).bind(actor.person).bind(actor.link).bind(actor.identity_version).bind(evidence).bind(auth.operation_grant).bind(hash).bind(input)
@@ -627,6 +684,31 @@ impl Store {
         }
         let mut reply = json!({"action":id,"work_item":work,"phase":phase,"operation":key,"version":row.get::<i64,_>("version"),"preview":preview,"result":result,"readback":row.get::<Option<Value>,_>("readback")});
         match tool {
+            "pms_link_context" => {
+                ensure!(
+                    key == "pms.command.CREATE_ORDER" && phase == "completed",
+                    "completed_booking_required"
+                );
+                let readback: Option<Value> = row.get("readback");
+                let order = readback
+                    .as_ref()
+                    .and_then(|r| r["order"]["id"].as_str())
+                    .ok_or_else(|| anyhow::anyhow!("booking_readback_required"))?;
+                reply = json!({"property":auth.property,"order_ref":order});
+            }
+            "pms_link" => {
+                reply = self
+                    .link_business_source(
+                        &mut tx,
+                        &auth,
+                        parse("work_item")?,
+                        id,
+                        evidence,
+                        &a["readback"],
+                    )
+                    .await?;
+                sync_work(&mut tx, &self.tenant, work).await?;
+            }
             "pms_status" => {
                 if phase == "awaiting_confirmation" {
                     reply["confirmation_code"] = json!(row.get::<String, _>("confirmation_code"));

@@ -58,7 +58,7 @@ def transport(request, *, host=False):
 
 
 # Output uses positive field selection: free text, notes, source bodies and credentials are omitted.
-PUBLIC_FIELDS = set("schemaVersion events eventId eventType sequence action work_item phase operation version method transactionReference pricing pricingDecision pricingBasis policyBaseAmount targetCurrentContractAmount differenceFromPolicy manualAdjustmentMinor differenceExceedsThreshold cashLines cashRemainder coverageSet serviceDate minorUnits inventoryUnit stayType unitKind bookingChannelCode roomId buildingCode roomTypeCode occupancyCapacity unit_code effectiveDate newArrivalDate newDepartureDate newInventoryUnitId settlement currentStatus previousStatus newStatus preview result readback previewId commandType propertyId effectHash effect expiresAt receiptId commandId executionStatus businessCommitted resourceRefs factRefs committedAt order orders quote quoteId totalAmountMinor amountMinor currentContractAmount currentContractAmountMinor collectionDifference netRecordedCollection arrivalDate departureDate inventoryUnitId unitKind units id code name status nickname fullName primaryGuest members memberId property_id inventory_unit_id arrival_date departure_date current_contract_amount_minor net_recorded_collection_minor collection_difference_minor items kind reference occurredAt orderId enabled lastSyncedAt synchronizationError hasMore nextBeforeId nextCursor businessDate available capacity currency pricingPolicyVersionId nights guestCount totals stay stays occupants billId confirmation_hint confirmation_reused pms_reversed replayed".split())
+PUBLIC_FIELDS = set("schemaVersion events eventId eventType sequence action work_item phase operation version method transactionReference pricing pricingDecision pricingBasis policyBaseAmount targetCurrentContractAmount differenceFromPolicy manualAdjustmentMinor differenceExceedsThreshold cashLines cashRemainder coverageSet serviceDate minorUnits inventoryUnit stayType unitKind bookingChannelCode roomId buildingCode roomTypeCode occupancyCapacity unit_code effectiveDate newArrivalDate newDepartureDate newInventoryUnitId settlement currentStatus previousStatus newStatus preview result readback previewId commandType propertyId effectHash effect expiresAt receiptId commandId executionStatus businessCommitted resourceRefs factRefs committedAt order orders quote quoteId totalAmountMinor amountMinor currentContractAmount currentContractAmountMinor collectionDifference netRecordedCollection arrivalDate departureDate inventoryUnitId unitKind units id code name status nickname fullName primaryGuest members memberId property_id inventory_unit_id arrival_date departure_date current_contract_amount_minor net_recorded_collection_minor collection_difference_minor items kind reference occurredAt orderId enabled lastSyncedAt synchronizationError hasMore nextBeforeId nextCursor businessDate available capacity currency pricingPolicyVersionId nights guestCount totals stay stays occupants billId confirmation_hint confirmation_reused pms_reversed replayed linked source_summary".split())
 
 
 SAFE_ERRORS = {"payment_readback_required", "payment_effect_mismatch","invalid_arguments", "pms_disabled", "pms_property_denied", "pms_command_denied",
@@ -121,7 +121,7 @@ class Operations:
         args = dict(args)
         if args.get("work_item"):
             event = self.call("pms_event_context", {k: args[k] for k in ("binding", "operation", "work_item")})
-            if event:
+            if event and event.get("bill_id"):
                 current = self.pms.read("payments", event["property"], filters={"billId": event["bill_id"], "kind": "COLLECTION", "status": "ALL", "limit": 1})
                 items = current.get("items", [])
                 if len(items) != 1 or items[0].get("id") != event["bill_id"]:
@@ -194,6 +194,11 @@ class Operations:
         observed = self.pms.read("order", context["property"], resource=context["order_ref"])
         return self.call("pms_save_manual", {"action": args["action"], "readback": public(observed)})
 
+    def link(self, args):
+        context = self.call("pms_link_context", {"action": args["action"]})
+        current = self.pms.read("order", context["property"], resource=context["order_ref"])
+        return self.call("pms_link", {**args, "readback": public(current)})
+
     def invoke(self, name, args):
         validate(name, args)
         if name == "read": result = self.read(args)
@@ -202,6 +207,7 @@ class Operations:
         elif name == "recover": result = self.recover(args)
         elif name == "resume": result = self.resume(args)
         elif name == "reconcile": result = self.reconcile(args)
+        elif name == "link": result = self.link(args)
         else: result = self.call("pms_" + name, args)
         return {"ok": True, "result": public(result, group=self.context().get("chat_type") == "group")}
 
@@ -218,6 +224,7 @@ SCHEMAS = {
     "prepare": obj({"binding": TEXT, "operation": {"type": "string", "enum": [k for k,v in CATALOG.items() if "command" in v]},
                     "input": {"type": "object"}, "reason": obj({"code": TEXT, "note": {"type": "string", "maxLength": 2000}}, ["code", "note"]),
                     "work_item": TEXT}, ["binding", "operation", "input", "reason"]),
+    "link": obj({"action": TEXT, "work_item": TEXT}, ["action", "work_item"]),
     **{key: ACTION for key in ("execute", "recover", "status", "pause", "resume", "cancel", "handoff", "reconcile")},
 }
 
