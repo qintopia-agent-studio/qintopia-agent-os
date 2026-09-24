@@ -1455,6 +1455,10 @@ async fn welcome_host_model_token_wrong_profile_and_gateway_are_denied() -> Resu
         // Bounded timeout awaits the listener, not a blind sleep.
         if connected.is_none(){connected=Some(tokio::time::timeout(std::time::Duration::from_secs(3),async{loop{if let Ok(s)=tokio::net::UnixStream::connect(&socket).await {return s;}tokio::task::yield_now().await;}}).await?);}
 
+        // Exercise the same host after an empty readiness connection and another
+        // client that closes before this current-thread broker can accept it.
+        drop(connected.take());
+        drop(std::os::unix::net::UnixStream::connect(&socket)?);
         for (token,agent,gateway,denied) in [(model_token,"anan",f.gateway.as_str(),true),(host_token,"erhua",f.gateway.as_str(),true),(host_token,"anan","wrong-gateway",true),(host_token,"anan",f.gateway.as_str(),false)] {
             let request=json!({"operation":"person_foundation_ingress","schema_version":1,"agent":agent,"tool":"welcome_group_host","trusted_context":{"platform":"wecom","chat_type":"group","chat_id":"","sender_id":"","message_id":"","gateway_id":gateway},"arguments":{"action":"pending"},"token":token});
             let stream=if let Some(stream)=connected.take(){stream}else{tokio::net::UnixStream::connect(&socket).await?};let (r,mut w)=stream.into_split();let mut bytes=serde_json::to_vec(&request)?;bytes.push(b'\n');w.write_all(&bytes).await?;

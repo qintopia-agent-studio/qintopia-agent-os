@@ -748,3 +748,6 @@ mod database {
         Ok(())
     }
 }
+
+#[path = "foundation_transport_tests.rs"]
+mod transport;

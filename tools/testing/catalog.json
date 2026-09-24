@@ -2479,6 +2479,27 @@
             "real": ["真实PG业务服务、完整池比较与原群消息确认事务"],
             "simulated": ["虚构申请、逐人电话与认证消息；未调用线上PMS或外发"]
           }
+        },
+        {
+          "id": "person-collaboration/foundation-broker-early-disconnect",
+          "name": "Unix提前断连后监听与认证继续有效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_transport_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": [],
+            "filter": "person_collaboration::foundation_server_tests::transport::foundation_broker_early_disconnect_preserves_listener_and_authentication",
+            "args": ["--", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实Unix socket、OS peer凭据、broker任务退出与后续认证"],
+            "simulated": ["虚构token和协议请求；惰性连接池不访问数据库，无外发"]
+          }
         }
       ]
     },
