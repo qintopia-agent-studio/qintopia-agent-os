@@ -336,5 +336,48 @@ read_token 拒绝旧读响应；
 
 来源 A→B→A 不恢复被 B 清除的申请 Person 或案例关联。helper 的 Some 仅证明当前回读内容一致，不代替关联成立、许可或旧确认收据仍有效。
 
-四老师新能力沿既有业务目录登记为默认关闭；按总指挥明确同意，仅同步原 builtin 与 operations
+四老师新能力沿既有业务目录登记为默认关闭，仅同步原 builtin 与 operations
 smoke 的目录数量断言14→15。未改检查入口、CI条件或生产权限门禁。
+
+### 欢迎基础线首次整合
+
+正常本地合入欢迎冻结6c6548b，提交daaaccf。唯一冲突为data-design
+CHANGELOG同位置追加，保留003/004两项；共享mod/store、broker分支及业务目录保留双方。没有覆盖个人身份解析或改写已应用SQL。
+
+独立新建本地PG17/52322，顺序应用001→002→003→004；SQLx账本全部success，逐项SHA384与源码一致，安装顺序已回读。
+
+原52316支付环境及ed0接收进程未重启；冻结二进制已按原SHA256保留。整合后all-features共同PG100项通过，欢迎PG25项通过。日志为integration/person-tests.log、welcome-tests.log、migration-readback.json。
+
+基础线精确身份快照切片仍在推进，以上为首次整合结果。
+
+目录数量随动是现有业务测试预期更新，适用guardrails“沿用现有契约的业务实现和测试用例不因此变成修改CI的授权请求”。没有另一次用户CI批准，不将总指挥调度写成新增门禁授权；URL
+allowlist提案仍未获批。
+
+### 申请调用侧欢迎交接与测试进程隔离
+
+成功来源回读后，从共同服务现存申请/案例/Person/PMS
+occupant 关系及当前有效住宿投影派生独立
+`welcome_event`，精确绑定 tenant/scope/case/application，再调用公共
+`welcome_review_open_task`。不从支付或办理事项冒充，不修改基础线 snapshot/open_task；未配置或无可靠关联时保持等待，重复回读不重建事项，已有引用冲突拒绝覆盖，manual_hold 保留。
+
+本切片申请 PostgreSQL
+7 项通过，含真实签名 Bridge→HTTP→broker→PG 联测及新增欢迎交接。新增覆盖无关联、不完整人员关联、无运营配置、精确 payload、重复回读、人工暂停、身份链接撤销、冲突 payload 保留、跨范围、PMS 投影失效和来源撤回。Python
+31 项通过，包含欢迎交接失败后必须重新读取来源再重试。日志为
+`integration/application-welcome-final.log`、`integration/application-python.log`。
+
+签名 Bridge 测试原先临时修改共享进程环境，已单独提交 `7249ce7`
+改为当前测试二进制的独立子进程，原链路及断言保留，专项通过。首次新欢迎测试因夹具重复初始化租户失败，改为读取既有 fixture
+operator 后通过。
+
+默认并行共同回归实际为 100 passed / 1
+failed，不能视为全绿：唯一失败仍是账户生命周期的完整 state 比较，`local_dialogue_available`
+从 false 变 true。继续定位到基础线 `foundation_server::enable_test_http()`
+首次初始化同一全局环境变量；无 `#[test]` 的 PMS 专用旅程未被本轮选择器调用。原失败日志
+`integration/person-parallel-tests.log` 保留，基础线负责既有 HTTP
+fixture 初始化修复，再承接稳定 SHA 做并行回归。没有删除字段断言、降低授权检查或改共享 CI/runner。
+
+all-features 与 no-default-features 的 all-targets Clippy（`-D warnings`）均通过，日志为
+`integration/application-welcome-clippy.log` 和
+`integration/application-welcome-clippy-default.log`。
+
+生产默认关闭、真实飞书和群消息未执行，原支付服务与数据库未重启或覆盖。

@@ -35,7 +35,7 @@ impl Observation {
     }
 }
 
-fn references(alias: &str, record: &str) -> Result<()> {
+pub(super) fn references(alias: &str, record: &str) -> Result<()> {
     ensure!(
         !alias.is_empty()
             && alias.len() <= 80

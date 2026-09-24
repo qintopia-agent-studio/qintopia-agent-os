@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
+mod application_welcome;
 pub(crate) mod applications;
 mod auth;
 pub(crate) mod business;

@@ -77,6 +77,18 @@
 
 ## 验证与停用
 
+### 已有住宿案例的欢迎交接
+
+宿主在每次成功回读后，以相同固定来源/记录调用
+`reconcile_welcome`，模型不传案例或产物引用。服务端只选择已可靠关联该申请、同来源/物业/范围、已准入且仍有当前住宿安排的案例。缺关联、未配置确认范围或申请撤回时保持明确待办状态，不以候选相似度自动认人。
+
+现存关联要求申请、案例、有效 PMS occupant 身份链接指向同一 active
+Person，链接版本与案例保留版本相等；撤销或失效的链接不交接。已有 welcome_event 引用发生冲突时拒绝，不通过更新 payload 改写原事项范围。
+
+同案例/申请复用持久 anan
+`welcome_event`，payload 的 tenant/scope/case/application 引用全部来自数据库；有效产物同样从绑定表取。然后调用已有
+`welcome_review_open_task(None, &ReviewOpen)`，不调用渲染、发布或外发。回读与欢迎交接是独立事务；交接失败保持 Bridge 唤醒待重试，下次先重新读取来源，再幂等重开同事项。身份确认、内容确认及发布权限仍由公共欢迎服务分别校验；本适配器不接受模型提供确认。
+
 共同欢迎快照通过 `Store::application_identity_basis(&mut tx, scope, application)`
 读取可信身份依据，返回可选 hash；
 

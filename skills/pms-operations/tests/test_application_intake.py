@@ -80,6 +80,32 @@ class ApplicationReadbackTests(unittest.TestCase):
             adapter.synchronize("recSyntheticOne", Client(), host)
         self.assertEqual(calls, ["open", "GET", "save"])
 
+    def test_welcome_failure_retries_fresh_readback_before_handoff(self):
+        calls = []
+        class Client:
+            def read(inner, record):
+                calls.append("GET")
+                return self.observe()
+        attempts = [0]
+        def host(arguments):
+            action = arguments["action"]
+            calls.append(action)
+            if action == "open":
+                return {"read_token": "current-token"}
+            if action == "save":
+                return {"status": "duplicate", "application": "persisted-application"}
+            self.assertEqual(arguments, {"action": "reconcile_welcome", "record": "recSyntheticOne"})
+            attempts[0] += 1
+            if attempts[0] == 1:
+                raise ValueError("temporary_handoff_failure")
+            return {"status": "awaiting_reliable_stay_link"}
+        with self.assertRaises(ValueError):
+            adapter.synchronize("recSyntheticOne", Client(), host)
+        result = adapter.synchronize("recSyntheticOne", Client(), host)
+        self.assertEqual(result["application"], "persisted-application")
+        self.assertEqual(result["welcome"]["status"], "awaiting_reliable_stay_link")
+        self.assertEqual(calls, ["open", "GET", "save", "reconcile_welcome"] * 2)
+
     def test_fixed_http_readback_rejects_redirect_404_and_wrong_record(self):
         fixture = self
         seen = []

@@ -2,6 +2,9 @@
 use super::*;
 use crate::person_collaboration::store::applications::Observation;
 
+#[path = "application_welcome_tests.rs"]
+mod application_welcome_tests;
+
 fn observation() -> Observation {
     Observation {
         identity_hash: "a".repeat(64),
