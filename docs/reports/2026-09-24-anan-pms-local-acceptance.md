@@ -101,10 +101,17 @@ Cargo 命令均指定 `--manifest-path runtime/sidecar/Cargo.toml`，测试栈�
 
 12. PG tier 的最后 `operations-control-plane-apply-smoke.sh` 被
     `database URL hash is not in the reviewed allowlist`
-    拦截，随后的 JSONDecodeError 是缺少成功 JSON 的次生错误。代码先检查完整 URL 哈希，才检查 loopback
-    `qintopia_test`；现有两项哈希均为历史获批 staging，无法合法用于本任务随机端口隔离库。未修改 allowlist、CI 或门禁，未寻找 staging 凭据；此前 PG
-    Rust 用例全部通过，不把整个 PG
-    tier 记为通过。后续由维护者独立评审一次性测试数据库契约。
+    拦截，随后 JSONDecodeError 是次生错误。此前 Rust PG 用例通过，整个 applicable
+    check 仍未全通过，不能记为自动检查全绿。
+
+    诊断更正：初次仅据历史 staging 报告判断无合法本地配置，不准确。仓库公开模拟 URL
+    `postgres://postgres:postgres@127.0.0.1:5432/qintopia_test`
+    的 SHA256 恰为固定列表第一项。该配置在独立环境可用；本机 5432 已由基础线
+    `foundation-batch1/pr720-reconcile-postgres`
+    占用，不能停用、复用或重置它。本任务 52316 不匹配哈希；未改 allowlist、CI 或门禁，未寻找 staging 凭据。
+
+    [独立测试契约评审提案](../plans/active/disposable-postgres-boundary-review.md)
+    比较固定端口环境适配与复用通用 URL 边界，列九项标准及负面验证。仅供评审，未授权实施；不是必须修改门禁才能继续其他业务开发。
 
 这些是本地集成失败和修复记录，不是生产故障。实际 PMS 拒绝应以稳定错误码/回执处理，不能复述含隐私的响应正文。
 

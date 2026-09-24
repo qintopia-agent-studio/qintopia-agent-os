@@ -117,7 +117,8 @@ pnpm test:report
 一次性数据库的 URL 通过 runner 的 loopback 校验，不保证通过图像 staging 的固定 URL 哈希校验。若最后
 `operations-control-plane-apply-smoke.sh` 报
 `database URL hash is not in the reviewed allowlist`，记录此前 Rust
-PG 用例结果和该 smoke 的失败边界；不要改 allowlist、复用 staging 凭据或将总 tier 记为通过。需由维护者另行评审测试契约。见[岸岸本地验收记录](../reports/2026-09-24-anan-pms-local-acceptance.md)。
+PG 用例结果和该 smoke 的失败边界；不要改 allowlist、复用 staging 凭据或将总 tier 记为通过。既有固定 CI
+URL 有合法哈希；先核对本机 5432 归属，不能停用或写入其他任务的库。随机端口适配方案见[独立测试契约提案](../plans/active/disposable-postgres-boundary-review.md)，尚未批准实施。见[岸岸本地验收记录](../reports/2026-09-24-anan-pms-local-acceptance.md)。
 
 ## 欢迎渲染与跨平台任期回归
 
