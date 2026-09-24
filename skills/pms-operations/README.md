@@ -257,3 +257,27 @@ job。
 当前入口是回读已提交资料，不能把首次回读误作新提交并追罚历史；
 
 新申请表单必填由来源提交端另行落实。
+
+### 欢迎手机号私有回读
+
+`stay_contacts_host.py` 提供不注册模型工具的 `StayContactsHost`。宿主以固定 PMS
+READ 凭据和独立 Foundation HOST_TOKEN 运行； `synchronize(work_item)` 沿
+`welcome_stay_contacts`
+的 open/save/failed/status 读取服务端给出的完整候选池，最多200个订单，不按姓名截取候选。
+
+仅上传订单 id、property_id、整数 version 与完整当前 occupants 的 id/phone。
+
+形状错误或读取失败记为失败，不能填 null 或空集合伪装缺电话；当前 phone=null 原样保留，不回退历史号码。
+
+基础线群宿主的固定挂点为
+`WelcomeHost.callback(refresh_contacts=contacts.refresh_contacts)`。
+`refresh_contacts(work_item,presentation)`
+使用同一原可信消息上下文调用 open(refresh=true,presentation)，逐订单重新 GET/save 后返回脱敏 status。
+
+只有服务端 status=complete 且 scan_complete=true 才能继续原确认。
+
+读取代次不充当人类确认依据；相同业务依据继续原确认一次，实际变化由服务端拒绝。本模块不实现人员匹配、关系确认、消息发送或额外重试。
+
+`from_environment(trusted_context)`
+只接受宿主捕获的上下文，固定网关必须一致；要求现有 PMS/Foundation 本地开关及
+`QINTOPIA_APPLICATION_LOCAL_ENABLE=1`。凭据沿原 GREENPMS 配置，仍仅显式 loopback 模拟。号码和读取 token 只经私有宿主请求，不返回模型、群、日志或普通工具；停用调用入口即可停止回读，保留服务端原事项与恢复状态。

@@ -735,3 +735,38 @@ ignored，已含独立broker子进程，不另加1；最终all-features/all-targ
 
 Bridge18项对应本提交的 run_application_one
 followup_pending 分支和参数化恢复测试，既有退避、队列及旧job路径不变。没有新远端PR、push、合并、生产操作或005变更。
+
+## 手机号私有宿主增量（2026-09-25）
+
+共同基线为
+`f7e47b50e1d85c581f912f8d82ddaf26bc075ceb`；本线以 fast-forward 承接基础线欢迎切片和唯一电话接口，保留 PMS 增量草稿。实现只新增 PMS 包内私有
+`stay_contacts_host.py`，不注册模型工具。来源提交端新申请必填、服务端匹配与原消息确认由各自 owning 模块落实，本 HTTP 宿主不假称实现这些边界。
+
+定向最初9项通过，见
+`.local-workspace/anan/integration/phone-http-final.log`。使用真实 Client、loopback
+HTTP 和一项真实 Unix transport，broker 响应为模拟。
+
+覆盖23订单全池、完整住客最小投影、当前 null 不回退、错误版本与住客形状、跨物业、404/断连/重定向、READ 撤销。
+
+保存回执丢失后只查 status、确认刷新原 presentation、固定 HOST_TOKEN 与原可信消息快照、输出白名单。
+
+随后补充单订单失败仍遍历其余池、空呈现不能假作确认刷新；最终10项包含在 PMS 包原生51项中，全部通过，见
+`integration/phone-python-final.log`，不另加计数。既有 `anan-pms/client-plugin`
+目录场景自动发现新增测试文件，未修改测试框架或CI。
+
+首轮增量 auto 的 quick 层在两处 MD013 长行失败，日志
+`integration/phone-pr-auto.log`；分别为新包说明及共同基线电话接口文档的人工核对段。仅分段修复，不修改契约或门禁。使用
+`QINTOPIA_LOCAL_PR_BASE_REF=f7e47b50e1d85c581f912f8d82ddaf26bc075ceb`
+界定本增量，不重复旧支付/T07/T09范围；后续结果另记。
+
+服务端和群宿主电话增量仍待基础线稳定提交，当前10项不证明PG匹配或原确认一次完成。联合模拟验收应在实际共同SHA上补证，不将缺口改称生产待验收。未发送真实消息，未修改PMS源码、迁移、CI或生产配置。
+
+第二轮 quick 在上述报告新增长行失败，日志
+`integration/phone-pr-auto-final.log`；仅分段修复。
+
+第三轮增量 auto 通过 quick tier，见
+`integration/phone-pr-auto-third.log`。这是以上共同基线之后5文件增量的检查，不代表历史整体 heavy/apply
+smoke 已恢复。
+
+首次提交 hook 因当前 shell 未带本任务 Cargo 路径退出127，见
+`integration/phone-commit.log`。沿已准备的本地 toolchain 恢复 PATH 后重试正常 hook，不跳过检查。
