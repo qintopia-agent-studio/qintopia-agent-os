@@ -23,6 +23,8 @@ use uuid::Uuid;
 #[serde(deny_unknown_fields)]
 pub struct WelcomeSetting {
     pub mode: String,
+    /// Parts covered by this standing review/direct arrangement.
+    /// Other parts still require content review; this is not an output filter.
     pub parts: Vec<String>,
     pub phase: String,
     pub text_template: String,

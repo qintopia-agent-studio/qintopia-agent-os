@@ -48,6 +48,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.96.0
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install welcome Chinese font
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fonts-noto-cjk
       - name: Prepare local testing environment
         run: pnpm test:setup
       - name: Test harness contracts

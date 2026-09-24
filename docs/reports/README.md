@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-24 PR #720 跨平台 CI 修复](2026-09-24-pr720-ci-repair.md)
+
 - [2026-09-23 舍长标签工作台、知识与临时代理交接](2026-09-23-steward-workspace-completion.md)
 
 - [2026-09-23 本栋约定生命周期修复与本地交接](2026-09-23-rule-lifecycle-local-acceptance.md)

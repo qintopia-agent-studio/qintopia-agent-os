@@ -444,3 +444,10 @@ pnpm artifact:prune:sidecar:qiwe-production
 
 That command keeps the latest ten artifacts named
 `qintopia-message-sidecar-qiwe-production-linux-x86_64-gnu` by default.
+
+## Foundation restart ownership
+
+`skills/person-foundation/**` is owned by `hermes-erhua`. The draft `agents/anan/**`
+package is local-only and explicitly requires no production restart. Enabling a future
+Anan production profile requires a reviewed deployment and restart contract; this
+classification does not create or enable that service.

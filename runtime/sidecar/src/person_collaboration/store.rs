@@ -481,9 +481,14 @@ impl Store {
                 && old.get::<String, _>("agent_key") == a.agent
                 && old.get::<String, _>("domain_key") == a.domain
                 && old.get::<Option<Uuid>, _>("duty_id") == a.duty
-                && a.valid_from
-                    .is_none_or(|start| start == old.get::<DateTime<Utc>, _>("valid_from"))
-                && old.get::<Option<DateTime<Utc>>, _>("valid_until") == a.valid_until
+                && a.valid_from.is_none_or(|start| {
+                    start.timestamp_micros()
+                        == old.get::<DateTime<Utc>, _>("valid_from").timestamp_micros()
+                })
+                && old
+                    .get::<Option<DateTime<Utc>>, _>("valid_until")
+                    .map(|t| t.timestamp_micros())
+                    == a.valid_until.map(|t| t.timestamp_micros())
                 && old.get::<Option<Uuid>, _>("proxy_for_id") == a.proxy_for;
             if !unchanged {
                 self.end_connection(tx, actor, p, id, now).await?;
@@ -580,9 +585,11 @@ impl Store {
             .bind(&self.tenant).bind(a.person).bind(a.role).bind(a.scope).fetch_optional(&mut **tx).await?;
         let appointment = if let Some(r) = existing {
             ensure!(
-                a.valid_from
-                    .is_none_or(|start| start == r.get::<DateTime<Utc>, _>("valid_from"))
-                    && r.get::<Option<DateTime<Utc>>, _>("valid_until") == a.valid_until
+                a.valid_from.is_none_or(|start| start.timestamp_micros()
+                    == r.get::<DateTime<Utc>, _>("valid_from").timestamp_micros())
+                    && r.get::<Option<DateTime<Utc>>, _>("valid_until")
+                        .map(|t| t.timestamp_micros())
+                        == a.valid_until.map(|t| t.timestamp_micros())
                     && r.get::<Option<Uuid>, _>("proxy_for_id") == a.proxy_for,
                 "existing_term_differs"
             );

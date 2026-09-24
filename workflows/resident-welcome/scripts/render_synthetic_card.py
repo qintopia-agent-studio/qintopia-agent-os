@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Bounded, network-free synthetic renderer; not the missing legacy v10 migration."""
+import hashlib
 import io
 import json
 import os
 import sys
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 
 
 def render(material):
@@ -59,7 +60,12 @@ def render(material):
         draw.text((84, 315 + index * 39), line, font=fonts[27], fill="#e9efe9")
     draw.text((84, 622), "此卡仅含虚构资料 · 本地合成验收", font=fonts[22], fill="#a9bbae")
     output = io.BytesIO()
-    im.save(output, format="PNG", optimize=True)
+    # Different source content must invalidate approval even if a font maps it
+    # to identical glyphs (or ignores a character). Keep only a digest in metadata.
+    metadata = PngImagePlugin.PngInfo()
+    source = json.dumps(material, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    metadata.add_text("qintopia_material_sha256", hashlib.sha256(source.encode("utf-8")).hexdigest())
+    im.save(output, format="PNG", optimize=True, pnginfo=metadata)
     return output.getvalue()
 
 

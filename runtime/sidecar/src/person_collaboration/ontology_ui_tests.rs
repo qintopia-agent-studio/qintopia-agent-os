@@ -2,7 +2,7 @@
 #![cfg(feature = "postgres-integration-tests")]
 use super::{model::*, Actor, Store};
 use anyhow::{Context, Result};
-use chrono::{Duration, Utc};
+use chrono::{Duration, Timelike, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -48,8 +48,16 @@ fn scheduled(s: &Value) -> Assignment {
         agent: "erhua".into(),
         domain: "community_service".into(),
         responsibility: "未来任期本地回归".into(),
-        valid_from: Some(Utc::now() + Duration::days(1)),
-        valid_until: Some(Utc::now() + Duration::days(2)),
+        valid_from: Some(
+            (Utc::now() + Duration::days(1))
+                .with_nanosecond(123456789)
+                .unwrap(),
+        ),
+        valid_until: Some(
+            (Utc::now() + Duration::days(2))
+                .with_nanosecond(987654321)
+                .unwrap(),
+        ),
         proxy_for: None,
         actions: vec![],
         permissions: vec![PermissionSetting {

@@ -113,3 +113,9 @@ pnpm test:report
 数量；历史合成 fixtures 可能累积超过 32。保留演示库、权限上限和失败证据，使用新的本机实例与
 `qintopia_test`
 重跑完整数据库 tier，不删除旧成员或放宽权限校验。见[2026-09-23 约定生命周期检查记录](../reports/2026-09-23-rule-lifecycle-local-acceptance.md)。
+
+## 欢迎渲染与跨平台任期回归
+
+PostgreSQL 欢迎集成需显式设置
+`QINTOPIA_WELCOME_RENDER_PYTHON`，使用安装了锁定 Pillow 的解释器。Linux 测试机需安装
+`fonts-noto-cjk`，避免中文缺字造成不同文案看似相同。渲染产物还绑定输入摘要；图片像素相同不能证明原始内容相同。任期精度回归使用固定纳秒输入，覆盖 PostgreSQL 微秒读回后的编辑行为。

@@ -48,6 +48,17 @@ const assertFailure = (name, files) => {
   }
 };
 
+assertSuccess(
+  "anan-local-draft",
+  ["agents/anan/agent.yaml", "agents/anan/welcome_runtime.py"],
+  []
+);
+assertSuccess(
+  "person-foundation-tools",
+  ["skills/person-foundation/__init__.py"],
+  ["hermes-erhua"]
+);
+
 assertSuccess("docs-only", ["docs/operations/production-deploy-runner.md"], []);
 assertSuccess("nested-readme", ["deploy/runner/README.md"], []);
 assertSuccess("ci-metadata", [".github/workflows/ci.yml", "package.json"], []);

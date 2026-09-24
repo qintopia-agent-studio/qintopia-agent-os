@@ -14,6 +14,8 @@ independent_targets:
   hermes-core: hermes-core-release
 
 no_restart_paths:
+  # Draft local executor; no deployed Anan profile exists.
+  - "agents/anan/**"
   - "*.md"
   - "**/*.md"
   - "README*"
@@ -82,6 +84,7 @@ rules:
       Erhua profile, QiWe consultation, context MCP, weather, and Erhua plugin behavior.
     paths:
       - "agents/erhua/**"
+      - "skills/person-foundation/**"
       - "runtime/hermes/migrate_erhua_livecool_env.py"
       - "runtime/hermes/profile_transaction.py"
       - "runtime/hermes/render_profile_overlay.py"
