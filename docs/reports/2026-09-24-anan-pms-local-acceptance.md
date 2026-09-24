@@ -770,3 +770,60 @@ smoke 已恢复。
 
 首次提交 hook 因当前 shell 未带本任务 Cargo 路径退出127，见
 `integration/phone-commit.log`。沿已准备的本地 toolchain 恢复 PATH 后重试正常 hook，不跳过检查。
+
+### 电话宿主与欢迎服务联合验证
+
+本线正常合并 `f5d56968ac2667a03bd6177a4d97dcf872178f8d` 与电话宿主
+`0540dc7f1c474acc8e956a2fb469c51e8000077d`，共同基线为
+`8d154acec9a9614b9410ba3d2d63dd4634616570`。
+
+双方接口文档分段保留，未修改001—005或服务实现。
+
+联合测试复用 contacts 子模块已有 Fixture，隔离子进程环境，实际启动 Unix broker 与 PG。
+
+Python 调用真实 Client、StayContactsHost 和 WelcomeHost.callback；PMS
+HTTP 与群交付使用模拟，不接真实渠道。
+
+覆盖同一原确认刷新后一次完成及重放、实际号码依据变化拒绝、人工核对和原独立关系不因电话过期阻断、同人另一申请不能豁免本次复验。
+
+仅新增获准测试入口、宿主联合脚本与目录场景；实际执行结果随后记录。
+
+联合用例已通过：1 passed / 0 failed / 0
+ignored，包含五条业务路径与独立子进程，子进程和路径不重复计为测试项。
+
+见 `integration/phone-joint-third.log`。
+
+初次扫描及需电话的确认各执行 `/me`
+和固定订单 GET；同值刷新后同一原消息完成且PG只新增1份确认回执，消息重放零额外HTTP读取/回执。
+
+号码变化后旧确认被拒绝；跨申请旧关系先拒绝无刷新确认，再对实际变化拒绝原呈现。
+
+明确人工核对与精确本申请已有有效关系在电话证据过期后仍可确认，确认阶段HTTP读取为0。
+
+后者 Person 关系保持有效，前者回执明确记录 manual_source。
+
+首次只读PG预检误查默认schema的迁移表；改查 `qintopia_messages._sqlx_migrations`
+后身份/端口/迁移读取正常，见 `integration/phone-joint-preflight-verified.log`。
+
+Fixture随后沿原migrator在本任务52322测试库应用未经修改的005；没有操作52316支付库。
+
+首两轮测试就绪探针连接后立即关闭，随后观察到socket
+refused；改为等待固定无效请求的完整broker回执后通过。
+
+保留
+`integration/phone-joint-first.log`、`integration/phone-joint-second.log`，没有为测试修改服务实现。
+
+随后 contacts 整模块默认并行9 passed / 0 failed / 0 ignored，已包含联合1项，不能相加。见
+`integration/phone-joint-contacts-final.log`；父测试只转发子进程JSON证据，不重复输出libtest计数。全features/all-targets
+Clippy `-D warnings` 通过，见
+`integration/phone-joint-clippy.log`。目录新联合场景可发现，harness8项通过，见
+`integration/phone-joint-catalog.log` 和 `integration/phone-joint-harness.log`。
+
+联合后的首轮quick只在新增报告MD013长行失败，见
+`integration/phone-joint-quick.log`；仅分段修复，未改检查配置。早断就绪连接的broker退出原因未独立捕获，总指挥已交基础线现有任务隔离复现并捕获退出错误，服务修复归基础线。
+
+完整请求握手与本次业务链已通过，不据此声明服务早断连接健壮性通过。
+
+最终 quick 通过，见
+`integration/phone-joint-quick-final.log`。已在共同源码上完成本次电话私有回读与原确认五路径的本地联合交付。本切片未实现来源提交端的新申请手机号必填；回读不能替代表单提交校验。早断连接可靠性诊断由基础线继续；以上两项不混写为外部验收。真实模型、PMS响应与群渠道、发布部署仍未验收或启用。原综合auto末端的apply
+smoke URL allowlist门禁仍是独立已知限制，未放宽或重跑旧业务链。

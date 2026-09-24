@@ -657,3 +657,175 @@ async fn welcome_contacts_independent_relation_requires_exact_application_and_so
     }
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "explicit isolated PostgreSQL required"]
+async fn welcome_contacts_real_broker_private_host_and_original_confirmation() -> Result<()> {
+    // No HOST/PROFILE mutation reaches other native tests, even when run in parallel.
+    if std::env::var("QINTOPIA_CONTACTS_JOURNEY_CHILD").as_deref() != Ok("1") {
+        let output = tokio::task::spawn_blocking(|| {
+            std::process::Command::new(std::env::current_exe()?)
+                .arg("person_collaboration::welcome_review_tests::contacts::welcome_contacts_real_broker_private_host_and_original_confirmation")
+                .args(["--exact", "--ignored", "--nocapture"])
+                .env("QINTOPIA_CONTACTS_JOURNEY_CHILD", "1")
+                .output()
+        }).await??;
+        // Keep libtest's child summary out of the parent runner's count; retain full
+        // diagnostics on failure and only the journey's JSON evidence on success.
+        anyhow::ensure!(
+            output.status.success(),
+            "contacts_child_failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        for line in String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|line| line.starts_with('{'))
+        {
+            println!("{line}");
+        }
+        return Ok(());
+    }
+    for mode in ["same", "changed", "manual", "existing", "cross_application"] {
+        let f = contact_fixture().await?;
+        if matches!(mode, "existing" | "cross_application") {
+            let initial = f.deliver_contacts().await?;
+            let message = f
+                .group_text(
+                    &format!(
+                        "确认 {} 人员1 关联住宿",
+                        initial["reference"].as_str().unwrap()
+                    ),
+                    true,
+                )
+                .await?;
+            assert_eq!(
+                f.host(json!({"action":"callback"}), &message).await?["identity_confirmed"],
+                true
+            );
+            if mode == "cross_application" {
+                let other = Uuid::new_v4();
+                sqlx::query("INSERT INTO qintopia_agent_os.welcome_applications SELECT (jsonb_populate_record(NULL::qintopia_agent_os.welcome_applications,to_jsonb(a)||jsonb_build_object('id',$2::uuid,'record_ref',$3::text))).* FROM qintopia_agent_os.welcome_applications a WHERE a.id=$1").bind(f.application).bind(other).bind(format!("sim-other-{other}")).execute(&f.store.pool).await?;
+                sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET application_id=$2,version=version+1 WHERE id=$1").bind(f.case).bind(other).execute(&f.store.pool).await?;
+            }
+        }
+        let dir = tempfile::tempdir()?;
+        let socket = dir.path().join("foundation.sock");
+        let file = dir.path().join("synthetic-contacts.json");
+        let binding:Uuid=sqlx::query_scalar("SELECT binding_id FROM qintopia_agent_os.application_intake_states WHERE application_id=$1").bind(f.application).fetch_one(&f.store.pool).await?;
+        let opened = f.contacts(json!({"action":"open"}), "").await?;
+        let mut orders = Vec::new();
+        for read in opened["reads"].as_array().unwrap() {
+            orders.push(f.contact_order(read, Some("13800000000")).await?);
+        }
+        let chat: String =
+            sqlx::query_scalar("SELECT chat_id FROM qintopia_messages.conversations WHERE id=$1")
+                .bind(f.group)
+                .fetch_one(&f.store.pool)
+                .await?;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut fixture = json!({"application_work":opened["work_item"],"orders":orders,
+            "context":{"platform":"wecom","chat_type":"group","chat_id":chat,
+                "sender_id":"synthetic-service-account","message_id":"","gateway_id":f.gateway}});
+        for (key, value) in [
+            (
+                "QINTOPIA_FOUNDATION_SOCKET",
+                socket.to_string_lossy().into_owned(),
+            ),
+            (
+                "QINTOPIA_FOUNDATION_TOKEN",
+                Uuid::new_v4().simple().to_string(),
+            ),
+            (
+                "QINTOPIA_FOUNDATION_HOST_TOKEN",
+                Uuid::new_v4().simple().to_string(),
+            ),
+            ("QINTOPIA_FOUNDATION_GATEWAY_ID", f.gateway.clone()),
+            ("QINTOPIA_FOUNDATION_PROFILE", "anan".into()),
+            ("QINTOPIA_FOUNDATION_LOCAL_ENABLE", "1".into()),
+            ("QINTOPIA_PMS_LOCAL_ENABLE", "1".into()),
+            ("QINTOPIA_APPLICATION_LOCAL_ENABLE", "1".into()),
+            ("QINTOPIA_APPLICATION_BINDING", binding.to_string()),
+            (
+                "QINTOPIA_APPLICATION_RESOURCE_ALIAS",
+                "resident-application".into(),
+            ),
+            ("ANAN_CONTACTS_REPO", root.to_string_lossy().into_owned()),
+            ("ANAN_CONTACTS_FIXTURE", file.to_string_lossy().into_owned()),
+        ] {
+            std::env::set_var(key, value);
+        }
+        let store = Store {
+            pool: f.store.pool.clone(),
+            tenant: f.store.tenant.clone(),
+        };
+        let broker = tokio::spawn(super::super::foundation_server::broker(store));
+        let outcome:Result<()>=async {
+            tokio::time::timeout(std::time::Duration::from_secs(5),async {
+                loop {
+                    if let Ok(stream)=tokio::net::UnixStream::connect(&socket).await {
+                        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+                        let (read,mut write)=stream.into_split();
+                        write.write_all(b"{}\n").await?;
+                        let mut line=String::new();
+                        BufReader::new(read).read_line(&mut line).await?;
+                        anyhow::ensure!(serde_json::from_str::<Value>(&line)?["ok"]==false,"broker_readiness_failed");
+                        return Ok::<(),anyhow::Error>(());
+                    }
+                    tokio::task::yield_now().await;
+                }
+            }).await??;
+            std::fs::write(&file,serde_json::to_vec(&fixture)?)?;
+            run_contacts_journey("prime").await?;
+            let prepared=f.deliver_contacts().await?;
+            let message=f.group_text(&format!("确认 {} 人员1 关联住宿{}",prepared["reference"].as_str().unwrap(),if mode=="manual" {" 人工核对"}else{""}),true).await?;
+            fixture["context"]["message_id"]=json!(message);
+            if matches!(mode,"manual"|"existing") {
+                // Expiration is RFC3339 evidence only; it never revokes identity.
+                sqlx::query("UPDATE qintopia_agent_os.work_items SET metadata=jsonb_set(metadata,'{welcome_contact_read_v1,expires}',to_jsonb($2::text)) WHERE id=$1")
+                    .bind(Uuid::parse_str(opened["work_item"].as_str().unwrap())?)
+                    .bind((Utc::now()-Duration::minutes(10)).to_rfc3339()).execute(&f.store.pool).await?;
+                assert_ne!(f.contacts(json!({"action":"status"}),"").await?["status"],"complete");
+            }
+            if matches!(mode,"changed"|"cross_application") {
+                for order in fixture["orders"].as_array_mut().unwrap() {
+                    for occupant in order["occupants"].as_array_mut().unwrap() {occupant["phone"]=json!("13900000000");}
+                }
+            }
+            std::fs::write(&file,serde_json::to_vec(&fixture)?)?;
+            let before:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.welcome_review_receipts WHERE work_item_id=$1").bind(f.work).fetch_one(&f.store.pool).await?;
+            run_contacts_journey(mode).await?;
+            let after:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.welcome_review_receipts WHERE work_item_id=$1").bind(f.work).fetch_one(&f.store.pool).await?;
+            assert_eq!(after-before,if matches!(mode,"changed"|"cross_application"){0}else{1},"{mode}");
+            if mode=="manual" {
+                let basis:String=sqlx::query_scalar("SELECT effects->>'identity_basis' FROM qintopia_agent_os.welcome_review_receipts WHERE work_item_id=$1 ORDER BY created_at DESC LIMIT 1").bind(f.work).fetch_one(&f.store.pool).await?;
+                assert_eq!(basis,"manual_source");
+            }
+            if mode=="existing" {
+                let person:Option<Uuid>=sqlx::query_scalar("SELECT person_id FROM qintopia_agent_os.welcome_cases WHERE id=$1").bind(f.case).fetch_one(&f.store.pool).await?;
+                assert_eq!(person,Some(f.person));
+            }
+            Ok(())
+        }.await;
+        broker.abort();
+        let _ = broker.await;
+        outcome?;
+    }
+    Ok(())
+}
+
+async fn run_contacts_journey(mode: &str) -> Result<()> {
+    let mode = mode.to_owned();
+    let status = tokio::task::spawn_blocking(move || {
+        std::process::Command::new("python3")
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../skills/pms-operations/tests/stay_contacts_broker_journey.py"
+            ))
+            .arg(mode)
+            .status()
+    })
+    .await??;
+    anyhow::ensure!(status.success(), "contacts_python_journey_failed");
+    Ok(())
+}

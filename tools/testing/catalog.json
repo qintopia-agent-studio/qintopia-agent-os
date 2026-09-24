@@ -3505,6 +3505,29 @@
             "real": ["共同服务规则、权限、事项元数据、尝试及PG事务"],
             "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
           }
+        },
+        {
+          "id": "anan-pms/private-contacts-real-broker-original-confirmation",
+          "name": "私有电话宿主与原确认联合链",
+          "aliases": ["电话复验联合"],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_contacts_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::contacts::welcome_contacts_real_broker_private_host_and_original_confirmation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "私有PMS Client、Unix传输、服务PostgreSQL、WelcomeHost原消息确认与重放"
+            ],
+            "simulated": ["本机PMS HTTP响应、群交付和模拟身份；无真实渠道或生产"]
+          }
         }
       ]
     }
