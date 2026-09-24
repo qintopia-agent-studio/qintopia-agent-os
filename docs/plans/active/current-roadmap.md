@@ -40,11 +40,31 @@ the morning of 2026-09-24 (Asia/Shanghai). Follow the
 [closeout handoff](../../reports/2026-09-23-ontology-ui-local-acceptance.md#工程交付与次日验收2026-09-23)
 for the fixed code, preserved local evidence and outstanding real integrations.
 
+Front-desk scope clarification (2026-09-23): the owner defines community life experience
+and community co-creation as broad domains. Nearby recommendations and issue follow-up
+are examples, not the model boundary. Preserve member initiative and connect shared
+memory back to useful service, voluntary participation and actual outcomes. Read the
+[updated business model](../../agent-os/community-business-model.md#11-二花通过互动收集信息与积累社区记忆)
+before continuing the draft implementation. Member-facing UI organization remains a
+proposal; this documentation update does not establish implemented features.
+
 The
 [Erhua and Anan history review](../../reports/2026-09-22-erhua-anan-history-review.md)
 also preserves the full room-booking collaboration goal and the deferred evaluation of
 Erhua's answer-quality improvement. They are not new prerequisites for C/D. Future
 payment integration reuses PMS-owned synchronization and matching.
+
+Latest Anan/PMS clarification (2026-09-24): implement conversational PMS operations
+first as Anan-owned Skill/plugin tools with a PMS client, reusing Agent OS identity,
+authorization, tasks and execution records. Events and a new shared Adapter service are
+not prerequisites. Green PMS supplies payment events from its worker; move-in
+applications originate in Feishu Base and enter through the existing Workflow/Bridge.
+Link sources into a case only with reliable evidence; preserve Silaoshi's
+responsibilities when adding Anan's application consumer. The current local welcome
+package and a connected Hermes Gateway do not prove PMS access. Follow the
+[Anan room collaboration development plan](anan-pms-event-integration.md) and
+[new development conversation handoff](anan-pms-development-handoff.md) for phased work,
+recovery requirements and acceptance gates.
 
 The monorepo migration and server cleanup phases are complete. The historical execution
 log is archived at

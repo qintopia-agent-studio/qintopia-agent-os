@@ -72,6 +72,9 @@ mod nats_connection;
 mod operations;
 mod operations_intake;
 pub mod person_collaboration;
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+#[path = "../../../skills/pms-operations/tests/broker_driver.rs"]
+mod pms_local_journey_tests;
 #[cfg_attr(not(feature = "xiaoman-feishu-poster-adapter"), allow(dead_code))]
 mod poster_delivery;
 #[cfg_attr(

@@ -54,6 +54,8 @@ pub const ACTIONS: &[&str] = &[
     "identity",
     "manage",
     "technical_support",
+    "read_business",
+    "execute_business",
 ];
 pub const DOMAINS: &[&str] = &[
     "community_service",

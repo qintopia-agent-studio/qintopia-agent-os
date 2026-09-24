@@ -15,6 +15,9 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-24.001`:
+  [Business operation execution](2026-09-24-business-operation-execution.md)
+
 - `2026-09-23.009`: [Steward review delegation](2026-09-23-steward-review-delegation.md)
 
 - `2026-09-23.008`: [Scoped text-rule lifecycle](2026-09-23-person-rule-lifecycle.md)

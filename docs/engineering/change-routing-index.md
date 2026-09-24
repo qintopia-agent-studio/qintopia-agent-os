@@ -107,10 +107,15 @@ successful deploy may have restarted only some targets. When workflow logs canno
 a target-specific live baseline, the workflow falls back to the previous published
 Release tag for that target.
 
-When adding an Agent, add `runtime.restart_target` and `runtime.systemd_user_service` to
-`agents/<agent>/agent.yaml`, then add the matching deploy request schema entry, smoke
-restart case, restart rule, and contract tests in the same PR. Do not add a new profile
-package without this deployable restart contract.
+When adding a managed Agent, add `runtime.restart_target` and
+`runtime.systemd_user_service` to `agents/<agent>/agent.yaml`, then add the matching
+deploy request schema entry, smoke restart case, restart rule, and contract tests in the
+same PR. Do not add a new managed profile package without this deployable restart
+contract. An explicit `runtime.management: unmanaged` registers capability identity
+only, retains all other package checks and must not enter managed production lists. It
+does not mean the live Profile is absent and does not bypass source-path release
+ownership or unmatched-path checks. See the
+[package contract](package-contract.md#agent-identity-and-managed-runtime).
 
 ## File-Level Anchors
 

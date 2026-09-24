@@ -68,3 +68,10 @@ entries:
     notes:
       Local-only trusted tools for shared Person, scoped rules, memory and persisted
       Agent work.
+  - id: skills/pms-operations
+    path: skills/pms-operations
+    manifest: skills/pms-operations/manifest.yaml
+    status: draft
+    notes:
+      Anan-only local PMS operations; shared authority and production gates remain
+      distinct.

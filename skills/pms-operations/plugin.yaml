@@ -1,0 +1,26 @@
+name: pms-operations
+label: 岸岸 PMS 客房协作
+kind: standalone
+version: 0.1.0
+description:
+  Local-only Anan PMS tools with shared Person authority and durable recovery.
+provides_tools:
+  - qintopia_pms_read
+  - qintopia_pms_prepare
+  - qintopia_pms_execute
+  - qintopia_pms_recover
+  - qintopia_pms_status
+  - qintopia_pms_pause
+  - qintopia_pms_resume
+  - qintopia_pms_cancel
+  - qintopia_pms_handoff
+  - qintopia_pms_reconcile
+provides_hooks:
+  - pre_gateway_dispatch
+optional_env:
+  - name: GREENPMS_BASE_URL
+    description: Explicit synthetic loopback PMS endpoint; no production URL accepted.
+    password: false
+  - name: GREENPMS_API_TOKEN
+    description: Synthetic local PMS token; never returned by tools.
+    password: true

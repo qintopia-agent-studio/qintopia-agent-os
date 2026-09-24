@@ -2930,17 +2930,80 @@ if (
   );
 }
 
+const assertUnmanagedAgent = (entry, manifest) => {
+  const id = entry.id.replace(/^agents\//, "");
+  const target = `hermes-${id}`;
+  const service = `hermes-gateway-${id}.service`;
+  const runtime = manifest.runtime ?? {};
+  if (Object.keys(runtime).some((key) => key !== "management")) {
+    addError(`${entry.manifest}: unmanaged Agent must not declare deployment fields`);
+  }
+  const profiles = readYaml("runtime/hermes/profile-registry.yaml").profiles ?? [];
+  const rules = readYaml("deploy/restart-target-rules.yaml");
+  const schema = JSON.parse(readText("deploy/runner/deploy-request.schema.json"));
+  const inProfile = profiles.some(
+    (p) =>
+      p.id === id ||
+      p.agent_manifest === entry.manifest ||
+      p.systemd_user_service === service
+  );
+  const inRules =
+    (rules.allowed_targets ?? []).includes(target) ||
+    (rules.rules ?? []).some(
+      (r) =>
+        r.target === target ||
+        (r.paths ?? []).some(
+          (pattern) =>
+            pattern.startsWith(`${entry.path}/`) ||
+            [
+              entry.manifest,
+              `${entry.path}/profile.template.yaml`,
+              `${entry.path}/__init__.py`,
+            ].some((file) => path.matchesGlob(file, pattern))
+        )
+    );
+  const inSchema = JSON.stringify(schema).includes(`"${target}"`);
+  const inSmoke =
+    readText("deploy/runner/smoke-release.sh").includes(`${target})`) ||
+    readText("deploy/runner/smoke-release.sh").includes(service);
+  const inPayload = readText("tools/deploy/build-deploy-bundle.mjs").includes(
+    `"${entry.path}`
+  );
+  if (inProfile || inRules || inSchema || inSmoke || inPayload) {
+    addError(
+      `${entry.manifest}: unmanaged Agent must not enter managed production lists`
+    );
+  }
+};
+
 const agentRegistry = exists("registry/agents.yaml")
   ? readYaml("registry/agents.yaml")
   : { entries: [] };
 for (const entry of agentRegistry.entries ?? []) {
   if (entry.id === "agents/default") {
+    if (
+      entry.manifest &&
+      exists(entry.manifest) &&
+      readYaml(entry.manifest).runtime?.management === "unmanaged"
+    ) {
+      addError(`${entry.manifest}: default runtime contract is unchanged`);
+    }
     continue;
   }
   if (!entry.manifest || !exists(entry.manifest)) {
     continue;
   }
   const agentManifest = readYaml(entry.manifest);
+  if (agentManifest.runtime?.management === "unmanaged") {
+    assertUnmanagedAgent(entry, agentManifest);
+    continue;
+  }
+  if (
+    agentManifest.runtime?.management !== undefined &&
+    agentManifest.runtime.management !== "managed"
+  ) {
+    addError(`${entry.manifest}: unknown runtime management`);
+  }
   const target = agentManifest.runtime?.restart_target;
   const service = agentManifest.runtime?.systemd_user_service;
   if (!target || !service) {
