@@ -2150,6 +2150,157 @@
           }
         }
       ]
+    },
+    {
+      "id": "anan-pms",
+      "name": "岸岸客房受控办理",
+      "aliases": ["岸岸PMS", "PMS办理"],
+      "scenarios": [
+        {
+          "id": "anan-pms/client-plugin",
+          "name": "受控客户端和可信宿主工具边界",
+          "aliases": [],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/pms-operations/tests",
+            "args": ["-v"],
+            "count_strategy": "unittest"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["客户端协议、插件参数、宿主证据与输出裁剪"],
+            "simulated": ["loopback HTTP 响应及宿主事件；不调用真实模型或渠道"]
+          }
+        },
+        {
+          "id": "anan-pms/empty-exact-scope-and-cross-property-fail-closed",
+          "name": "空权限、跨物业与撤权拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_empty_exact_scope_and_cross_property_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
+            "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/host-evidence-confirmation-and-concurrent-claim",
+          "name": "可信确认与并发执行抢占",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_host_evidence_confirmation_and_concurrent_claim",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
+            "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/restart-unknown-reuses-key-and-preserves-independent-results",
+          "name": "重启恢复与独立业务动作",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_restart_unknown_reuses_key_and_preserves_independent_results",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
+            "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/confirmation-cannot-survive-grant-expiry",
+          "name": "确认不能跨授权到期",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_confirmation_cannot_survive_grant_expiry",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
+            "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/natural-confirmation-pause-resume-cancel-and-ambiguity",
+          "name": "自然确认、歧义、暂停恢复和取消",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_natural_confirmation_pause_resume_cancel_and_ambiguity",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
+            "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/delegation-cannot-expand-and-parent-revocation-propagates",
+          "name": "子集委派与父授权撤销",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_delegation_cannot_expand_and_parent_revocation_propagates",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
+            "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
+          }
+        }
+      ]
     }
   ],
   "gaps": [

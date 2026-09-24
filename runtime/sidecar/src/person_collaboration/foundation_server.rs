@@ -70,6 +70,26 @@ pub(super) async fn dispatch(
         )?;
     }
     match path {
+        "/api/foundation/business/authorize" => {
+            let a: Value = serde_json::from_slice(body)?;
+            only_keys(&a, &["binding", "operation"])?;
+            Ok(serde_json::to_value(
+                store
+                    .business_authorize(
+                        actor,
+                        serde_json::from_value(a["binding"].clone())?,
+                        a["operation"].as_str().unwrap_or(""),
+                    )
+                    .await?,
+            )?)
+        }
+        "/api/foundation/business/delegate" => {
+            let a: Value = serde_json::from_slice(body)?;
+            only_keys(&a, &["target_grant", "binding", "operation", "until"])?;
+            Ok(
+                json!({"operation_grant":store.business_delegate(actor,serde_json::from_value(a["target_grant"].clone())?,serde_json::from_value(a["binding"].clone())?,a["operation"].as_str().unwrap_or(""),serde_json::from_value(a["until"].clone())?).await?}),
+            )
+        }
         "/api/foundation/state" => {
             let person = store.verified_person(actor).await?;
             let welcome = crate::resident_welcome::store::Store {
@@ -1033,7 +1053,19 @@ pub(super) async fn broker(store: Store) -> Result<()> {
         raw.zeroize();
         let result = match parsed {
             Ok(request) => {
-                if !super::digest(request.token.as_bytes()).eq(&super::digest(token.as_bytes())) {
+                let expected = if request.operation == "person_foundation_ingress" {
+                    std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")
+                        .ok()
+                        .filter(|v| {
+                            (32..=256).contains(&v.len())
+                                && super::digest(v.as_bytes()) != super::digest(token.as_bytes())
+                        })
+                } else {
+                    Some(token.to_string())
+                };
+                if !expected.as_ref().is_some_and(|value| {
+                    super::digest(request.token.as_bytes()) == super::digest(value.as_bytes())
+                }) {
                     Err(anyhow::anyhow!("authentication_required"))
                 } else {
                     broker_invoke(&store, &gateway, &profile, request).await
@@ -1058,10 +1090,46 @@ pub(super) async fn broker_invoke(
     r: ToolRequest,
 ) -> Result<Value> {
     ensure!(
-        r.operation == "person_foundation_tool" && r.schema_version == 1 && r.agent == profile,
+        matches!(
+            r.operation.as_str(),
+            "person_foundation_tool" | "person_foundation_ingress"
+        ) && r.schema_version == 1
+            && r.agent == profile,
         "agent_tool_denied"
     );
     let t = r.trusted_context;
+    if r.operation == "person_foundation_ingress" {
+        ensure!(
+            profile == "anan" && r.tool == "pms_capture" && t.gateway_id == gateway,
+            "agent_tool_denied"
+        );
+        only_keys(&r.arguments, &["text"])?;
+        let turn = super::store::business::HostTurn {
+            platform: t.platform,
+            chat_type: t.chat_type,
+            chat_id: t.chat_id,
+            sender_id: t.sender_id,
+            message_id: t.message_id,
+            text: r.arguments["text"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("invalid_arguments"))?
+                .into(),
+        };
+        return store.business_capture_turn(gateway, &turn).await;
+    }
+    if r.tool.starts_with("pms_") {
+        ensure!(
+            profile == "anan"
+                && t.gateway_id == gateway
+                && t.platform == "wecom"
+                && matches!(t.chat_type.as_str(), "direct" | "group"),
+            "agent_tool_denied"
+        );
+        let actor = store.gateway_actor(gateway, &t.sender_id).await?;
+        return store
+            .business_invoke(&actor, &t.message_id, &t.chat_id, &r.tool, &r.arguments)
+            .await;
+    }
     ensure!(
         t.gateway_id == gateway
             && t.platform == "qiwe"

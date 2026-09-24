@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-24 岸岸 PMS 本地实施与验收](2026-09-24-anan-pms-local-acceptance.md)
+
 - [2026-09-24 岸岸架构与并行开发评审](2026-09-24-anan-architecture-parallel-review.md)
 
 - [2026-09-24 岸岸客房协作开发计划](../plans/active/anan-pms-event-integration.md)及

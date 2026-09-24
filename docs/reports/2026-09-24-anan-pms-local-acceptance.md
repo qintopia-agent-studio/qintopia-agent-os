@@ -1,0 +1,126 @@
+# 岸岸 PMS 本地实施与验收记录
+
+日期：2026-09-24。分支 `codex/anan-pms-collaboration`，基线
+`b42db0d8b8388c65dcf62c1f1fd41a7325298c5e`，规格继承提交
+`adff875`。本报告随阶段验证更新；未完成项不记为通过。
+
+## 范围与当前实现
+
+- 按已批准 A 方案登记 `agents/anan`
+  为 unmanaged；schema、两检查器和状态回归更新在批准范围内。缺省 managed 和现有七个 Agent 的生产要求保留；unmanaged 校验无部署字段且未进入已核对生产清单。
+- `skills/pms-operations` 包含有限目录、官方 Hermes
+  Plugin、受控 loopback 客户端和宿主入口。固定目标、不追重定向、不继承代理、不接受模型提供人员、批准、物业或幂等键。PMS
+  `/me` 只证明执行主体上限。
+- 共同服务增加 `read_business` / `execute_business`
+  精确操作范围，沿既有 Person、任职和授权链验证。缺省无操作；委派只能是自身当前权限子集；物业、任期、身份、撤权和祖先链每次检查。
+- WorkItem 下分别记录报价、预览和执行；每个动作独立的请求、预览、执行、恢复键和回执。失联后查原键/resolve；已成功步骤不重放；WorkItem 汇总独立动作状态。
+- 自然确认绑定同人、同会话内唯一当前方案，不要求复制长编码。完整普通整间预订或当笔收款交办可按受限中文语义逐项对照最终 PMS 效果后复用，无二次机械确认。
+
+  每笔收款均需有权人对订单、流水、金额的明确决定，长期授权和事件不替代。不完整/不支持的语言保持待确认；不让模型解释文本产生批准。
+
+- 暂停、取消、恢复与人工接手保留原账本。在途先核对，不暗中撤销 PMS 事实。人工完成的入住/退房/取消，需可信原会话的订单引用和实际 PMS 状态回读，记为
+  `manual_completed`，不伪造插件执行回执。其他命令人工接手的效果核验尚未自动收口。
+- 新迁移 `202609240001_business_operation_execution.sql`
+  不修改旧迁移、不为旧人员赋权。feed 表仅是后续持久入口，未因此宣称消费者或真实推送完成。
+
+## 已有验证证据
+
+所有测试使用本任务模拟资料；无真实 PMS 写入或消息发送。
+
+| 检查                            | 实际结果与边界                                                                                                                                                                                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A 状态回归                      | `pnpm agents:check` 通过，运行两个真实检查器的正常/非法状态；覆盖 Profile、restart path、请求枚举、smoke 和 payload 污染                                                                                                                        |
+| registry / profile bundles      | `pnpm registry:check`、`node tools/agents/check-profile-bundles.mjs` 通过                                                                                                                                                                       |
+| 客户端/插件                     | 17 项 unittest 通过；模拟 HTTP、宿主事件与授权边界，非真实模型                                                                                                                                                                                  |
+| 共同服务持久化                  | 6 项 PostgreSQL 测试通过；已按仓库契约标为显式数据库用例，跨仓联测移至技能包独立入口。包含委派、父撤权、自然确认歧义、暂停恢复取消、并发领取与重启恢复                                                                                          |
+| PMS HTTP 子链                   | 未修改 Green PMS `0254fbabdda0b76b56370248f2ad24e44e4e950a`，实际 HTTP 查权/查房/报价/预览/建单/订单回读/原键恢复通过；不把 Token 权限称为人类授权                                                                                              |
+| 首批完整本地链                  | 独立 opt-in 1 passed：官方 Hermes ContextVar、模拟 WeCom 宿主、真实 Unix broker、Person 精确授权、持久确认、插件、真实 PMS HTTP；覆盖原交办复用、自然收款确认、重复防护与入住回读                                                               |
+| 扩大后的完整联测                | 1 passed，实际官方 PluginContext/registry 注册并调用工具；失联收款原键恢复、明确当笔收款指令复用、改期/续住/换房、人工入住接手回读通过；入住当天缩住、提前普通退房按 PMS 规则拒绝，记 preview_rejected。尚未验证跨营业日缩住/普通退房的成功路径 |
+| 其他共同授权/欢迎及全库 PR 检查 | auto 的 light 层通过；3.12 下 runtime、两个 adapter 边界及两组禁止警告 Clippy 通过；all-features 866 passed / 130 ignored；PG Rust 用例通过，最后 apply smoke 因既有 URL allowlist 受阻                                                         |
+
+环境：Agent OS 与 PMS 分别使用专用 PG17 实例，端口 `52316` / `52319`；数据库都为
+`qintopia_test` 但实例不同。PMS 通过原 `run-database-test-suite.ts`
+测试锁启动。官方 Hermes 只读 checkout 为
+`d337b736aa1e8ebecfab043842d13e4a2d2f48a3`；本任务独立 Python
+3.12 环境，未修改源码或用户 Profile。宿主读取该版本 `_VAR_MAP`
+中当前任务已绑定的 ContextVar；接口缺失/未绑定即拒绝，禁止环境回退。
+`session_context_engaged()` 只是进程级标记，不能单独证明当前任务有可信会话。
+
+RTK 当前不可用，实际使用原生命令。PG17 结果不代表 PG18 全套测试或生产验收。原始本地日志在本 worktree
+`.local-workspace/anan/`，不纳入 Git。
+
+PR 准备：`pnpm pr:doctor` 通过，提示尚无 upstream、工作区未提交；初始正文草稿通过
+`pnpm pr:check-body` 的本地事件输入验证。统一目录 `pnpm test:harness`
+8 项通过；跨仓测试使用独立入口，PG 用例仍由既有全库 PG
+tier 执行，不能因 ignore 标记被跳过后误记通过。
+
+## 全库分层检查记录
+
+首次 `pnpm check:pr:auto`：退出 1；`check:light` 已完整通过，失败发生在误用系统 Python
+3.9 的 QiWe 运行时测试。后续按原 runner 定义接续，不重复未受改动影响的部署层。
+
+| 命令/层                                                              | 环境                                                 | 退出码与结果                                                                                                |
+| -------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `pnpm check:runtime`                                                 | Python 3.12.14、Rust 1.96.0；无 PG URL / apply-smoke | 0；QiWe 326 项（1 原有跳过），Rust 851 passed / 2 ignored，两个 CLI smoke 通过                              |
+| 两项 `qiwe-staging-adapter` / `qiwe-production-adapter` 精确编译边界 | Rust 1.96.0；无 PG 环境                              | 均为 0，各 1 passed                                                                                         |
+| `cargo clippy --all-targets --no-default-features -- -D warnings`    | Rust 1.96.0                                          | 0                                                                                                           |
+| `cargo clippy --all-targets --all-features -- -D warnings`           | Rust 1.96.0                                          | 0                                                                                                           |
+| `cargo test --all-features`                                          | 无 PG URL / apply-smoke                              | 0；866 passed / 130 ignored，PG 前置用例由下一层执行                                                        |
+| `pnpm check:pr:postgres`                                             | 本任务 PG17 / 52316 / qintopia_test                  | 1；显式 Rust PG 用例通过（person_collaboration 77、welcome 24）；最后 apply smoke 被既有 URL allowlist 拦截 |
+
+Cargo 命令均指定 `--manifest-path runtime/sidecar/Cargo.toml`，测试栈为
+`RUST_MIN_STACK=33554432`。Python 路径为本任务独立 venv；未更改系统默认解释器。日志分别为
+`.local-workspace/anan/check-pr-auto-python39.log`、`check-runtime.log`、
+`heavy-remainder.log`、`full-chain-final.log`。这些日志不含业务凭据，不纳入 Git。
+
+## 失败、修复与运行约束
+
+1. 首轮新测试并发建空 schema 发生冲突；测试初始化改为进程内一次性执行加数据库 advisory
+   lock，防不同测试进程同时初始化；不改生产迁移执行器。
+2. 新业务 action 未扩展角色/职责数组约束，导致模拟 bootstrap 拒绝；补入同一新迁移，不改变已有授权行。
+3. A 新测试的临时仓库根目录为 `0700`，既有 canary 要求
+   `0755`；仅修临时 fixture 权限，未削弱原门禁。
+4. PMS 实际预览和查询有超过 5 秒的请求；客户端改为有界 30 秒。超时保留原键，不能换键或声称未执行。
+5. 完整联测最初使用系统 Python 3.9，无法导入 Hermes；改用独立 Python
+   3.12 与该版本声明依赖。
+6. 扩展测试将续住放在入住前，PMS 按真实规则拒绝；调整业务顺序，保留未执行事项，不修改 PMS 规则。
+7. 并行重型检查期间曾出现已提交预览的响应超时，以及 PMS 测试锁 process
+   snapshot 临时失败；保留日志和持久原键。联测对未知预览沿原键重取；`PREVIEW:<command>`
+   是内部账本类型，不在公开恢复接口枚举内。执行才查结果/resolve，明确预览拒绝另记
+   `preview_rejected`，不伪造 PMS 回执。重型部署检查与联合业务测试顺序执行。
+
+8. 完整检查最先被新增文档的 Markdown 行长和标题问题拦截；已修复，Markdown 检查通过。
+9. 新 PG 用例起初未声明显式数据库前置条件，跨仓测试也位于通用 PG 模块内。按既有契约整理用例标记；跨仓入口由技能包持有并单独经 PMS 测试锁启动，未修改 CI 门禁。
+10. 插件恢复暂停方案后原先停在 draft，未继续预览；修复为重新预览并等待新确认。增加进程中断于 draft 的恢复回归，17 项 Python 测试通过。最新独立完整链已复跑：1
+    passed / 0 ignored，实际持久结果和 PMS 回读通过。
+
+11. `check:pr:auto` 的 light 层全部通过后，运行时层误用了系统 Python
+    3.9，QiWe 测试报 5 项语法/事件循环错误。切换本任务 Python 3.12 后 QiWe
+    326 项测试通过（1 项原有跳过）。按原定义继续运行 runtime、feature 边界、Clippy、all-features 和 PostgreSQL
+    tier，不重复已通过的部署层，不把单次 auto 记为全绿。
+
+12. PG tier 的最后 `operations-control-plane-apply-smoke.sh` 被
+    `database URL hash is not in the reviewed allowlist`
+    拦截，随后的 JSONDecodeError 是缺少成功 JSON 的次生错误。代码先检查完整 URL 哈希，才检查 loopback
+    `qintopia_test`；现有两项哈希均为历史获批 staging，无法合法用于本任务随机端口隔离库。未修改 allowlist、CI 或门禁，未寻找 staging 凭据；此前 PG
+    Rust 用例全部通过，不把整个 PG
+    tier 记为通过。后续由维护者独立评审一次性测试数据库契约。
+
+这些是本地集成失败和修复记录，不是生产故障。实际 PMS 拒绝应以稳定错误码/回执处理，不能复述含隐私的响应正文。
+
+## 发布和后续边界
+
+- 未改 resolver、restart rules、安装 payload、生产 Profile
+  registry、workflow 或 job。新包非文档路径仍属于 unmatched
+  production-adjacent；发布阻断保留，不能把 unmanaged 当发布豁免。
+- [收款首次基线提案](../plans/active/anan-payment-feed-baseline-proposal.md)要求已提交源 head。
+  `occurredAt=now()`
+  是源事务开始时间，不可过滤启用前晚提交事件；一页尾游标不是 head。首次序号起点已获用户同意；接口及主动通知归 PMS 项目。原参考 PMS 基线没有该只读接口；发送方现已提交
+  `608c53b`，本线已只读核对路由与响应类型。发送方回报 PG18.6 专项 16/16 通过；本线接收与联合验证尚未完成，不跨仓改源代码。
+- 飞书原链在 `workflows/silaoshi-daily-ops` 官方 transform/Bridge；参考 Feishu
+  Base 空目录不是缺失入口证据。原新增触发已定位，修订/撤回与当前生产绑定待核验，不启动旧制卡直发、不另建扫描器。
+- 按[双线协调记录](../plans/active/agent-os-dual-track-coordination.md)，身份/欢迎群与 UI 归基础线。
+
+  本线仅接住宿事实、可靠申请引用和既有 WorkItem，等待明确公共接口；欢迎内容确认不授予 PMS 操作权限。
+
+- 真实 Livecool 模型、专属 Bot、主动工作群能力、实际操作者权限、生产 PMS、欢迎发布与 T14 均未验收。当前未 SSH、读取生产凭据、发布、部署、合并或外发。

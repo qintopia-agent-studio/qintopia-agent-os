@@ -100,19 +100,36 @@
       }
     },
     "runtime": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["restart_target", "systemd_user_service"],
-      "properties": {
-        "restart_target": {
-          "type": "string",
-          "pattern": "^hermes-[a-z0-9][a-z0-9-]*$"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["restart_target", "systemd_user_service"],
+          "properties": {
+            "restart_target": {
+              "type": "string",
+              "pattern": "^hermes-[a-z0-9][a-z0-9-]*$"
+            },
+            "systemd_user_service": {
+              "type": "string",
+              "pattern": "^hermes-gateway-[a-z0-9][a-z0-9-]*\\.service$"
+            },
+            "management": {
+              "const": "managed"
+            }
+          }
         },
-        "systemd_user_service": {
-          "type": "string",
-          "pattern": "^hermes-gateway-[a-z0-9][a-z0-9-]*\\.service$"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["management"],
+          "properties": {
+            "management": {
+              "const": "unmanaged"
+            }
+          }
         }
-      }
+      ]
     },
     "dependencies": {
       "type": "array",
@@ -138,5 +155,42 @@
         "minLength": 1
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "agent"
+          },
+          "id": {
+            "not": {
+              "const": "agents/default"
+            }
+          }
+        },
+        "required": ["type", "id"]
+      },
+      "then": {},
+      "else": {
+        "properties": {
+          "runtime": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["restart_target", "systemd_user_service"],
+            "properties": {
+              "restart_target": {
+                "type": "string",
+                "pattern": "^hermes-[a-z0-9][a-z0-9-]*$"
+              },
+              "systemd_user_service": {
+                "type": "string",
+                "pattern": "^hermes-gateway-[a-z0-9][a-z0-9-]*\\.service$"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

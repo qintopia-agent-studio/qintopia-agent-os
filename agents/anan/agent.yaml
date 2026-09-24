@@ -1,0 +1,35 @@
+id: agents/anan
+type: agent
+name: 岸岸
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description: Room collaboration identity using governed PMS operations in Hermes.
+source:
+  path: docs/plans/active/anan-pms-event-integration.md
+  reference: confirmed-2026-09-24
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+runtime:
+  management: unmanaged
+validation:
+  commands:
+    - pnpm agents:check
+    - pnpm registry:check
+    - python3 -m unittest discover -s skills/pms-operations/tests -v
+dependencies:
+  - skills/pms-operations
+  - skills/person-foundation
+  - workflows/resident-welcome
+tags:
+  - agent
+  - hospitality
+  - hermes
+next_actions:
+  - Validate the synthetic local dialogue and shared authority chain.
+  - Review production ownership, token isolation and actual model/channel acceptance
+    independently; preserve the existing user Profile.

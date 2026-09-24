@@ -28,6 +28,52 @@ const requireNonEmptyArray = (file, template, field) => {
   }
 };
 
+const assertUnmanagedAgent = (entry, manifest) => {
+  const id = entry.id.replace(/^agents\//, "");
+  const target = `hermes-${id}`;
+  const service = `hermes-gateway-${id}.service`;
+  const runtime = manifest.runtime ?? {};
+  if (Object.keys(runtime).some((key) => key !== "management")) {
+    addError(`${entry.manifest}: unmanaged Agent must not declare deployment fields`);
+  }
+  const profiles = readYaml("runtime/hermes/profile-registry.yaml").profiles ?? [];
+  const rules = readYaml("deploy/restart-target-rules.yaml");
+  const schema = JSON.parse(readText("deploy/runner/deploy-request.schema.json"));
+  const inProfile = profiles.some(
+    (p) =>
+      p.id === id ||
+      p.agent_manifest === entry.manifest ||
+      p.systemd_user_service === service
+  );
+  const inRules =
+    (rules.allowed_targets ?? []).includes(target) ||
+    (rules.rules ?? []).some(
+      (r) =>
+        r.target === target ||
+        (r.paths ?? []).some(
+          (pattern) =>
+            pattern.startsWith(`${entry.path}/`) ||
+            [
+              entry.manifest,
+              `${entry.path}/profile.template.yaml`,
+              `${entry.path}/__init__.py`,
+            ].some((file) => path.matchesGlob(file, pattern))
+        )
+    );
+  const inSchema = JSON.stringify(schema).includes(`"${target}"`);
+  const inSmoke =
+    readText("deploy/runner/smoke-release.sh").includes(`${target})`) ||
+    readText("deploy/runner/smoke-release.sh").includes(service);
+  const inPayload = readText("tools/deploy/build-deploy-bundle.mjs").includes(
+    `"${entry.path}`
+  );
+  if (inProfile || inRules || inSchema || inSmoke || inPayload) {
+    addError(
+      `${entry.manifest}: unmanaged Agent must not enter managed production lists`
+    );
+  }
+};
+
 const requiredAgentIds = new Set([
   "agents/default",
   "agents/erhua",
@@ -110,7 +156,17 @@ for (const entry of entries) {
     addError(`${templatePath}: runtime must be hermes`);
   }
 
-  if (entry.id !== "agents/default") {
+  if (
+    runtime.management !== undefined &&
+    !["managed", "unmanaged"].includes(runtime.management)
+  ) {
+    addError(`${entry.manifest}: unknown runtime management`);
+  }
+  if (runtime.management === "unmanaged") {
+    if (entry.id === "agents/default")
+      addError(`${entry.manifest}: default runtime contract is unchanged`);
+    assertUnmanagedAgent(entry, manifest);
+  } else if (entry.id !== "agents/default") {
     const expectedTarget = `hermes-${agentId}`;
     const expectedService = `hermes-gateway-${agentId}.service`;
     if (runtime.restart_target !== expectedTarget) {

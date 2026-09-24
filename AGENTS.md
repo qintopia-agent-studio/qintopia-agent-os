@@ -27,6 +27,8 @@ belong in [production status](docs/operations/production-current-status.md) and 
 
 ## Working rules
 
+- 中文沟通与文档统一用“模拟”描述测试身份、事件、数据和环境，不用“合成”表示模拟；既有代码标识保留原文。
+
 - Do not develop directly on `master`; preserve unrelated changes and local evidence.
 - Document first for features, behavior changes, migrations and runtime changes.
 - CI changes require a proposal reviewed against the owner's criteria and explicit owner

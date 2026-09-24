@@ -1,0 +1,30 @@
+id: skills/pms-operations
+type: skill
+name: PMS Operations
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description: Anan room collaboration with scoped PMS operations and durable recovery.
+source:
+  path: docs/plans/active/anan-pms-event-integration.md
+  reference: confirmed-2026-09-24
+  disposition: template
+production_boundary:
+  external_sends: false
+  database_writes: true
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - python3 -m unittest discover -s skills/pms-operations/tests -v
+    - pnpm registry:check
+dependencies:
+  - skills/person-foundation
+  - runtime/sidecar
+tags:
+  - hospitality
+  - pms
+  - local-only
+next_actions:
+  - Validate local shared-service authorization and PMS command recovery.
+  - Review production payload, profile ownership and credential isolation separately.

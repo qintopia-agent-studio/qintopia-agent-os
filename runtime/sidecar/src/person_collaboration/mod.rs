@@ -67,3 +67,6 @@ async fn connect_local(input: &str) -> Result<PgPool> {
 
 #[cfg(test)]
 mod rule_lifecycle_tests;
+
+#[cfg(test)]
+pub(crate) mod business_tests;

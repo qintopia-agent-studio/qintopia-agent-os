@@ -1,5 +1,12 @@
 # Data Design Changelog
 
+## 2026-09-24.001 — Business operation execution
+
+- New exact operation grants, trusted host turn evidence and independent PMS action records on WorkItems.
+- Extend role/duty selectable actions and grant constraints without assigning any existing person new authority.
+- Durable event inbox and checkpoints; default capability remains disabled and synthetic only.
+- Design: [business execution](2026-09-24-business-operation-execution.md).
+
 ## 2026-09-23.009 — Steward review delegation
 
 - Add scoped, time-bounded resident review assignments sourced from existing designate and review authority.
