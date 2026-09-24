@@ -381,3 +381,24 @@ all-features 与 no-default-features 的 all-targets Clippy（`-D warnings`）�
 `integration/application-welcome-clippy-default.log`。
 
 生产默认关闭、真实飞书和群消息未执行，原支付服务与数据库未重启或覆盖。
+
+### 精确欢迎最终整合
+
+调用侧冻结 `5a37c288877bb8c7650556cafd88387d0f594edc`，随后正常合入基础线
+`ac43412f52c3f3d3845a544a3ca84806dc077dec`。最终 merge 为
+`145f6fbddd179678c347ed533b4ae8408cc7e3bc`，双亲即这两个提交；代码无冲突，首次提交标题因 Conventional
+Commits 类型无效被拒绝，使用允许的 `fix` 类型后正常提交，未跳过 hooks。
+
+合并后 all-features 共同 PostgreSQL 按默认并行执行 **104 passed / 0 failed / 0
+ignored**，包含签名 Bridge 子进程、完整账户状态断言和新申请欢迎交接；resident_welcome 为
+**25 passed / 0 failed / 0
+ignored**。两组共 129 项，子进程内部的同一 Bridge 测试不重复计数。日志为
+`integration/precise-person-parallel.log` 和
+`integration/precise-welcome-tests.log`。新增交接场景沿既有 catalog 登记，test:list 可发现，test:harness
+8 项通过；未修改共享执行器或 CI 门禁。
+
+基础线的精确快照现已纳入：普通内容变动保留仍有效认人依据、内容需重审；A→B→A 中途未重开也不恢复旧 receipt，摘要不变但真实关系失效同样撤销旧批准。003/004源码未变，不重复改写迁移。原支付联合验收不重跑，ed0接收进程和证据保留。
+
+本次仍不等于真实人员候选、群内可信交互、真实飞书修改/撤回、真人或生产验收。原最终 apply
+smoke 的 URL hash
+allowlist 阻断不变，未获得新 CI 提案批准；不能把这两组定向回归称为全部仓库门禁全绿。整条 PMS 业务范围的申请事项与后续办理动作汇合、跨营业日缩住/正常退房/未来取消成功路径仍是独立待收口项，不能由欢迎接线通过代替。

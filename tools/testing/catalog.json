@@ -2845,6 +2845,27 @@
             "real": ["签名Unix Bridge、持久唤醒、HTTP客户端、宿主broker与PostgreSQL"],
             "simulated": ["飞书HTTP来源及申请；不使用生产配置或执行旧脚本"]
           }
+        },
+        {
+          "id": "anan-pms/application-welcome-reuses-exact-task-and-requires-current-relation",
+          "name": "申请可靠现存住宿关系与独立欢迎事项交接",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_welcome_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_welcome_tests::application_welcome_reuses_exact_task_and_requires_current_relation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["申请回读、现存关系校验、独立welcome_event和公共欢迎确认入口"],
+            "simulated": ["人员、PMS住宿投影和运营群；不执行渲染或外发"]
+          }
         }
       ]
     }
