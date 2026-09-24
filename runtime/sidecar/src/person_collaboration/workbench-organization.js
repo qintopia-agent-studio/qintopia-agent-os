@@ -285,6 +285,8 @@ function renderOrganization() {
   if (active(pos) && state.management_available)
     powers.append(actions(button("添加另一项协作", () => openWork(pos, null))));
   detail.append(powers, constraintsPanel(pos.scope_id));
+  if (rs.some((r) => r.agent === "anan" && r.domain === "hospitality"))
+    detail.append(operationsWorkspace(pos.scope_id));
   if (
     state.relations.some(
       (r) =>
@@ -340,6 +342,8 @@ function renderPersonalWork() {
     }
     if (relation.agent === "erhua" && relation.domain === "community_service")
       work.append(stewardWorkspace(relation.scope));
+    if (relation.agent === "anan" && relation.domain === "hospitality")
+      work.append(operationsWorkspace(relation.scope));
     const grants = state.grants.filter(
       (g) => g.collaboration === relation.id && g.effective && g.mode !== "denied"
     );
@@ -389,7 +393,7 @@ function renderPersonalWork() {
       "p",
       "日常事项直接告诉与你协作的智能体。它应说明处理结果，或告诉你还缺什么条件。"
     ),
-    sub("当前为本地合成体验，真实对话渠道尚未启用。")
+    sub("当前为本地模拟体验，真实对话渠道尚未启用。")
   );
   if (own.some((r) => r.agent === "erhua" && r.status === "active"))
     next.append(
@@ -405,7 +409,7 @@ function renderPersonalWork() {
     link.href = "/foundation";
     next.append(
       actions(link),
-      sub("此入口用于本批合成体验，使用固定例句理解，只产生本地回执。")
+      sub("此入口用于本批模拟体验，使用固定例句理解，只产生本地回执。")
     );
   }
   target.append(next);

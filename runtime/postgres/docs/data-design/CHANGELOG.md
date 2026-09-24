@@ -7,6 +7,12 @@
 - Dispatch distinct Anan and Silaoshi work without financial authority or external sends.
 - Design: [application readback](2026-09-24-application-event-intake.md).
 
+## 2026-09-24.003 — Welcome subject confirmation
+
+- Add scoped work-account subjects, operations confirmation and identity attribution.
+- Preserve personal/PMS authority and building publication rules.
+- Design: [welcome subject confirmation](2026-09-24-welcome-subject-confirmation.md).
+
 ## 2026-09-24.002 — Payment event ingress
 
 - Persist immutable source/property/binding snapshots for inbox and checkpoints.

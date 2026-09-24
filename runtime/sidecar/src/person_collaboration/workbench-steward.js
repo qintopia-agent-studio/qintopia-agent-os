@@ -710,3 +710,273 @@ function stewardProgress(scope) {
   load();
   return panel;
 }
+
+// Operations confirmation stays inside the user's work, not a welcome navigation category.
+function operationsWorkspace(scope) {
+  const matters = box("待我确认的事项"),
+    settings = box("协作安排"),
+    feedback = sub("正在读取……"),
+    list = el("div");
+  matters.append(
+    sub("岸岸整理候选和内容，你核对后一次提交；不会因此直接发布。"),
+    feedback,
+    actions(button("刷新事项", load)),
+    list
+  );
+  async function load() {
+    try {
+      const data = await api("/api/foundation/operations/list", { scope });
+      list.replaceChildren();
+      feedback.textContent = "";
+      for (const item of data.items) {
+        const card = box(
+          `${item.person_label || "待确认居民"} · ${item.snapshot.building || "入住事项"}`
+        );
+        card.append(
+          sub(`办理群：${item.group_label}`),
+          sub(
+            {
+              pending: "等待核对",
+              identity_confirmed: "已确认部分关联，内容尚待确认",
+              confirmed: "运营确认已完成，后续按本栋约定办理",
+              rejected: "已退回",
+              revoked: "已撤销确认",
+            }[item.status]
+          )
+        );
+        item.snapshot.artifacts.forEach((a) => {
+          if (a.kind === "welcome_card") {
+            const img = el("img");
+            img.src = `/api/foundation/card?id=${encodeURIComponent(a.id)}`;
+            img.alt = "待核对的欢迎卡片";
+            img.className = "qo-review-image";
+            card.append(img);
+          } else if (a.text) card.append(el("p", a.text));
+        });
+        if (["pending", "identity_confirmed"].includes(item.status)) {
+          const person = selectField(
+            card,
+            crypto.randomUUID(),
+            "系统找到的人员候选",
+            [
+              { id: "", label: "请选择；不能确定时先保留待办" },
+              ...item.candidates.map((c) => ({ id: c.person, label: c.label })),
+            ],
+            ""
+          );
+          card.append(sub("候选依据：已有来源人员，仍需核对申请与逐个入住人的关系。"));
+          const channel = selectField(
+            card,
+            crypto.randomUUID(),
+            "对应的微信／企微账号",
+            [
+              { id: "", label: "尚未确定账号" },
+              ...data.channels.map((c) => ({ id: c.id, label: c.label })),
+            ],
+            ""
+          );
+          card.append(
+            helpTip(
+              "如何确认关联",
+              "候选仅供核对，不是已认定的身份。只勾选你能确认的关系；缺少账号时可以先确认申请与住宿。"
+            )
+          );
+          const checks = {};
+          for (const [key, label] of [
+            ["confirm_application_stay", "这份申请与本次实际入住人是同一人"],
+            ["confirm_channel_person", "所选聊天账号属于这位居民"],
+            ["confirm_content", "我已核对本版照片、卡片和介绍，内容及使用许可正确"],
+          ]) {
+            const wrap = el("label"),
+              input = el("input");
+            input.type = "checkbox";
+            input.disabled = !data.allowed_effects.includes(
+              key === "confirm_content" ? "review" : "identity"
+            );
+            wrap.append(input, document.createTextNode(label));
+            card.append(wrap);
+            checks[key] = input;
+          }
+          let pending = null;
+          const submit = button("保存勾选的确认", async () => {
+            if (!pending)
+              pending = {
+                operation_id: crypto.randomUUID(),
+                work_item: item.work_item,
+                expected_version: item.version,
+                person: person.value || null,
+                channel: channel.value || null,
+                decision: "confirm",
+                ...Object.fromEntries(
+                  Object.entries(checks).map(([k, v]) => [k, v.checked])
+                ),
+              };
+            card.inert = true;
+            try {
+              await api("/api/foundation/operations/decide", pending);
+              await load();
+              feedback.textContent = "已保存，群与页面共用这条记录。";
+            } catch (e) {
+              feedback.textContent = e.message;
+              if (e.code) pending = null;
+              else submit.textContent = "核对原请求结果";
+            } finally {
+              card.inert = false;
+            }
+          });
+          card.append(
+            actions(
+              submit,
+              button("信息不足，暂不确认", () => {
+                feedback.textContent = "已保留待办，没有建立新的身份关联。";
+              }),
+              button("候选不对，退回整理", () => decide(item, "reject"))
+            )
+          );
+        }
+        if (
+          ["identity_confirmed", "confirmed"].includes(item.status) &&
+          ["identity", "review"].every((e) => data.allowed_effects.includes(e))
+        )
+          card.append(button("撤销本事项的确认", () => decide(item, "revoke")));
+        list.append(card);
+      }
+      if (!data.items.length) feedback.textContent = "当前没有需要你确认的事项。";
+    } catch (e) {
+      feedback.textContent = e.message;
+    }
+  }
+  async function decide(item, decision) {
+    const command = {
+      operation_id: crypto.randomUUID(),
+      work_item: item.work_item,
+      expected_version: item.version,
+      person: null,
+      channel: null,
+      confirm_application_stay: false,
+      confirm_channel_person: false,
+      confirm_content: false,
+      decision,
+    };
+    matters.inert = true;
+    try {
+      await api("/api/foundation/operations/decide", command);
+      await load();
+    } catch (e) {
+      feedback.textContent = e.message;
+    } finally {
+      matters.inert = false;
+    }
+  }
+  async function settingsLoad() {
+    settings.replaceChildren();
+    try {
+      const data = await api("/api/foundation/operations/options", { scope });
+      if (!data.can_manage) {
+        settings.append(sub("由有相应管理授权的负责人设置确认人和办理群。"));
+        return;
+      }
+      settings.append(
+        el("h3", "谁来确认、在哪个群办理"),
+        sub("更换安排后旧账号不再有这项确认权；已有记录保留。")
+      );
+      const group = selectField(
+        settings,
+        crypto.randomUUID(),
+        "运营工作群",
+        data.groups,
+        data.conversation || ""
+      );
+      for (const observed of data.observed)
+        settings.append(
+          button(`登记工作账号：${observed.label}`, async () => {
+            try {
+              await api("/api/foundation/operations/account", {
+                link: observed.id,
+                gateway: observed.gateway,
+                label: observed.label,
+              });
+              await settingsLoad();
+            } catch (e) {
+              feedback.textContent = e.message;
+            }
+          })
+        );
+      const people = [
+        ...data.people.map((p) => ({ ...p, kind: "person" })),
+        ...data.accounts
+          .filter((a) => a.active)
+          .map((a) => ({ ...a, kind: "work_account" })),
+      ];
+      const rows = [];
+      for (const subject of people) {
+        const row = box(subject.label),
+          previous = data.reviewers.find(
+            (r) => r.subject.kind === subject.kind && r.subject.id === subject.id
+          );
+        const flags = {};
+        for (const [effect, label] of [
+          ["identity", "可确认本事项的人员关联"],
+          ["review", "可确认卡片与介绍"],
+        ]) {
+          const wrap = el("label"),
+            check = el("input");
+          check.type = "checkbox";
+          check.checked = previous?.effects.includes(effect) || false;
+          wrap.append(check, document.createTextNode(label));
+          row.append(wrap);
+          flags[effect] = check;
+        }
+        const until = inputField(
+          row,
+          crypto.randomUUID(),
+          "授权截止时间",
+          "",
+          "datetime-local"
+        );
+        if (previous) {
+          const d = new Date(previous.valid_until);
+          d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+          until.value = d.toISOString().slice(0, 16);
+        }
+        rows.push({ subject, flags, until });
+        settings.append(row);
+      }
+      settings.append(
+        helpTip(
+          "授权范围",
+          "这些确认仅用于当前范围的客房欢迎事项，不授予收款、订房、入住办理或通用身份管理权限。"
+        ),
+        button("保存协作安排", async () => {
+          try {
+            const reviewers = rows
+              .filter((r) => Object.values(r.flags).some((c) => c.checked))
+              .map((r) => ({
+                subject: { kind: r.subject.kind, id: r.subject.id },
+                effects: Object.keys(r.flags).filter((k) => r.flags[k].checked),
+                valid_until: new Date(r.until.value).toISOString(),
+              }));
+            await api("/api/foundation/operations/settings", {
+              scope,
+              conversation: group.value,
+              expected_version: data.version,
+              reviewers,
+            });
+            await settingsLoad();
+            feedback.textContent = "已保存协作安排。";
+          } catch (e) {
+            feedback.textContent = e.message;
+          }
+        })
+      );
+    } catch (e) {
+      settings.append(sub(e.message));
+    }
+  }
+  matters.refreshWorkspace = load;
+  settings.refreshWorkspace = settingsLoad;
+  return workTabs("客房协作", [
+    ["事项与进展", matters],
+    ["协作安排", settings],
+  ]);
+}

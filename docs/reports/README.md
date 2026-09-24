@@ -1,5 +1,9 @@
 # Reports
 
+- [2026-09-24 欢迎身份关联与运营确认本地实现](2026-09-24-welcome-operations-local-implementation.md)
+
+- [2026-09-24 欢迎身份关联与运营确认审计](2026-09-24-welcome-identity-and-review-audit.md)
+
 - [2026-09-24 岸岸 PMS 本地实施与验收](2026-09-24-anan-pms-local-acceptance.md)
 
 - [2026-09-24 岸岸架构与并行开发评审](2026-09-24-anan-architecture-parallel-review.md)
