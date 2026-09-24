@@ -670,3 +670,59 @@ async fn welcome_trusted_task_requires_exact_source_and_preserves_manual_hold() 
     assert!(held);
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "explicit isolated PostgreSQL required"]
+async fn welcome_new_pending_or_rejected_matter_cannot_reuse_older_approval() -> Result<()> {
+    let f = Fixture::new().await?;
+    let subject = f.subject().await?;
+    f.store
+        .welcome_review_decide(&subject, &f.decision())
+        .await?;
+    let app: Uuid = sqlx::query_scalar(
+        "SELECT application_id FROM qintopia_agent_os.welcome_cases WHERE id=$1",
+    )
+    .bind(f.case)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let next: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload) SELECT work_item_type,'awaiting_review',requester_agent,target_agent,capability_key,brief_summary,purpose,$2,$2,payload FROM qintopia_agent_os.work_items WHERE id=$1 RETURNING id")
+        .bind(f.work).bind(Uuid::new_v4().to_string()).fetch_one(&f.store.pool).await?;
+    f.store
+        .welcome_review_open_task(
+            None,
+            &ReviewOpen {
+                work_item: next,
+                scope: f.scope,
+                case_ref: f.case,
+                application: app,
+                artifacts: vec![f.artifact],
+            },
+        )
+        .await?;
+    for rejected in [false, true] {
+        if rejected {
+            let mut r = f.decision();
+            r.work_item = next;
+            r.decision = "reject".into();
+            r.confirm_application_stay = false;
+            r.confirm_channel_person = false;
+            r.confirm_content = false;
+            f.store.welcome_review_decide(&subject, &r).await?;
+        }
+        let mut tx = f.store.pool.begin().await?;
+        assert!(super::assert_welcome_operations_review(
+            &f.store.pool,
+            &mut tx,
+            &f.store.tenant,
+            f.scope,
+            f.case,
+            f.artifact
+        )
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("operations_confirmation_required"));
+        tx.rollback().await?;
+    }
+    Ok(())
+}

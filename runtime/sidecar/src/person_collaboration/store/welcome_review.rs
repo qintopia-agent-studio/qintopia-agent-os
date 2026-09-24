@@ -385,7 +385,7 @@ impl Store {
             .bind(request.work_item)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("INSERT INTO qintopia_agent_os.work_item_events(work_item_id,event_type,actor_type,actor_id,data) VALUES($1,'welcome_operations_requested','agent','anan',$2)").bind(request.work_item).bind(json!({"configuration_version":version,"external_send":false})).execute(&mut *tx).await?;
+        sqlx::query("INSERT INTO qintopia_agent_os.work_item_events(work_item_id,event_type,actor_type,actor_id,data,created_at) VALUES($1,'welcome_operations_requested','agent','anan',$2,clock_timestamp())").bind(request.work_item).bind(json!({"configuration_version":version,"external_send":false})).execute(&mut *tx).await?;
         tx.commit().await?;
         Ok(json!({"work_item":request.work_item,"status":"pending"}))
     }
@@ -803,7 +803,7 @@ pub(crate) async fn assert_operations_review(
     if !configured {
         return Ok(());
     }
-    let row=sqlx::query("SELECT i.*,r.subject_kind,r.subject_id,r.subject_version,r.subject_proof,r.grant_id FROM qintopia_agent_os.welcome_review_items i JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=i.content_receipt JOIN qintopia_agent_os.welcome_review_settings s ON s.tenant_key=i.tenant_key AND s.scope_id=i.scope_id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.case_id=$3 AND i.status='confirmed' AND i.configuration_version=s.version ORDER BY r.created_at DESC LIMIT 1")
+    let row=sqlx::query("SELECT i.*,r.subject_kind,r.subject_id,r.subject_version,r.subject_proof,r.grant_id FROM qintopia_agent_os.welcome_review_items i JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=i.content_receipt JOIN qintopia_agent_os.welcome_review_settings s ON s.tenant_key=i.tenant_key AND s.scope_id=i.scope_id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.case_id=$3 AND i.status='confirmed' AND i.configuration_version=s.version AND i.work_item_id=(SELECT newer.work_item_id FROM qintopia_agent_os.welcome_review_items newer JOIN qintopia_agent_os.work_item_events e ON e.work_item_id=newer.work_item_id AND e.event_type='welcome_operations_requested' WHERE newer.tenant_key=$1 AND newer.scope_id=$2 AND newer.case_id=$3 ORDER BY e.created_at DESC,e.id DESC LIMIT 1) ORDER BY r.created_at DESC LIMIT 1")
         .bind(tenant).bind(scope).bind(case).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("operations_confirmation_required"))?;
     let saved: Value = row.get("snapshot");
     let ids = artifact_ids(&saved)?;

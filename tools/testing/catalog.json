@@ -1975,6 +1975,27 @@
             "real": ["共同身份、授权、事项确认及 PostgreSQL 事务"],
             "simulated": ["人员、渠道消息与入住资料；无真实群发送"]
           }
+        },
+        {
+          "id": "person-collaboration/new-matter-cannot-reuse-old-approval",
+          "name": "新事项待确认或退回不复用旧审批",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_new_pending_or_rejected_matter_cannot_reuse_older_approval",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、授权、事项确认及 PostgreSQL 事务"],
+            "simulated": ["人员、渠道消息与入住资料；无真实群发送"]
+          }
         }
       ]
     },
