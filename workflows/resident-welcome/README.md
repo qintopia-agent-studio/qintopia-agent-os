@@ -34,7 +34,8 @@ Profile 或真实渠道验收。原通用 `qintopia_person_task_status`
 
 复用既有 Person、WorkItem、Artifact 和 work_item_events；来源链接的 namespace、逐人案例、申请修订、有效同意、目标范围与人类审批决定资格。
 
-群和内容部分独立恢复，不等一小时。
+群和内容部分独立恢复，不等一小时。已保存的 `succeeded` 或 `unknown`
+状态优先回读，不因执行器临时不可用改报等待，也不重新发送；只有尚未完成的动作才等待执行器恢复。
 
 通用 Operations MCP 仍不承担本流程的真实任务写入。
 

@@ -182,6 +182,13 @@ async fn foundation_welcome_direct_review_real_agents_and_partial_unknown_recove
     let b = id(&direct["actions"][1]);
     assert_eq!(
         f.welcome
+            .foundation_execute(a, SyntheticOutcome::Unavailable)
+            .await?["status"],
+        "waiting"
+    );
+    assert_eq!(effects(&f).await?, 0);
+    assert_eq!(
+        f.welcome
             .foundation_execute(a, SyntheticOutcome::Success)
             .await?["status"],
         "succeeded"
@@ -207,6 +214,15 @@ async fn foundation_welcome_direct_review_real_agents_and_partial_unknown_recove
     f.welcome
         .foundation_execute(b, SyntheticOutcome::Success)
         .await?;
+    for (action, status) in [(a, "succeeded"), (b, "unknown")] {
+        assert_eq!(
+            f.welcome
+                .foundation_execute(action, SyntheticOutcome::Unavailable)
+                .await?["status"],
+            status,
+            "executor downtime must preserve the stored result"
+        );
+    }
     assert_eq!(effects(&f).await?, 2, "unknown must not blindly resend");
     let reopened = Store::local(&crate::foundation_test_support::database_url(
         "QINTOPIA_COLLABORATION_TEST",

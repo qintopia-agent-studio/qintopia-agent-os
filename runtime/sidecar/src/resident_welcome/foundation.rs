@@ -731,14 +731,14 @@ impl Store {
         action: Uuid,
         outcome: SyntheticOutcome,
     ) -> Result<Value> {
+        let status:String=sqlx::query_scalar("SELECT status FROM qintopia_agent_os.welcome_actions WHERE id=$1 AND foundation_basis IS NOT NULL").bind(action).fetch_one(&self.pool).await?;
+        if status == "succeeded" || status == "unknown" {
+            return Ok(json!({"status":status,"action_ref":action}));
+        }
         if matches!(outcome, SyntheticOutcome::Unavailable) {
             return Ok(
                 json!({"status":"waiting","reason":"executor_unavailable","action_ref":action}),
             );
-        }
-        let status:String=sqlx::query_scalar("SELECT status FROM qintopia_agent_os.welcome_actions WHERE id=$1 AND foundation_basis IS NOT NULL").bind(action).fetch_one(&self.pool).await?;
-        if status == "succeeded" || status == "unknown" {
-            return Ok(json!({"status":status,"action_ref":action}));
         }
         let mut available_tx = self.pool.begin().await?;
         let tenant: String = sqlx::query_scalar(
