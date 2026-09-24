@@ -299,26 +299,83 @@ impl Store {
 
 async fn snapshot(
     tx: &mut Transaction<'_, Postgres>,
-    tenant: &str,
+    store: &Store,
     scope: Uuid,
     case: Uuid,
     application: Uuid,
     artifacts: &[Uuid],
+    channel: Option<Uuid>,
 ) -> Result<Value> {
     ensure!(artifacts.len() <= 8, "too_many_artifacts");
-    let row=sqlx::query("SELECT c.version,c.source_instance,c.property_id,c.order_id,c.stay_id,c.occupant_id,a.revision,a.field_hash,a.consent_version,a.consent_active,a.valid,v.revision::text AS source_revision,v.projection FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_applications a ON a.id=$4 AND a.source_instance=c.source_instance JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id AND NOT v.invalidated WHERE c.id=$3 AND EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id WHERE f.tenant_key=$1 AND f.scope_id=$2 AND t.source_instance=c.source_instance AND t.property_id=c.property_id AND (t.kind<>'building' OR t.building_code=v.projection->>'building')) FOR SHARE OF c,a,v")
-        .bind(tenant).bind(scope).bind(case).bind(application).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("welcome_source_scope_mismatch"))?;
+    // Read source evidence in this transaction before acquiring case/application locks.
+    // Source writes and welcome operations share the outer tenant lock.
+    let basis = store
+        .application_identity_basis(tx, scope, application)
+        .await?;
+    let row=sqlx::query("SELECT c.version,c.person_id AS case_person,c.application_id AS case_application,c.identity_link_id,c.identity_version,a.person_id AS application_person,c.source_instance,c.property_id,c.order_id,c.stay_id,c.occupant_id,a.revision,a.field_hash,a.consent_version,a.consent_active,a.valid,v.revision::text AS source_revision,v.projection FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_applications a ON a.id=$4 AND a.source_instance=c.source_instance JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id AND NOT v.invalidated WHERE c.id=$3 AND EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id WHERE f.tenant_key=$1 AND f.scope_id=$2 AND t.source_instance=c.source_instance AND t.property_id=c.property_id AND (t.kind<>'building' OR t.building_code=v.projection->>'building')) FOR SHARE OF c,a,v")
+        .bind(&store.tenant).bind(scope).bind(case).bind(application).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("welcome_source_scope_mismatch"))?;
     let mut contents = Vec::new();
     for id in artifacts {
         let artifact=sqlx::query("SELECT a.id,a.content_hash,a.artifact_type,a.content_text FROM qintopia_agent_os.artifacts a JOIN qintopia_agent_os.welcome_artifact_bindings b ON b.artifact_id=a.id WHERE a.id=$1 AND b.case_id=$2 AND b.application_id=$3 AND b.application_revision=$4 AND b.consent_version=$5 AND b.revoked_at IS NULL AND a.content_hash IS NOT NULL")
             .bind(id).bind(case).bind(application).bind(row.get::<i64,_>("revision")).bind(row.get::<i64,_>("consent_version")).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("welcome_content_version_conflict"))?;
         contents.push(json!({"id":id,"hash":artifact.get::<String,_>("content_hash"),"kind":artifact.get::<String,_>("artifact_type"),"text":artifact.get::<Option<String>,_>("content_text")}));
     }
+    let pms_link: Option<Uuid> = row.get("identity_link_id");
+    let pms = identity_link_snapshot(tx, pms_link).await?;
+    let channel_link = identity_link_snapshot(tx, channel).await?;
+    let pms_scope: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_identity_scopes WHERE namespace=$1 AND source_instance=$2 AND property_id=$3)")
+        .bind(pms["namespace"].as_str()).bind(row.get::<String,_>("source_instance")).bind(row.get::<String,_>("property_id")).fetch_one(&mut **tx).await?;
+    let channel_scope: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.namespace=$1 AND g.subject_type=$2 AND g.tenant_key=$3 AND g.scope_id=$4 AND g.active AND g.account_kind<>'shared' AND s.status='active')")
+        .bind(channel_link["namespace"].as_str()).bind(channel_link["subject_type"].as_str()).bind(&store.tenant).bind(scope).fetch_one(&mut **tx).await?;
+    let relations = json!({"application_person":row.get::<Option<Uuid>,_>("application_person"),"case_person":row.get::<Option<Uuid>,_>("case_person"),"case_application":row.get::<Option<Uuid>,_>("case_application"),"case_identity_version":row.get::<Option<i64>,_>("identity_version"),"pms":pms,"pms_scope":pms_scope,"channel":channel_link,"channel_scope":channel_scope});
     let projection: Value = row.get("projection");
     Ok(
-        json!({"case_version":row.get::<i64,_>("version"),"application_revision":row.get::<i64,_>("revision"),"application_hash":row.get::<String,_>("field_hash"),"consent_version":row.get::<i64,_>("consent_version"),"consent_active":row.get::<bool,_>("consent_active"),"valid":row.get::<bool,_>("valid"),"source":row.get::<String,_>("source_instance"),"property":row.get::<String,_>("property_id"),"order":row.get::<String,_>("order_id"),"stay":row.get::<String,_>("stay_id"),"occupant":row.get::<String,_>("occupant_id"),"source_revision":row.get::<String,_>("source_revision"),"building":projection["building"],"artifacts":contents}),
+        json!({"application_identity_basis":basis,"relations":relations,"case_version":row.get::<i64,_>("version"),"application_revision":row.get::<i64,_>("revision"),"application_hash":row.get::<String,_>("field_hash"),"consent_version":row.get::<i64,_>("consent_version"),"consent_active":row.get::<bool,_>("consent_active"),"valid":row.get::<bool,_>("valid"),"source":row.get::<String,_>("source_instance"),"property":row.get::<String,_>("property_id"),"order":row.get::<String,_>("order_id"),"stay":row.get::<String,_>("stay_id"),"occupant":row.get::<String,_>("occupant_id"),"source_revision":row.get::<String,_>("source_revision"),"building":projection["building"],"artifacts":contents}),
     )
 }
+// Link version and evidence distinguish a fresh confirmation from a revoked old proof,
+// even when the same account is later linked to the same person again.
+async fn identity_link_snapshot(
+    tx: &mut Transaction<'_, Postgres>,
+    link: Option<Uuid>,
+) -> Result<Value> {
+    let row = sqlx::query("SELECT id,namespace,subject_type,source_ref,person_id,status,version,evidence_ref,confirmed_by,confirmed_by_work_account FROM qintopia_identity.source_identity_links WHERE id=$1 FOR SHARE")
+        .bind(link).fetch_optional(&mut **tx).await?;
+    let Some(row) = row else {
+        return Ok(Value::Null);
+    };
+    let person: Option<Uuid> = row.get("person_id");
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM qintopia_identity.persons WHERE id=$1 FOR SHARE")
+            .bind(person)
+            .fetch_optional(&mut **tx)
+            .await?;
+    Ok(
+        json!({"id":row.get::<Uuid,_>("id"),"namespace":row.get::<String,_>("namespace"),"subject_type":row.get::<String,_>("subject_type"),"source_ref":row.get::<String,_>("source_ref"),"person":person,"status":row.get::<String,_>("status"),"version":row.get::<i64,_>("version"),"evidence":row.get::<Option<Uuid>,_>("evidence_ref"),"confirmed_by":row.get::<Option<Uuid>,_>("confirmed_by"),"confirmed_by_work_account":row.get::<Option<Uuid>,_>("confirmed_by_work_account"),"person_status":status}),
+    )
+}
+
+fn identity_relations_valid(snapshot: &Value, application: Uuid, person: Option<Uuid>) -> bool {
+    let Some(person) = person else { return false };
+    let r = &snapshot["relations"];
+    let person = json!(person);
+    r["application_person"] == person
+        && r["case_person"] == person
+        && r["case_application"] == json!(application)
+        && r["pms"]["person"] == person
+        && r["pms"]["person_status"] == "active"
+        && r["pms"]["status"] == "confirmed"
+        && r["pms"]["subject_type"] == "pms_occupant"
+        && r["pms"]["source_ref"] == snapshot["occupant"]
+        && r["pms"]["version"] == r["case_identity_version"]
+        && r["pms_scope"] == true
+        && (r["channel"].is_null()
+            || (r["channel"]["person"] == person
+                && r["channel"]["status"] == "confirmed"
+                && r["channel"]["person_status"] == "active"
+                && r["channel_scope"] == true))
+}
+
 fn artifact_ids(value: &Value) -> Result<Vec<Uuid>> {
     value["artifacts"]
         .as_array()
@@ -359,25 +416,69 @@ impl Store {
             .bind(request.work_item).bind(&self.tenant).bind(request.case_ref.to_string()).bind(request.scope.to_string()).bind(request.application.to_string()).fetch_one(&mut *tx).await?;
         ensure!(owned, "welcome_work_item_source_required");
         let version:i64=sqlx::query_scalar("SELECT version FROM qintopia_agent_os.welcome_review_settings WHERE tenant_key=$1 AND scope_id=$2").bind(&self.tenant).bind(request.scope).fetch_one(&mut *tx).await?;
+        let old = sqlx::query(
+            "SELECT * FROM qintopia_agent_os.welcome_review_items WHERE work_item_id=$1 FOR UPDATE",
+        )
+        .bind(request.work_item)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let selected_channel = old
+            .as_ref()
+            .and_then(|r| r.get::<Option<Uuid>, _>("confirmed_channel"));
         let current = snapshot(
             &mut tx,
-            &self.tenant,
+            self,
             request.scope,
             request.case_ref,
             request.application,
             &request.artifacts,
+            selected_channel,
         )
         .await?;
         // Candidate references come from this source's existing person links. They never bind automatically.
         let rows=sqlx::query("SELECT DISTINCT p.id,CASE WHEN nullif(p.preferred_name,'') IS NULL OR p.preferred_name=p.display_name THEN p.display_name ELSE p.preferred_name||' · '||p.display_name END AS label FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id JOIN qintopia_agent_os.welcome_identity_scopes s ON s.namespace=l.namespace WHERE s.source_instance=$1 AND s.property_id=$2 AND p.status='active' UNION SELECT p.id,CASE WHEN nullif(p.preferred_name,'') IS NULL OR p.preferred_name=p.display_name THEN p.display_name ELSE p.preferred_name||' · '||p.display_name END AS label FROM qintopia_identity.persons p JOIN qintopia_agent_os.welcome_applications a ON a.person_id=p.id WHERE a.id=$3 AND p.status='active' ORDER BY label,id LIMIT 20")
             .bind(current["source"].as_str()).bind(current["property"].as_str()).bind(request.application).fetch_all(&mut *tx).await?;
         let candidates:Vec<Value>=rows.iter().map(|r|json!({"person":r.get::<Uuid,_>("id"),"label":r.get::<String,_>("label"),"basis":"已有来源人员，待核对申请及入住关系","confirmed":false})).collect();
-        if let Some(old)=sqlx::query("SELECT tenant_key,scope_id,case_id,application_id,snapshot,version,status,configuration_version FROM qintopia_agent_os.welcome_review_items WHERE work_item_id=$1").bind(request.work_item).fetch_optional(&mut *tx).await? {
-            ensure!(old.get::<String,_>("tenant_key")==self.tenant && old.get::<Uuid,_>("scope_id")==request.scope && old.get::<Uuid,_>("case_id")==request.case_ref && old.get::<Uuid,_>("application_id")==request.application,"welcome_work_item_conflict");
-            if old.get::<Value,_>("snapshot")==current && old.get::<i64,_>("configuration_version")==version && !matches!(old.get::<String,_>("status").as_str(),"revoked"|"rejected") { return Ok(json!({"work_item":request.work_item,"version":old.get::<i64,_>("version"),"replayed":true})); }
+        if let Some(old) = old {
+            ensure!(
+                old.get::<String, _>("tenant_key") == self.tenant
+                    && old.get::<Uuid, _>("scope_id") == request.scope
+                    && old.get::<Uuid, _>("case_id") == request.case_ref
+                    && old.get::<Uuid, _>("application_id") == request.application,
+                "welcome_work_item_conflict"
+            );
+            let relationships_invalid = old.get::<Option<Uuid>, _>("identity_receipt").is_some()
+                && !identity_relations_valid(
+                    &current,
+                    request.application,
+                    old.get("confirmed_person"),
+                );
+            if !relationships_invalid
+                && old.get::<Value, _>("snapshot") == current
+                && old.get::<i64, _>("configuration_version") == version
+                && !matches!(
+                    old.get::<String, _>("status").as_str(),
+                    "revoked" | "rejected"
+                )
+            {
+                return Ok(
+                    json!({"work_item":request.work_item,"version":old.get::<i64,_>("version"),"replayed":true}),
+                );
+            }
             let previous: Value = old.get("snapshot");
-            let identity_changed = ["application_revision", "application_hash", "source_revision"]
-                .iter().any(|key| previous[key] != current[key]);
+            let same_trusted_basis = previous["application_identity_basis"].as_str().is_some()
+                && previous["application_identity_basis"] == current["application_identity_basis"];
+            let identity_changed = relationships_invalid
+                || previous["relations"] != current["relations"]
+                || previous["source_revision"] != current["source_revision"]
+                || (!same_trusted_basis
+                    && [
+                        "application_identity_basis",
+                        "application_revision",
+                        "application_hash",
+                    ]
+                    .iter()
+                    .any(|key| previous[key] != current[key]));
             sqlx::query("UPDATE qintopia_agent_os.welcome_review_items SET snapshot=$2,candidates=$3,configuration_version=$4,version=version+1,status='pending',content_receipt=NULL,identity_receipt=CASE WHEN $5 THEN NULL ELSE identity_receipt END WHERE work_item_id=$1")
                 .bind(request.work_item).bind(&current).bind(json!(candidates)).bind(version).bind(identity_changed).execute(&mut *tx).await?;
         } else {
@@ -464,7 +565,16 @@ impl Store {
         let saved: Value = row.get("snapshot");
         let artifacts = artifact_ids(&saved)?;
         let current = if r.decision == "confirm" {
-            snapshot(&mut tx, &self.tenant, scope, case, app, &artifacts).await?
+            snapshot(
+                &mut tx,
+                self,
+                scope,
+                case,
+                app,
+                &artifacts,
+                row.get("confirmed_channel"),
+            )
+            .await?
         } else {
             saved.clone()
         };
@@ -558,8 +668,11 @@ impl Store {
                         && !artifacts.is_empty(),
                     "welcome_content_not_ready"
                 );
-                let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links WHERE id=$1 AND person_id=$2 AND status='confirmed')").bind(channel).bind(person).fetch_one(&mut *tx).await?;
-                ensure!(valid, "channel_identity_changed");
+                let live = snapshot(&mut tx, self, scope, case, app, &artifacts, channel).await?;
+                ensure!(
+                    identity_relations_valid(&live, app, person),
+                    "welcome_identity_relations_changed"
+                );
                 sqlx::query("UPDATE qintopia_agent_os.welcome_artifact_bindings SET case_version=(SELECT version FROM qintopia_agent_os.welcome_cases WHERE id=$1) WHERE artifact_id=ANY($2) AND case_id=$1")
                     .bind(case).bind(&artifacts).execute(&mut *tx).await?;
                 content_receipt = Some(r.operation_id);
@@ -593,7 +706,7 @@ impl Store {
             // Never clear or overwrite another workflow's manual pause.
         }
         let after = if r.decision == "confirm" {
-            snapshot(&mut tx, &self.tenant, scope, case, app, &artifacts).await?
+            snapshot(&mut tx, self, scope, case, app, &artifacts, channel).await?
         } else {
             saved
         };
@@ -805,10 +918,33 @@ pub(crate) async fn assert_operations_review(
     }
     let row=sqlx::query("SELECT i.*,r.subject_kind,r.subject_id,r.subject_version,r.subject_proof,r.grant_id FROM qintopia_agent_os.welcome_review_items i JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=i.content_receipt JOIN qintopia_agent_os.welcome_review_settings s ON s.tenant_key=i.tenant_key AND s.scope_id=i.scope_id WHERE i.tenant_key=$1 AND i.scope_id=$2 AND i.case_id=$3 AND i.status='confirmed' AND i.configuration_version=s.version AND i.work_item_id=(SELECT newer.work_item_id FROM qintopia_agent_os.welcome_review_items newer JOIN qintopia_agent_os.work_item_events e ON e.work_item_id=newer.work_item_id AND e.event_type='welcome_operations_requested' WHERE newer.tenant_key=$1 AND newer.scope_id=$2 AND newer.case_id=$3 ORDER BY e.created_at DESC,e.id DESC LIMIT 1) ORDER BY r.created_at DESC LIMIT 1")
         .bind(tenant).bind(scope).bind(case).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("operations_confirmation_required"))?;
+    let store = Store {
+        pool: pool.clone(),
+        tenant: tenant.into(),
+    };
     let saved: Value = row.get("snapshot");
     let ids = artifact_ids(&saved)?;
-    let current = snapshot(tx, tenant, scope, case, row.get("application_id"), &ids).await?;
+    let current = snapshot(
+        tx,
+        &store,
+        scope,
+        case,
+        row.get("application_id"),
+        &ids,
+        row.get("confirmed_channel"),
+    )
+    .await?;
     ensure!(saved == current, "operations_content_changed");
+    ensure!(
+        row.get::<Option<Uuid>, _>("identity_receipt").is_some()
+            && row.get::<Option<Uuid>, _>("confirmed_channel").is_some()
+            && identity_relations_valid(
+                &current,
+                row.get("application_id"),
+                row.get("confirmed_person")
+            ),
+        "operations_identity_changed"
+    );
     let kind: String =
         sqlx::query_scalar("SELECT artifact_type FROM qintopia_agent_os.artifacts WHERE id=$1")
             .bind(artifact)
@@ -858,10 +994,6 @@ pub(crate) async fn assert_operations_review(
             session_hash: None,
             tenant: tenant.into(),
         })
-    };
-    let store = Store {
-        pool: pool.clone(),
-        tenant: tenant.into(),
     };
     let grant = store
         .welcome_authorize(tx, &subject, scope, &["review"])
