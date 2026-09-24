@@ -29,6 +29,8 @@ class Broker:
             if self.lose_receipt:
                 raise ConnectionError("lost acknowledgement")
             self.status = request["outcome"]
+        if action == "confirmation_context":
+            return {"requires_contacts": False, "work_item": None, "presentation": "p", "replayed": False}
         if action == "callback":
             self.approved = True
         return {"status": self.status}
@@ -65,6 +67,35 @@ class WelcomeHostTests(unittest.TestCase):
         host = module.WelcomeHost(broker, module.SimulatedTransport(), local_enabled=True)
         self.assertEqual(host.recover("p", "c")["status"], "unknown")
         self.assertNotIn("receipt", broker.calls)
+
+    def test_phone_refresh_uses_same_callback_and_does_not_confirm_on_failure(self):
+        calls = []
+        def broker(request):
+            calls.append(request["action"])
+            if request["action"] == "confirmation_context":
+                return {"requires_contacts": True, "work_item": "application-work", "presentation": "original"}
+            return {"confirmed": True}
+        def refresh(work, presentation):
+            self.assertEqual((work, presentation), ("application-work", "original"))
+            calls.append("actual-read")
+            return {"status": "complete", "scan_complete": True}
+        host = module.WelcomeHost(broker, module.SimulatedTransport(), local_enabled=True)
+        self.assertTrue(host.callback(refresh_contacts=refresh)["confirmed"])
+        self.assertEqual(calls, ["confirmation_context", "actual-read", "callback"])
+        calls.clear()
+        with self.assertRaises(ValueError):
+            host.callback(refresh_contacts=lambda *_: {"status": "incomplete", "scan_complete": False})
+        self.assertEqual(calls, ["confirmation_context"])
+
+    def test_replayed_or_independent_confirmation_needs_no_contact_function(self):
+        for replayed in [True, False]:
+            calls = []
+            def broker(request):
+                calls.append(request["action"])
+                return {"requires_contacts": False, "replayed": replayed}
+            host = module.WelcomeHost(broker, module.SimulatedTransport(), local_enabled=True)
+            host.callback(refresh_contacts=lambda *_: self.fail("must not refresh"))
+            self.assertEqual(calls, ["confirmation_context", "callback"])
 
     def test_no_implicit_or_arbitrary_external_transport(self):
         for transport, enabled in [(module.SimulatedTransport(), False), (object(), True)]:

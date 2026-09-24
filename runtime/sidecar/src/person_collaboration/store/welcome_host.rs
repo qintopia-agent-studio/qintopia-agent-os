@@ -1,6 +1,6 @@
 //! Local host-only presentation state; authenticated group replies use the UI command.
 use super::{
-    welcome_review::{artifact_ids, snapshot, WelcomeSubject},
+    welcome_review::{artifact_ids, identity_relations_valid, snapshot, WelcomeSubject},
     Store,
 };
 use crate::person_collaboration::{
@@ -31,6 +31,7 @@ pub(crate) enum Request {
         presentation: Uuid,
     },
     Callback,
+    ConfirmationContext,
 }
 impl Store {
     async fn welcome_host_scope(&self, gateway: &str) -> Result<Uuid> {
@@ -90,8 +91,11 @@ impl Store {
         let has_more = channels.len() > 20;
         let source=sqlx::query("SELECT p.application_revision,p.identity_hash,p.field_hash,p.hints->>'name' AS name,p.hints->>'nickname' AS nickname FROM qintopia_agent_os.welcome_source_projections p JOIN qintopia_agent_os.business_property_bindings b ON b.id=p.binding_id AND b.tenant_key=p.tenant_key AND b.version=p.binding_version AND b.active WHERE p.tenant_key=$1 AND p.scope_id=$2 AND p.application_id=$3 AND p.expires_at>clock_timestamp() AND p.application_revision=$4 AND p.field_hash=$5").bind(&self.tenant).bind(scope).bind(row.get::<Uuid,_>("application_id")).bind(saved["application_revision"].as_i64()).bind(saved["application_hash"].as_str()).fetch_optional(&mut **tx).await?;
         let hint=source.map(|r|json!({"revision":r.get::<i64,_>("application_revision"),"identity_hash":r.get::<String,_>("identity_hash"),"field_hash":r.get::<String,_>("field_hash"),"label":format!("{} · {}",r.get::<String,_>("nickname"),r.get::<String,_>("name"))}));
+        let contacts = self
+            .welcome_contacts_for_application(tx, scope, row.get("application_id"))
+            .await?;
         Ok(
-            json!({"work_item":work,"version":row.get::<i64,_>("version"),"configuration_version":row.get::<i64,_>("config"),"configured_by":issuer,"authority_refs":refs,"conversation":row.get::<Uuid,_>("conversation_id"),"platform":row.get::<String,_>("platform"),"chat_id":row.get::<String,_>("chat_id"),"group_label":row.get::<String,_>("display_name"),"review":saved,"candidates":row.get::<Value,_>("candidates"),"channels":channels.iter().take(20).map(|r|json!({"id":r.get::<Uuid,_>("id"),"version":r.get::<i64,_>("version"),"label":r.get::<String,_>("label")})).collect::<Vec<_>>(),"channels_has_more":has_more,"source_hint":hint}),
+            json!({"application":row.get::<Uuid,_>("application_id"),"case_ref":row.get::<Uuid,_>("case_id"),"contacts":contacts["evidence"],"work_item":work,"version":row.get::<i64,_>("version"),"configuration_version":row.get::<i64,_>("config"),"configured_by":issuer,"authority_refs":refs,"conversation":row.get::<Uuid,_>("conversation_id"),"platform":row.get::<String,_>("platform"),"chat_id":row.get::<String,_>("chat_id"),"group_label":row.get::<String,_>("display_name"),"review":saved,"candidates":row.get::<Value,_>("candidates"),"channels":channels.iter().take(20).map(|r|json!({"id":r.get::<Uuid,_>("id"),"version":r.get::<i64,_>("version"),"label":r.get::<String,_>("label")})).collect::<Vec<_>>(),"channels_has_more":has_more,"source_hint":hint}),
         )
     }
     pub(super) async fn welcome_presentation_current(
@@ -100,6 +104,7 @@ impl Store {
         scope: Uuid,
         work: Uuid,
         id: Uuid,
+        require_contacts: bool,
     ) -> Result<Value> {
         let row=sqlx::query("SELECT snapshot,status FROM qintopia_agent_os.welcome_group_presentations WHERE tenant_key=$1 AND scope_id=$2 AND work_item_id=$3 AND id=$4 FOR UPDATE").bind(&self.tenant).bind(scope).bind(work).bind(id).fetch_one(&mut **tx).await?;
         ensure!(
@@ -108,7 +113,14 @@ impl Store {
         );
         let saved: Value = row.get("snapshot");
         let current = self.presentation_basis(tx, scope, work).await?;
-        ensure!(saved == current, "presentation_stale");
+        let mut old = saved.clone();
+        let mut new = current.clone();
+        old.as_object_mut().unwrap().remove("contacts");
+        new.as_object_mut().unwrap().remove("contacts");
+        ensure!(
+            old == new && (!require_contacts || saved["contacts"] == current["contacts"]),
+            "presentation_stale"
+        );
         Ok(saved)
     }
     pub(in crate::person_collaboration) async fn welcome_host(
@@ -119,6 +131,9 @@ impl Store {
     ) -> Result<Value> {
         ensure!(t.gateway_id == gateway, "gateway_scope_mismatch");
         let scope = self.welcome_host_scope(gateway).await?;
+        if matches!(r, Request::ConfirmationContext) {
+            return self.welcome_confirmation_context(gateway, t, scope).await;
+        }
         if matches!(r, Request::Callback) {
             return self.welcome_group_callback(gateway, t, scope).await;
         }
@@ -174,7 +189,7 @@ impl Store {
                     return Ok(json!({"presentation":id,"status":status,"send":false}));
                 }
                 let current = self
-                    .welcome_presentation_current(&mut tx, scope, row.get("work_item_id"), id)
+                    .welcome_presentation_current(&mut tx, scope, row.get("work_item_id"), id, true)
                     .await;
                 let Ok(basis) = current else {
                     sqlx::query("UPDATE qintopia_agent_os.welcome_group_presentations SET status='stale',updated_at=clock_timestamp() WHERE id=$1").bind(id).execute(&mut *tx).await?;
@@ -226,12 +241,12 @@ impl Store {
             _ => unreachable!(),
         }
     }
-    async fn welcome_group_callback(
+    async fn group_decision(
         &self,
         gateway: &str,
         t: TrustedContext,
         scope: Uuid,
-    ) -> Result<Value> {
+    ) -> Result<(WelcomeSubject, ReviewDecision, Uuid, Value, bool)> {
         ensure!(
             t.chat_type == "group" && matches!(t.platform.as_str(), "wecom" | "qiwe"),
             "configured_operations_group_required"
@@ -262,9 +277,75 @@ impl Store {
             chat: t.chat_id,
             configuration_version: row.get("version"),
         };
-        self.welcome_review_decide_presented(&subject, &decision, Some(presentation.get("id")))
+        Ok((
+            subject,
+            decision,
+            presentation.get("id"),
+            presentation.get("snapshot"),
+            text.split_whitespace().any(|w| w == "人工核对"),
+        ))
+    }
+    pub(super) async fn welcome_confirmation_context(
+        &self,
+        gateway: &str,
+        t: TrustedContext,
+        scope: Uuid,
+    ) -> Result<Value> {
+        let (subject, r, presentation, saved, manual) =
+            self.group_decision(gateway, t, scope).await?;
+        let (mut tx, _, _) = self.begin().await?;
+        let mut effects = Vec::new();
+        if r.confirm_application_stay
+            || r.confirm_channel_person
+            || r.decision == "create_person"
+            || r.decision == "revoke"
+        {
+            effects.push("identity");
+        }
+        if r.confirm_content || matches!(r.decision.as_str(), "reject" | "revoke") {
+            effects.push("review");
+        }
+        ensure!(!effects.is_empty(), "explicit_effect_required");
+        self.welcome_authorize(&mut tx, &subject, scope, &effects)
+            .await?;
+        if let Some(receipt)=sqlx::query("SELECT request_hash,subject_kind,subject_id FROM qintopia_agent_os.welcome_review_receipts WHERE id=$1 AND tenant_key=$2").bind(r.operation_id).bind(&self.tenant).fetch_optional(&mut *tx).await? {
+            let reference=subject.reference();
+            ensure!(receipt.get::<String,_>("request_hash")==crate::person_collaboration::digest(&serde_json::to_vec(&r)?) && receipt.get::<String,_>("subject_kind")==reference.kind() && receipt.get::<Uuid,_>("subject_id")==reference.id(),"idempotency_conflict");
+            return Ok(json!({"requires_contacts":false,"work_item":null,"presentation":presentation,"replayed":true}));
+        }
+        self.welcome_presentation_current(&mut tx, scope, r.work_item, presentation, false)
+            .await?;
+        let requires = contact_dependency(&saved, &r, manual);
+        Ok(
+            json!({"requires_contacts":requires,"work_item":if requires {saved["contacts"]["work_item"].clone()} else {Value::Null},"presentation":presentation,"replayed":false}),
+        )
+    }
+    async fn welcome_group_callback(
+        &self,
+        gateway: &str,
+        t: TrustedContext,
+        scope: Uuid,
+    ) -> Result<Value> {
+        let (subject, r, presentation, _, _) = self.group_decision(gateway, t, scope).await?;
+        self.welcome_review_decide_presented(&subject, &r, Some(presentation))
             .await
     }
+}
+pub(super) fn contact_dependency(saved: &Value, r: &ReviewDecision, manual: bool) -> bool {
+    if manual || saved["contacts"].is_null() {
+        return false;
+    }
+    if r.decision == "create_person" {
+        return true;
+    }
+    if r.decision != "confirm" || !r.confirm_application_stay {
+        return false;
+    }
+    !serde_json::from_value::<Uuid>(saved["application"].clone())
+        .ok()
+        .is_some_and(|application| {
+            identity_relations_valid(&saved["review"], application, r.person)
+        })
 }
 fn render(reference: &str, v: &Value) -> String {
     let mut s = format!(
@@ -272,6 +353,25 @@ fn render(reference: &str, v: &Value) -> String {
         v["source_hint"]["label"].as_str().unwrap_or("待核对申请"),
         v["review"]["building"].as_str().unwrap_or("待核对")
     );
+    if !v["contacts"].is_null() {
+        let selected = v["case_ref"].as_str().unwrap_or("");
+        let reason = match v["contacts"]["comparisons"][selected].as_str() {
+            Some("match") => "申请与本次入住人的手机号一致，仍需核对本人",
+            Some("different") => "申请与本次入住人的手机号不同，请核对是否填错或换号",
+            Some("missing") => "本次入住人缺少手机号，需核对原始入住资料",
+            Some("unusable") => "本次入住人手机号格式无法核对，需核对原始资料",
+            Some("application_missing") => "历史申请缺少手机号，可核对原始资料",
+            Some("application_unusable") => "申请手机号格式无法核对，可核对原始资料",
+            _ => "此入住人没有当前电话核对依据，请核对原始资料",
+        };
+        s.push_str(&format!("电话核对：{reason}。\n"));
+        s.push_str("电话不能证明微信账号归属。提交时自动复验；若已独立核对原始资料，可在命令末尾加“人工核对”。\n");
+        if v["contacts"]["ambiguous"] == true {
+            s.push_str("多个入住候选使用相同电话，请核对实际入住人。\n");
+        }
+    } else {
+        s.push_str("本事项尚未使用完整电话核对，请依据原始入住资料确认。\n");
+    }
     for (i, c) in v["candidates"].as_array().into_iter().flatten().enumerate() {
         s.push_str(&format!(
             "人员{}：{}\n",
@@ -305,7 +405,7 @@ fn render(reference: &str, v: &Value) -> String {
 fn parse(text: &str, v: &Value, operation: Uuid) -> Result<ReviewDecision> {
     let words: Vec<_> = text.split_whitespace().collect();
     ensure!(
-        words.len() >= 2 && words.len() <= 7,
+        words.len() >= 2 && words.len() <= 8,
         "explicit_group_confirmation_required"
     );
     let decision = match words[0] {
@@ -332,6 +432,7 @@ fn parse(text: &str, v: &Value, operation: Uuid) -> Result<ReviewDecision> {
     for w in &words[2..] {
         ensure!(seen.insert(*w), "explicit_group_confirmation_required");
         match *w {
+            "人工核对" => {}
             "关联住宿" => r.confirm_application_stay = true,
             "关联账号" => r.confirm_channel_person = true,
             "内容" => r.confirm_content = true,
@@ -361,7 +462,9 @@ fn parse(text: &str, v: &Value, operation: Uuid) -> Result<ReviewDecision> {
         }
     }
     ensure!(
-        decision == "confirm" || words.len() == 2,
+        decision == "confirm"
+            || words.len() == 2
+            || (decision == "create_person" && words.len() == 3 && words[2] == "人工核对"),
         "explicit_group_confirmation_required"
     );
     Ok(r)

@@ -61,6 +61,13 @@ class WelcomeHost:
         return self.broker({"action": "receipt", "presentation": presentation,
                             "claim": claim, "outcome": "delivered", "receipt": receipt})
 
-    def callback(self):
+    def callback(self, *, refresh_contacts=None):
         """The broker derives the sender and text from persisted authenticated input."""
+        context = self.broker({"action": "confirmation_context"})
+        if context["requires_contacts"]:
+            if refresh_contacts is None:
+                raise ValueError("contact_confirmation_refresh_required")
+            refreshed = refresh_contacts(context["work_item"], context["presentation"])
+            if refreshed.get("status") != "complete" or refreshed.get("scan_complete") is not True:
+                raise ValueError("contact_confirmation_refresh_incomplete")
         return self.broker({"action": "callback"})

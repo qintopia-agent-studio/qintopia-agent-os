@@ -1734,3 +1734,6 @@ async fn welcome_source_bound_person_creation_rejects_expiry_existing_and_change
     }
     Ok(())
 }
+
+#[path = "welcome_contacts_tests.rs"]
+mod contacts;

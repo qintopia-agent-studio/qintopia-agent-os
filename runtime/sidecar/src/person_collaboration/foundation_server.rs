@@ -966,7 +966,7 @@ pub(super) async fn card(store: &Store, actor: &Actor, artifact: Uuid) -> Result
     store.welcome_review_card(actor, artifact).await
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct TrustedContext {
     pub(super) platform: String,
@@ -1120,6 +1120,23 @@ pub(super) async fn broker_invoke(
             );
             return store
                 .welcome_host(gateway, t, serde_json::from_value(r.arguments)?)
+                .await;
+        }
+        if r.tool == "welcome_stay_contacts" {
+            ensure!(
+                profile == "anan"
+                    && t.gateway_id == gateway
+                    && std::env::var("QINTOPIA_APPLICATION_LOCAL_ENABLE").as_deref() == Ok("1"),
+                "agent_tool_denied"
+            );
+            return store
+                .welcome_stay_contacts(
+                    gateway,
+                    Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?,
+                    &std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?,
+                    &t,
+                    serde_json::from_value(r.arguments)?,
+                )
                 .await;
         }
         if r.tool == "welcome_source_projection" {

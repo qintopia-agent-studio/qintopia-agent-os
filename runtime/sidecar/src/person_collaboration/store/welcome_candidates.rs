@@ -4,7 +4,7 @@ use crate::person_collaboration::{digest, welcome_model::ReviewOpen};
 use anyhow::{ensure, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use sqlx::Row;
+use sqlx::{postgres::PgRow, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 #[derive(Deserialize)]
@@ -118,6 +118,33 @@ impl Store {
         Ok(json!({"stored":true,"identity_confirmed":false}))
     }
 
+    pub(super) async fn welcome_candidate_source(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        scope: Uuid,
+        application: Uuid,
+    ) -> Result<PgRow> {
+        let basis = self
+            .application_identity_basis(tx, scope, application)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("trusted_readback_required"))?;
+        let source=sqlx::query("SELECT p.hints,a.source_instance,b.property_id FROM qintopia_agent_os.welcome_source_projections p JOIN qintopia_agent_os.welcome_applications a ON a.id=p.application_id AND a.revision=p.application_revision AND a.field_hash=p.field_hash JOIN qintopia_agent_os.business_property_bindings b ON b.id=p.binding_id AND b.tenant_key=p.tenant_key AND b.version=p.binding_version AND b.active WHERE p.tenant_key=$1 AND p.scope_id=$2 AND a.id=$3 AND p.identity_hash=$4 AND p.expires_at>clock_timestamp() AND a.valid AND a.consent_active FOR SHARE OF p,a,b")
+            .bind(&self.tenant).bind(scope).bind(application).bind(basis).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("current_source_projection_required"))?;
+        Ok(source)
+    }
+    pub(super) async fn welcome_candidate_pool(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        scope: Uuid,
+        source: &str,
+        property: &str,
+    ) -> Result<Vec<PgRow>> {
+        let rows=sqlx::query("SELECT c.id AS case_id,c.order_id,c.occupant_id,c.version,c.stay_id,p.id AS person,p.display_name,p.preferred_name,ARRAY(SELECT alias FROM qintopia_identity.person_aliases WHERE person_id=p.id ORDER BY alias LIMIT 20) AS aliases,v.projection FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id AND NOT v.invalidated AND NOT v.conflicted JOIN qintopia_agent_os.welcome_identity_scopes s ON s.source_instance=c.source_instance AND s.property_id=c.property_id LEFT JOIN qintopia_identity.source_identity_links l ON l.namespace=s.namespace AND l.subject_type='pms_occupant' AND l.source_ref=c.occupant_id AND l.status='confirmed' LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id AND p.status='active' WHERE c.source_instance=$1 AND c.property_id=$2 AND c.admitted AND v.projection->>'state' IN ('Reserved','InHouse') AND v.projection->>'current_arrangement'='true' AND v.projection->>'inventory_reserved'='true' AND v.projection->>'stay'=c.stay_id AND EXISTS(SELECT 1 FROM jsonb_array_elements(v.projection->'occupants') o WHERE o->>'id'=c.occupant_id AND o->>'active'='true') AND EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_sources ws WHERE ws.source_instance=c.source_instance AND ws.property_id=c.property_id AND ws.enabled AND NOT ws.rebuilding) AND EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id WHERE f.tenant_key=$3 AND f.scope_id=$4 AND t.source_instance=c.source_instance AND t.property_id=c.property_id AND t.enabled AND (t.kind<>'building' OR t.building_code=v.projection->>'building')) ORDER BY c.id LIMIT 201 FOR SHARE OF c,v,s")
+            .bind(source).bind(property).bind(&self.tenant).bind(scope).fetch_all(&mut **tx).await?;
+        ensure!(rows.len() <= 200, "candidate_scope_too_large");
+        Ok(rows)
+    }
+
     pub(crate) async fn welcome_candidates(
         &self,
         subject: &WelcomeSubject,
@@ -127,19 +154,23 @@ impl Store {
         let (mut tx, _, _) = self.begin().await?;
         self.welcome_authorize(&mut tx, subject, scope, &["identity"])
             .await?;
-        let basis = self
-            .application_identity_basis(&mut tx, scope, application)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("trusted_readback_required"))?;
-        let source=sqlx::query("SELECT p.hints,a.source_instance,b.property_id FROM qintopia_agent_os.welcome_source_projections p JOIN qintopia_agent_os.welcome_applications a ON a.id=p.application_id AND a.revision=p.application_revision AND a.field_hash=p.field_hash JOIN qintopia_agent_os.business_property_bindings b ON b.id=p.binding_id AND b.tenant_key=p.tenant_key AND b.version=p.binding_version AND b.active WHERE p.tenant_key=$1 AND p.scope_id=$2 AND a.id=$3 AND p.identity_hash=$4 AND p.expires_at>clock_timestamp() AND a.valid AND a.consent_active FOR SHARE OF p,a,b")
-            .bind(&self.tenant).bind(scope).bind(application).bind(basis).fetch_optional(&mut *tx).await?.ok_or_else(||anyhow::anyhow!("current_source_projection_required"))?;
+        let source = self
+            .welcome_candidate_source(&mut tx, scope, application)
+            .await?;
         let hints: Value = source.get("hints");
         let name = normalize(&field(&hints["name"]));
         let nickname = normalize(&field(&hints["nickname"]));
-        // The authoritative stay projection may lack contact details; never invent them.
-        let rows=sqlx::query("SELECT c.id AS case_id,c.occupant_id,c.version,c.stay_id,p.id AS person,p.display_name,p.preferred_name,ARRAY(SELECT alias FROM qintopia_identity.person_aliases WHERE person_id=p.id ORDER BY alias LIMIT 20) AS aliases,v.projection FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=c.source_instance AND v.property_id=c.property_id AND v.aggregate_type='order' AND v.aggregate_id=c.order_id AND NOT v.invalidated AND NOT v.conflicted JOIN qintopia_agent_os.welcome_identity_scopes s ON s.source_instance=c.source_instance AND s.property_id=c.property_id LEFT JOIN qintopia_identity.source_identity_links l ON l.namespace=s.namespace AND l.subject_type='pms_occupant' AND l.source_ref=c.occupant_id AND l.status='confirmed' LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id AND p.status='active' WHERE c.source_instance=$1 AND c.property_id=$2 AND c.admitted AND v.projection->>'state' IN ('Reserved','InHouse') AND v.projection->>'current_arrangement'='true' AND v.projection->>'inventory_reserved'='true' AND v.projection->>'stay'=c.stay_id AND EXISTS(SELECT 1 FROM jsonb_array_elements(v.projection->'occupants') o WHERE o->>'id'=c.occupant_id AND o->>'active'='true') AND EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_sources ws WHERE ws.source_instance=c.source_instance AND ws.property_id=c.property_id AND ws.enabled AND NOT ws.rebuilding) AND EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_foundation_targets f JOIN qintopia_agent_os.welcome_targets t ON t.id=f.target_id WHERE f.tenant_key=$3 AND f.scope_id=$4 AND t.source_instance=c.source_instance AND t.property_id=c.property_id AND t.enabled AND (t.kind<>'building' OR t.building_code=v.projection->>'building')) ORDER BY c.id LIMIT 201")
-            .bind(source.get::<String,_>("source_instance")).bind(source.get::<String,_>("property_id")).bind(&self.tenant).bind(scope).fetch_all(&mut *tx).await?;
-        ensure!(rows.len() <= 200, "candidate_scope_too_large");
+        let rows = self
+            .welcome_candidate_pool(
+                &mut tx,
+                scope,
+                &source.get::<String, _>("source_instance"),
+                &source.get::<String, _>("property_id"),
+            )
+            .await?;
+        let contacts = self
+            .welcome_contacts_for_application(&mut tx, scope, application)
+            .await?;
         let mut candidates = Vec::new();
         for row in rows {
             let display: String = row
@@ -184,7 +215,35 @@ impl Store {
                 score += 10;
                 reasons.push("申请与住宿开始日期一致");
             }
-            candidates.push(json!({"case_ref":row.get::<Uuid,_>("case_id"),"person":row.get::<Option<Uuid>,_>("person"),"case_version":row.get::<i64,_>("version"),"label":format!("{} · {}",preferred.unwrap_or_else(||display.clone()),display),"building":projection["building"],"stay_ref":row.get::<String,_>("stay_id"),"occupant_ref":row.get::<String,_>("occupant_id"),"basis":reasons.join("；"),"score":score,"confirmed":false,"missing":["入住来源未提供可核验手机号；未用手机号认定本人"],"arrival_match":arrival_match}));
+            let case: Uuid = row.get("case_id");
+            let phone_status = if contacts["scan_complete"] == true {
+                contacts["evidence"]["comparisons"][case.to_string()]
+                    .as_str()
+                    .unwrap_or("not_read")
+            } else {
+                contacts["status"].as_str().unwrap_or("not_read")
+            };
+            let phone_reason = match phone_status {
+                "match" => {
+                    score += 1000;
+                    if contacts["evidence"]["ambiguous"] == true {
+                        "手机号一致，但有多个候选共用号码，须核对实际入住人"
+                    } else {
+                        "手机号一致，仅作为主要候选线索，仍需确认"
+                    }
+                }
+                "different" => "手机号不同，请核对是否填错或使用了其他号码",
+                "missing" => "此入住人未提供手机号",
+                "unusable" => "此入住人手机号格式无法核对",
+                "application_missing" => "历史申请未提供手机号，可按原始资料核对",
+                "application_unusable" => "申请手机号格式无法核对，可按原始资料核对",
+                "incomplete" => "部分住宿资料读取失败，尚不能按手机号完整排序",
+                "awaiting_source_sync" => "住宿更新尚未同步完成，请稍后重新核对",
+                "stale" => "电话核对资料已变化或过期，需要重新读取",
+                _ => "尚未完成逐人电话读取，可由客服核对原始资料",
+            };
+            reasons.insert(0, phone_reason);
+            candidates.push(json!({"case_ref":case,"person":row.get::<Option<Uuid>,_>("person"),"case_version":row.get::<i64,_>("version"),"label":format!("{} · {}",preferred.unwrap_or_else(||display.clone()),display),"building":projection["building"],"stay_ref":row.get::<String,_>("stay_id"),"occupant_ref":row.get::<String,_>("occupant_id"),"basis":reasons.join("；"),"score":score,"confirmed":false,"missing":[],"phone_status":phone_status,"arrival_match":arrival_match}));
         }
         candidates.sort_by_key(|v| std::cmp::Reverse(v["score"].as_i64().unwrap_or(0)));
         let ambiguous = candidates.len() > 1;
@@ -199,7 +258,7 @@ impl Store {
             .rev()
             .collect();
         Ok(
-            json!({"application":application,"label":format!("{} · {}",field(&hints["nickname"]),field(&hints["name"])),"phone_hint":if phone.is_empty(){String::new()}else{format!("尾号{suffix}")},"candidates":candidates,"ambiguous":ambiguous,"automatic_binding":false}),
+            json!({"application":application,"label":format!("{} · {}",field(&hints["nickname"]),field(&hints["name"])),"phone_hint":if phone.is_empty(){String::new()}else{format!("尾号{suffix}")},"candidates":candidates,"ambiguous":ambiguous,"automatic_binding":false,"contacts_status":contacts["status"],"phone_scan_complete":contacts["scan_complete"],"phone_ambiguous":contacts["evidence"]["ambiguous"]}),
         )
     }
 
