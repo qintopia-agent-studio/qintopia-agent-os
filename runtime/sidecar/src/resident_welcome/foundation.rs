@@ -83,10 +83,10 @@ impl AgentTaskContext {
             "trusted_welcome_task_required"
         );
         ensure!(
-            include_str!("../../../../registry/agents.yaml")
+            include_str!("../../../../fixtures/agents/welcome.yaml")
                 .lines()
                 .any(|line| line.trim() == format!("- id: agents/{expected}")),
-            "registered_welcome_agent_required"
+            "registered_local_welcome_agent_required"
         );
         Ok(Self {
             work,
@@ -701,6 +701,11 @@ impl Store {
                     && existing.get::<i64, _>("target_version") == request.target_version,
                 "approval_operation_conflict"
             );
+            tx.commit().await?;
+            // Approval may have committed before preparation failed. Replay the
+            // idempotent preparation with current authority, never the send.
+            self.foundation_prepare(case, request.target, &request.phase)
+                .await?;
             return Ok(json!({"approval_ref":request.operation,"version":1,"approval_kind":kind}));
         }
         sqlx::query("INSERT INTO qintopia_agent_os.welcome_approvals(id,artifact_id,target_id,target_version,phase,content_hash,approved_by,foundation_basis) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)")

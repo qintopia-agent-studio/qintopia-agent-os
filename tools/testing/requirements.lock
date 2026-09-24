@@ -6,4 +6,3 @@ pluggy==1.6.0
 pygments==2.19.2
 pytest==8.4.2
 attrs==25.3.0
-Pillow==11.3.0

@@ -42,6 +42,7 @@ mod database {
     use uuid::Uuid;
 
     async fn fixture() -> Result<Store> {
+        super::super::foundation_server::enable_test_http();
         let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
         let store = Store::local(
             &database,

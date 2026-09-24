@@ -29,6 +29,10 @@ belong in [production status](docs/operations/production-current-status.md) and 
 
 - Do not develop directly on `master`; preserve unrelated changes and local evidence.
 - Document first for features, behavior changes, migrations and runtime changes.
+- CI changes require a proposal reviewed against the owner's criteria and explicit owner
+  agreement before editing. Follow the
+  [CI change approval rule](docs/engineering/programming-agent-guardrails.md#ci-change-approval-rule);
+  development, repair, or merge authorization alone does not approve new CI changes.
 - Report the files read, intended changes, validation and production boundaries before
   editing. Localize behavior through existing code, tests and contracts.
 - Use a suitable existing checkout by default. Read the guardrails' worktree lifecycle

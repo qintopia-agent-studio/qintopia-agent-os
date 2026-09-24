@@ -1,3 +1,4 @@
+-- Design: docs/data-design/2026-09-23-ontology-audience.md
 -- Preserve only observed occupancy by building; current membership is always re-evaluated.
 CREATE TABLE qintopia_identity.person_stay_building_history (
     source_instance text NOT NULL,

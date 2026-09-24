@@ -5,12 +5,12 @@ import os
 import unittest
 from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 
 
 class AnanRuntimeContract(unittest.TestCase):
     def test_independent_plugin_does_not_register_other_agents_or_send_tools(self):
-        spec = importlib.util.spec_from_file_location("anan_runtime_test", ROOT / "agents/anan/__init__.py")
+        spec = importlib.util.spec_from_file_location("anan_runtime_test", ROOT / "fixtures/agents/anan/__init__.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         class Context:

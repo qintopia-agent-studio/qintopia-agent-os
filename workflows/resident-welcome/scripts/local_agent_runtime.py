@@ -144,7 +144,7 @@ def execute(raw: bytes) -> dict[str, Any]:
     if not isinstance(context["input"], dict):
         raise ValueError("invalid_task_input")
     validate(request["arguments"], EMPTY_ARGUMENTS)
-    plugin_path = ROOT / "agents" / agent / "welcome_runtime.py"
+    plugin_path = ROOT / "fixtures/agents" / agent / "welcome_runtime.py"
     source = plugin_path.read_bytes()
     # Execute exactly the bytes whose digest is returned. A loader reopening the
     # path or using cached bytecode would weaken the source identity evidence.
@@ -178,7 +178,7 @@ def main():
     # No credentials or application config survive into the fixed plugin host. The
     # audited plugins read only their code/fonts; the host exposes no DB/channel API.
     for key in list(os.environ):
-        if key not in {"LANG", "LC_ALL", "PYTHONUNBUFFERED", "PYTHONDONTWRITEBYTECODE"}:
+        if key not in {"LANG", "LC_ALL", "PYTHONUNBUFFERED", "PYTHONDONTWRITEBYTECODE", "QINTOPIA_WELCOME_TEST_ARTIFACT"}:
             del os.environ[key]
     sys.dont_write_bytecode = True
     sys.addaudithook(deny_external_effects)

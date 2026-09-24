@@ -11,6 +11,7 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 async fn setup() -> Result<(Store, Actor, Value, Uuid)> {
+    super::foundation_server::enable_test_http();
     let (store, owner, state) = fixture().await?;
     let scope = find(&state, "scopes", "一栋");
     assign(

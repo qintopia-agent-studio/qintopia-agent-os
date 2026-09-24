@@ -189,3 +189,6 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   `cargo run -- erhua-member-speaker-canary-sender-map --chat-id <reviewed-erhua-qiwe-group-id>`.
   Its output contains raw QiWe sender ids; keep it as a server-local temporary file only
   and never retain it as evidence.
+
+本地欢迎的脚本测试替身位于
+`fixtures/agents/erhua/welcome_runtime.py`，不代表真实 Hermes 接线或正式制卡能力。

@@ -2062,6 +2062,27 @@
             "real": ["PostgreSQL范围/来源模式校验、观测事务、订单与成员状态保持"],
             "simulated": ["本地合成来源；不连接真实PMS或群成员接口"]
           }
+        },
+        {
+          "id": "resident-welcome/foundation-approval-replay",
+          "name": "审批已保存后的准备失败重试，不重复发送",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/resident_welcome/foundation_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "resident_welcome::foundation_tests::foundation_welcome_approval_replay_recovers_preparation_without_resending",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["审批持久化、幂等重试恢复准备、动作去重"],
+            "simulated": ["固定图片与本地执行器；不调用真实制卡或发送"]
+          }
         }
       ]
     },
@@ -2094,7 +2115,7 @@
           "aliases": [],
           "executor": "unittest",
           "target": {
-            "path": "agents/anan/tests",
+            "path": "fixtures/agents/anan/tests",
             "args": ["-v"],
             "count_strategy": "unittest"
           },
@@ -2102,7 +2123,7 @@
           "timeout_seconds": 180,
           "required": true,
           "boundary": {
-            "real": ["岸岸 package、注册接口和生产边界声明"],
+            "real": ["岸岸测试替身、注册接口和生产隔离"],
             "simulated": ["Hermes tool host；不启动生产 Profile"]
           }
         },
@@ -2123,7 +2144,7 @@
             "real": [
               "岸岸、阿靓、二花插件注册和进程执行",
               "可信任务协议与输入输出源码哈希",
-              "Pillow 真实渲染、尺寸和内容边界"
+              "固定 PNG 产物、输入摘要和内容边界"
             ],
             "simulated": ["虚构任务与姓名简介；无真实资料、Hermes、网络或模型"]
           }

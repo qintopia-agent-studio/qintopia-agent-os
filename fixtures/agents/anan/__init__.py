@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def register(ctx):
-    path = Path(__file__).resolve().parents[2] / "skills" / "person-foundation" / "__init__.py"
+    path = Path(__file__).resolve().parents[3] / "skills" / "person-foundation" / "__init__.py"
     spec = importlib.util.spec_from_file_location("qintopia_anan_foundation", path)
     if spec is None or spec.loader is None:
         raise RuntimeError("person-foundation package unavailable")

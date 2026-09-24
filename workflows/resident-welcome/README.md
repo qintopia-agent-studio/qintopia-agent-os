@@ -19,8 +19,9 @@ OS 的统一设置；本流程只使用这些设置，不要求用户为欢迎�
 本批本地任务由岸岸 `anan` 编排，阿靓 `huabaosi` 渲染受控卡片，二花 `erhua`
 传递具体版本审核并转发。内部可信上下文从持久 WorkItem 的固定 Agent、capability 和来源构造；模型不能自行填 Agent 身份。不恢复 call_agent，不启用生产 Profile。
 
-本地 Runtime 通过固定 `scripts/local_agent_runtime.py` 子进程加载各 Agent 自己的
-`welcome_runtime.py`，调用其真实注册工具。Rust 锁定 WorkItem 后构造 stdin 可信任务上下文；工具的模型参数固定为空。
+本地 Runtime 通过固定 `scripts/local_agent_runtime.py` 子进程加载
+`fixtures/agents/<agent>/welcome_runtime.py`
+中各参与者的本地测试工具，调用其真实注册工具。Rust 锁定 WorkItem 后构造 stdin 可信任务上下文；工具的模型参数固定为空。
 
 岸岸返回制卡请求和逐部分执行计划，阿靓运行 Pillow 并返回 PNG，二花返回绑定具体 Artifact/hash 的审核或转发指令。Rust 实际使用这些结果，并保留最终身份、权限、内容版本与发送门禁。
 
@@ -147,3 +148,21 @@ OS 负责受控任务、输入许可、Artifact 版本及审核／发送回执�
 
 当前 `render_synthetic_card.py`
 是本地虚构资料测试替身，由阿靓的本地测试插件调用。它不代表四老师现有实现尚未完成，也不代表旧能力已经迁移。后续应先定位四老师现有源码与依赖，保留原效果和样例，再迁移到阿靓能力包；不因 CI 通过而启用或替换生产渲染器。
+
+## 自动化链路与视觉验收分离
+
+CI 的 Rust 欢迎测试在 test 构建中选择
+`scripts/test_card_artifact.py`，Python 协议测试也显式选择同一夹具。它生成固定像素、绑定输入摘要的 PNG，不模拟中文排版。
+
+仍实际验证插件进程、输入边界、产物版本、审批撤旧和失败恢复。共享测试框架无需欢迎专用环境变量、Pillow 或字库。
+
+本地演示保持显式的 Pillow 解释器配置。可选视觉检查：在独立 Python 环境安装
+`requirements-visual.txt` 后，运行
+`python3 -m unittest discover -s workflows/resident-welcome/visual-tests -v`。这只是合成排版；四老师真实卡片需另行联调，不作为 CI 的网络依赖。
+
+岸岸本地替身位于 `fixtures/agents/anan/`，其真实 Hermes
+Runtime 已由负责人建立，但本 PR 不接管该 Profile 或服务部署。二花与阿靓的欢迎测试替身也归入
+`fixtures/agents/`；二花真实人员工具入口仍在原插件能力目录。
+
+合成欢迎的参与者声明位于
+`fixtures/agents/welcome.yaml`，仅供现有 synthetic 来源链路核验固定任务协议，不从生产部署清单推断测试执行器是否可用。

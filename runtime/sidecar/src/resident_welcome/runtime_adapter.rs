@@ -56,8 +56,19 @@ pub(super) async fn invoke(
 }
 
 fn run(request: Value) -> Result<Invocation> {
+    #[cfg(not(test))]
     let python = std::env::var("QINTOPIA_WELCOME_RENDER_PYTHON")
         .map_err(|_| anyhow::anyhow!("explicit_renderer_python_required"))?;
+    #[cfg(test)]
+    let python = {
+        // Exercise the real process/tool protocol with a fixed test artifact.
+        // No visual renderer or shared CI environment configuration is needed.
+        let result = Command::new("python3")
+            .args(["-c", "import sys; print(sys.executable)"])
+            .output()?;
+        ensure!(result.status.success(), "test_python_unavailable");
+        String::from_utf8(result.stdout)?.trim().to_owned()
+    };
     ensure!(
         std::path::Path::new(&python).is_absolute(),
         "absolute_renderer_python_required"
@@ -65,15 +76,17 @@ fn run(request: Value) -> Result<Invocation> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let runner = root.join("workflows/resident-welcome/scripts/local_agent_runtime.py");
     let agent = request["agent"].as_str().unwrap();
-    let plugin = root.join(format!("agents/{agent}/welcome_runtime.py"));
+    let plugin = root.join(format!("fixtures/agents/{agent}/welcome_runtime.py"));
     let plugin_hash =
         digest(&std::fs::read(plugin).map_err(|_| anyhow::anyhow!("agent_runtime_unavailable"))?);
     let raw = serde_json::to_vec(&request)?;
     ensure!(raw.len() <= 64 * 1024, "agent_runtime_input_too_large");
     let request_hash = digest(&raw);
-    let mut child = Command::new(python)
-        .arg(runner)
-        .env_clear()
+    let mut command = Command::new(python);
+    command.arg(runner).env_clear();
+    #[cfg(test)]
+    command.env("QINTOPIA_WELCOME_TEST_ARTIFACT", "1");
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

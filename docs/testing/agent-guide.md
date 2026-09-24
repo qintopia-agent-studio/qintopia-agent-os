@@ -116,6 +116,11 @@ pnpm test:report
 
 ## 欢迎渲染与跨平台任期回归
 
-PostgreSQL 欢迎集成需显式设置
-`QINTOPIA_WELCOME_RENDER_PYTHON`，使用安装了锁定 Pillow 的解释器。Linux 测试机需安装
-`fonts-noto-cjk`，避免中文缺字造成不同文案看似相同。渲染产物还绑定输入摘要；图片像素相同不能证明原始内容相同。任期精度回归使用固定纳秒输入，覆盖 PostgreSQL 微秒读回后的编辑行为。
+PostgreSQL 欢迎集成使用业务包固定 PNG 夹具，继续执行真实进程协议、产物登记、审批与版本失效检查，不依赖 Pillow 或字库，不声称验证了实际排版。业务测试自行准备本地 HTTP 开关；生产默认门禁不变。
+
+手工验证合成排版时，按 `workflows/resident-welcome/requirements-visual.txt`
+安装依赖，并运行该包的 `visual-tests`；本地演示继续显式设置
+`QINTOPIA_WELCOME_RENDER_PYTHON`
+为装有 Pillow 的绝对解释器路径。真实制卡能力仍属于四老师，迁给阿靓需独立联调。
+
+任期精度回归使用固定纳秒输入，覆盖 PostgreSQL 微秒读回后的编辑行为。

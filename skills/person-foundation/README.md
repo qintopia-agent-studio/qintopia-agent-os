@@ -49,7 +49,7 @@ adapter 明确记录为
 
 ```sh
 python3 -m unittest discover -s skills/person-foundation/tests -v
-python3 -m unittest discover -s agents/anan/tests -v
+python3 -m unittest discover -s fixtures/agents/anan/tests -v
 pnpm skills:qintopia-tools:check
 pnpm registry:check
 ```
@@ -65,3 +65,8 @@ QINTOPIA_FOUNDATION_SMOKE_ENABLE=1 python3 skills/person-foundation/tests/local_
 网关，写入并停止虚构人员的回复偏好，验证读回、条件更正、旧消息不恢复、跨范围与身份伪造拒绝；仅输出计数及边界，不输出 token、身份引用或业务内容。
 
 关闭本地 flag 或停止 socket 服务即可停用。已写本地审计和版本不删除；恢复时先查持久状态，未知结果不重放。当前不提供生产 Profile、真实登录提供方、真实上传/外发或真实 PMS/飞书写入。
+
+## 发布归属
+
+二花现有 qintopia-tools 注册入口按需加载本包，因此本包源文件变更归属既有 `hermes-erhua`
+重启目标。该登记经负责人确认，只复用原有部署流程，不新增服务或启用工具；本地开关、可信网关与生产接入门禁保持独立。岸岸测试替身位于 fixtures，真实岸岸接入须先核对 Runtime。

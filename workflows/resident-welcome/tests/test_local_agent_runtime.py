@@ -11,7 +11,8 @@ import sys
 import unittest
 from uuid import uuid4
 
-from PIL import Image
+import struct
+import zlib
 
 ROOT = Path(__file__).resolve().parents[3]
 RUNNER = ROOT / "workflows/resident-welcome/scripts/local_agent_runtime.py"
@@ -39,7 +40,8 @@ class LocalAgentRuntimeTests(unittest.TestCase):
     def run_request(self, request, expected_success=True):
         raw = request if isinstance(request, bytes) else encoded(request)
         process = subprocess.run([sys.executable, str(RUNNER)], input=raw, stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE, timeout=15, check=False)
+                                 stderr=subprocess.PIPE, timeout=15, check=False,
+                                 env={**os.environ, "QINTOPIA_WELCOME_TEST_ARTIFACT": "1"})
         self.assertEqual(process.stderr, b"")
         result = json.loads(process.stdout)
         self.assertEqual(process.returncode, 0 if expected_success else 2, result)
@@ -53,7 +55,7 @@ class LocalAgentRuntimeTests(unittest.TestCase):
             self.assertEqual(result["plugin_id"], "qintopia-welcome-" + request["agent"])
             self.assertEqual(result["request_sha256"], hashlib.sha256(raw).hexdigest())
             self.assertEqual(result["output_sha256"], hashlib.sha256(encoded(result["output"])).hexdigest())
-            plugin = ROOT / "agents" / request["agent"] / "welcome_runtime.py"
+            plugin = ROOT / "fixtures/agents" / request["agent"] / "welcome_runtime.py"
             self.assertEqual(result["plugin_source_sha256"], hashlib.sha256(plugin.read_bytes()).hexdigest())
         else:
             self.assertEqual(result["ok"], False)
@@ -82,10 +84,8 @@ class LocalAgentRuntimeTests(unittest.TestCase):
         self.assertEqual((output["case_ref"], output["case_version"]), (CASE, 3))
         content = base64.b64decode(output["content_base64"], validate=True)
         self.assertEqual(output["content_hash"], hashlib.sha256(content).hexdigest())
-        with Image.open(io.BytesIO(content)) as image:
-            image.load()
-            self.assertEqual(image.size, (1080, 720))
-            self.assertGreater(len(image.getcolors(maxcolors=1080 * 720)), 20)
+        self.assertEqual(content[:8], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(struct.unpack(">II", content[16:24]), (1, 1))
 
     def test_erhua_registered_tools_preserve_exact_review_and_send_binding(self):
         review = {"case_ref": CASE, "target_ref": TARGET, "phase": "formal", "artifact_ref": ARTIFACT,

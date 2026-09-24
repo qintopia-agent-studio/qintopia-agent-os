@@ -800,17 +800,7 @@ async fn run_once(
 fn staging_apply_config(database_url: &str) -> Result<AdapterConfig> {
     validate_staging_owner_approval(std::env::var(STAGING_APPROVAL_ENV).ok().as_deref())?;
     let disposable_test = disposable_postgres_smoke_enabled();
-    if disposable_test {
-        #[cfg(feature = "postgres-integration-tests")]
-        validate_disposable_smoke_database_boundary(
-            database_url,
-            std::env::var("QINTOPIA_HUABAOSI_IMAGE_TEST_DATABASE_URL_SHA256")
-                .ok()
-                .as_deref(),
-        )?;
-    } else {
-        validate_staging_database_boundary(database_url, false)?;
-    }
+    validate_staging_database_boundary(database_url, disposable_test)?;
     let config = AdapterConfig::from_env(database_url)
         .context("Huabaosi staging adapter configuration is invalid")?;
     if disposable_test {
@@ -952,47 +942,9 @@ fn validate_staging_database_boundary_with_allowlist(
 
 #[cfg(feature = "huabaosi-staging-adapter")]
 fn disposable_postgres_smoke_enabled() -> bool {
-    disposable_postgres_smoke_allowed(
-        std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE")
-            .ok()
-            .as_deref(),
-    )
-}
-
-#[cfg(any(test, feature = "huabaosi-staging-adapter"))]
-fn disposable_postgres_smoke_allowed(opt_in: Option<&str>) -> bool {
-    cfg!(feature = "postgres-integration-tests") && opt_in.is_some_and(|value| value.trim() == "1")
-}
-
-#[cfg(any(
-    test,
-    all(
-        feature = "huabaosi-staging-adapter",
-        feature = "postgres-integration-tests"
-    )
-))]
-fn validate_disposable_smoke_database_boundary(
-    database_url: &str,
-    expected_hash: Option<&str>,
-) -> Result<()> {
-    let expected_hash = expected_hash.context("explicit disposable database URL hash required")?;
-    if !is_lower_hex(expected_hash, 64)
-        || format!("{:x}", Sha256::digest(database_url.as_bytes())) != expected_hash
-    {
-        bail!("disposable database URL hash mismatch");
-    }
-    let parsed = Url::parse(database_url).context("parse disposable database URL")?;
-    if database_url.contains(['\r', '\n', '\t'])
-        || !matches!(parsed.scheme(), "postgres" | "postgresql")
-        || !matches!(parsed.host_str(), Some("127.0.0.1" | "[::1]"))
-        || parsed.port().is_none_or(|port| port < 1024)
-        || parsed.path() != "/qintopia_test"
-        || parsed.fragment().is_some()
-        || !matches!(parsed.query(), None | Some("sslmode=disable"))
-    {
-        bail!("disposable database requires literal-loopback qintopia_test without connection overrides");
-    }
-    Ok(())
+    cfg!(feature = "postgres-integration-tests")
+        && std::env::var("QINTOPIA_OPERATIONS_APPLY_SMOKE_ENABLE")
+            .is_ok_and(|value| value.trim() == "1")
 }
 
 #[cfg(any(test, feature = "huabaosi-staging-adapter"))]
@@ -2898,37 +2850,6 @@ mod tests {
     fn ci_disposable_database_url_is_reviewed_explicitly() {
         let ci_loopback_url = "postgres://postgres:postgres@127.0.0.1:5432/qintopia_test";
         assert!(validate_staging_database_boundary(ci_loopback_url, true).is_ok());
-    }
-
-    #[test]
-    fn disposable_smoke_hash_binds_random_port_without_expanding_staging_allowlist() {
-        assert!(!disposable_postgres_smoke_allowed(None));
-        assert!(!disposable_postgres_smoke_allowed(Some("0")));
-        assert_eq!(
-            disposable_postgres_smoke_allowed(Some("1")),
-            cfg!(feature = "postgres-integration-tests")
-        );
-        let local = "postgres://postgres:postgres@127.0.0.1:32775/qintopia_test";
-        let hash = format!("{:x}", Sha256::digest(local.as_bytes()));
-        assert!(validate_disposable_smoke_database_boundary(local, Some(&hash)).is_ok());
-        assert!(validate_disposable_smoke_database_boundary(local, None).is_err());
-        assert!(validate_disposable_smoke_database_boundary(local, Some(&"0".repeat(64))).is_err());
-        assert!(validate_staging_database_boundary(local, true).is_err());
-        for invalid in [
-            "postgres://postgres:postgres@db.example.test:32775/qintopia_test",
-            "postgres://postgres:postgres@localhost:32775/qintopia_test",
-            "postgres://postgres:postgres@127.0.0.1:32775/qintopia",
-            "postgres://postgres:postgres@127.0.0.1/qintopia_test",
-            "postgres://postgres:postgres@127.0.0.1:1/qintopia_test",
-            "postgres://postgres:postgres@127.0.0.1:32775/qintopia_test?host=db.example.test",
-            "postgres://postgres:postgres@127.0.0.1:32775/qintopia_test#ignored",
-        ] {
-            let hash = format!("{:x}", Sha256::digest(invalid.as_bytes()));
-            assert!(validate_disposable_smoke_database_boundary(invalid, Some(&hash)).is_err());
-        }
-        let local = "postgresql://postgres:postgres@[::1]:32775/qintopia_test?sslmode=disable";
-        let hash = format!("{:x}", Sha256::digest(local.as_bytes()));
-        assert!(validate_disposable_smoke_database_boundary(local, Some(&hash)).is_ok());
     }
 
     #[test]

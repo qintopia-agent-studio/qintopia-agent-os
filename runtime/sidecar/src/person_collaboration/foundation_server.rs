@@ -1304,3 +1304,11 @@ pub(crate) fn error_code(error: &anyhow::Error) -> String {
         "foundation_operation_failed".into()
     }
 }
+
+// Only business test fixtures enable their own local endpoint. The production
+// dispatcher still checks the explicit startup gate above.
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(super) fn enable_test_http() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| std::env::set_var("QINTOPIA_FOUNDATION_LOCAL_ENABLE", "1"));
+}

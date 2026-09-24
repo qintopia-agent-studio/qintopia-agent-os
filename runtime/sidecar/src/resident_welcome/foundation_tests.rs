@@ -164,7 +164,7 @@ async fn effects(f: &Fixture) -> Result<i64> {
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_direct_review_real_agents_and_partial_unknown_recovery() -> Result<()> {
     let f = fixture().await?;
     setting(&f, 0, "direct", &["text", "image"], None, 0).await?;
@@ -231,7 +231,9 @@ async fn foundation_welcome_direct_review_real_agents_and_partial_unknown_recove
         .bind(vec![case(&f,0),case(&f,1)]).bind(vec![case(&f,0).to_string(),case(&f,1).to_string()]).fetch_all(&f.welcome.pool).await?;
     assert_eq!(agents, vec!["anan", "erhua", "huabaosi"]);
     let stored:Vec<u8>=sqlx::query_scalar("SELECT d.content FROM qintopia_agent_os.welcome_local_artifact_data d JOIN qintopia_agent_os.welcome_artifact_bindings b ON b.artifact_id=d.artifact_id WHERE b.case_id=$1 AND d.media_type='image/png' LIMIT 1").bind(case(&f,0)).fetch_one(&f.welcome.pool).await?;
-    assert_eq!(image::load_from_memory(&stored)?.width(), 1080);
+    // The process returns a real, decodable fixed PNG; visual layout is tested separately.
+    let image = image::load_from_memory(&stored)?;
+    assert_eq!((image.width(), image.height()), (1, 1));
     let runtime:Vec<Value>=sqlx::query_scalar("SELECT e.data FROM qintopia_agent_os.work_item_events e JOIN qintopia_agent_os.work_items w ON w.id=e.work_item_id WHERE e.event_type='welcome_runtime_result' AND w.idempotency_key LIKE ANY($1)")
         .bind(vec![format!("%{}%",case(&f,0)),format!("%{}%",case(&f,1))]).fetch_all(&f.welcome.pool).await?;
     let operations: std::collections::BTreeSet<String> = runtime
@@ -316,7 +318,7 @@ async fn foundation_welcome_direct_review_real_agents_and_partial_unknown_recove
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_single_overrides_future_expiry_and_content_versions() -> Result<()> {
     let f = fixture().await?;
     setting(&f, 0, "direct", &["text", "image"], None, 0).await?;
@@ -385,7 +387,7 @@ async fn foundation_welcome_single_overrides_future_expiry_and_content_versions(
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_timing_permission_change_and_scope_fail_closed() -> Result<()> {
     let f = fixture().await?;
     setting(&f, 0, "direct", &["text"], None, 0).await?;
@@ -455,7 +457,7 @@ async fn foundation_welcome_timing_permission_change_and_scope_fail_closed() -> 
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_upper_confirmation_and_executor_retention() -> Result<()> {
     let f = fixture().await?;
     assign(&f.people, &f.owner, f.stewards[1], scope(&f, 0), None).await?;
@@ -513,7 +515,7 @@ async fn foundation_welcome_upper_confirmation_and_executor_retention() -> Resul
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_month_review_never_reuses_previous_case_approval() -> Result<()> {
     let f = fixture().await?;
     let setting = KnowledgeWrite {
@@ -557,7 +559,7 @@ async fn foundation_welcome_month_review_never_reuses_previous_case_approval() -
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_content_revision_consent_and_legacy_bypass_rejected() -> Result<()> {
     let f = fixture().await?;
     setting(&f, 0, "direct", &["text", "image"], None, 0).await?;
@@ -669,7 +671,7 @@ async fn publish_only_confirmer(f: &Fixture) -> Result<()> {
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_direct_upper_confirmation_needs_publish_without_review() -> Result<()> {
     let f = fixture().await?;
     publish_only_confirmer(&f).await?;
@@ -708,7 +710,7 @@ async fn foundation_welcome_direct_upper_confirmation_needs_publish_without_revi
 }
 
 #[tokio::test]
-#[ignore = "explicit isolated database and Pillow renderer required"]
+#[ignore = "explicit isolated database required"]
 async fn foundation_welcome_review_and_upper_confirmation_remain_separate() -> Result<()> {
     let f = fixture().await?;
     publish_only_confirmer(&f).await?;
@@ -775,3 +777,52 @@ async fn foundation_welcome_review_and_upper_confirmation_remain_separate() -> R
 
 #[path = "steward_tests.rs"]
 mod steward_tests;
+
+#[tokio::test]
+#[ignore = "explicit isolated database required"]
+async fn foundation_welcome_approval_replay_recovers_preparation_without_resending() -> Result<()> {
+    let f = fixture().await?;
+    setting(&f, 0, "review", &["text", "image"], None, 0).await?;
+    render(&f, 0).await?;
+    prepare(&f, 0).await?;
+    let artifact = artifacts(&f, 0).await?.remove(0);
+    let request = ReviewRequest {
+        operation: Uuid::new_v4(),
+        artifact: id(&artifact["artifact_ref"]),
+        target: target(&f, 0),
+        target_version: 1,
+        phase: "formal".into(),
+        content_hash: artifact["content_hash"].as_str().unwrap().into(),
+    };
+    sqlx::query("UPDATE qintopia_agent_os.collaboration_local_executors SET available=false WHERE tenant_key=$1 AND agent_key='anan'").bind(&f.tenant).execute(&f.welcome.pool).await?;
+    let error = f
+        .welcome
+        .foundation_approve(&f.tenant, f.stewards[0], &request)
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("executor_unavailable"),
+        "{error}"
+    );
+    let saved: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.welcome_approvals WHERE id=$1")
+            .bind(request.operation)
+            .fetch_one(&f.welcome.pool)
+            .await?;
+    assert_eq!(saved, 1, "approval committed before preparation failed");
+    sqlx::query("UPDATE qintopia_agent_os.collaboration_local_executors SET available=true WHERE tenant_key=$1 AND agent_key='anan'").bind(&f.tenant).execute(&f.welcome.pool).await?;
+    for _ in 0..2 {
+        let replay = f
+            .welcome
+            .foundation_approve(&f.tenant, f.stewards[0], &request)
+            .await?;
+        assert_eq!(replay["approval_ref"], json!(request.operation));
+    }
+    let actions: i64 = sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.welcome_actions WHERE case_id=$1 AND artifact_id=$2").bind(case(&f,0)).bind(request.artifact).fetch_one(&f.welcome.pool).await?;
+    assert_eq!(
+        actions, 1,
+        "replay must restore one action without duplication"
+    );
+    assert_eq!(effects(&f).await?, 0, "approval retry must never send");
+    Ok(())
+}

@@ -587,3 +587,6 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   installation evidence now exist, but the no-network preflight remains fail-closed
   because provider/media configuration is not provisioned; the timer must remain
   disabled until that gate passes.
+
+本地欢迎的脚本测试替身位于
+`fixtures/agents/huabaosi/welcome_runtime.py`，不代表真实 Hermes 接线或正式制卡能力。

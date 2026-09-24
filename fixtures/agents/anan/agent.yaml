@@ -24,7 +24,7 @@ validation:
     - pnpm registry:check
     - pnpm agents:profile-bundles:check
     - pnpm deploy:runner:check
-    - python3 -m unittest discover -s agents/anan/tests -v
+    - python3 -m unittest discover -s fixtures/agents/anan/tests -v
 dependencies:
   - workflows/resident-welcome
   - skills/person-foundation

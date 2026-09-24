@@ -24,7 +24,6 @@ validation:
 dependencies:
   - runtime/sidecar
   - runtime/postgres
-  - agents/anan
   - agents/silaoshi
   - agents/erhua
   - agents/huabaosi

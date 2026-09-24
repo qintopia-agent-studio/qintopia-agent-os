@@ -2,6 +2,7 @@
 import base64
 import hashlib
 import importlib.util
+import os
 from pathlib import Path
 
 from local_agent_runtime import EMPTY_ARGUMENTS, REFERENCE, object_schema, text_schema
@@ -17,7 +18,8 @@ def register(ctx):
             "material": object_schema({"display_name": text_schema(40),
                                        "description": {"type": "string", "minLength": 0, "maxLength": 320}}),
         }))
-        renderer_path = Path(__file__).resolve().parents[2] / "workflows/resident-welcome/scripts/render_synthetic_card.py"
+        script = "test_card_artifact.py" if os.environ.get("QINTOPIA_WELCOME_TEST_ARTIFACT") == "1" else "render_synthetic_card.py"
+        renderer_path = Path(__file__).resolve().parents[3] / "workflows/resident-welcome/scripts" / script
         spec = importlib.util.spec_from_file_location("qintopia_welcome_synthetic_renderer", renderer_path)
         if spec is None or spec.loader is None:
             raise ValueError("renderer_unavailable")

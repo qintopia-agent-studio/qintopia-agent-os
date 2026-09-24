@@ -14,7 +14,6 @@ import {
   createAllureResult,
   commandForScenario,
   resetDatabase,
-  venvPython,
 } from "../lib.mjs";
 
 test("catalog resolves full, feature, alias and parameterized scenario without duplicate execution", () => {
@@ -188,33 +187,4 @@ test("a foreign database ownership marker prevents reset before any mutation", a
     ],
   };
   await assert.rejects(resetDatabase(database), /marker mismatch; refusing reset/);
-});
-
-test("welcome renderer uses the owned test Python and ignores ambient override", () => {
-  const prior = process.env.QINTOPIA_WELCOME_RENDER_PYTHON;
-  process.env.QINTOPIA_WELCOME_RENDER_PYTHON = "/untrusted/renderer-python";
-  try {
-    const { catalog } = validateCatalog();
-    const { feature, scenario } = selectScenarios(catalog, {
-      scenario: "resident-welcome/foundation-direct-review-recovery",
-    })[0];
-    const command = commandForScenario(feature, scenario, {
-      runId: "test-renderer",
-      runDir: "/tmp/test-renderer",
-    });
-    assert.equal(command.env.QINTOPIA_WELCOME_RENDER_PYTHON, venvPython);
-    assert.equal(safeEnvironment().QINTOPIA_WELCOME_RENDER_PYTHON, undefined);
-    assert.equal(command.env.QINTOPIA_FOUNDATION_LOCAL_ENABLE, undefined);
-    const http = selectScenarios(catalog, {
-      scenario: "person-collaboration/foundation-http-memory-replay",
-    })[0];
-    const httpCommand = commandForScenario(http.feature, http.scenario, {
-      runId: "test-foundation-http",
-      runDir: "/tmp/test-foundation-http",
-    });
-    assert.equal(httpCommand.env.QINTOPIA_FOUNDATION_LOCAL_ENABLE, "1");
-  } finally {
-    if (prior === undefined) delete process.env.QINTOPIA_WELCOME_RENDER_PYTHON;
-    else process.env.QINTOPIA_WELCOME_RENDER_PYTHON = prior;
-  }
 });

@@ -30,7 +30,7 @@ PY
 python3 - "$sidecar_dir" <<'PY'
 import hashlib, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1]).parents[1]
-paths = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'runtime/sidecar', 'runtime/postgres/migrations', 'registry', 'workflows/resident-welcome', 'skills/person-foundation', 'skills/qintopia-tools/variants/erhua', 'agents/anan', 'agents/huabaosi', 'agents/erhua'], cwd=root).split(b'\0')
+paths = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard', 'runtime/sidecar', 'runtime/postgres/migrations', 'registry', 'workflows/resident-welcome', 'skills/person-foundation', 'skills/qintopia-tools/variants/erhua', 'agents/anan', 'fixtures/agents', 'agents/huabaosi', 'agents/erhua'], cwd=root).split(b'\0')
 h = hashlib.sha256()
 for name in sorted(set(paths)):
     if name:

@@ -439,11 +439,7 @@ function runPostgresChecks() {
         "--test-threads=1",
       ],
       {
-        env: {
-          ...postgresTestEnv,
-          QINTOPIA_TEST_MODE: "1",
-          QINTOPIA_FOUNDATION_LOCAL_ENABLE: "1",
-        },
+        env: { ...postgresTestEnv, QINTOPIA_TEST_MODE: "1" },
       }
     );
   }

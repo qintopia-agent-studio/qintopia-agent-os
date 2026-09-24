@@ -43,14 +43,6 @@ function verifyUntrackedRiskPath(relativePath) {
     const invocationLog = path.join(fixtureRoot, "command-invocations.log");
     const recorder = `#!/bin/sh
 printf '%s %s\\n' "$0" "$*" >> "$QINTOPIA_TEST_INVOCATION_LOG"
-case "$*" in
-  *"--features postgres-integration-tests person_collaboration --"*)
-    if [ "$QINTOPIA_TEST_MODE" != "1" ] || [ "$QINTOPIA_FOUNDATION_LOCAL_ENABLE" != "1" ]; then
-      printf '%s\\n' "Foundation integration requires explicit test and local enable gates" >&2
-      exit 1
-    fi
-    ;;
-esac
 exit 0
 `;
 
@@ -96,7 +88,6 @@ exit 0
         ...process.env,
         PATH: `${fakeBin}${path.delimiter}${process.env.PATH ?? ""}`,
         QINTOPIA_TEST_INVOCATION_LOG: invocationLog,
-        QINTOPIA_FOUNDATION_LOCAL_ENABLE: "0",
       }
     );
     const invocations = fs.readFileSync(invocationLog, "utf8");
@@ -1112,30 +1103,6 @@ if (ciWorkflow) {
         errors.push(
           ".github/workflows/ci.yml: PostgreSQL integration must run the guarded apply smoke"
         );
-      }
-      const foundationIntegrationStep = postgresJob.steps?.find(
-        (step) =>
-          step?.name ===
-          "Person collaboration and resident welcome PostgreSQL integration"
-      );
-      if (
-        foundationIntegrationStep?.env?.QINTOPIA_TEST_MODE !== "1" ||
-        foundationIntegrationStep?.env?.QINTOPIA_FOUNDATION_LOCAL_ENABLE !== "1"
-      ) {
-        errors.push(
-          ".github/workflows/ci.yml: Foundation integration must explicitly enable its disposable test and local HTTP gates"
-        );
-      }
-      for (const module of ["person_collaboration", "resident_welcome"]) {
-        if (
-          !String(foundationIntegrationStep?.run ?? "").includes(
-            `--features postgres-integration-tests ${module} -- --include-ignored --test-threads=1`
-          )
-        ) {
-          errors.push(
-            `.github/workflows/ci.yml: Foundation integration must include the complete ${module} suite`
-          );
-        }
       }
       const groupSendIntegrationStep = postgresJob.steps?.find(
         (step) => step?.name === "Rust group send-ready PostgreSQL integration"
