@@ -543,6 +543,21 @@ async fn welcome_reopen_after_revoke_requires_explicit_new_confirmation() -> Res
     .fetch_one(&f.store.pool)
     .await?;
     assert_eq!(n, 3);
+    request.operation_id = Uuid::new_v4();
+    request.expected_version = 5;
+    request.decision = "revoke".into();
+    f.store.welcome_review_decide(&subject, &request).await?;
+    let retained: Option<Uuid> = sqlx::query_scalar(
+        "SELECT person_id FROM qintopia_agent_os.welcome_applications WHERE id=$1",
+    )
+    .bind(app)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(
+        retained,
+        Some(f.person),
+        "prior revoke receipts must not claim ownership of an existing application link"
+    );
     Ok(())
 }
 #[tokio::test]
@@ -724,5 +739,81 @@ async fn welcome_new_pending_or_rejected_matter_cannot_reuse_older_approval() ->
         .contains("operations_confirmation_required"));
         tx.rollback().await?;
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit isolated PostgreSQL required"]
+async fn welcome_source_revision_requires_identity_reconfirmation_and_retains_revoke_ownership(
+) -> Result<()> {
+    let f = Fixture::new().await?;
+    let subject = f.subject().await?;
+    let app: Uuid = sqlx::query_scalar(
+        "SELECT application_id FROM qintopia_agent_os.welcome_cases WHERE id=$1",
+    )
+    .bind(f.case)
+    .fetch_one(&f.store.pool)
+    .await?;
+    sqlx::query("UPDATE qintopia_agent_os.welcome_applications SET person_id=NULL WHERE id=$1")
+        .bind(app)
+        .execute(&f.store.pool)
+        .await?;
+    f.store
+        .welcome_review_decide(&subject, &f.decision())
+        .await?;
+    sqlx::query("UPDATE qintopia_agent_os.welcome_applications SET revision=revision+1,field_hash=$2 WHERE id=$1")
+        .bind(app).bind(super::digest(b"changed source identity fields")).execute(&f.store.pool).await?;
+    f.store
+        .welcome_review_open_task(
+            None,
+            &ReviewOpen {
+                work_item: f.work,
+                scope: f.scope,
+                case_ref: f.case,
+                application: app,
+                artifacts: vec![],
+            },
+        )
+        .await?;
+    let list = f.store.welcome_review_list(&subject, f.scope).await?;
+    assert_eq!(list["items"][0]["identity_confirmed"], false);
+    let mut r = f.decision();
+    r.expected_version = 3;
+    r.confirm_application_stay = false;
+    r.confirm_channel_person = false;
+    assert!(f
+        .store
+        .welcome_review_decide(&subject, &r)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("identity_segments_required"));
+    // Source changes invalidate this matter's proof, not the global account/person fact.
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM qintopia_identity.source_identity_links WHERE id=$1",
+    )
+    .bind(f.channel)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(status, "confirmed");
+    r.operation_id = Uuid::new_v4();
+    r.confirm_application_stay = true;
+    r.confirm_channel_person = true;
+    r.confirm_content = false;
+    f.store.welcome_review_decide(&subject, &r).await?;
+    r.operation_id = Uuid::new_v4();
+    r.expected_version = 4;
+    r.decision = "revoke".into();
+    f.store.welcome_review_decide(&subject, &r).await?;
+    let person: Option<Uuid> = sqlx::query_scalar(
+        "SELECT person_id FROM qintopia_agent_os.welcome_applications WHERE id=$1",
+    )
+    .bind(app)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert!(
+        person.is_none(),
+        "explicit revocation still removes the association created by this matter"
+    );
     Ok(())
 }

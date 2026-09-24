@@ -375,8 +375,11 @@ impl Store {
         if let Some(old)=sqlx::query("SELECT tenant_key,scope_id,case_id,application_id,snapshot,version,status,configuration_version FROM qintopia_agent_os.welcome_review_items WHERE work_item_id=$1").bind(request.work_item).fetch_optional(&mut *tx).await? {
             ensure!(old.get::<String,_>("tenant_key")==self.tenant && old.get::<Uuid,_>("scope_id")==request.scope && old.get::<Uuid,_>("case_id")==request.case_ref && old.get::<Uuid,_>("application_id")==request.application,"welcome_work_item_conflict");
             if old.get::<Value,_>("snapshot")==current && old.get::<i64,_>("configuration_version")==version && !matches!(old.get::<String,_>("status").as_str(),"revoked"|"rejected") { return Ok(json!({"work_item":request.work_item,"version":old.get::<i64,_>("version"),"replayed":true})); }
-            sqlx::query("UPDATE qintopia_agent_os.welcome_review_items SET snapshot=$2,candidates=$3,configuration_version=$4,version=version+1,status='pending',content_receipt=NULL WHERE work_item_id=$1")
-                .bind(request.work_item).bind(&current).bind(json!(candidates)).bind(version).execute(&mut *tx).await?;
+            let previous: Value = old.get("snapshot");
+            let identity_changed = ["application_revision", "application_hash", "source_revision"]
+                .iter().any(|key| previous[key] != current[key]);
+            sqlx::query("UPDATE qintopia_agent_os.welcome_review_items SET snapshot=$2,candidates=$3,configuration_version=$4,version=version+1,status='pending',content_receipt=NULL,identity_receipt=CASE WHEN $5 THEN NULL ELSE identity_receipt END WHERE work_item_id=$1")
+                .bind(request.work_item).bind(&current).bind(json!(candidates)).bind(version).bind(identity_changed).execute(&mut *tx).await?;
         } else {
             sqlx::query("INSERT INTO qintopia_agent_os.welcome_review_items(work_item_id,tenant_key,scope_id,case_id,application_id,configuration_version,snapshot,candidates) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
                 .bind(request.work_item).bind(&self.tenant).bind(request.scope).bind(request.case_ref).bind(request.application).bind(version).bind(&current).bind(json!(candidates)).execute(&mut *tx).await?;
@@ -569,15 +572,12 @@ impl Store {
                 "revoked"
             };
             if r.decision == "revoke" {
-                if let Some(receipt) = identity_receipt {
-                    let previous:Option<Value>=sqlx::query_scalar("SELECT effects FROM qintopia_agent_os.welcome_review_receipts WHERE id=$1 AND work_item_id=$2 AND tenant_key=$3").bind(receipt).bind(r.work_item).bind(&self.tenant).fetch_optional(&mut *tx).await?;
-                    if previous.as_ref().is_some_and(|v| {
-                        v["application_stay"] == true
-                            && v.get("previous_application_person")
-                                .is_some_and(Value::is_null)
-                    }) {
-                        sqlx::query("UPDATE qintopia_agent_os.welcome_applications SET person_id=NULL WHERE id=$1 AND person_id=$2").bind(app).bind(person).execute(&mut *tx).await?;
-                    }
+                // The active receipt may have expired after a source revision. Ownership
+                // of the original application link remains in this matter's audit history.
+                let created_application_link: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_review_receipts WHERE work_item_id=$1 AND tenant_key=$2 AND effects->>'decision'='confirm' AND effects->>'application_stay'='true' AND effects->'previous_application_person'='null'::jsonb)")
+                    .bind(r.work_item).bind(&self.tenant).fetch_one(&mut *tx).await?;
+                if created_application_link {
+                    sqlx::query("UPDATE qintopia_agent_os.welcome_applications SET person_id=NULL WHERE id=$1 AND person_id=$2").bind(app).bind(person).execute(&mut *tx).await?;
                 }
                 sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET person_id=NULL,identity_link_id=NULL,identity_version=NULL,version=version+1 WHERE id=$1 AND identity_link_id IN (SELECT l.id FROM qintopia_identity.source_identity_links l JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=l.evidence_ref WHERE r.work_item_id=$2 AND r.tenant_key=$3)")
                     .bind(case).bind(r.work_item).bind(&self.tenant).execute(&mut *tx).await?;

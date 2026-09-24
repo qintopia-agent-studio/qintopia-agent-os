@@ -1996,6 +1996,27 @@
             "real": ["共同身份、授权、事项确认及 PostgreSQL 事务"],
             "simulated": ["人员、渠道消息与入住资料；无真实群发送"]
           }
+        },
+        {
+          "id": "person-collaboration/source-revision-and-revoke-ownership",
+          "name": "来源改版重确认及原关联撤销",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_source_revision_requires_identity_reconfirmation_and_retains_revoke_ownership",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、授权、事项确认及 PostgreSQL 事务"],
+            "simulated": ["人员、渠道消息与入住资料；无真实群发送"]
+          }
         }
       ]
     },
