@@ -1099,6 +1099,13 @@ pub(super) async fn broker_invoke(
     );
     let t = r.trusted_context;
     if r.operation == "person_foundation_ingress" {
+        if r.tool == "pms_application_intake" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            return super::application_ingress::invoke(store, r.arguments).await;
+        }
         if r.tool == "pms_payment_feed" {
             ensure!(
                 profile == "anan" && t.gateway_id == gateway,

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
+import importlib.util
 import json
 import os
 import re
@@ -59,7 +60,24 @@ def load_config(path: Path) -> dict[str, Any]:
         raise BridgeError("action max_retries must be between 0 and 3")
     for key in ("success_template", "failure_template"):
         _notification_message(str(action.get(key, "")), 0, "0" * 64)
+    application_config(cfg)
     return cfg
+
+
+def application_config(cfg: dict[str, Any]) -> dict[str, Any] | None:
+    intake = cfg.get("application_intake")
+    if intake is None:
+        return None
+    if (not isinstance(intake, dict) or intake.get("local_only") is not True
+            or os.environ.get("QINTOPIA_APPLICATION_LOCAL_ENABLE") != "1"
+            or set(intake) != {"local_only", "resource_alias", "record_path"}
+            or not isinstance(intake.get("resource_alias"), str)
+            or not re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", intake["resource_alias"])
+            or not isinstance(intake.get("record_path"), list)
+            or not 1 <= len(intake["record_path"]) <= 6
+            or not all(isinstance(key, str) and 0 < len(key) <= 100 for key in intake["record_path"])):
+        raise BridgeError("local application intake configuration is invalid")
+    return intake
 
 
 def _secret(cfg: dict[str, Any]) -> bytes:
@@ -154,17 +172,40 @@ def connect_db(cfg: dict[str, Any]) -> sqlite3.Connection:
         )
         """
     )
-    conn.execute(
-        "UPDATE jobs SET status='retry',next_attempt_at=? WHERE status='running'",
-        (int(time.time()),),
-    )
+    conn.execute("""CREATE TABLE IF NOT EXISTS application_wakes (
+        resource_alias TEXT NOT NULL, record_ref TEXT NOT NULL,
+        requested_version INTEGER NOT NULL DEFAULT 1,
+        completed_version INTEGER NOT NULL DEFAULT 0,
+        attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL,
+        last_error_code TEXT, PRIMARY KEY(resource_alias,record_ref))""")
+    if application_config(cfg) is None:
+        conn.execute(
+            "UPDATE jobs SET status='retry',next_attempt_at=? WHERE status='running'",
+            (int(time.time()),),
+        )
     conn.commit()
     os.chmod(path, 0o600)
     return conn
 
 
-def enqueue(conn: sqlite3.Connection, envelope: dict[str, Any], now: int | None = None) -> str:
+def enqueue(conn: sqlite3.Connection, envelope: dict[str, Any], now: int | None = None,
+            *, cfg: dict[str, Any] | None = None) -> str:
     current = int(time.time() if now is None else now)
+    intake = application_config(cfg or {})
+    if intake is not None:
+        record: Any = envelope["payload"]
+        for key in intake["record_path"]:
+            record = record.get(key) if isinstance(record, dict) else None
+        if not isinstance(record, str) or not re.fullmatch(r"rec[A-Za-z0-9]{1,100}", record):
+            raise BridgeError("application record reference is unavailable")
+        # Callback ID is deliberately not the application revision. Even identical
+        # old record-only callbacks can wake a new authoritative readback.
+        conn.execute("""INSERT INTO application_wakes(resource_alias,record_ref,next_attempt_at)
+            VALUES(?,?,?) ON CONFLICT(resource_alias,record_ref) DO UPDATE SET
+            requested_version=requested_version+1,next_attempt_at=excluded.next_attempt_at""",
+            (intake["resource_alias"], record, current))
+        conn.commit()
+        return "accepted"
     cursor = conn.execute(
         "INSERT OR IGNORE INTO jobs "
         "(delivery_id,payload_json,status,next_attempt_at,created_at,updated_at) "
@@ -273,6 +314,9 @@ def _run_bounded_action(command: list[str], payload: str, timeout: int) -> tuple
 
 def run_one(conn: sqlite3.Connection, cfg: dict[str, Any], now: int | None = None) -> bool:
     current = int(time.time() if now is None else now)
+    intake = application_config(cfg)
+    if intake is not None:
+        return run_application_one(conn, intake, current)
     row = conn.execute(
         "SELECT delivery_id,payload_json,attempts FROM jobs "
         "WHERE status IN ('queued','retry') AND next_attempt_at<=? "
@@ -328,6 +372,43 @@ def run_one(conn: sqlite3.Connection, cfg: dict[str, Any], now: int | None = Non
     return True
 
 
+def application_readback(resource: str, record: str) -> Any:
+    # Fixed repository-owned adapter, never a command or path supplied by a callback.
+    path = Path(__file__).resolve().parents[3] / "skills/pms-operations/application_intake.py"
+    spec = importlib.util.spec_from_file_location("qintopia_application_intake", path)
+    assert spec and spec.loader
+    adapter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(adapter)
+    return adapter.readback_one(resource, record)
+
+
+def run_application_one(conn: sqlite3.Connection, intake: dict[str, Any], current: int) -> bool:
+    row = conn.execute("""SELECT record_ref,requested_version,attempts FROM application_wakes
+        WHERE resource_alias=? AND requested_version>completed_version AND next_attempt_at<=?
+        ORDER BY next_attempt_at,record_ref LIMIT 1""", (intake["resource_alias"], current)).fetchone()
+    if row is None:
+        return False
+    record, version, attempts = row
+    # Persist a retry delay before crossing the readback/broker boundary. Unknown
+    # completion is safe to re-read; shared-service content/version dedupe is authoritative.
+    conn.execute("""UPDATE application_wakes SET attempts=attempts+1,next_attempt_at=?
+        WHERE resource_alias=? AND record_ref=?""",
+        (current + min(300, 30 * 2 ** min(attempts, 4)), intake["resource_alias"], record))
+    conn.commit()
+    try:
+        result = application_readback(intake["resource_alias"], record)
+        if not isinstance(result, dict) or result.get("status") not in {"accepted", "duplicate"}:
+            raise BridgeError("application readback not committed")
+        conn.execute("""UPDATE application_wakes SET completed_version=max(completed_version,?),
+            attempts=0,last_error_code=NULL WHERE resource_alias=? AND record_ref=?""",
+            (version, intake["resource_alias"], record))
+    except Exception:
+        conn.execute("""UPDATE application_wakes SET last_error_code='readback_pending'
+            WHERE resource_alias=? AND record_ref=?""", (intake["resource_alias"], record))
+    conn.commit()
+    return True
+
+
 def transform(cfg: dict[str, Any]) -> int:
     raw = sys.stdin.buffer.read(MAX_PAYLOAD_BYTES + 1)
     if not raw or len(raw) > MAX_PAYLOAD_BYTES:
@@ -378,7 +459,7 @@ def serve(cfg: dict[str, Any]) -> int:
                     try:
                         envelope = json.loads(raw)
                         verify_envelope(envelope, cfg)
-                        status = enqueue(conn, envelope)
+                        status = enqueue(conn, envelope, cfg=cfg)
                         response = {"status": status}
                     except Exception:
                         response = {"status": "rejected"}

@@ -73,3 +73,37 @@ head 后原子初始化 baseline/checkpoint，后续每次先读持久游标。 
 事件仅形成待核对事项；准备关联收款方案前实际查询对应 billId，核对类型、可用状态、流水引用、金额与 WECOM 方式。实际 PMS 预览和当笔人类确认仍必需。
 
 MATCHED、REFUND、历史事件不新建收款催办；无可靠联系人时保持待联系，不发送消息。本地同 UID 宿主隔离仍不等于生产强隔离；正式配置与真实渠道尚未启用。
+
+## 本地申请回读
+
+四老师统一 Bridge 的本地申请模式调用
+`application_intake.py`，不注册模型工具。固定宿主配置包含
+`QINTOPIA_APPLICATION_LOCAL_ENABLE=1`、`QINTOPIA_APPLICATION_BINDING`、
+`QINTOPIA_APPLICATION_RESOURCE_ALIAS`、`QINTOPIA_APPLICATION_LOCAL_CONFIG` 和
+`QINTOPIA_APPLICATION_LOCAL_API_TOKEN`，沿既有独立 HOST_TOKEN 访问 broker。
+
+私有 JSON 配置仅指向显式 loopback 模拟 HTTP，包含 base_url、base_token、table_id、resource_alias、fields、consent_value，可选 withdrawn_value。
+
+fields 将 name/nickname/phone、consent 及可选 arrival/nights/room_type/occupation/interests/status 映射到许可字段名。
+
+只读固定记录，不跟随重定向、不取附件、不输出字段正文或凭据。
+
+生产 Feishu URL 当前被拒绝。
+
+回调只唤醒授权回读。
+
+新的 read_token 使旧读响应失效；
+
+CAS 冲突后重读来源，禁止换 token 重交旧结果。
+
+内部 revision 与源 last_modified_time 分开，后者仅是观察证据。
+
+姓名/昵称/电话身份指纹和普通内容摘要分开；
+
+字段未变不会抹掉已确认 Person，身份字段变化则失效本申请的关联并留审计。
+
+404或暂时不可读保留原状态；
+
+撤回需实际状态字段证据。
+
+共同服务复用 welcome_applications，并持久派发岸岸办理和四老师运营两个原事项。事件不批准业务，完成/取消/执行中的事项不因来源更新自动重做；欢迎需可靠案例及公共确认入口。

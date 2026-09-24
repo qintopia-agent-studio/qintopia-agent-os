@@ -278,3 +278,63 @@ completed/cursor5。两边账本差异符合第三笔由 PMS 模拟人工接手�
 OS 不重登的业务边界。
 
 最终证据为本线 joint/final-payment-receiver.json 与发送方 joint/final-status.json、final-sql.txt。已停止新增支付场景，保留环境；真实浏览器、真人、渠道和生产仍未验收。
+
+发送方版本化联合报告为 Green PMS 提交 `ddb51daf8e6697cc721465b89f5c999de35a7703`，文件
+`待开发项/PMS-AgentOS-支付事件联合验收-20260924.md`。该报告提交不改变联合业务源码357f9ce。
+
+## 阶段4：本地申请回读与分派切片
+
+004由总指挥预留。复用既有签名 Unix
+Bridge，新分支显式本地启用且默认关闭；旧未启用路由保持。同 record 回调持续唤醒，不被旧 jobs 的 delivery_id 去重吞掉；新模式不执行旧制卡/直发脚本。
+
+固定来源适配器实际 GET 指定本地模拟记录，许可字段形成内容与身份指纹，不读取附件或输出资料正文。
+
+回调只携带记录引用，模型不能提供身份 hash、Person、批准或撤回事实。
+
+404、权限或网络错误保留待回读。
+
+权威回读后，独立 HOST_TOKEN 通过原 broker 原子保存 welcome_applications 投影及岸岸/四老师各一事项。
+
+内部 revision 仅随内容变化增加，不将 last_modified_time、delivery_id 或 record_id 当修订号。
+
+read_token 拒绝旧读响应；
+
+丢 ACK 同 token 重交同内容返回 duplicate。
+
+四老师运营事项不成为普通订单审批。
+
+已完成/取消/执行中的事项不因来源变化自动重放；
+
+明确撤回只停止未完成来源待办，不改 PMS 事实。
+
+身份字段为固定许可姓名/昵称/手机号。内容变化保留已确认 Person；身份字段变化清本申请 Person、解除案例 application_id 并保留旧引用审计，不撤销全局账号身份或 PMS 入住人事实。
+
+公共 `application_identity_basis(&mut tx, scope, application)`
+在同事务核对有效绑定及来源归属。
+
+它以当前申请字段重算已提交 completed_hash，其他入口改写申请后返回 None，防止旧身份摘要被误用。
+
+不重复实现欢迎确认，snapshot/open_task 的精确身份失效由基础线接入本公共读取方法。
+
+| 验证                                       | 本线整合欢迎前的实际结果                  |
+| ------------------------------------------ | ----------------------------------------- |
+| 申请 PostgreSQL 专项                       | 6 passed，含完整 Bridge/HTTP/broker/PG 链 |
+| person_collaboration 回归                  | 88 passed / 0 ignored                     |
+| PMS/申请 Python                            | 30 passed                                 |
+| 四老师 Bridge 与迁移兼容测试               | 21 passed                                 |
+| 原业务目录 harness                         | 8 passed                                  |
+| no-default/all-features Clippy all-targets | 禁止警告通过                              |
+
+完整申请链的六次实际 HTTP 读取覆盖重复记录回调、内容/身份变更、404保持待回读、恢复及明确撤回。最终同一申请 revision4、原两事项取消，旧脚本执行0；坏签名拒绝。模拟 HTTP 边界不等于真实飞书触发通过。
+
+证据为 application-pg-tests.log、application-bridge-journey.log、application-person-regression.log、application-python-tests.log、application-clippy.log，均在忽略目录
+`.local-workspace/anan/`。004已应用后不再改写；先前考虑新增 observed_* 列的方案已撤回，实际用 completed_hash 读取接口。
+
+本切片尚未整合欢迎6c6548b，不将以上结果记作001→002→003→004集成验证。原申请到真实人员候选、可靠住宿关联后的欢迎调用、群可信交互及生产修订/撤回接线仍需后续验收。
+
+身份依据补充回归通过：其他入口仅改 field_hash、valid 或 consent_active 时均返回 None；跨 scope、绑定停用或版本改变同样拒绝。
+
+来源 A→B→A 不恢复被 B 清除的申请 Person 或案例关联。helper 的 Some 仅证明当前回读内容一致，不代替关联成立、许可或旧确认收据仍有效。
+
+四老师新能力沿既有业务目录登记为默认关闭；按总指挥明确同意，仅同步原 builtin 与 operations
+smoke 的目录数量断言14→15。未改检查入口、CI条件或生产权限门禁。

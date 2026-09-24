@@ -1,4 +1,5 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
+mod application_ingress;
 pub mod auth_server;
 mod business_ingress;
 mod foundation_server;

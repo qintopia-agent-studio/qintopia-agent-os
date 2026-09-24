@@ -2404,6 +2404,132 @@
             "real": ["PostgreSQL事务、可信来源隔离、持久去重与收款精确授权"],
             "simulated": ["来源事件及人员；真实HTTPS发送方联合验证另行执行"]
           }
+        },
+        {
+          "id": "anan-pms/application-repeated-readback-reuses-projection-and-two-work-items",
+          "name": "申请重复回读与双职责分派",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_repeated_readback_reuses_projection_and_two_work_items",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL申请投影、版本围栏、审计和双消费者任务"],
+            "simulated": ["飞书回读资料、人员和租户；无真实触发或消息发送"]
+          }
+        },
+        {
+          "id": "anan-pms/application-read-fence-rejects-stale-response-and-recovers-lost-ack",
+          "name": "申请回读并发版本与丢回执恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_read_fence_rejects_stale_response_and_recovers_lost_ack",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL申请投影、版本围栏、审计和双消费者任务"],
+            "simulated": ["飞书回读资料、人员和租户；无真实触发或消息发送"]
+          }
+        },
+        {
+          "id": "anan-pms/application-content-preserves-person-but-identity-change-unlinks-only-application",
+          "name": "申请内容更新保留身份与身份依据失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_content_preserves_person_but_identity_change_unlinks_only_application",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL申请投影、版本围栏、审计和双消费者任务"],
+            "simulated": ["飞书回读资料、人员和租户；无真实触发或消息发送"]
+          }
+        },
+        {
+          "id": "anan-pms/application-unreadable-source-does-not-withdraw-and-completed-work-is-not-replayed",
+          "name": "申请不可读不撤回与完成事项不重放",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_unreadable_source_does_not_withdraw_and_completed_work_is_not_replayed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL申请投影、版本围栏、审计和双消费者任务"],
+            "simulated": ["飞书回读资料、人员和租户；无真实触发或消息发送"]
+          }
+        },
+        {
+          "id": "anan-pms/application-model-ingress-and-unowned-projection-are-rejected",
+          "name": "申请宿主边界与已有投影接管拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_model_ingress_and_unowned_projection_are_rejected",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL申请投影、版本围栏、审计和双消费者任务"],
+            "simulated": ["飞书回读资料、人员和租户；无真实触发或消息发送"]
+          }
+        },
+        {
+          "id": "anan-pms/application-signed-bridge-http-and-broker-persist-actual-readbacks",
+          "name": "申请签名入口与HTTP回读共同服务完整链",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::application_tests::application_signed_bridge_http_and_broker_persist_actual_readbacks",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust", "python"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["签名Unix Bridge、持久唤醒、HTTP客户端、宿主broker与PostgreSQL"],
+            "simulated": ["飞书HTTP来源及申请；不使用生产配置或执行旧脚本"]
+          }
         }
       ]
     }
