@@ -2975,6 +2975,29 @@
             "real": ["共同服务人工接手基线、具体事实确认、事务和不重放"],
             "simulated": ["PMS历史与收款事实；实际PMS另由本地全链验证"]
           }
+        },
+        {
+          "id": "anan-pms/two-valid-scopes-isolate-identical-external-ids",
+          "name": "两个合法作用域同标识同额正向接收与交叉权限隔离",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_scope_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_scope_tests::two_valid_scopes_accept_same_external_ids_and_reject_crossed_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": [
+              "同租户两个有效作用域/主体/精确授权、共同服务事件接收与动作账本、PG事务"
+            ],
+            "simulated": ["物业、来源、付款事件及PMS预览；无PMS HTTP或真实渠道操作"]
+          }
         }
       ]
     }

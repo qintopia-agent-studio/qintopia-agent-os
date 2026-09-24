@@ -11,6 +11,8 @@ use uuid::Uuid;
 mod application_tests;
 #[path = "business_manual_tests.rs"]
 mod business_manual_tests;
+#[path = "business_scope_tests.rs"]
+mod business_scope_tests;
 
 struct Fixture {
     store: Store,
