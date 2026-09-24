@@ -122,7 +122,7 @@ class Operations:
         if args.get("work_item"):
             event = self.call("pms_event_context", {k: args[k] for k in ("binding", "operation", "work_item")})
             if event:
-                current = self.pms.read("payments", event["property"], filters={"billId": event["bill_id"], "limit": 1})
+                current = self.pms.read("payments", event["property"], filters={"billId": event["bill_id"], "kind": "COLLECTION", "status": "ALL", "limit": 1})
                 items = current.get("items", [])
                 if len(items) != 1 or items[0].get("id") != event["bill_id"]:
                     raise ValueError("payment_readback_required")

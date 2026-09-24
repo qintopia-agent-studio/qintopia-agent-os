@@ -43,7 +43,7 @@ def invoke(name, args):
 capture("请核对这笔模拟收款，先准备具体方案")
 bill = os.environ["QINTOPIA_PAYMENT_JOINT_BILL"]
 work = os.environ["QINTOPIA_PAYMENT_JOINT_WORK"]
-items = invoke("read", {"binding": agent["binding"], "query": "payments", "filters": {"billId": bill}})["items"]
+items = invoke("read", {"binding": agent["binding"], "query": "payments", "filters": {"billId": bill, "kind": "COLLECTION", "status": "ALL"}})["items"]
 assert len(items) == 1 and items[0]["id"] == bill and items[0]["status"] == "AVAILABLE"
 payment = items[0]
 before = client.read("order", fixture["propertyId"], resource=fixture["orderId"])
@@ -60,7 +60,7 @@ except ValueError as e:
     assert str(e) == "human_confirmation_required"
 else:
     raise AssertionError("payment event executed without human confirmation")
-assert client.read("payments", fixture["propertyId"], filters={"billId": bill})["items"][0]["status"] == "AVAILABLE"
+assert client.read("payments", fixture["propertyId"], filters={"billId": bill, "kind": "COLLECTION", "status": "ALL"})["items"][0]["status"] == "AVAILABLE"
 # Explicit simulated authorized human turn; event/long-term grant alone never confirms.
 capture(f'请为订单「{fixture["orderId"]}」登记企微收款{payment["amountMinor"]/100:.2f}元，流水号「{payment["reference"]}」。')
 # The naturally phrased current-scheme confirmation is the explicit final decision.
@@ -80,7 +80,7 @@ state["phase"] = "unknown"
 state_file.write_text(json.dumps(state))
 result = invoke("recover", {"action": prepared["action"]})
 assert result["phase"] == "completed" and result["readback"]["order"]["id"] == fixture["orderId"]
-matched = client.read("payments", fixture["propertyId"], filters={"billId": bill})["items"][0]
+matched = client.read("payments", fixture["propertyId"], filters={"billId": bill, "kind": "COLLECTION", "status": "ALL"})["items"][0]
 assert matched["status"] == "MATCHED" and matched["orderId"] == fixture["orderId"]
 try:
     invoke("execute", {"action": prepared["action"]})

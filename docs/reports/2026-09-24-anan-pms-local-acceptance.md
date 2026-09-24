@@ -182,3 +182,17 @@ head并同事务保存baseline/checkpoint，独立SQL回读结果为：
 阶段3 `pnpm check:light`
 全部通过（退出0），包括登记、秘密扫描、部署runner和时钟回归。既有PG apply
 smoke仍受固定URL门禁限制；适用总检查未全通过，不宣称auto全绿。
+
+### 联合首笔事件与查询修正
+
+接收端冻结为 `ed0bb6c`，发送端工具为 `357f9ce`。真实本地 HTTPS 验证结果：
+
+- 坏签名：上游401，发送源持久暂停；接收端事件/事项/动作均0。
+- 丢ACK：上游202且代理丢回执；接收端事件1、事项1、动作0，检查点仍0。
+- 正常重试：200 duplicate，发送端accepted；双方SQL回读同一receipt，事件/事项仍各1。
+- 推送后补拉：宿主实际feed使cursor从0到1，仍复用同一receipt与事项。
+
+发送方一次CA路径误拼发生于TLS加载，未到HTTP代理；其记录与真正丢ACK的202分开保留。接收方对丢ACK不猜测失败，沿持久事件及回执核对，没有新增财务动作。
+
+首轮人确认链停在只读查询：调用漏了PMS必填kind，被API拒绝；SQL确认actions仍为空。插件的事件关联读取与联合脚本均补入COLLECTION和status=ALL，明确读取已匹配状态用于回读。新增请求参数回归后Python
+23项通过；未修改PMS、Rust或已运行的接收二进制。原失败日志保留在joint/collection-first-read-failure.log，未创建动作或执行收款，随后沿同一账单继续。

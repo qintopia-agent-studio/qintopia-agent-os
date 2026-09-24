@@ -35,7 +35,7 @@ class PluginTests(unittest.TestCase):
             op=plugin.Operations(pms,broker,lambda:{})
             with self.assertRaises(ValueError): op.prepare(args)
             self.assertEqual(calls,['pms_event_context'])
-            self.assertEqual(pms.called,('payments','property_a',{'billId':'bill','limit':1}))
+            self.assertEqual(pms.called,('payments','property_a',{'billId':'bill','kind':'COLLECTION','status':'ALL','limit':1}))
         with self.assertRaises(ValueError):
             plugin.validate('prepare',dict(args,source_payment={'status':'AVAILABLE'}))
 
