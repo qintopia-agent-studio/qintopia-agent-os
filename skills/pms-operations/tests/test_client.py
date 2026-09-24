@@ -82,6 +82,21 @@ class ClientTests(unittest.TestCase):
             self.client.read("availability", "property_a")
         self.assertEqual(len(self.calls), 3)
 
+    def test_payment_bill_read_preserves_required_kind_and_includes_matched_status(self):
+        self.routes["GET", "/api/v1/external-payments"] = 200, {"items": [{"id": "bill", "status": "MATCHED"}]}
+        result = self.client.read("payments", "property_a", filters={"billId": "bill", "kind": "COLLECTION", "status": "ALL", "limit": 1})
+        self.assertEqual(result["items"][0]["status"], "MATCHED")
+        self.assertEqual(parse_qs(urlsplit(self.calls[-1][1]).query), {"propertyId": ["property_a"], "billId": ["bill"], "kind": ["COLLECTION"], "status": ["ALL"], "limit": ["1"]})
+
+    def test_payment_head_uses_read_grant_and_fixed_route(self):
+        self.routes["GET", "/api/v1/external-payment-events/head"] = 200, {"schemaVersion": "pms.payments.v1", "propertyId": "property_a", "headCursor": "42"}
+        self.assertEqual(self.client.payment_head("property_a")["headCursor"], "42")
+        self.assertEqual(self.calls[-1][1], "/api/v1/external-payment-events/head?propertyId=property_a")
+        self.me["propertyAccess"] = {}
+        with self.assertRaisesRegex(pms.PmsError, "pms_property_denied"):
+            self.client.payment_head("property_a")
+        self.assertEqual(self.calls[-1][1], "/api/v1/me")
+
     def test_order_resource_cannot_cross_property_even_with_multi_property_token(self):
         self.routes["GET", "/api/v1/orders/order_foreign"] = 200, {"order": {"property_id": "property_b"}}
         with self.assertRaisesRegex(pms.PmsError, "pms_property_denied"):

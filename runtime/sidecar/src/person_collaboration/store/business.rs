@@ -425,7 +425,15 @@ impl Store {
         );
         let allowed: &[&str] = match tool {
             "pms_authorize" => &["binding", "operation"],
-            "pms_start" => &["binding", "operation", "input", "reason", "work_item"],
+            "pms_start" => &[
+                "binding",
+                "operation",
+                "input",
+                "reason",
+                "work_item",
+                "source_payment",
+            ],
+            "pms_event_context" => &["binding", "operation", "work_item"],
             "pms_save_preview" => &["action", "claim", "preview"],
             "pms_reject_preview" => &["action", "claim"],
             "pms_save_result" => &["action", "claim", "result", "readback"],
@@ -449,7 +457,7 @@ impl Store {
             .business_evidence_in(&mut tx, actor, gateway, message, chat)
             .await?;
         let policy = super::foundation::load_policy(&mut tx, &self.tenant, now).await?;
-        if matches!(tool, "pms_authorize" | "pms_start") {
+        if matches!(tool, "pms_authorize" | "pms_start" | "pms_event_context") {
             let key = a["operation"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("invalid_arguments"))?;
@@ -467,6 +475,22 @@ impl Store {
                 actor.gateway.as_ref().is_some_and(|g| g.2 == auth.scope),
                 "gateway_scope_mismatch"
             );
+            if tool == "pms_event_context" {
+                let row=sqlx::query("SELECT subject_ref FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND binding_id=$2 AND binding_version=$3 AND work_item_id=$4 AND source_instance=$5 AND property_id=$6 AND feed='pms.payments.v1' AND NOT baseline AND payload->>'kind'='COLLECTION' AND payload->>'eventType'='DISCOVERED'")
+                    .bind(&self.tenant).bind(auth.binding).bind(auth.binding_version).bind(parse("work_item")?).bind(&auth.source).bind(&auth.property).fetch_optional(&mut *tx).await?;
+                let result = match row {
+                    Some(row) => {
+                        ensure!(
+                            key == "pms.command.RECORD_COLLECTION",
+                            "business_work_denied"
+                        );
+                        json!({"bill_id":row.get::<String,_>("subject_ref"),"property":auth.property})
+                    }
+                    None => Value::Null,
+                };
+                tx.commit().await?;
+                return Ok(result);
+            }
             if tool == "pms_authorize" {
                 tx.commit().await?;
                 return Ok(serde_json::to_value(auth)?);
@@ -514,7 +538,17 @@ impl Store {
                 let work = parse("work_item")?;
                 let owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND work_item_id=$2 AND binding_id=$3 AND actor_person_id=$4)")
                     .bind(&self.tenant).bind(work).bind(auth.binding).bind(actor.person).fetch_one(&mut *tx).await?;
-                ensure!(owned, "business_work_denied");
+                let source_payment = &a["source_payment"];
+                let event_owned = if !owned && key == "pms.command.RECORD_COLLECTION" {
+                    sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND binding_id=$2 AND binding_version=$3 AND work_item_id=$4 AND feed='pms.payments.v1' AND subject_ref=$5 AND source_instance=$6 AND property_id=$7 AND NOT baseline AND payload->>'kind'='COLLECTION' AND payload->>'eventType'='DISCOVERED')")
+                        .bind(&self.tenant).bind(auth.binding).bind(auth.binding_version).bind(work).bind(source_payment["id"].as_str().unwrap_or("")).bind(&auth.source).bind(&auth.property).fetch_one(&mut *tx).await?
+                        && source_payment["status"]=="AVAILABLE" && source_payment["kind"]=="COLLECTION"
+                        && input["method"]=="WECOM" && source_payment["reference"]==input["transactionReference"]
+                        && source_payment["amountMinor"]==input["amountMinor"]
+                } else {
+                    false
+                };
+                ensure!(owned || event_owned, "business_work_denied");
                 work
             } else {
                 sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload,metadata) VALUES('business_operation','queued','anan','anan','anan.pms','客房办理','synthetic_business',$1,$1,'{}','{\"local_only\":true}') RETURNING id")

@@ -1,5 +1,6 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
 pub mod auth_server;
+mod business_ingress;
 mod foundation_server;
 pub(crate) use foundation_server::error_code as foundation_error_code;
 pub mod local_server;

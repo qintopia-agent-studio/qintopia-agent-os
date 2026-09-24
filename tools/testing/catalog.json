@@ -2530,6 +2530,111 @@
             "real": ["Person权限与真实PostgreSQL持久动作、确认、恢复"],
             "simulated": ["人员、WeCom事件和PMS结果；真实broker及PMS联合验证另行执行"]
           }
+        },
+        {
+          "id": "anan-pms/payment-nonzero-baseline-is-atomic-concurrent-and-restart-safe",
+          "name": "支付非零基线与重启恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::payment_nonzero_baseline_is_atomic_concurrent_and_restart_safe",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL事务、可信来源隔离、持久去重与收款精确授权"],
+            "simulated": ["来源事件及人员；真实HTTPS发送方联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/payment-push-feed-deduplicate-and-gaps-roll-back-atomically",
+          "name": "支付推送补拉去重与整页回滚",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::payment_push_feed_deduplicate_and_gaps_roll_back_atomically",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL事务、可信来源隔离、持久去重与收款精确授权"],
+            "simulated": ["来源事件及人员；真实HTTPS发送方联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/payment-matched-first-refund-and-scope-do-not-create-collection-authority",
+          "name": "支付乱序退款与可信域隔离",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::payment_matched_first_refund_and_scope_do_not_create_collection_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL事务、可信来源隔离、持久去重与收款精确授权"],
+            "simulated": ["来源事件及人员；真实HTTPS发送方联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/payment-signed-ingress-ack-is-durable-and-strict",
+          "name": "支付签名与持久回执",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::payment_signed_ingress_ack_is_durable_and_strict",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL事务、可信来源隔离、持久去重与收款精确授权"],
+            "simulated": ["来源事件及人员；真实HTTPS发送方联合验证另行执行"]
+          }
+        },
+        {
+          "id": "anan-pms/payment-work-attachment-requires-exact-authority-readback-and-human-confirmation",
+          "name": "支付事项关联与当笔人类确认",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::payment_work_attachment_requires_exact_authority_readback_and_human_confirmation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["PostgreSQL事务、可信来源隔离、持久去重与收款精确授权"],
+            "simulated": ["来源事件及人员；真实HTTPS发送方联合验证另行执行"]
+          }
         }
       ]
     }

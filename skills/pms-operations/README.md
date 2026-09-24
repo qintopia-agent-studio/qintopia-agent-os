@@ -55,3 +55,21 @@ OS 尚未接管发布，不表示用户服务器不存在岸岸 Profile。新增
 
 本地 PMS HTTP 子链、真实 broker 联测、官方 Hermes
 ContextVar 与真实渠道/模型验收分别记录；前几者不等于 T14 生产验收。
+
+## 本地支付接收与补拉
+
+支付接收固定为 `POST /api/v1/ingress/pms/events`，仅在本地 collaboration
+listener 显式启用时挂载。需同时设置 `QINTOPIA_PMS_EVENTS_LOCAL_ENABLE=1` 和
+`QINTOPIA_FOUNDATION_LOCAL_ENABLE=1`，并配置
+`QINTOPIA_PMS_EVENT_BINDING`、`QINTOPIA_PMS_EVENT_SOURCE`、`QINTOPIA_PMS_EVENT_PROPERTY`、
+`QINTOPIA_PMS_EVENT_KEY_ID`、`QINTOPIA_PMS_EVENT_KEY_FILE`。密钥文件为绝对路径、普通文件、仅属主可读写；不使用生产密钥或把内容提交到 Git。
+
+宿主补拉入口为 `python payment_feed.py`，不注册模型工具。它沿既有 Unix broker 使用独立
+`QINTOPIA_FOUNDATION_HOST_TOKEN`，真实读取 PMS
+head 后原子初始化 baseline/checkpoint，后续每次先读持久游标。 `GREENPMS_BASE_URL` 与只读
+`GREENPMS_API_TOKEN`
+指向本任务本地 PMS；默认单次最多 10 页，达到页数上限返回 caught_up=false，再次运行从持久位置继续。失联不自行重试财务写入，重启不覆盖基线。推送不会推进补拉 checkpoint。
+
+事件仅形成待核对事项；准备关联收款方案前实际查询对应 billId，核对类型、可用状态、流水引用、金额与 WECOM 方式。实际 PMS 预览和当笔人类确认仍必需。
+
+MATCHED、REFUND、历史事件不新建收款催办；无可靠联系人时保持待联系，不发送消息。本地同 UID 宿主隔离仍不等于生产强隔离；正式配置与真实渠道尚未启用。

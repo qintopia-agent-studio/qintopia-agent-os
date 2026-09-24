@@ -1113,6 +1113,13 @@ pub(super) async fn broker_invoke(
         .await;
     }
     if r.operation == "person_foundation_ingress" {
+        if r.tool == "pms_payment_feed" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            return super::business_ingress::feed(store, &r.arguments).await;
+        }
         ensure!(
             profile == "anan" && r.tool == "pms_capture" && t.gateway_id == gateway,
             "agent_tool_denied"

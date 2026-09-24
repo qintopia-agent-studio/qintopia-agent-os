@@ -101,10 +101,17 @@ Cargo 命令均指定 `--manifest-path runtime/sidecar/Cargo.toml`，测试栈�
 
 12. PG tier 的最后 `operations-control-plane-apply-smoke.sh` 被
     `database URL hash is not in the reviewed allowlist`
-    拦截，随后的 JSONDecodeError 是缺少成功 JSON 的次生错误。代码先检查完整 URL 哈希，才检查 loopback
-    `qintopia_test`；现有两项哈希均为历史获批 staging，无法合法用于本任务随机端口隔离库。未修改 allowlist、CI 或门禁，未寻找 staging 凭据；此前 PG
-    Rust 用例全部通过，不把整个 PG
-    tier 记为通过。后续由维护者独立评审一次性测试数据库契约。
+    拦截，随后 JSONDecodeError 是次生错误。此前 Rust PG 用例通过，整个 applicable
+    check 仍未全通过，不能记为自动检查全绿。
+
+    诊断更正：初次仅据历史 staging 报告判断无合法本地配置，不准确。仓库公开模拟 URL
+    `postgres://postgres:postgres@127.0.0.1:5432/qintopia_test`
+    的 SHA256 恰为固定列表第一项。该配置在独立环境可用；本机 5432 已由基础线
+    `foundation-batch1/pr720-reconcile-postgres`
+    占用，不能停用、复用或重置它。本任务 52316 不匹配哈希；未改 allowlist、CI 或门禁，未寻找 staging 凭据。
+
+    [独立测试契约评审提案](../plans/active/disposable-postgres-boundary-review.md)
+    比较固定端口环境适配与复用通用 URL 边界，列九项标准及负面验证。仅供评审，未授权实施；不是必须修改门禁才能继续其他业务开发。
 
 这些是本地集成失败和修复记录，不是生产故障。实际 PMS 拒绝应以稳定错误码/回执处理，不能复述含隐私的响应正文。
 
@@ -124,3 +131,68 @@ Cargo 命令均指定 `--manifest-path runtime/sidecar/Cargo.toml`，测试栈�
   本线仅接住宿事实、可靠申请引用和既有 WorkItem，等待明确公共接口；欢迎内容确认不授予 PMS 操作权限。
 
 - 真实 Livecool 模型、专属 Bot、主动工作群能力、实际操作者权限、生产 PMS、欢迎发布与 T14 均未验收。当前未 SSH、读取生产凭据、发布、部署、合并或外发。
+
+## 阶段 3：本地支付接收切片
+
+新增独立
+`202609240002_business_payment_event_ingress.sql`；001 未改，003 归欢迎线。应用前回读001成功、002未应用、checkpoint/inbox为空；应用后001与002均成功。首次误查public下迁移表报不存在，改查实际qintopia_messages
+schema，未重建数据库。
+
+固定支付HMAC入口与host-only补拉已接入；原verify仅抽取authenticate阶段，旧解码、作用域、签名字节及错误语义保持。模型operation不能进入host-only分支。Actor/Grant、个人身份解析与欢迎UI未改。
+
+关联事件事项前，插件实际读取PMS
+billId并核对可用状态、流水、金额和WECOM方式。共同服务仍要求当前人员的精确收款权限及当笔确认。事件不制造批准或财务动作。
+
+| 验证                           | 实际结果                                             |
+| ------------------------------ | ---------------------------------------------------- |
+| person_collaboration PG        | 82 passed / 0 ignored，含5项支付专项                 |
+| resident_welcome PG            | 24 passed / 0 ignored，按原runner环境及串行参数运行  |
+| Python客户端、插件、宿主补拉   | 22 passed                                            |
+| all-features Rust              | 866 passed / 136 ignored；支付PG用例已在上层实际执行 |
+| no-default/all-features Clippy | 两组all-targets禁止警告均通过                        |
+| 业务目录harness                | 8 passed                                             |
+| 普通本地sidecar构建            | 通过                                                 |
+| 独立联合配置初始化             | 1 passed，不重置PMS、不生成付款                      |
+
+支付专项覆盖非零H=42、并发首次初始化、重启不覆盖、push/feed同回执、缺口整页回滚、MATCHED先到、退款不建催办、跨来源/物业拒绝、签名持久ACK、关联权限和无确认拒绝。
+
+保留的本地失败及修复：测试曾直接访问Actor私有字段，已改用verified_person
+API。扩大PG回归曾遗漏原runner的串行参数，账户状态前后仅local_dialogue_available不同，原因是其他测试并发改变进程开关；未改断言，按原串行命令复跑82项通过。
+
+欢迎回归首次只配置WELCOME前置，14项跨模块foundation用例拒绝缺少通用harness开关。按原runner完整环境补跑24项通过，保留payment-welcome-env-failure.log。这些环境失败不改写为首次全绿；既有图像apply
+smoke的固定URL限制仍未解决。
+
+### 联合服务与基线
+
+18449本地receiver已启动；固定事件路径GET返回404，禁止泛用CSRF绕过。宿主真实调用发送方PMS
+head并同事务保存baseline/checkpoint，独立SQL回读结果为：
+
+- sourceInstance：`synthetic-pms-joint-20260924`
+- propertyId：`prop_qintopia_demo`
+- bindingVersion：1
+- baselineCursor与cursor：均为0
+
+证据位于忽略目录joint/baseline-initialize.log与joint/baseline-readback.json。本次真实空流基线与非零H=42专项分别记录；冻结前未通知发送方discover。模拟配置与密钥不进入Git，旧5432、PMS联合库及其他任务实例未改动。
+
+发送方实际联合工具版本为`357f9cea044a1343332e6806cef1fda05899d408`；对方报告PR
+51 已合入 main，merge为`e7f77163eb6d4cbc0142b356f96087b0a399458c`。HTTPS签名投递、丢ACK重试及人确认后的真实本地收款链仍待联合执行。
+
+为避免磁盘耗尽，仅清理本任务5个未使用的旧增量编译缓存目录，未删除源码、日志、数据库或其他任务目录。
+
+阶段3 `pnpm check:light`
+全部通过（退出0），包括登记、秘密扫描、部署runner和时钟回归。既有PG apply
+smoke仍受固定URL门禁限制；适用总检查未全通过，不宣称auto全绿。
+
+### 联合首笔事件与查询修正
+
+接收端冻结为 `ed0bb6c`，发送端工具为 `357f9ce`。真实本地 HTTPS 验证结果：
+
+- 坏签名：上游401，发送源持久暂停；接收端事件/事项/动作均0。
+- 丢ACK：上游202且代理丢回执；接收端事件1、事项1、动作0，检查点仍0。
+- 正常重试：200 duplicate，发送端accepted；双方SQL回读同一receipt，事件/事项仍各1。
+- 推送后补拉：宿主实际feed使cursor从0到1，仍复用同一receipt与事项。
+
+发送方一次CA路径误拼发生于TLS加载，未到HTTP代理；其记录与真正丢ACK的202分开保留。接收方对丢ACK不猜测失败，沿持久事件及回执核对，没有新增财务动作。
+
+首轮人确认链停在只读查询：调用漏了PMS必填kind，被API拒绝；SQL确认actions仍为空。插件的事件关联读取与联合脚本均补入COLLECTION和status=ALL，明确读取已匹配状态用于回读。新增请求参数回归后Python
+23项通过；未修改PMS、Rust或已运行的接收二进制。原失败日志保留在joint/collection-first-read-failure.log，未创建动作或执行收款，随后沿同一账单继续。

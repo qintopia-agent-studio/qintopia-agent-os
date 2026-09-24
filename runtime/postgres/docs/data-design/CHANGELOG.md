@@ -6,6 +6,13 @@
 - Preserve personal/PMS authority and building publication rules.
 - Design: [welcome subject confirmation](2026-09-24-welcome-subject-confirmation.md).
 
+## 2026-09-24.002 — Payment event ingress
+
+- Persist immutable source/property/binding snapshots for inbox and checkpoints.
+- Deduplicate events and sequences within the trusted source domain.
+- Reject unsafe reconstruction of preexisting unscoped event rows.
+- Design: [payment event ingress](2026-09-24-business-payment-event-ingress.md).
+
 ## 2026-09-24.001 — Business operation execution
 
 - New exact operation grants, trusted host turn evidence and independent PMS action records on WorkItems.

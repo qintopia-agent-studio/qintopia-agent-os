@@ -61,7 +61,7 @@ def transport(request, *, host=False):
 PUBLIC_FIELDS = set("schemaVersion events eventId eventType sequence action work_item phase operation version method transactionReference pricing pricingDecision pricingBasis policyBaseAmount targetCurrentContractAmount differenceFromPolicy manualAdjustmentMinor differenceExceedsThreshold cashLines cashRemainder coverageSet serviceDate minorUnits inventoryUnit stayType unitKind bookingChannelCode roomId buildingCode roomTypeCode occupancyCapacity unit_code effectiveDate newArrivalDate newDepartureDate newInventoryUnitId settlement currentStatus previousStatus newStatus preview result readback previewId commandType propertyId effectHash effect expiresAt receiptId commandId executionStatus businessCommitted resourceRefs factRefs committedAt order orders quote quoteId totalAmountMinor amountMinor currentContractAmount currentContractAmountMinor collectionDifference netRecordedCollection arrivalDate departureDate inventoryUnitId unitKind units id code name status nickname fullName primaryGuest members memberId property_id inventory_unit_id arrival_date departure_date current_contract_amount_minor net_recorded_collection_minor collection_difference_minor items kind reference occurredAt orderId enabled lastSyncedAt synchronizationError hasMore nextBeforeId nextCursor businessDate available capacity currency pricingPolicyVersionId nights guestCount totals stay stays occupants billId confirmation_hint confirmation_reused pms_reversed replayed".split())
 
 
-SAFE_ERRORS = {"invalid_arguments", "pms_disabled", "pms_property_denied", "pms_command_denied",
+SAFE_ERRORS = {"payment_readback_required", "payment_effect_mismatch","invalid_arguments", "pms_disabled", "pms_property_denied", "pms_command_denied",
     "pms_unavailable", "pms_outcome_unknown", "pms_preview_rejected", "pms_preview_expired", "pms_request_rejected",
     "human_confirmation_required", "business_action_terminal", "business_reconcile_first",
     "business_operation_denied", "business_authority_denied", "business_authority_changed",
@@ -118,6 +118,21 @@ class Operations:
         operation = args["operation"]
         if operation not in CATALOG or "command" not in CATALOG[operation]:
             raise ValueError("unsupported_command")
+        args = dict(args)
+        if args.get("work_item"):
+            event = self.call("pms_event_context", {k: args[k] for k in ("binding", "operation", "work_item")})
+            if event:
+                current = self.pms.read("payments", event["property"], filters={"billId": event["bill_id"], "kind": "COLLECTION", "status": "ALL", "limit": 1})
+                items = current.get("items", [])
+                if len(items) != 1 or items[0].get("id") != event["bill_id"]:
+                    raise ValueError("payment_readback_required")
+                payment = items[0]
+                if (payment.get("status") != "AVAILABLE" or payment.get("kind") != "COLLECTION"
+                        or args["input"].get("method") != "WECOM"
+                        or payment.get("reference") != args["input"].get("transactionReference")
+                        or payment.get("amountMinor") != args["input"].get("amountMinor")):
+                    raise ValueError("payment_effect_mismatch")
+                args["source_payment"] = {k: payment[k] for k in ("id", "status", "kind", "reference", "amountMinor")}
         started = self.call("pms_start", args)
         action = started["action"]
         if started.get("replayed"):

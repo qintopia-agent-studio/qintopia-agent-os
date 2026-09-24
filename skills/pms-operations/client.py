@@ -159,6 +159,10 @@ class Client:
                     and command in me["propertyCommandGrants"].get(property_id, []), "pms_command_denied")
         return me
 
+    def payment_head(self, property_id):
+        self.authorize(property_id)
+        return self._request("GET", "/api/v1/external-payment-events/head?" + urlencode({"propertyId": property_id}))
+
     def read(self, kind, property_id, *, resource=None, filters=None):
         require(kind in READS, "unsupported_query")
         self.authorize(property_id)

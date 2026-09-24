@@ -492,3 +492,456 @@ async fn business_delegation_cannot_expand_and_parent_revocation_propagates() ->
         .is_err());
     Ok(())
 }
+
+// Payment inbox tests share only the existing isolated tenant fixture, not PMS decisions.
+fn payment(
+    sequence: i64,
+    bill: &str,
+    kind: &str,
+    event_type: &str,
+) -> super::store::business_events::PaymentEvent {
+    super::store::business_events::PaymentEvent {
+        event_id: format!("payment:{bill}:{event_type}"),
+        bill_id: bill.into(),
+        kind: kind.into(),
+        event_type: event_type.into(),
+        occurred_at: Utc::now(),
+        sequence: sequence.to_string(),
+    }
+}
+fn payment_head(value: &str) -> super::store::business_events::PaymentHead {
+    super::store::business_events::PaymentHead {
+        schema_version: "pms.payments.v1".into(),
+        source_instance: "synthetic-pms".into(),
+        property_id: "property_a".into(),
+        binding_version: 1,
+        head_cursor: value.into(),
+    }
+}
+fn payment_page(
+    events: Vec<super::store::business_events::PaymentEvent>,
+    end: &str,
+) -> super::store::business_events::PaymentPage {
+    super::store::business_events::PaymentPage {
+        schema_version: "pms.payments.v1".into(),
+        property_id: "property_a".into(),
+        events,
+        next_cursor: end.into(),
+    }
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn payment_nonzero_baseline_is_atomic_concurrent_and_restart_safe() -> Result<()> {
+    let f = Fixture::new().await?;
+    assert!(f.store.business_feed_open(f.binding, None).await.is_err());
+    let h = payment_head("42");
+    let (a, b) = tokio::join!(
+        f.store.business_feed_open(f.binding, Some(&h)),
+        f.store.business_feed_open(f.binding, Some(&h))
+    );
+    assert_eq!(a?["cursor"], "42");
+    assert_eq!(b?["baselineCursor"], "42");
+    assert!(f
+        .store
+        .business_feed_open(f.binding, Some(&payment_head("43")))
+        .await
+        .is_err());
+    let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
+    let restarted = Store::local(&database, &f.store.tenant).await?;
+    assert_eq!(
+        restarted.business_feed_open(f.binding, None).await?["cursor"],
+        "42"
+    );
+    restarted
+        .business_accept_payment(
+            f.binding,
+            "synthetic-pms",
+            "property_a",
+            &payment(41, "old", "COLLECTION", "DISCOVERED"),
+        )
+        .await?;
+    let n:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND work_item_id IS NOT NULL")
+        .bind(&f.store.tenant).fetch_one(&f.store.pool).await?;
+    assert_eq!(n, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn payment_push_feed_deduplicate_and_gaps_roll_back_atomically() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.store
+        .business_feed_open(f.binding, Some(&payment_head("40")))
+        .await?;
+    let a = payment(41, "bill_a", "COLLECTION", "DISCOVERED");
+    let b = payment(42, "bill_b", "COLLECTION", "DISCOVERED");
+    let ack = f
+        .store
+        .business_accept_payment(f.binding, "synthetic-pms", "property_a", &b)
+        .await?;
+    assert_eq!(
+        f.store.business_feed_open(f.binding, None).await?["cursor"],
+        "40"
+    );
+    assert!(f
+        .store
+        .business_feed_page(
+            f.binding,
+            "synthetic-pms",
+            "40",
+            payment_page(
+                vec![a.clone(), payment(43, "gap", "COLLECTION", "DISCOVERED")],
+                "43"
+            )
+        )
+        .await
+        .is_err());
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1",
+    )
+    .bind(&f.store.tenant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(n, 1);
+    let page = f
+        .store
+        .business_feed_page(
+            f.binding,
+            "synthetic-pms",
+            "40",
+            payment_page(vec![a.clone(), b.clone()], "42"),
+        )
+        .await?;
+    assert_eq!(page["receipts"][1]["receipt_id"], ack["receipt_id"]);
+    let duplicate = f
+        .store
+        .business_accept_payment(f.binding, "synthetic-pms", "property_a", &a)
+        .await?;
+    assert_eq!(duplicate["receipt_id"], page["receipts"][0]["receipt_id"]);
+    assert_eq!(duplicate["status"], "duplicate");
+    let mut conflict = a.clone();
+    conflict.kind = "REFUND".into();
+    assert!(f
+        .store
+        .business_accept_payment(f.binding, "synthetic-pms", "property_a", &conflict)
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_accept_payment(
+            f.binding,
+            "synthetic-pms",
+            "property_a",
+            &payment(42, "other", "COLLECTION", "DISCOVERED")
+        )
+        .await
+        .is_err());
+    let n:i64=sqlx::query_scalar("SELECT count(DISTINCT work_item_id) FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1").bind(&f.store.tenant).fetch_one(&f.store.pool).await?;
+    assert_eq!(n, 2);
+    let actions: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM qintopia_agent_os.business_actions WHERE tenant_key=$1",
+    )
+    .bind(&f.store.tenant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(actions, 0); // Receipt/event never manufactures a financial command or human approval.
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn payment_matched_first_refund_and_scope_do_not_create_collection_authority() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.store
+        .business_feed_open(f.binding, Some(&payment_head("9")))
+        .await?;
+    for e in [
+        payment(11, "already", "COLLECTION", "MATCHED"),
+        payment(10, "already", "COLLECTION", "DISCOVERED"),
+        payment(12, "refund", "REFUND", "DISCOVERED"),
+    ] {
+        f.store
+            .business_accept_payment(f.binding, "synthetic-pms", "property_a", &e)
+            .await?;
+    }
+    let e = payment(13, "new", "COLLECTION", "DISCOVERED");
+    assert!(f
+        .store
+        .business_accept_payment(f.binding, "other-source", "property_a", &e)
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_accept_payment(f.binding, "synthetic-pms", "other-property", &e)
+        .await
+        .is_err());
+    let n:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND work_item_id IS NOT NULL").bind(&f.store.tenant).fetch_one(&f.store.pool).await?;
+    assert_eq!(n, 0);
+    sqlx::query(
+        "UPDATE qintopia_agent_os.business_property_bindings SET version=version+1 WHERE id=$1",
+    )
+    .bind(f.binding)
+    .execute(&f.store.pool)
+    .await?;
+    assert!(f.store.business_feed_context(f.binding).await.is_err());
+    assert!(f
+        .store
+        .business_accept_payment(f.binding, "synthetic-pms", "property_a", &e)
+        .await
+        .is_err());
+    Ok(())
+}
+
+fn signed_payment_request(raw: Vec<u8>, delivery: &str) -> crate::local_http::Request {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    let mut mac = Hmac::<Sha256>::new_from_slice(b"synthetic-payment-signing-secret-32").unwrap();
+    mac.update(
+        format!(
+            "POST\n/api/v1/ingress/pms/events\n1000\n{delivery}\n{}",
+            super::digest(&raw)
+        )
+        .as_bytes(),
+    );
+    let signature = mac
+        .finalize()
+        .into_bytes()
+        .iter()
+        .map(|v| format!("{v:02x}"))
+        .collect::<String>();
+    crate::local_http::Request {
+        method: "POST".into(),
+        path: crate::resident_welcome::protocol::PATH.into(),
+        body: raw,
+        headers: [
+            ("content-type", "application/json".into()),
+            ("x-qt-key-id", "test".into()),
+            ("x-qt-sent-at", "1000".into()),
+            ("x-qt-delivery-id", delivery.into()),
+            ("x-qt-signature", signature),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.into(), v))
+        .collect(),
+    }
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn payment_signed_ingress_ack_is_durable_and_strict() -> Result<()> {
+    use super::business_ingress::{receive, Config};
+    use crate::resident_welcome::protocol::SigningKey;
+    let f = Fixture::new().await?;
+    let config = Config {
+        binding: f.binding,
+        key: SigningKey {
+            key_id: "test".into(),
+            secret: zeroize::Zeroizing::new(b"synthetic-payment-signing-secret-32".to_vec()),
+            source_instance: "synthetic-pms".into(),
+            properties: ["property_a".into()].into_iter().collect(),
+        },
+    };
+    let mut envelope = serde_json::to_value(payment(43, "bill", "COLLECTION", "DISCOVERED"))?;
+    envelope.as_object_mut().unwrap().extend(serde_json::from_value::<serde_json::Map<String,Value>>(json!({"schemaVersion":"pms.payments.v1","sourceInstance":"synthetic-pms","propertyId":"property_a"}))?);
+    let raw = serde_json::to_vec(&envelope)?;
+    assert_eq!(
+        receive(
+            &f.store,
+            &config,
+            &signed_payment_request(raw.clone(), "one"),
+            1000
+        )
+        .await
+        .status,
+        503
+    );
+    f.store
+        .business_feed_open(f.binding, Some(&payment_head("42")))
+        .await?;
+    let accepted = receive(
+        &f.store,
+        &config,
+        &signed_payment_request(raw.clone(), "one"),
+        1000,
+    )
+    .await;
+    assert_eq!(accepted.status, 202);
+    let receipt: Uuid = serde_json::from_value(accepted.body["receipt_id"].clone())?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_event_inbox WHERE id=$1)",
+    )
+    .bind(receipt)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert!(exists);
+    let repeated = receive(
+        &f.store,
+        &config,
+        &signed_payment_request(raw.clone(), "new-delivery"),
+        1000,
+    )
+    .await;
+    assert_eq!(repeated.status, 200);
+    assert_eq!(repeated.body["receipt_id"], accepted.body["receipt_id"]);
+    assert_eq!(
+        receive(
+            &f.store,
+            &config,
+            &signed_payment_request(raw.clone(), "old"),
+            1301
+        )
+        .await
+        .status,
+        401
+    );
+    let mut bad = signed_payment_request(raw.clone(), "bad");
+    bad.body.push(b' ');
+    assert_eq!(receive(&f.store, &config, &bad, 1000).await.status, 401);
+    envelope["kind"] = json!("REFUND");
+    assert_eq!(
+        receive(
+            &f.store,
+            &config,
+            &signed_payment_request(serde_json::to_vec(&envelope)?, "conflict"),
+            1000
+        )
+        .await
+        .status,
+        409
+    );
+    envelope["propertyId"] = json!("other");
+    assert_eq!(
+        receive(
+            &f.store,
+            &config,
+            &signed_payment_request(serde_json::to_vec(&envelope)?, "scope"),
+            1000
+        )
+        .await
+        .status,
+        403
+    );
+    let duplicate = b"{\"extra\":{\"a\":1,\"a\":2}}".to_vec();
+    assert_eq!(
+        receive(
+            &f.store,
+            &config,
+            &signed_payment_request(duplicate, "duplicate-json"),
+            1000
+        )
+        .await
+        .status,
+        400
+    );
+    let mut wrong_method = signed_payment_request(raw, "method");
+    wrong_method.method = "GET".into();
+    assert_eq!(
+        receive(&f.store, &config, &wrong_method, 1000).await.status,
+        404
+    );
+    Ok(())
+}
+
+pub(crate) async fn payment_joint_setup() -> Result<()> {
+    anyhow::ensure!(
+        std::env::var("QINTOPIA_PAYMENT_JOINT_ENABLE").as_deref() == Ok("1"),
+        "joint_disabled"
+    );
+    let output = std::path::PathBuf::from(std::env::var("QINTOPIA_PAYMENT_JOINT_CONFIG")?);
+    anyhow::ensure!(
+        output.is_absolute() && !output.exists(),
+        "existing_joint_configuration_preserved"
+    );
+    let source = std::env::var("QINTOPIA_PAYMENT_JOINT_SOURCE")?;
+    let property = std::env::var("QINTOPIA_PAYMENT_JOINT_PROPERTY")?;
+    anyhow::ensure!(
+        source.starts_with("synthetic-") && crate::resident_welcome::protocol::reference(&property),
+        "synthetic_source_required"
+    );
+    let f = Fixture::new().await?;
+    sqlx::query("UPDATE qintopia_agent_os.business_property_bindings SET source_instance=$2,property_id=$3 WHERE id=$1")
+        .bind(f.binding).bind(&source).bind(&property).execute(&f.store.pool).await?;
+    f.allow("RECORD_COLLECTION").await?;
+    let read:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,parent_grant_id,decision_mode) SELECT tenant_key,collaboration_id,'read_business',parent_grant_id,'autonomous' FROM qintopia_agent_os.collaboration_grants WHERE id=$1 RETURNING id")
+        .bind(f.grant).fetch_one(&f.store.pool).await?;
+    for key in ["pms.read.payments", "pms.read.order", "pms.read.orders"] {
+        sqlx::query("INSERT INTO qintopia_agent_os.business_operation_grants(tenant_key,authority_grant_id,binding_id,operation_key,issued_by) VALUES($1,$2,$3,$4,$5)")
+            .bind(&f.store.tenant).bind(read).bind(f.binding).bind(key).bind(f.store.verified_person(&f.actor).await?).execute(&f.store.pool).await?;
+    }
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)?;
+    file.write_all(&serde_json::to_vec(&json!({"tenant":f.store.tenant,"binding":f.binding,"gateway":f.gateway,"sender":f.sender,"sourceInstance":source,"propertyId":property}))?)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn payment_work_attachment_requires_exact_authority_readback_and_human_confirmation(
+) -> Result<()> {
+    let f = Fixture::new().await?;
+    f.store
+        .business_feed_open(f.binding, Some(&payment_head("42")))
+        .await?;
+    f.store
+        .business_accept_payment(
+            f.binding,
+            "synthetic-pms",
+            "property_a",
+            &payment(43, "bill", "COLLECTION", "DISCOVERED"),
+        )
+        .await?;
+    let work: Uuid = sqlx::query_scalar(
+        "SELECT work_item_id FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1",
+    )
+    .bind(&f.store.tenant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    f.capture("source", "请核对这笔收款").await?;
+    let args =
+        json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","work_item":work});
+    assert!(f
+        .call("source", "pms_event_context", args.clone())
+        .await
+        .is_err());
+    f.allow("RECORD_COLLECTION").await?;
+    assert_eq!(
+        f.call("source", "pms_event_context", args.clone()).await?["bill_id"],
+        "bill"
+    );
+    let mut start = args;
+    start["input"] =
+        json!({"orderId":"order","method":"WECOM","amountMinor":100,"transactionReference":"ref"});
+    start["reason"] = json!({"code":"CUSTOMER_PAYMENT","note":"模拟核对"});
+    assert!(f.call("source", "pms_start", start.clone()).await.is_err());
+    start["source_payment"] = json!({"id":"bill","status":"AVAILABLE","kind":"COLLECTION","reference":"other","amountMinor":100});
+    assert!(f.call("source", "pms_start", start.clone()).await.is_err());
+    start["source_payment"]["reference"] = json!("ref");
+    let action = f.call("source", "pms_start", start).await?;
+    assert!(f
+        .call(
+            "source",
+            "pms_claim_execute",
+            json!({"action":action["action"]})
+        )
+        .await
+        .is_err());
+    let request = super::foundation_server::parse_broker_request(&serde_json::to_vec(&json!({
+        "operation":"person_foundation_tool","schema_version":1,"agent":"anan","tool":"pms_payment_feed",
+        "trusted_context":{"gateway_id":f.gateway,"platform":"host","chat_type":"","chat_id":"","sender_id":"","message_id":""},
+        "arguments":{"action":"open","head":{"headCursor":"999"}},"token":"not-used-direct-unit"}))?)?;
+    assert!(
+        super::foundation_server::broker_invoke(&f.store, &f.gateway, "anan", request)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        f.store.business_feed_open(f.binding, None).await?["cursor"],
+        "42"
+    );
+    Ok(())
+}
