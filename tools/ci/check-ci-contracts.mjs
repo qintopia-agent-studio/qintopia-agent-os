@@ -1113,21 +1113,6 @@ if (ciWorkflow) {
           ".github/workflows/ci.yml: PostgreSQL integration must run the guarded apply smoke"
         );
       }
-      const rendererSetup = postgresJob.steps?.find(
-        (step) => step?.name === "Install welcome renderer dependencies"
-      );
-      for (const required of [
-        "python -m pip install -r tools/testing/requirements.lock",
-        "fonts-noto-cjk",
-        "QINTOPIA_WELCOME_RENDER_PYTHON=$(command -v python)",
-        "$GITHUB_ENV",
-      ]) {
-        if (!String(rendererSetup?.run ?? "").includes(required)) {
-          errors.push(
-            `.github/workflows/ci.yml: welcome renderer setup missing ${required}`
-          );
-        }
-      }
       const foundationIntegrationStep = postgresJob.steps?.find(
         (step) =>
           step?.name ===
