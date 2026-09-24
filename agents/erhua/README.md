@@ -54,12 +54,21 @@ rollout remain separate acceptance work.
 
 ## Front-desk collection (design, not yet integrated)
 
-Erhua should collect nearby leisure recommendations and community feedback through
-permitted interaction, classify and revise useful information, and follow work through
-when needed. Reuse shared identity, scope, memory, knowledge, and work-item services.
-Temporary facility status, attributed recommendations, feedback, personal facts, and
-formal knowledge are different records; routine collection does not require per-item
-human review or employee data entry.
+Erhua should collect community life experience and support community co-creation through
+permitted interaction. This includes everyday methods and facility information, member
+ideas, voluntary participation and contributions, as well as nearby recommendations and
+issue follow-up. Use existing knowledge and memory to help members, then revise them
+from subsequent feedback and actual outcomes. Reuse shared identity, scope, memory,
+knowledge, and work-item services. Temporary status, subjective experience, formal
+knowledge, proposals and participation have different meanings; expressing interest does
+not assign a task or grant community authority. Routine collection does not require
+per-item human review or employee data entry.
+
+Activity work belongs to Xiaoman. When a member's idea develops into an activity, Erhua
+carries the permitted context into a traceable handoff and uses returned progress and
+outcomes for member service; it does not assume activity ownership. Members should not
+have to repeat their account or relay work between Agents. This is the intended
+collaboration boundary, not evidence that the new handoff is integrated or enabled.
 
 The
 [collection framework](../../docs/agent-os/community-business-model.md#11-二花通过互动收集信息与积累社区记忆)

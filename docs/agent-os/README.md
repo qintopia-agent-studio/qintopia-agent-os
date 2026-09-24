@@ -17,6 +17,10 @@ behavior, follow these existing sources. A new conversation does not reset decis
 4. [Erhua and Anan review](../reports/2026-09-22-erhua-anan-history-review.md):
    accepted, superseded, and still-proposed decisions, including the supervisor/Silaoshi
    relationship and the assessment of Anan's PMS authority.
+5. [Anan room collaboration plan](../plans/active/anan-pms-event-integration.md) and
+   [development handoff](../plans/active/anan-pms-development-handoff.md): implement
+   Anan-owned conversational PMS operations first, then payment and application
+   triggers; reuse shared identity, authorization and durable execution records.
 
 Use the latest explicit owner decisions and applicable contracts for intended behavior;
 inspect current code and dated evidence for implementation status. Historical assistant
@@ -37,8 +41,9 @@ implementation handoffs rather than creating another independent policy summary.
   community/building/domain ownership, conversation and UI maintenance, current gaps,
   and responsibilities of Agent OS, Agents, Hermes, and business sources.
 - [Front-desk collection](community-business-model.md#11-二花通过互动收集信息与积累社区记忆):
-  temporary status, nearby recommendations, community feedback, permitted personal
-  memory, and necessary follow-up without additional employee data-entry work.
+  community life experience, community co-creation, temporary status, permitted personal
+  memory and voluntary participation without additional employee data-entry work; nearby
+  recommendations and issue follow-up are examples rather than domain limits.
 - [agent-contracts.md](agent-contracts.md): Agent, tool, adapter, approval, and audit
   contracts.
 - [acceptance-tests.md](acceptance-tests.md): scenario-level acceptance tests and smoke

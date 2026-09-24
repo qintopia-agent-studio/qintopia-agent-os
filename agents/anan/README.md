@@ -1,7 +1,9 @@
 # Agent：岸岸（anan）
 
-岸岸是客房协作智能体。负责人已于 2026-09-24 确认在 Hermes
-Runtime 建立岸岸；该实际 Profile 的工具、权限与发布归属尚待后续联调核对。本目录保留能力文档，本 PR 不接管真实 Profile 部署。
+岸岸是配合小客服和刘珊操作 Green
+PMS 的客房协作智能体。负责人已于 2026-09-24 确认在 Hermes
+Runtime 建立岸岸；该实际 Profile 的模型、工具、权限与发布归属尚待后续联调核对。本目录保留能力文档，欢迎测试替身位于
+`fixtures/agents/anan/`，本批不接管真实 Profile 部署。
 
 ## 职责与接入
 
@@ -27,6 +29,11 @@ Runtime 建立岸岸；该实际 Profile 的工具、权限与发布归属尚待
 `fixtures/agents/anan/`，不登记为生产 Agent，也不进入部署白名单或重启规则。本批只用合成资料与测试上传/发送适配器，完整订房、支付、真实 LLM 和真实渠道验收另行记录。
 
 本地停用入口或停止消费者可撤回接入；保留持久任务及审计，未知外部结果不得自动重试。未来启用生产须独立评审不可变发布、Profile 与凭据绑定、渠道权限、回滚及真实效果。
+
+下一阶段见[岸岸客房协作开发计划](../../docs/plans/active/anan-pms-event-integration.md)与
+[开发交接](../../docs/plans/active/anan-pms-development-handoff.md)：先实现岸岸专用 Skill/插件工具与 PMS 客户端，完成直接对话办理；再接 PMS 收款及飞书申请，复用同一办理流程。
+
+事件和新共享中转服务不是对话能力的前置。目前 PMS 工具与真实验收尚未完成，不能把 Gateway 连通或本地欢迎运行器视为已具备这些能力。
 
 ## 验证
 

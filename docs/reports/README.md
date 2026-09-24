@@ -1,5 +1,10 @@
 # Reports
 
+- [2026-09-24 岸岸架构与并行开发评审](2026-09-24-anan-architecture-parallel-review.md)
+
+- [2026-09-24 岸岸客房协作开发计划](../plans/active/anan-pms-event-integration.md)及
+  [开发交接提示词](../plans/active/anan-pms-development-handoff.md)
+
 - [2026-09-24 PR #720 跨平台 CI 修复](2026-09-24-pr720-ci-repair.md)
 
 - [2026-09-23 舍长标签工作台、知识与临时代理交接](2026-09-23-steward-workspace-completion.md)
