@@ -17,6 +17,9 @@ const errors = {
   welcome_version_conflict: "这条事项已有更新，请刷新后核对新版。",
   welcome_content_version_conflict: "入住资料或内容已有更新，旧确认不能用于新版。",
   operations_confirmation_required: "等待小客服或主管确认本次资料与卡片。",
+  welcome_identity_relations_changed:
+    "人员与申请、入住或聊天账号的关联已变化，请重新核对。",
+  operations_identity_changed: "原人员关联已失效，请重新核对后再继续。",
   operations_content_changed: "已确认的资料发生变化，请重新确认。",
   operations_approval_authority_changed: "原确认人的授权已变化，请重新安排确认。",
   identity_segments_required:

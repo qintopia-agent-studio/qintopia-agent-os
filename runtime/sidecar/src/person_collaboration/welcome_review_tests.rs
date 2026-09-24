@@ -17,10 +17,14 @@ struct Fixture {
     person: Uuid,
     channel: Uuid,
     artifact: Uuid,
+    application: Uuid,
     group: Uuid,
 }
 impl Fixture {
     async fn new() -> Result<Self> {
+        Self::with_intake(false).await
+    }
+    async fn with_intake(intake: bool) -> Result<Self> {
         let db = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
         let store = Store::local(
             &db,
@@ -92,6 +96,39 @@ impl Fixture {
         .bind(case)
         .fetch_one(&store.pool)
         .await?;
+        let app = if intake {
+            let binding: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_property_bindings(tenant_key,scope_id,source_instance,property_id) SELECT $1,$2,source_instance,property_id FROM qintopia_agent_os.welcome_cases WHERE id=$3 RETURNING id")
+                .bind(&store.tenant).bind(scope).bind(case).fetch_one(&store.pool).await?;
+            let record = format!("rec{}", Uuid::new_v4().simple());
+            let read = store
+                .application_read_open(binding, "resident-application", &record)
+                .await?;
+            let result = store
+                .application_read_save(
+                    binding,
+                    "resident-application",
+                    &record,
+                    serde_json::from_value(read["read_token"].clone())?,
+                    &source_observation(),
+                )
+                .await?;
+            let id: Uuid = serde_json::from_value(result["application"].clone())?;
+            sqlx::query(
+                "UPDATE qintopia_agent_os.welcome_applications SET person_id=$2 WHERE id=$1",
+            )
+            .bind(id)
+            .bind(person)
+            .execute(&store.pool)
+            .await?;
+            sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET application_id=$2 WHERE id=$1")
+                .bind(case)
+                .bind(id)
+                .execute(&store.pool)
+                .await?;
+            id
+        } else {
+            app
+        };
         // Known Person remains a candidate while the new stay and channel are pending.
         sqlx::query("UPDATE qintopia_identity.source_identity_links SET status='pending',person_id=NULL,confirmed_by=NULL,evidence_ref=NULL WHERE id=(SELECT identity_link_id FROM qintopia_agent_os.welcome_cases WHERE id=$1)").bind(case).execute(&store.pool).await?;
         sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET person_id=NULL,identity_version=NULL,identity_link_id=NULL WHERE id=$1").bind(case).execute(&store.pool).await?;
@@ -122,8 +159,69 @@ impl Fixture {
             person,
             channel,
             artifact,
+            application: app,
             group,
         })
+    }
+    async fn reopen(&self, artifacts: Vec<Uuid>) -> Result<serde_json::Value> {
+        self.store
+            .welcome_review_open_task(
+                None,
+                &ReviewOpen {
+                    work_item: self.work,
+                    scope: self.scope,
+                    case_ref: self.case,
+                    application: self.application,
+                    artifacts,
+                },
+            )
+            .await
+    }
+    async fn readback(&self, observation: &super::store::applications::Observation) -> Result<()> {
+        let row = sqlx::query("SELECT binding_id,resource_alias,record_ref FROM qintopia_agent_os.application_intake_states WHERE application_id=$1").bind(self.application).fetch_one(&self.store.pool).await?;
+        let binding: Uuid = row.get("binding_id");
+        let alias: String = row.get("resource_alias");
+        let record: String = row.get("record_ref");
+        let read = self
+            .store
+            .application_read_open(binding, &alias, &record)
+            .await?;
+        self.store
+            .application_read_save(
+                binding,
+                &alias,
+                &record,
+                serde_json::from_value(read["read_token"].clone())?,
+                observation,
+            )
+            .await?;
+        Ok(())
+    }
+    async fn new_content(&self) -> Result<Uuid> {
+        let id: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.artifacts(work_item_id,artifact_type,created_by_agent,content_text,content_hash) VALUES($1,'welcome_text','anan','新版模拟介绍',$2) RETURNING id")
+            .bind(self.work).bind(super::digest(b"new welcome text")).fetch_one(&self.store.pool).await?;
+        sqlx::query("INSERT INTO qintopia_agent_os.welcome_artifact_bindings(artifact_id,case_id,application_id,application_revision,case_version,consent_version,template_version) SELECT $1,c.id,a.id,a.revision,c.version,a.consent_version,'simulated' FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_applications a ON a.id=$3 WHERE c.id=$2")
+            .bind(id).bind(self.case).bind(self.application).execute(&self.store.pool).await?;
+        Ok(id)
+    }
+    async fn assert_publish(&self, artifact: Uuid, permitted: bool) -> Result<()> {
+        let mut tx = self.store.pool.begin().await?;
+        let result = super::assert_welcome_operations_review(
+            &self.store.pool,
+            &mut tx,
+            &self.store.tenant,
+            self.scope,
+            self.case,
+            artifact,
+        )
+        .await;
+        assert_eq!(
+            result.is_ok(),
+            permitted,
+            "unexpected operations approval: {result:?}"
+        );
+        tx.rollback().await?;
+        Ok(())
     }
     async fn subject(&self) -> Result<WelcomeSubject> {
         self.store
@@ -759,8 +857,20 @@ async fn welcome_source_revision_requires_identity_reconfirmation_and_retains_re
         .execute(&f.store.pool)
         .await?;
     f.store
-        .welcome_review_decide(&subject, &f.decision())
+        .welcome_review_open_task(
+            None,
+            &ReviewOpen {
+                work_item: f.work,
+                scope: f.scope,
+                case_ref: f.case,
+                application: app,
+                artifacts: vec![f.artifact],
+            },
+        )
         .await?;
+    let mut initial = f.decision();
+    initial.expected_version = 2;
+    f.store.welcome_review_decide(&subject, &initial).await?;
     sqlx::query("UPDATE qintopia_agent_os.welcome_applications SET revision=revision+1,field_hash=$2 WHERE id=$1")
         .bind(app).bind(super::digest(b"changed source identity fields")).execute(&f.store.pool).await?;
     f.store
@@ -778,7 +888,7 @@ async fn welcome_source_revision_requires_identity_reconfirmation_and_retains_re
     let list = f.store.welcome_review_list(&subject, f.scope).await?;
     assert_eq!(list["items"][0]["identity_confirmed"], false);
     let mut r = f.decision();
-    r.expected_version = 3;
+    r.expected_version = 4;
     r.confirm_application_stay = false;
     r.confirm_channel_person = false;
     assert!(f
@@ -802,7 +912,7 @@ async fn welcome_source_revision_requires_identity_reconfirmation_and_retains_re
     r.confirm_content = false;
     f.store.welcome_review_decide(&subject, &r).await?;
     r.operation_id = Uuid::new_v4();
-    r.expected_version = 4;
+    r.expected_version = 5;
     r.decision = "revoke".into();
     f.store.welcome_review_decide(&subject, &r).await?;
     let person: Option<Uuid> = sqlx::query_scalar(
@@ -815,5 +925,221 @@ async fn welcome_source_revision_requires_identity_reconfirmation_and_retains_re
         person.is_none(),
         "explicit revocation still removes the association created by this matter"
     );
+    Ok(())
+}
+
+fn source_observation() -> super::store::applications::Observation {
+    super::store::applications::Observation {
+        identity_hash: "a".repeat(64),
+        field_hash: "b".repeat(64),
+        valid: true,
+        consent_active: true,
+        source_version: Some("1".into()),
+    }
+}
+
+#[tokio::test]
+#[ignore = "explicit isolated PostgreSQL required"]
+async fn welcome_trusted_content_change_preserves_identity_but_requires_new_content_approval(
+) -> Result<()> {
+    let f = Fixture::with_intake(true).await?;
+    let subject = f.subject().await?;
+    let initial = f.decision();
+    f.store.welcome_review_decide(&subject, &initial).await?;
+    f.assert_publish(f.artifact, true).await?;
+    let mut content = source_observation();
+    content.field_hash = "c".repeat(64);
+    content.source_version = Some("2".into());
+    f.readback(&content).await?;
+    f.assert_publish(f.artifact, false).await?;
+    let artifact = f.new_content().await?;
+    f.reopen(vec![artifact]).await?;
+    let row = sqlx::query("SELECT identity_receipt,content_receipt FROM qintopia_agent_os.welcome_review_items WHERE work_item_id=$1").bind(f.work).fetch_one(&f.store.pool).await?;
+    assert_eq!(
+        row.get::<Option<Uuid>, _>("identity_receipt"),
+        Some(initial.operation_id)
+    );
+    assert_eq!(row.get::<Option<Uuid>, _>("content_receipt"), None);
+    f.assert_publish(artifact, false).await?;
+    let mut review = f.decision();
+    review.expected_version = 3;
+    review.confirm_application_stay = false;
+    review.confirm_channel_person = false;
+    assert_eq!(
+        f.store.welcome_review_decide(&subject, &review).await?["status"],
+        "confirmed"
+    );
+    f.assert_publish(artifact, true).await?;
+    let revoked: bool = sqlx::query_scalar("SELECT revoked_at IS NOT NULL FROM qintopia_agent_os.welcome_artifact_bindings WHERE artifact_id=$1").bind(f.artifact).fetch_one(&f.store.pool).await?;
+    assert!(revoked);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit isolated PostgreSQL required"]
+async fn welcome_source_aba_without_reopen_cannot_revive_identity_receipt() -> Result<()> {
+    let f = Fixture::with_intake(true).await?;
+    let subject = f.subject().await?;
+    let initial = f.decision();
+    f.store.welcome_review_decide(&subject, &initial).await?;
+    sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET manual_hold=true WHERE id=$1")
+        .bind(f.case)
+        .execute(&f.store.pool)
+        .await?;
+    let mut changed = source_observation();
+    changed.identity_hash = "d".repeat(64);
+    changed.field_hash = "e".repeat(64);
+    f.readback(&changed).await?;
+    f.readback(&source_observation()).await?;
+    let mut tx = f.store.pool.begin().await?;
+    assert_eq!(
+        f.store
+            .application_identity_basis(&mut tx, f.scope, f.application)
+            .await?,
+        Some("a".repeat(64))
+    );
+    tx.rollback().await?;
+    f.assert_publish(f.artifact, false).await?;
+    let mut review = f.decision();
+    review.expected_version = 2;
+    review.confirm_application_stay = false;
+    review.confirm_channel_person = false;
+    assert!(f
+        .store
+        .welcome_review_decide(&subject, &review)
+        .await
+        .is_err());
+    let artifact = f.new_content().await?;
+    f.reopen(vec![artifact]).await?;
+    let list = f.store.welcome_review_list(&subject, f.scope).await?;
+    assert_eq!(list["items"][0]["identity_confirmed"], false);
+    review.expected_version = 3;
+    assert!(f
+        .store
+        .welcome_review_decide(&subject, &review)
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("identity_segments_required"));
+    let row=sqlx::query("SELECT c.person_id,c.application_id,c.manual_hold,a.person_id AS application_person,l.status FROM qintopia_agent_os.welcome_cases c JOIN qintopia_agent_os.welcome_applications a ON a.id=$2 JOIN qintopia_identity.source_identity_links l ON l.id=c.identity_link_id WHERE c.id=$1").bind(f.case).bind(f.application).fetch_one(&f.store.pool).await?;
+    assert_eq!(row.get::<Option<Uuid>, _>("person_id"), Some(f.person));
+    assert_eq!(row.get::<Option<Uuid>, _>("application_id"), None);
+    assert_eq!(row.get::<Option<Uuid>, _>("application_person"), None);
+    assert_eq!(row.get::<String, _>("status"), "confirmed");
+    assert!(row.get::<bool, _>("manual_hold"));
+    let receipts: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM qintopia_agent_os.welcome_review_receipts WHERE work_item_id=$1",
+    )
+    .bind(f.work)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(receipts, 1);
+    let channel: String = sqlx::query_scalar(
+        "SELECT status FROM qintopia_identity.source_identity_links WHERE id=$1",
+    )
+    .bind(f.channel)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(channel, "confirmed");
+    // An explicit new identity decision is required; the source hash alone never repairs links.
+    review.confirm_application_stay = true;
+    review.confirm_channel_person = true;
+    assert_eq!(
+        f.store.welcome_review_decide(&subject, &review).await?["status"],
+        "confirmed"
+    );
+    let held: bool =
+        sqlx::query_scalar("SELECT manual_hold FROM qintopia_agent_os.welcome_cases WHERE id=$1")
+            .bind(f.case)
+            .fetch_one(&f.store.pool)
+            .await?;
+    assert!(held);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit isolated PostgreSQL required"]
+async fn welcome_unchanged_content_cannot_hide_unlinked_or_replaced_identity_relations(
+) -> Result<()> {
+    for mutation in 0..7 {
+        let f = Fixture::with_intake(true).await?;
+        let subject = f.subject().await?;
+        f.store
+            .welcome_review_decide(&subject, &f.decision())
+            .await?;
+        match mutation {
+            0 => {
+                sqlx::query(
+                    "UPDATE qintopia_agent_os.welcome_applications SET person_id=NULL WHERE id=$1",
+                )
+                .bind(f.application)
+                .execute(&f.store.pool)
+                .await?;
+            }
+            1 => {
+                sqlx::query(
+                    "UPDATE qintopia_agent_os.welcome_applications SET person_id=$2 WHERE id=$1",
+                )
+                .bind(f.application)
+                .bind(f.store.verified_person(&f.owner).await?)
+                .execute(&f.store.pool)
+                .await?;
+            }
+            2 => {
+                sqlx::query(
+                    "UPDATE qintopia_agent_os.welcome_cases SET application_id=NULL WHERE id=$1",
+                )
+                .bind(f.case)
+                .execute(&f.store.pool)
+                .await?;
+            }
+            3 => {
+                sqlx::query("UPDATE qintopia_agent_os.welcome_cases SET person_id=$2 WHERE id=$1")
+                    .bind(f.case)
+                    .bind(f.store.verified_person(&f.owner).await?)
+                    .execute(&f.store.pool)
+                    .await?;
+            }
+            4 => {
+                sqlx::query("UPDATE qintopia_identity.source_identity_links SET status='revoked',version=version+1 WHERE id=$1").bind(f.channel).execute(&f.store.pool).await?;
+                sqlx::query("UPDATE qintopia_identity.source_identity_links SET status='confirmed',version=version+1 WHERE id=$1").bind(f.channel).execute(&f.store.pool).await?;
+            }
+            5 => {
+                sqlx::query("UPDATE qintopia_identity.source_identity_links SET status='revoked',version=version+1 WHERE id=(SELECT identity_link_id FROM qintopia_agent_os.welcome_cases WHERE id=$1)").bind(f.case).execute(&f.store.pool).await?;
+                sqlx::query("UPDATE qintopia_identity.source_identity_links SET status='confirmed',version=version+1 WHERE id=(SELECT identity_link_id FROM qintopia_agent_os.welcome_cases WHERE id=$1)").bind(f.case).execute(&f.store.pool).await?;
+            }
+            _ => {
+                sqlx::query("UPDATE qintopia_agent_os.business_property_bindings SET active=false WHERE tenant_key=$1").bind(&f.store.tenant).execute(&f.store.pool).await?;
+            }
+        }
+        f.assert_publish(f.artifact, false).await?;
+        let mut review = f.decision();
+        review.expected_version = 2;
+        review.confirm_application_stay = false;
+        review.confirm_channel_person = false;
+        assert!(
+            f.store
+                .welcome_review_decide(&subject, &review)
+                .await
+                .is_err(),
+            "mutation {mutation}"
+        );
+        f.reopen(vec![f.artifact]).await?;
+        let list = f.store.welcome_review_list(&subject, f.scope).await?;
+        assert_eq!(
+            list["items"][0]["identity_confirmed"], false,
+            "mutation {mutation}"
+        );
+        assert_eq!(list["items"][0]["content_confirmed"], false);
+        review.expected_version = 3;
+        assert!(f
+            .store
+            .welcome_review_decide(&subject, &review)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("identity_segments_required"));
+        f.assert_publish(f.artifact, false).await?;
+    }
     Ok(())
 }
