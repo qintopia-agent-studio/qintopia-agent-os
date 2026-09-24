@@ -825,5 +825,53 @@ Clippy `-D warnings` 通过，见
 完整请求握手与本次业务链已通过，不据此声明服务早断连接健壮性通过。
 
 最终 quick 通过，见
-`integration/phone-joint-quick-final.log`。已在共同源码上完成本次电话私有回读与原确认五路径的本地联合交付。本切片未实现来源提交端的新申请手机号必填；回读不能替代表单提交校验。早断连接可靠性诊断由基础线继续；以上两项不混写为外部验收。真实模型、PMS响应与群渠道、发布部署仍未验收或启用。原综合auto末端的apply
+`integration/phone-joint-quick-final.log`。已在共同源码上完成本次电话私有回读与原确认五路径的本地联合交付。本切片不拥有来源提交校验；后续只读核实表单手机号已必填，见下节纠正。早断连接可靠性诊断由基础线继续。真实模型、PMS响应与群渠道、发布部署仍未验收或启用。原综合auto末端的apply
 smoke URL allowlist门禁仍是独立已知限制，未放宽或重跑旧业务链。
+
+### 来源手机号必填归属核查与状态纠正（2026-09-25）
+
+只读查询于北京时间2026-09-25 02:19前后完成；脱敏证据汇总时间为
+`2026-09-24T18:19:51.875232Z`（北京时间02:19:51）。使用现有
+`lark-cli --as user`，命令类别依次为
+`+title-resolve`、`+url-resolve`、`+table-list`、`+form-list`、`+field-list`、
+`+form-questions-list`、`+view-get-visible-fields`、`+form-share-get`。没有读取申请记录、手机号值、附件或Workflow请求头；没有提交、建行、导入或修改配置。
+
+定位依据：精确标题「秦托邦｜入住申请信息表」；其下唯一查得表为「秦托邦入住申请数据」，唯一查得表单为「秦托邦入驻申请表表单」。以字段稳定ID关联同名「手机号码」题目，并用可见题目列表交叉核对。Git仅保留标题与下列脱敏配置结论，不保存资源token、分享URL或个人资料。
+
+| 核对对象          | 当前只读结果                                         |
+| ----------------- | ---------------------------------------------------- |
+| 手机号码字段/题目 | type=text、style.type=phone、required=true           |
+| 表单题目可见性    | 手机号码在visible_fields内；题目响应未列visible_rule |
+| 分享状态          | enabled=true、access_scope=anyone；本次未修改范围    |
+| 真实空号提交拦截  | 未实测，没有发送测试申请                             |
+
+**纠正此前欠项表述：已发现的正式表单当前具有手机号必填配置，不是尚缺本地实现。**
+回读宿主不拥有提交校验，不等于来源提交端没有校验。剩余空号实际提交拦截是来源侧外部验收限制，不是本轮本地缺口或凭据问题。
+
+本地与来源职责证据：
+
+- Agent OS `skills/pms-operations/application_intake.py:64` 构造观察，`:120`
+  只GET已有记录。
+  `source_version`来自last_modified_time，不表示提交类型；phone缺失仍可形成历史观察。
+- `workflows/silaoshi-daily-ops/bin/script_action_bridge.py:136` 核验签名/时间窗，`:190`
+  只由记录引用累加requested_version并唤醒GET。签名认证传输，不证明新申请提交；计数不是源版本。
+- `runtime/sidecar/src/person_collaboration/store/applications.rs:96`、`:170`
+  的read_token/expected_revision用于CAS；内部revision=1仅是首份本地投影。首次观察、历史编辑、旧回调与补拉不能据此判成新提交并追罚缺电话。
+- `skills/pms-operations/tests/test_application_intake.py:41`
+  覆盖删除电话后仍观察并改变身份hash；Bridge `tests/test_script_action_bridge.py:201`
+  覆盖同记录旧回调再次唤醒。已有PMS51/Bridge18结果适用于回读边界，本轮没有重复运行，不能替代表单提交测试。
+- `/Users/feather/Documents/Codex project/Feishu Base`
+  为空目录，无本地Git仓库或提交源码。
+- Green PMS `0254fbabdda0b76b56370248f2ad24e44e4e950a` 的
+  `apps/api/src/server.ts:922`、`:982` 是命令预览/确认入口；
+  `apps/api/src/schemas.ts:322`、`:483`
+  的CREATE_ORDER住客phone可选。订单不是飞书申请，不能将本决定扩大成PMS订单或历史住客手机号必填。
+
+既有AddRecordTrigger只证明源记录创建后的通知，不能证明来自表单提交；之前的配置审计见
+`docs/plans/active/unified-person-identity-foundation-assessment.md:235`。本轮未证明直接建行、导入或其他API写入实际用于申请，不能把平台潜在入口当实施欠项。
+
+最小方案为本节文档纠正与来源侧后续受控验收，当前不需修改表单设置。不新增无调用入口的申请服务，不在回读valid上增加phone门禁，不改PMS必填、004/005或历史提醒。若未来证实另有实际提交入口，再由总指挥指定唯一owner，在该入口提交前最小校验并补测试。
+
+脱敏证据为本地
+`.local-workspace/anan/application-phone-ownership-evidence.json`；完整有界归属说明为同目录
+`application-phone-ownership.md`。原始配置读取结果仅保留在该忽略目录的仅属主可读文件中，不含申请记录。
