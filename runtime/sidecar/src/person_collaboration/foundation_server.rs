@@ -1021,7 +1021,12 @@ pub(super) async fn broker(store: Store) -> Result<()> {
     let owner = std::fs::metadata(path)?.uid();
     loop {
         let (stream, _) = listener.accept().await?;
-        if stream.peer_cred()?.uid() != owner {
+        // A client can disconnect after connect but before accept/peer inspection.
+        // Unreadable credentials reject this connection, not the listening broker.
+        let Ok(credentials) = stream.peer_cred() else {
+            continue;
+        };
+        if credentials.uid() != owner {
             continue;
         }
         let (read, mut writer) = stream.into_split();
