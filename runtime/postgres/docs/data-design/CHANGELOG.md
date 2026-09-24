@@ -1,5 +1,12 @@
 # Data Design Changelog
 
+## 2026-09-24.004 — Application readback and dispatch
+
+- Fence trusted local source reads and reuse welcome application projections.
+- Keep identity fingerprints separate from content; preserve confirmation audit.
+- Dispatch distinct Anan and Silaoshi work without financial authority or external sends.
+- Design: [application readback](2026-09-24-application-event-intake.md).
+
 ## 2026-09-24.003 — Welcome subject confirmation
 
 - Add scoped work-account subjects, operations confirmation and identity attribution.

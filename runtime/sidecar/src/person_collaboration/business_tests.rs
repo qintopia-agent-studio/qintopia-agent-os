@@ -7,6 +7,9 @@ use serde_json::{json, Value};
 use sqlx::Row;
 use uuid::Uuid;
 
+#[path = "application_tests.rs"]
+mod application_tests;
+
 struct Fixture {
     store: Store,
     actor: Actor,

@@ -64,6 +64,7 @@ const ALLOWED_SOURCE_TYPES: &[&str] = &[
 const DRY_RUN_ALLOWED_GROUP_ALIASES: &[&str] = &["community_activity_group"];
 const DRY_RUN_ALLOWED_GROUP_IDS: &[&str] = &[];
 const BUILTIN_CAPABILITY_KEYS: &[&str] = &[
+    "silaoshi.application_review",
     "resident_welcome.coordinate",
     "huabaosi.create_visual_asset",
     "huabaosi.generate_image_asset",
@@ -10137,6 +10138,17 @@ fn recommended_command_for_workbench_event(
 
 fn builtin_capability(capability_key: &str) -> Option<Capability> {
     match capability_key {
+        "silaoshi.application_review" => Some(Capability {
+            capability_key: capability_key.to_string(),
+            provider_agent: "silaoshi".into(),
+            display_name: "申请运营跟进".into(),
+            description: "本地可信来源待办；不是订单审批或财务授权".into(),
+            allowed_callers: vec![],
+            allowed_work_item_types: vec!["application_review".into()],
+            risk_level: "high".into(),
+            review_policy: "before_external_use".into(),
+            enabled: false,
+        }),
         "resident_welcome.coordinate" => Some(Capability {
             capability_key: capability_key.to_string(),
             provider_agent: "silaoshi".to_string(),
@@ -11308,7 +11320,12 @@ mod tests {
         let report = capability_list_from_builtin();
 
         assert_eq!(report.source, "builtin");
-        assert_eq!(report.capability_count, 14);
+        assert_eq!(report.capability_count, 15);
+        assert!(report.capabilities.iter().any(|item| {
+            item.capability_key == "silaoshi.application_review"
+                && !item.enabled
+                && item.allowed_callers.is_empty()
+        }));
         assert!(report.capabilities.iter().any(|item| {
             item.capability_key == "resident_welcome.coordinate"
                 && !item.enabled

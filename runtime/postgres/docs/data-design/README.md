@@ -15,6 +15,9 @@ Agent OS data layer.
 
 ## Versions
 
+- `2026-09-24.004`:
+  [Application readback and dispatch](2026-09-24-application-event-intake.md)
+
 - `2026-09-24.002`:
   [Payment event ingress](2026-09-24-business-payment-event-ingress.md)
 

@@ -196,3 +196,145 @@ smoke仍受固定URL门禁限制；适用总检查未全通过，不宣称auto�
 
 首轮人确认链停在只读查询：调用漏了PMS必填kind，被API拒绝；SQL确认actions仍为空。插件的事件关联读取与联合脚本均补入COLLECTION和status=ALL，明确读取已匹配状态用于回读。新增请求参数回归后Python
 23项通过；未修改PMS、Rust或已运行的接收二进制。原失败日志保留在joint/collection-first-read-failure.log，未创建动作或执行收款，随后沿同一账单继续。
+
+### 首笔收款与 MATCHED 联合回读
+
+实际联合版本：Rust receiver 为 `ed0bb6c`，Python 插件与联合脚本为
+`7726a6f`，PMS 服务仍为 `357f9ce`。PMS 合并没有切换在用联合环境。
+
+沿原模拟账单执行真实本地业务链，脚本退出0：
+
+- 无当笔确认时拒绝执行且账单仍为 AVAILABLE。
+- 可信模拟 Person 对具体订单、流水、金额自然确认后执行 RECORD_COLLECTION。
+- 测试故意丢弃 Confirm 响应，保留 UNKNOWN，随后沿原执行键恢复为 completed。
+- 实际回读订单及流水 MATCHED；再次执行被拒绝。
+
+发送方独立 SQL 核对仅一条 COLLECTION，金额12000分，匹配来源 CONFIRMED。接收方仅有一个动作
+`eddb06be-f04e-4da8-98da-ed32d775ee64`，关联原事项
+`a11c8919-5677-4f8b-ad8a-178f04e92679`，PMS 业务回执为
+`receipt_dbafe6d0-b255-4c25-a109-13fa4312aa43`。以上均为隔离环境模拟资料。
+
+PMS 原 HTTPS sender 随后投递事务生成的 MATCHED（sequence=2），返回202及回执
+`eb310e73-9e1c-4017-99ff-ee15d085a987`。本线独立 SQL 确认 inbox=2、work=1、action=1。
+
+两个事件共用原事项，completed 动作未被覆盖；push 后 cursor 仍为1。真实 feed 补拉后 cursor=2、baseline=0，两条事件及回执不变，没有重复收款或新事项。
+
+本地证据均位于忽略目录 joint：
+
+- collection-one.log、collection-one-result.json；
+- matched-push-receiver.json、matched-feed.log、matched-feed-receiver.json。
+
+首笔结果文件不重跑、不覆盖。PG 专项通过不能替代双端联合验证。
+
+### 第二笔与有界模拟负例
+
+第二笔真实 PMS
+DISCOVERED 为 sequence=3；先实际 feed，cursor=3、inbox=3、work=2，action 仍为首笔唯一 completed。之后原 HTTPS
+sender 返回 duplicate/accepted，回执 `d2f6824d-4693-4efc-bd08-171c54d6edbd`
+与 feed 一致，未创建收款。
+
+第二笔投递期间18450代理进程退出，一次 TRANSPORT_UNCONFIRMED 未到接收端。发送方归档原 TLS 记录后恢复同一入口及临时 CA；API、receiver、数据库均未重启或重置。
+
+发送方在忽略目录使用有界 replay 工具读取原持久 body，复用 sendClaim、HTTPS
+transport 和签名。以下为内存单字段变异的模拟信封，不是 PMS 业务事务事件；不调用 finishDelivery，不改变原 accepted 状态，也不把工具分类当作订阅已暂停：
+
+| 模拟负例 | 单字段变化                              | HTTP | 本线逐次 SQL 回读                      |
+| -------- | --------------------------------------- | ---- | -------------------------------------- |
+| 内容冲突 | 原 eventId/sequence，occurredAt 加1毫秒 | 409  | inbox3/work2/action1 completed/cursor3 |
+| 来源越界 | sourceInstance 换为未配置来源           | 403  | 同上，全部回执不变                     |
+| 物业越界 | propertyId 换为未配置物业               | 403  | 同上，全部回执不变                     |
+
+证据均位于忽略目录 joint：
+
+- second-feed-first.log、second-feed-first-receiver.json；
+- second-duplicate-conflict-receiver.json；
+- wrong-source-receiver.json、wrong-property-receiver.json。
+
+错误作用域拒绝不等于两个合法作用域隔离已联合验收；后者仍未覆盖。
+
+### 第三笔 MATCHED 先到
+
+发送方通过正常 runtime 角色 Preview/Confirm 事务将第三笔模拟账单登记为 MATCHED，独立 SQL 核对12000分、唯一 COLLECTION、来源 CONFIRMED。
+
+这是模拟人工接手事务，不是浏览器点击或真人确认验收；本线没有重复执行收款。
+
+发送方真实 publish 物化 DISCOVERED sequence4 与 MATCHED
+sequence5，使用未变异原 body 先投递5再投递4，两次均202。
+
+本线逐次 SQL 回读两事件 work_item 均为空，总 inbox=5、work=2、action=1
+completed。push 后 cursor 仍为3。
+
+随后实际 feed 连续补齐4和5，cursor=5、baseline=0，未补建催办或收款。
+
+- MATCHED 回执：`d481c7fc-2c75-452c-88bc-7099d564072d`。
+- DISCOVERED 回执：`5212eb66-f408-4209-9a4f-ba52dc4a72ea`。
+- 证据：joint/third-matched-first-receiver.json、third-discovered-late-receiver.json、third-ordered-feed.log、third-ordered-feed-receiver.json。
+
+单次 replay 不修改发送队列确认状态。随后原 sender 正常投递第三笔两事件，均返回200
+duplicate，复用上述回执。发送方最终独立 SQL/status 确认五事件全部 accepted、无 last_error。
+
+三笔均12000分：首笔和第三笔 CONFIRMED 匹配，第二笔未匹配；PMS 全库收款事实仅首/第三笔两条、合计24000分。本线最终独立回读仍 inbox5/work2/action1
+completed/cursor5。两边账本差异符合第三笔由 PMS 模拟人工接手登记、Agent
+OS 不重登的业务边界。
+
+最终证据为本线 joint/final-payment-receiver.json 与发送方 joint/final-status.json、final-sql.txt。已停止新增支付场景，保留环境；真实浏览器、真人、渠道和生产仍未验收。
+
+发送方版本化联合报告为 Green PMS 提交 `ddb51daf8e6697cc721465b89f5c999de35a7703`，文件
+`待开发项/PMS-AgentOS-支付事件联合验收-20260924.md`。该报告提交不改变联合业务源码357f9ce。
+
+## 阶段4：本地申请回读与分派切片
+
+004由总指挥预留。复用既有签名 Unix
+Bridge，新分支显式本地启用且默认关闭；旧未启用路由保持。同 record 回调持续唤醒，不被旧 jobs 的 delivery_id 去重吞掉；新模式不执行旧制卡/直发脚本。
+
+固定来源适配器实际 GET 指定本地模拟记录，许可字段形成内容与身份指纹，不读取附件或输出资料正文。
+
+回调只携带记录引用，模型不能提供身份 hash、Person、批准或撤回事实。
+
+404、权限或网络错误保留待回读。
+
+权威回读后，独立 HOST_TOKEN 通过原 broker 原子保存 welcome_applications 投影及岸岸/四老师各一事项。
+
+内部 revision 仅随内容变化增加，不将 last_modified_time、delivery_id 或 record_id 当修订号。
+
+read_token 拒绝旧读响应；
+
+丢 ACK 同 token 重交同内容返回 duplicate。
+
+四老师运营事项不成为普通订单审批。
+
+已完成/取消/执行中的事项不因来源变化自动重放；
+
+明确撤回只停止未完成来源待办，不改 PMS 事实。
+
+身份字段为固定许可姓名/昵称/手机号。内容变化保留已确认 Person；身份字段变化清本申请 Person、解除案例 application_id 并保留旧引用审计，不撤销全局账号身份或 PMS 入住人事实。
+
+公共 `application_identity_basis(&mut tx, scope, application)`
+在同事务核对有效绑定及来源归属。
+
+它以当前申请字段重算已提交 completed_hash，其他入口改写申请后返回 None，防止旧身份摘要被误用。
+
+不重复实现欢迎确认，snapshot/open_task 的精确身份失效由基础线接入本公共读取方法。
+
+| 验证                                       | 本线整合欢迎前的实际结果                  |
+| ------------------------------------------ | ----------------------------------------- |
+| 申请 PostgreSQL 专项                       | 6 passed，含完整 Bridge/HTTP/broker/PG 链 |
+| person_collaboration 回归                  | 88 passed / 0 ignored                     |
+| PMS/申请 Python                            | 30 passed                                 |
+| 四老师 Bridge 与迁移兼容测试               | 21 passed                                 |
+| 原业务目录 harness                         | 8 passed                                  |
+| no-default/all-features Clippy all-targets | 禁止警告通过                              |
+
+完整申请链的六次实际 HTTP 读取覆盖重复记录回调、内容/身份变更、404保持待回读、恢复及明确撤回。最终同一申请 revision4、原两事项取消，旧脚本执行0；坏签名拒绝。模拟 HTTP 边界不等于真实飞书触发通过。
+
+证据为 application-pg-tests.log、application-bridge-journey.log、application-person-regression.log、application-python-tests.log、application-clippy.log，均在忽略目录
+`.local-workspace/anan/`。004已应用后不再改写；先前考虑新增 observed_* 列的方案已撤回，实际用 completed_hash 读取接口。
+
+本切片尚未整合欢迎6c6548b，不将以上结果记作001→002→003→004集成验证。原申请到真实人员候选、可靠住宿关联后的欢迎调用、群可信交互及生产修订/撤回接线仍需后续验收。
+
+身份依据补充回归通过：其他入口仅改 field_hash、valid 或 consent_active 时均返回 None；跨 scope、绑定停用或版本改变同样拒绝。
+
+来源 A→B→A 不恢复被 B 清除的申请 Person 或案例关联。helper 的 Some 仅证明当前回读内容一致，不代替关联成立、许可或旧确认收据仍有效。
+
+四老师新能力沿既有业务目录登记为默认关闭；按总指挥明确同意，仅同步原 builtin 与 operations
+smoke 的目录数量断言14→15。未改检查入口、CI条件或生产权限门禁。

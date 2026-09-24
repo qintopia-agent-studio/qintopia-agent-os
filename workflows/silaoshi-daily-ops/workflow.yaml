@@ -21,6 +21,7 @@ validation:
     - pnpm workflows:check
 dependencies:
   - agents/silaoshi
+  - skills/pms-operations
   - runtime/postgres
   - mcp/context-server
 tags:
