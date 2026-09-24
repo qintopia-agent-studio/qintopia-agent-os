@@ -875,3 +875,47 @@ smoke URL allowlist门禁仍是独立已知限制，未放宽或重跑旧业务�
 脱敏证据为本地
 `.local-workspace/anan/application-phone-ownership-evidence.json`；完整有界归属说明为同目录
 `application-phone-ownership.md`。原始配置读取结果仅保留在该忽略目录的仅属主可读文件中，不含申请记录。
+
+### 早断连接修复的共同整合（2026-09-25）
+
+基础线已确认原问题是服务缺陷：Darwin在客户端提前断连后，accept成功但peer_cred返回NotConnected/errno57，原问号传播使整个broker退出。
+
+根因与修复前失败记录见
+[基础线报告](2026-09-25-foundation-broker-disconnect.md)，不再将此问题视作仅fixture现象。
+
+本线合入修复 `85cf41309684d3456aca5eba70cebc9aa067b593`，共同SHA为
+`69b054dce1c510b9827fbf643856fc48bac420f9`；双亲为表单审计
+`72c05adcafd8b03cf49eb0d9adb8ed860da11d42` 和上述修复。
+
+双方目录独立场景、电话联合测试和来源表单纠正全部保留，无冲突。
+
+运行逻辑仅拒绝凭据无法读取的当前连接，继续listener；UID/token/业务授权不变。
+
+CI、deploy、allowlist和001—005未改。
+
+共同SHA上完成三个定向用例，各1 passed / 0 failed / 0 ignored：
+
+- `integration/broker-merge-unix.log`：真实Unix再次观察errno57；提前断连、半截请求、不读回复后下一请求仍可处理，错误token与profile仍拒绝，不连接PG。
+
+- `integration/broker-merge-auth.log`：本任务52322实际PG，模型token/错误profile/错误gateway拒绝，授权宿主正常；未使用基础线51847或旧支付52316库。
+
+- `integration/broker-merge-journey.log`：实际私有Client/Unix/服务PG/WelcomeHost，原五业务模式与重放通过；PMS
+  HTTP响应和群交付仍为模拟。
+
+三项与此前模块9项、基础线全量结果不累计，子进程也不另计。
+
+双方场景可在目录发现，harness8通过，见 `integration/broker-merge-catalog.log`、
+`integration/broker-merge-harness.log`。
+
+本地早断连接缺口现已修复并共同验证；未重复旧支付/订房链。
+
+来源表单手机号必填已只读确认，实际空号提交拦截仍属来源侧外部验收。
+
+真实模型、渠道和部署未启用；旧综合auto末端固定URL allowlist门禁仍保留。
+
+按总指挥要求，在同一共同源码上复验contacts模块默认并行9/0/0，见
+`integration/broker-merge-contacts.log`；已含五模式联合1项，不另相加。共同源码全features/all-targets严格Clippy通过，见
+`integration/broker-merge-clippy.log`。本轮约定的电话私有宿主、欢迎服务、原确认联合链及早断连接修复没有剩余代码或集成欠项。来源实际提交拦截、真实模型/渠道与部署仍是未执行的外部验收，不能据本地模拟结果声称通过。
+
+最终共同quick通过，见
+`integration/broker-merge-quick.log`。本次未重跑已知失败的完整auto；基础线85cf413的各层通过与末端allowlist失败分开保留，不声明完整auto通过。报告以正常hooks提交，未执行push、远端PR、主线合并或生产动作。
