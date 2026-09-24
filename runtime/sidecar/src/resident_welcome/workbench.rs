@@ -40,6 +40,30 @@ pub struct IdentityRequest {
     pub revoke: bool,
 }
 
+/// Shared persistence primitive. Callers must authorize and bind the source scope first.
+pub(crate) async fn create_person_for_pending_source(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    link: Uuid,
+    version: i64,
+    label: &str,
+    nickname: Option<&str>,
+) -> Result<Uuid> {
+    ensure!(
+        !label.trim().is_empty()
+            && label.chars().count() <= 80
+            && !label.chars().any(char::is_control),
+        "invalid_person_label"
+    );
+    let row=sqlx::query("SELECT status,version,person_id FROM qintopia_identity.source_identity_links WHERE id=$1 FOR UPDATE").bind(link).fetch_one(&mut **tx).await?;
+    ensure!(
+        row.get::<String, _>("status") == "pending"
+            && row.get::<i64, _>("version") == version
+            && row.get::<Option<Uuid>, _>("person_id").is_none(),
+        "pending_identity_required"
+    );
+    Ok(sqlx::query_scalar("INSERT INTO qintopia_identity.persons(display_name,preferred_name) VALUES($1,$2) RETURNING id").bind(label).bind(nickname).fetch_one(&mut **tx).await?)
+}
+
 impl Store {
     pub async fn workbench_identity(&self, actor: &Actor, r: &IdentityRequest) -> Result<Value> {
         if let Some(person) = r.person_ref {
@@ -83,11 +107,13 @@ impl Store {
                     && link.get::<String, _>("status") == "pending",
                 "pending_identity_required"
             );
-            let person: Uuid = sqlx::query_scalar(
-                "INSERT INTO qintopia_identity.persons(display_name) VALUES ($1) RETURNING id",
+            let person = create_person_for_pending_source(
+                &mut tx,
+                r.link_ref,
+                r.expected_version,
+                label,
+                None,
             )
-            .bind(label)
-            .fetch_one(&mut *tx)
             .await?;
             sqlx::query("UPDATE qintopia_identity.source_identity_links SET person_id=$2,status='confirmed',version=version+1,evidence_ref=$3,confirmed_by=$4,updated_at=now() WHERE id=$1")
                 .bind(r.link_ref).bind(person).bind(r.operation_id).bind(actor.person).execute(&mut *tx).await?;

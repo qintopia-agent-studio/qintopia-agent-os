@@ -1113,6 +1113,33 @@ pub(super) async fn broker_invoke(
         .await;
     }
     if r.operation == "person_foundation_ingress" {
+        if r.tool == "welcome_group_host" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            return store
+                .welcome_host(gateway, t, serde_json::from_value(r.arguments)?)
+                .await;
+        }
+        if r.tool == "welcome_source_projection" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            let request: super::store::welcome_candidates::SourceProjection =
+                serde_json::from_value(r.arguments)?;
+            ensure!(
+                std::env::var("QINTOPIA_APPLICATION_LOCAL_ENABLE").as_deref() == Ok("1")
+                    && Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?
+                        == request.binding,
+                "application_source_mismatch"
+            );
+            let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.business_property_bindings b ON b.tenant_key=g.tenant_key AND b.scope_id=g.scope_id JOIN qintopia_agent_os.application_intake_states i ON i.tenant_key=b.tenant_key AND i.binding_id=b.id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND b.active AND b.id=$3 AND i.application_id=$4 AND i.resource_alias=$5)")
+                .bind(&store.tenant).bind(gateway).bind(request.binding).bind(request.application).bind(std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?).fetch_one(&store.pool).await?;
+            ensure!(bound, "application_source_mismatch");
+            return store.welcome_project_source(&request).await;
+        }
         if r.tool == "pms_application_intake" {
             ensure!(
                 profile == "anan" && t.gateway_id == gateway,
@@ -1167,7 +1194,7 @@ pub(super) async fn broker_invoke(
             && t.sender_id.len() <= 240,
         "trusted_context_unavailable"
     );
-    let actor = store.gateway_actor(gateway, &t.sender_id).await?;
+    let actor = store.conversation_actor(gateway, &t.sender_id).await?;
     let scope = store.gateway_scope(&actor).await?;
     if t.chat_type == "group" {
         let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.chat_id=$3 AND c.status='active')")

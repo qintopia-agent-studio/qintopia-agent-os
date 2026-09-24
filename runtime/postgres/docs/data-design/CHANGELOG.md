@@ -1,5 +1,10 @@
 # Data Design Changelog
 
+## 2026-09-24.005 — Welcome matching and group presentations
+
+- Add expiring source hints and durable version-bound local presentations.
+- Design: [welcome projection](2026-09-24-welcome-source-and-group-projection.md).
+
 ## 2026-09-24.004 — Application readback and dispatch
 
 - Fence trusted local source reads and reuse welcome application projections.

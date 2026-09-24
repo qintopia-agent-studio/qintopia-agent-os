@@ -99,7 +99,7 @@ impl Store {
                 gateway: gateway.into(),
             });
         }
-        if let Ok(actor) = self.gateway_actor(gateway, sender).await {
+        if let Ok(actor) = self.conversation_actor(gateway, sender).await {
             return Ok(WelcomeSubject::Person(actor));
         }
         let row=sqlx::query("SELECT l.id,l.person_id,l.version,g.version AS gateway_version FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_identity.work_accounts w ON w.id=l.confirmed_by_work_account AND w.tenant_key=g.tenant_key JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=l.evidence_ref AND r.tenant_key=g.tenant_key AND r.subject_kind='work_account' AND r.subject_id=w.id JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND l.source_ref=$3 AND g.active AND g.account_kind<>'shared' AND l.status='confirmed' AND p.status='active'")
@@ -145,7 +145,10 @@ impl Store {
                 ensure!(tenant == &self.tenant, "tenant_mismatch");
                 let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_identity.persons p ON p.id=l.person_id JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=l.evidence_ref AND r.tenant_key=g.tenant_key AND r.subject_id=l.confirmed_by_work_account AND r.subject_kind='work_account' WHERE l.id=$1 AND l.person_id=$2 AND l.version=$3 AND l.status='confirmed' AND p.status='active' AND g.tenant_key=$4 AND g.gateway_key=$5 AND g.version=$6 AND g.scope_id=$7 AND g.active AND g.account_kind<>'shared' AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type)=1)")
                     .bind(link).bind(person).bind(version).bind(&self.tenant).bind(gateway).bind(gateway_version).bind(scope).fetch_one(&mut **tx).await?;
-                ensure!(valid, "identity_changed_or_revoked");
+                ensure!(
+                    valid && self.work_account_person_proof(tx, *link, *person).await?,
+                    "identity_changed_or_revoked"
+                );
             }
             WelcomeSubject::Person(actor) => {
                 self.verify(tx, actor).await?;
@@ -263,7 +266,7 @@ impl Store {
         Ok(json!({"version":request.expected_version+1}))
     }
 
-    async fn welcome_authorize(
+    pub(super) async fn welcome_authorize(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         subject: &WelcomeSubject,
@@ -297,7 +300,7 @@ impl Store {
     }
 }
 
-async fn snapshot(
+pub(super) async fn snapshot(
     tx: &mut Transaction<'_, Postgres>,
     store: &Store,
     scope: Uuid,
@@ -320,6 +323,9 @@ async fn snapshot(
             .bind(id).bind(case).bind(application).bind(row.get::<i64,_>("revision")).bind(row.get::<i64,_>("consent_version")).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("welcome_content_version_conflict"))?;
         contents.push(json!({"id":id,"hash":artifact.get::<String,_>("content_hash"),"kind":artifact.get::<String,_>("artifact_type"),"text":artifact.get::<Option<String>,_>("content_text")}));
     }
+    let source_link:Option<Uuid>=sqlx::query_scalar("SELECT l.id FROM qintopia_identity.source_identity_links l JOIN qintopia_agent_os.welcome_identity_scopes s ON s.namespace=l.namespace WHERE s.source_instance=$1 AND s.property_id=$2 AND l.subject_type='pms_occupant' AND l.source_ref=$3")
+        .bind(row.get::<String,_>("source_instance")).bind(row.get::<String,_>("property_id")).bind(row.get::<String,_>("occupant_id")).fetch_optional(&mut **tx).await?;
+    let occupant_source = identity_link_snapshot(tx, source_link).await?;
     let pms_link: Option<Uuid> = row.get("identity_link_id");
     let pms = identity_link_snapshot(tx, pms_link).await?;
     let channel_link = identity_link_snapshot(tx, channel).await?;
@@ -330,7 +336,7 @@ async fn snapshot(
     let relations = json!({"application_person":row.get::<Option<Uuid>,_>("application_person"),"case_person":row.get::<Option<Uuid>,_>("case_person"),"case_application":row.get::<Option<Uuid>,_>("case_application"),"case_identity_version":row.get::<Option<i64>,_>("identity_version"),"pms":pms,"pms_scope":pms_scope,"channel":channel_link,"channel_scope":channel_scope});
     let projection: Value = row.get("projection");
     Ok(
-        json!({"application_identity_basis":basis,"relations":relations,"case_version":row.get::<i64,_>("version"),"application_revision":row.get::<i64,_>("revision"),"application_hash":row.get::<String,_>("field_hash"),"consent_version":row.get::<i64,_>("consent_version"),"consent_active":row.get::<bool,_>("consent_active"),"valid":row.get::<bool,_>("valid"),"source":row.get::<String,_>("source_instance"),"property":row.get::<String,_>("property_id"),"order":row.get::<String,_>("order_id"),"stay":row.get::<String,_>("stay_id"),"occupant":row.get::<String,_>("occupant_id"),"source_revision":row.get::<String,_>("source_revision"),"building":projection["building"],"artifacts":contents}),
+        json!({"occupant_source":occupant_source,"application_identity_basis":basis,"relations":relations,"case_version":row.get::<i64,_>("version"),"application_revision":row.get::<i64,_>("revision"),"application_hash":row.get::<String,_>("field_hash"),"consent_version":row.get::<i64,_>("consent_version"),"consent_active":row.get::<bool,_>("consent_active"),"valid":row.get::<bool,_>("valid"),"source":row.get::<String,_>("source_instance"),"property":row.get::<String,_>("property_id"),"order":row.get::<String,_>("order_id"),"stay":row.get::<String,_>("stay_id"),"occupant":row.get::<String,_>("occupant_id"),"source_revision":row.get::<String,_>("source_revision"),"building":projection["building"],"artifacts":contents}),
     )
 }
 // Link version and evidence distinguish a fresh confirmation from a revoked old proof,
@@ -376,7 +382,7 @@ fn identity_relations_valid(snapshot: &Value, application: Uuid, person: Option<
                 && r["channel_scope"] == true))
 }
 
-fn artifact_ids(value: &Value) -> Result<Vec<Uuid>> {
+pub(super) fn artifact_ids(value: &Value) -> Result<Vec<Uuid>> {
     value["artifacts"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("invalid_snapshot"))?
@@ -499,21 +505,8 @@ impl Store {
         subject: &WelcomeSubject,
         scope: Uuid,
     ) -> Result<Value> {
-        let (mut tx, _, _) = self.begin().await?;
-        let grant = self.welcome_authorize(&mut tx, subject, scope, &[]).await?;
-        let allowed_effects: Vec<String> = sqlx::query_scalar(
-            "SELECT effects FROM qintopia_agent_os.welcome_review_subject_grants WHERE id=$1",
-        )
-        .bind(grant)
-        .fetch_one(&mut *tx)
-        .await?;
-        let rows=sqlx::query("SELECT i.*,CASE WHEN nullif(p.preferred_name,'') IS NULL OR p.preferred_name=p.display_name THEN p.display_name ELSE p.preferred_name||' · '||p.display_name END AS person_label,c.display_name AS group_label FROM qintopia_agent_os.welcome_review_items i JOIN qintopia_agent_os.welcome_review_settings s ON s.tenant_key=i.tenant_key AND s.scope_id=i.scope_id JOIN qintopia_messages.conversations c ON c.id=s.conversation_id LEFT JOIN qintopia_identity.persons p ON p.id=i.confirmed_person WHERE i.tenant_key=$1 AND i.scope_id=$2 ORDER BY i.work_item_id LIMIT 100")
-            .bind(&self.tenant).bind(scope).fetch_all(&mut *tx).await?;
-        let channels=sqlx::query("SELECT DISTINCT l.id,l.version,coalesce(nullif(ci.display_name,''),nullif(l.adapter_metadata->>'display_name',''),'待核对渠道账号') AS label,l.person_id FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type LEFT JOIN qintopia_identity.channel_identities ci ON ci.id=l.channel_identity_id WHERE g.tenant_key=$1 AND g.scope_id=$2 AND g.active AND g.account_kind<>'shared' AND (l.status<>'revoked' OR EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_review_receipts r JOIN qintopia_agent_os.welcome_review_items i ON i.work_item_id=r.work_item_id WHERE r.id=l.evidence_ref AND i.tenant_key=$1 AND i.scope_id=$2)) AND l.subject_type IN ('qiwe_sender','wecom_external','wecom_internal') ORDER BY label,l.id LIMIT 100")
-            .bind(&self.tenant).bind(scope).fetch_all(&mut *tx).await?;
-        Ok(
-            json!({"allowed_effects":allowed_effects,"items":rows.iter().map(|r|json!({"work_item":r.get::<Uuid,_>("work_item_id"),"version":r.get::<i64,_>("version"),"status":r.get::<String,_>("status"),"snapshot":r.get::<Value,_>("snapshot"),"candidates":r.get::<Value,_>("candidates"),"person_label":r.get::<Option<String>,_>("person_label"),"group_label":r.get::<String,_>("group_label"),"identity_confirmed":r.get::<Option<Uuid>,_>("identity_receipt").is_some(),"content_confirmed":r.get::<Option<Uuid>,_>("content_receipt").is_some()})).collect::<Vec<_>>(),"channels":channels.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"label":r.get::<String,_>("label"),"person":r.get::<Option<Uuid>,_>("person_id")})).collect::<Vec<_>>()}),
-        )
+        self.welcome_review_page(subject, scope, &super::welcome_pages::Page::default())
+            .await
     }
 
     pub(crate) async fn welcome_review_decide(
@@ -521,11 +514,33 @@ impl Store {
         subject: &WelcomeSubject,
         r: &ReviewDecision,
     ) -> Result<Value> {
+        self.welcome_review_decide_presented(subject, r, None).await
+    }
+    pub(super) async fn welcome_review_decide_presented(
+        &self,
+        subject: &WelcomeSubject,
+        r: &ReviewDecision,
+        presentation: Option<Uuid>,
+    ) -> Result<Value> {
         ensure!(
-            matches!(r.decision.as_str(), "confirm" | "reject" | "revoke"),
+            matches!(
+                r.decision.as_str(),
+                "confirm" | "reject" | "revoke" | "create_person"
+            ),
             "explicit_decision_required"
         );
         let mut effects = Vec::new();
+        if r.decision == "create_person" {
+            ensure!(
+                r.person.is_none()
+                    && r.channel.is_none()
+                    && !r.confirm_application_stay
+                    && !r.confirm_channel_person
+                    && !r.confirm_content,
+                "explicit_effect_required"
+            );
+            effects.push("identity");
+        }
         if r.confirm_application_stay || r.confirm_channel_person {
             effects.push("identity");
         }
@@ -551,6 +566,10 @@ impl Store {
             ensure!(receipt.get::<String,_>("request_hash")==hash && receipt.get::<String,_>("subject_kind")==reference.kind() && receipt.get::<Uuid,_>("subject_id")==reference.id(),"idempotency_conflict");
             return Ok(receipt.get("result"));
         }
+        if let Some(id) = presentation {
+            self.welcome_presentation_current(&mut tx, scope, r.work_item, id)
+                .await?;
+        }
         ensure!(
             row.get::<i64, _>("version") == r.expected_version,
             "welcome_version_conflict"
@@ -564,7 +583,7 @@ impl Store {
         let app: Uuid = row.get("application_id");
         let saved: Value = row.get("snapshot");
         let artifacts = artifact_ids(&saved)?;
-        let current = if r.decision == "confirm" {
+        let current = if matches!(r.decision.as_str(), "confirm" | "create_person") {
             snapshot(
                 &mut tx,
                 self,
@@ -588,7 +607,44 @@ impl Store {
         let mut content_receipt: Option<Uuid> = row.get("content_receipt");
         let mut status = "pending";
         let mut previous_application_person: Option<Uuid> = None;
-        if r.decision == "confirm" {
+        let mut created_person = None;
+        if r.decision == "create_person" {
+            ensure!(
+                row.get::<String, _>("status") == "pending"
+                    && person.is_none()
+                    && current["relations"]["application_person"].is_null()
+                    && current["relations"]["case_person"].is_null(),
+                "existing_person_must_be_reused"
+            );
+            ensure!(
+                current["valid"] == true
+                    && current["consent_active"] == true
+                    && current["occupant_source"]["status"] == "pending"
+                    && current["occupant_source"]["person"].is_null(),
+                "pending_identity_required"
+            );
+            let hints:Value=sqlx::query_scalar("SELECT p.hints FROM qintopia_agent_os.welcome_source_projections p JOIN qintopia_agent_os.business_property_bindings b ON b.id=p.binding_id AND b.tenant_key=p.tenant_key AND b.version=p.binding_version AND b.active WHERE p.tenant_key=$1 AND p.scope_id=$2 AND p.application_id=$3 AND p.application_revision=$4 AND p.field_hash=$5 AND p.identity_hash=$6 AND p.expires_at>clock_timestamp() FOR SHARE OF p,b")
+                .bind(&self.tenant).bind(scope).bind(app).bind(current["application_revision"].as_i64()).bind(current["application_hash"].as_str()).bind(current["application_identity_basis"].as_str()).fetch_one(&mut *tx).await?;
+            let label = hints["name"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("invalid_person_label"))?;
+            let link: Uuid = serde_json::from_value(current["occupant_source"]["id"].clone())?;
+            let version = current["occupant_source"]["version"]
+                .as_i64()
+                .ok_or_else(|| anyhow::anyhow!("pending_identity_required"))?;
+            let id = crate::resident_welcome::workbench::create_person_for_pending_source(
+                &mut tx,
+                link,
+                version,
+                label,
+                hints["nickname"].as_str().filter(|s| !s.is_empty()),
+            )
+            .await?;
+            confirm_link(&mut tx, link, id, &reference, r.operation_id, r.work_item).await?;
+            let candidate = json!({"person":id,"label":format!("{} · {}",hints["nickname"].as_str().unwrap_or(""),label),"basis":"已按当前申请建档并确认所选来源；申请与住宿关系仍待核对","confirmed":false});
+            sqlx::query("UPDATE qintopia_agent_os.welcome_review_items SET candidates=candidates||jsonb_build_array($2::jsonb) WHERE work_item_id=$1").bind(r.work_item).bind(candidate).execute(&mut *tx).await?;
+            created_person = Some(id);
+        } else if r.decision == "confirm" {
             ensure!(
                 !matches!(
                     row.get::<String, _>("status").as_str(),
@@ -705,15 +761,15 @@ impl Store {
             // Operations status blocks this confirmation independently of a steward's hold.
             // Never clear or overwrite another workflow's manual pause.
         }
-        let after = if r.decision == "confirm" {
+        let after = if matches!(r.decision.as_str(), "confirm" | "create_person") {
             snapshot(&mut tx, self, scope, case, app, &artifacts, channel).await?
         } else {
             saved
         };
-        let result = json!({"work_item":r.work_item,"version":r.expected_version+1,"status":status,"identity_confirmed":identity_receipt.is_some(),"channel_confirmed":channel.is_some(),"content_confirmed":content_receipt.is_some(),"published":false});
+        let result = json!({"created_person":created_person,"work_item":r.work_item,"version":r.expected_version+1,"status":status,"identity_confirmed":identity_receipt.is_some(),"channel_confirmed":channel.is_some(),"content_confirmed":content_receipt.is_some(),"published":false});
         sqlx::query("UPDATE qintopia_agent_os.welcome_review_items SET version=version+1,status=$2,snapshot=$3,confirmed_person=$4,confirmed_channel=$5,identity_receipt=$6,content_receipt=$7 WHERE work_item_id=$1")
             .bind(r.work_item).bind(status).bind(after).bind(person).bind(channel).bind(identity_receipt).bind(content_receipt).execute(&mut *tx).await?;
-        let effect_record = json!({"application_stay":r.confirm_application_stay,"channel_person":r.confirm_channel_person,"content":r.confirm_content,"decision":r.decision,"publish":false,"previous_application_person":previous_application_person});
+        let effect_record = json!({"created_person":created_person,"source_link":if created_person.is_some(){current["occupant_source"]["id"].clone()}else{Value::Null},"person":person,"channel":channel,"application_stay":r.confirm_application_stay,"channel_person":r.confirm_channel_person,"content":r.confirm_content,"decision":r.decision,"publish":false,"previous_application_person":previous_application_person});
         sqlx::query("INSERT INTO qintopia_agent_os.welcome_review_receipts(id,tenant_key,work_item_id,subject_kind,subject_id,subject_version,grant_id,request_hash,effects,result,subject_proof) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)")
             .bind(r.operation_id).bind(&self.tenant).bind(r.work_item).bind(reference.kind()).bind(reference.id()).bind(subject.version()).bind(grant).bind(hash).bind(&effect_record).bind(&result).bind(subject.proof()).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO qintopia_agent_os.work_item_events(work_item_id,event_type,actor_type,actor_id,data) VALUES($1,'welcome_operations_decision',$2,$3,$4)").bind(r.work_item).bind(reference.kind()).bind(reference.id().to_string()).bind(effect_record).execute(&mut *tx).await?;
@@ -820,9 +876,64 @@ pub(crate) async fn http_dispatch(
                 .await
         }
         "/api/foundation/operations/list" => {
-            let r: Scope = serde_json::from_slice(body)?;
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct List {
+                scope: Uuid,
+                #[serde(default)]
+                query: super::welcome_pages::Page,
+            }
+            let r: List = serde_json::from_slice(body)?;
             let subject = store.welcome_person_subject(actor).await?;
-            store.welcome_review_list(&subject, r.scope).await
+            store.welcome_review_page(&subject, r.scope, &r.query).await
+        }
+        "/api/foundation/operations/history"
+        | "/api/foundation/operations/sources"
+        | "/api/foundation/operations/candidates"
+        | "/api/foundation/operations/candidate-open" => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Query {
+                scope: Uuid,
+                work_item: Option<Uuid>,
+                application: Option<Uuid>,
+                case_ref: Option<Uuid>,
+                #[serde(default)]
+                query: super::welcome_pages::Page,
+            }
+            let r: Query = serde_json::from_slice(body)?;
+            let subject = store.welcome_person_subject(actor).await?;
+            let required = || anyhow::anyhow!("invalid_arguments");
+            match path {
+                "/api/foundation/operations/history" => {
+                    store
+                        .welcome_receipt_page(
+                            &subject,
+                            r.scope,
+                            r.work_item.ok_or_else(required)?,
+                            &r.query,
+                        )
+                        .await
+                }
+                "/api/foundation/operations/sources" => {
+                    store.welcome_source_page(&subject, r.scope, &r.query).await
+                }
+                "/api/foundation/operations/candidates" => {
+                    store
+                        .welcome_candidates(&subject, r.scope, r.application.ok_or_else(required)?)
+                        .await
+                }
+                _ => {
+                    store
+                        .welcome_candidate_open(
+                            &subject,
+                            r.scope,
+                            r.application.ok_or_else(required)?,
+                            r.case_ref.ok_or_else(required)?,
+                        )
+                        .await
+                }
+            }
         }
         "/api/foundation/operations/decide" => {
             let subject = store.welcome_person_subject(actor).await?;

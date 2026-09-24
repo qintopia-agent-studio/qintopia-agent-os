@@ -716,18 +716,125 @@ function operationsWorkspace(scope) {
   const matters = box("待我确认的事项"),
     settings = box("协作安排"),
     feedback = sub("正在读取……"),
-    list = el("div");
+    list = el("div"),
+    history = box("已办理事项"),
+    historyList = el("div"),
+    historyFeedback = sub(""),
+    historyPager = actions(),
+    pager = actions(),
+    sources = box("申请与入住核对"),
+    sourceList = el("div"),
+    sourcePager = actions();
+  const drafts = new Map(),
+    queries = {
+      pending: {
+        page: 0,
+        status: "pending",
+        search: "",
+        channel_page: 0,
+        channel_search: "",
+      },
+      history: {
+        page: 0,
+        status: "history",
+        search: "",
+        channel_page: 0,
+        channel_search: "",
+      },
+    };
+  let sourcePage = 0;
+  const search = inputField(matters, crypto.randomUUID(), "查找姓名或昵称", ""),
+    channelSearch = inputField(matters, crypto.randomUUID(), "查找微信／企微账号", ""),
+    historySearch = inputField(history, crypto.randomUUID(), "查找历史人员", ""),
+    sourceSearch = inputField(sources, crypto.randomUUID(), "查找申请人", ""),
+    sourceFeedback = sub("");
+  history.append(
+    historyFeedback,
+    actions(
+      button("查找", () => {
+        queries.history.search = historySearch.value;
+        queries.history.page = 0;
+        load("history");
+      })
+    ),
+    historyList,
+    historyPager
+  );
+  sources.append(
+    sub("系统只提出候选；缺少逐人资料时请先核对住宿记录。"),
+    sourceFeedback,
+    actions(
+      button("查找申请", () => {
+        sourcePage = 0;
+        loadSources();
+      })
+    ),
+    sourceList,
+    sourcePager
+  );
   matters.append(
     sub("岸岸整理候选和内容，你核对后一次提交；不会因此直接发布。"),
     feedback,
-    actions(button("刷新事项", load)),
-    list
+    actions(
+      button("查找／刷新事项", () => {
+        queries.pending.search = search.value;
+        queries.pending.channel_search = channelSearch.value;
+        queries.pending.page = 0;
+        queries.pending.channel_page = 0;
+        load();
+      })
+    ),
+    list,
+    pager
   );
-  async function load() {
+  function pendingKey(work) {
+    return `welcome-request:${scope}:${work}`;
+  }
+  function pendingRead(work) {
     try {
-      const data = await api("/api/foundation/operations/list", { scope });
-      list.replaceChildren();
-      feedback.textContent = "";
+      return JSON.parse(sessionStorage.getItem(pendingKey(work)) || "null");
+    } catch {
+      return null;
+    }
+  }
+  function pendingSave(work, value) {
+    if (value) sessionStorage.setItem(pendingKey(work), JSON.stringify(value));
+    else sessionStorage.removeItem(pendingKey(work));
+  }
+  async function load(mode = "pending") {
+    const q = queries[mode],
+      target = mode === "pending" ? list : historyList,
+      note = mode === "pending" ? feedback : historyFeedback,
+      controls = mode === "pending" ? pager : historyPager;
+    try {
+      const data = await api("/api/foundation/operations/list", { scope, query: q });
+      target.replaceChildren();
+      note.textContent = "";
+      controls.replaceChildren();
+      const prev = button("上一页", () => {
+          q.page--;
+          load(mode);
+        }),
+        next = button("下一页", () => {
+          q.page++;
+          load(mode);
+        });
+      prev.disabled = q.page === 0;
+      next.disabled = !data.has_more;
+      controls.append(prev, sub(`第 ${q.page + 1} 页`), next);
+      if (mode === "pending") {
+        const cp = button("账号上一页", () => {
+            q.channel_page--;
+            load();
+          }),
+          cn = button("账号下一页", () => {
+            q.channel_page++;
+            load();
+          });
+        cp.disabled = q.channel_page === 0;
+        cn.disabled = !data.channels_has_more;
+        controls.append(cp, sub(`账号第 ${q.channel_page + 1} 页`), cn);
+      }
       for (const item of data.items) {
         const card = box(
           `${item.person_label || "待确认居民"} · ${item.snapshot.building || "入住事项"}`
@@ -753,6 +860,18 @@ function operationsWorkspace(scope) {
             card.append(img);
           } else if (a.text) card.append(el("p", a.text));
         });
+        if (item.new_person && data.allowed_effects.includes("identity")) {
+          card.append(
+            sub(
+              `拟建档：${item.new_person.nickname || "昵称未提供"} · ${item.new_person.name || "姓名缺失"}；来源：本事项选中的实际入住人记录。`
+            ),
+            helpTip(
+              "首次建档",
+              "已有档案优先选择。此操作仅按当前申请姓名新建人员并确认所选来源；不会同时确认聊天账号、申请与住宿关系、卡片或付款。"
+            ),
+            button("按申请新建此人并确认所选来源", () => decide(item, "create_person"))
+          );
+        }
         if (["pending", "identity_confirmed"].includes(item.status)) {
           const person = selectField(
             card,
@@ -797,33 +916,68 @@ function operationsWorkspace(scope) {
             card.append(wrap);
             checks[key] = input;
           }
-          let pending = null;
-          const submit = button("保存勾选的确认", async () => {
-            if (!pending)
-              pending = {
-                operation_id: crypto.randomUUID(),
-                work_item: item.work_item,
-                expected_version: item.version,
-                person: person.value || null,
-                channel: channel.value || null,
-                decision: "confirm",
-                ...Object.fromEntries(
-                  Object.entries(checks).map(([k, v]) => [k, v.checked])
-                ),
-              };
-            card.inert = true;
-            try {
-              await api("/api/foundation/operations/decide", pending);
-              await load();
-              feedback.textContent = "已保存，群与页面共用这条记录。";
-            } catch (e) {
-              feedback.textContent = e.message;
-              if (e.code) pending = null;
-              else submit.textContent = "核对原请求结果";
-            } finally {
-              card.inert = false;
+          const savedDraft = drafts.get(item.work_item),
+            unresolved = pendingRead(item.work_item);
+          if (savedDraft) {
+            for (const [key, input] of Object.entries(checks))
+              input.checked = !!savedDraft[key];
+            person.value = savedDraft.person || "";
+            if (
+              savedDraft.channel &&
+              ![...channel.options].some((o) => o.value === savedDraft.channel)
+            )
+              channel.append(new Option(savedDraft.channel_label, savedDraft.channel));
+            channel.value = savedDraft.channel || "";
+          }
+          const capture = () =>
+            drafts.set(item.work_item, {
+              person: person.value,
+              channel: channel.value,
+              channel_label: channel.selectedOptions[0]?.textContent,
+              ...Object.fromEntries(
+                Object.entries(checks).map(([k, v]) => [k, v.checked])
+              ),
+            });
+          for (const input of [person, channel, ...Object.values(checks)])
+            input.addEventListener("change", capture);
+          if (unresolved)
+            for (const input of [person, channel, ...Object.values(checks)])
+              input.disabled = true;
+          let pending = unresolved;
+          const submit = button(
+            pending ? "核对原请求结果" : "保存勾选的确认",
+            async () => {
+              if (!pending)
+                pending = {
+                  operation_id: crypto.randomUUID(),
+                  work_item: item.work_item,
+                  expected_version: item.version,
+                  person: person.value || null,
+                  channel: channel.value || null,
+                  decision: "confirm",
+                  ...Object.fromEntries(
+                    Object.entries(checks).map(([k, v]) => [k, v.checked])
+                  ),
+                };
+              pendingSave(item.work_item, pending);
+              card.inert = true;
+              try {
+                await api("/api/foundation/operations/decide", pending);
+                pendingSave(item.work_item, null);
+                drafts.delete(item.work_item);
+                await load();
+                feedback.textContent = "已保存，群与页面共用这条记录。";
+              } catch (e) {
+                feedback.textContent = e.message;
+                if (e.code) {
+                  pending = null;
+                  pendingSave(item.work_item, null);
+                } else submit.textContent = "核对原请求结果";
+              } finally {
+                card.inert = false;
+              }
             }
-          });
+          );
           card.append(
             actions(
               submit,
@@ -839,15 +993,119 @@ function operationsWorkspace(scope) {
           ["identity", "review"].every((e) => data.allowed_effects.includes(e))
         )
           card.append(button("撤销本事项的确认", () => decide(item, "revoke")));
-        list.append(card);
+        const receipts = el("div");
+        let receiptPage = 0;
+        async function showReceipts() {
+          try {
+            const result = await api("/api/foundation/operations/history", {
+              scope,
+              work_item: item.work_item,
+              query: { page: receiptPage },
+            });
+            receipts.replaceChildren();
+            for (const r of result.items)
+              receipts.append(
+                sub(
+                  `${new Date(r.at).toLocaleString()} · ${r.label} · ${{ confirm: "确认", reject: "退回", revoke: "撤销", create_person: "首次建档并确认所选来源" }[r.decision]} ${[r.application_stay ? "申请与入住" : "", r.channel_person ? "账号归属" : "", r.content ? "卡片与介绍" : ""].filter(Boolean).join("、")}`
+                )
+              );
+            const prev = button("记录上一页", () => {
+                receiptPage--;
+                showReceipts();
+              }),
+              next = button("记录下一页", () => {
+                receiptPage++;
+                showReceipts();
+              });
+            prev.disabled = !receiptPage;
+            next.disabled = !result.has_more;
+            receipts.append(actions(prev, sub(`记录第 ${receiptPage + 1} 页`), next));
+          } catch (e) {
+            note.textContent = e.message;
+          }
+        }
+        card.append(button("查看办理记录", showReceipts), receipts);
+        target.append(card);
       }
-      if (!data.items.length) feedback.textContent = "当前没有需要你确认的事项。";
+      if (!data.items.length) note.textContent = "当前筛选下没有事项。";
     } catch (e) {
-      feedback.textContent = e.message;
+      note.textContent = e.message;
+    }
+  }
+  async function loadSources() {
+    try {
+      const result = await api("/api/foundation/operations/sources", {
+        scope,
+        query: { page: sourcePage, search: sourceSearch.value },
+      });
+      sourceList.replaceChildren();
+      sourcePager.replaceChildren();
+      sourceFeedback.textContent = result.items.length
+        ? ""
+        : "没有可用的申请投影，请先完成来源读取。";
+      for (const item of result.items) {
+        const card = box(item.label),
+          found = el("div");
+        card.append(
+          sub(`申请日期：${item.arrival || "未提供"}`),
+          button("查找可能对应的入住人", async () => {
+            try {
+              const data = await api("/api/foundation/operations/candidates", {
+                scope,
+                application: item.application,
+              });
+              found.replaceChildren();
+              found.append(
+                sub(`${data.phone_hint || "申请未提供手机号"}；未按手机号自动认人。`)
+              );
+              for (const c of data.candidates) {
+                const candidate = box(`${c.label} · ${c.building || "楼栋待核对"}`);
+                candidate.append(
+                  sub(c.basis),
+                  sub(c.missing.join("；")),
+                  button("以此入住记录发起核对", async () => {
+                    try {
+                      await api("/api/foundation/operations/candidate-open", {
+                        scope,
+                        application: item.application,
+                        case_ref: c.case_ref,
+                      });
+                      sourceFeedback.textContent = "已加入待确认事项，尚未建立关联。";
+                      await load();
+                    } catch (e) {
+                      sourceFeedback.textContent = e.message;
+                    }
+                  })
+                );
+                found.append(candidate);
+              }
+              if (!data.candidates.length)
+                found.append(sub("暂无可用的逐人入住候选，请核对住宿来源。"));
+            } catch (e) {
+              sourceFeedback.textContent = e.message;
+            }
+          }),
+          found
+        );
+        sourceList.append(card);
+      }
+      const prev = button("上一页", () => {
+          sourcePage--;
+          loadSources();
+        }),
+        next = button("下一页", () => {
+          sourcePage++;
+          loadSources();
+        });
+      prev.disabled = !sourcePage;
+      next.disabled = !result.has_more;
+      sourcePager.append(prev, sub(`第 ${sourcePage + 1} 页`), next);
+    } catch (e) {
+      sourceFeedback.textContent = e.message;
     }
   }
   async function decide(item, decision) {
-    const command = {
+    const command = pendingRead(item.work_item) || {
       operation_id: crypto.randomUUID(),
       work_item: item.work_item,
       expected_version: item.version,
@@ -858,11 +1116,16 @@ function operationsWorkspace(scope) {
       confirm_content: false,
       decision,
     };
+    pendingSave(item.work_item, command);
     matters.inert = true;
     try {
       await api("/api/foundation/operations/decide", command);
+      pendingSave(item.work_item, null);
+      drafts.delete(item.work_item);
       await load();
+      await load("history");
     } catch (e) {
+      if (e.code) pendingSave(item.work_item, null);
       feedback.textContent = e.message;
     } finally {
       matters.inert = false;
@@ -973,10 +1236,14 @@ function operationsWorkspace(scope) {
       settings.append(sub(e.message));
     }
   }
-  matters.refreshWorkspace = load;
+  matters.refreshWorkspace = () => load();
+  history.refreshWorkspace = () => load("history");
+  sources.refreshWorkspace = loadSources;
   settings.refreshWorkspace = settingsLoad;
   return workTabs("客房协作", [
-    ["事项与进展", matters],
+    ["待确认", matters],
+    ["历史记录", history],
+    ["资料核对", sources],
     ["协作安排", settings],
   ]);
 }

@@ -63,6 +63,6 @@ pub(crate) struct ReviewDecision {
     pub confirm_application_stay: bool,
     pub confirm_channel_person: bool,
     pub confirm_content: bool,
-    /// confirm, reject, or revoke; no generic "agree" operation.
+    /// confirm, reject, revoke, or explicit source-bound create_person; never generic agree.
     pub decision: String,
 }

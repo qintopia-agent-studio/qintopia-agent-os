@@ -1,5 +1,9 @@
 # Data Design
 
+## Welcome source and group projection
+
+- [2026-09-24 welcome source and group projection](2026-09-24-welcome-source-and-group-projection.md)
+
 This directory records versioned database design decisions for the Qintopia message and
 Agent OS data layer.
 

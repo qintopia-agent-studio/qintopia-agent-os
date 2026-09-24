@@ -2080,6 +2080,237 @@
             "real": ["共同身份、授权、事项确认及 PostgreSQL 事务"],
             "simulated": ["人员、渠道消息与入住资料；无真实群发送"]
           }
+        },
+        {
+          "id": "person-collaboration/welcome-host-presentation-authenticated-text-and-ui-receipt",
+          "name": "岸岸群呈现、认证原文确认与页面同一收据",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_host_presentation_authenticated_text_and_ui_receipt",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-host-unknown-never-reclaims-and-settles-original",
+          "name": "未知发送不重领、仅回读原回执",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_host_unknown_never_reclaims_and_settles_original",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-host-source-config-and-authority-changes-invalidate",
+          "name": "来源、群配置、授权与账号候选改变后旧呈现失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_host_source_config_and_authority_changes_invalidate",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-pages-over-100-scope-search-and-receipts",
+          "name": "超过100事项可翻页搜索且跨范围拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_pages_over_100_scope_search_and_receipts",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-person-conversation-compatibility-keeps-pms-separate",
+          "name": "工作账号确认后个人识别、不取得PMS权限",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_person_conversation_compatibility_keeps_pms_separate",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-person-real-broker-group-and-direct-use-same-link",
+          "name": "二花群聊私聊复用同一已确认账号且群内不披露私有资料",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_person_real_broker_group_and_direct_use_same_link",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-host-model-token-wrong-profile-and-gateway-are-denied",
+          "name": "真实Unix宿主门禁拒绝模型token、错误Agent与网关",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_host_model_token_wrong_profile_and_gateway_are_denied",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-source-projection-exact-fields-expiry-and-withdrawal",
+          "name": "来源字段摘要、中文null契约、过期撤回与TTL保护",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_source_projection_exact_fields_expiry_and_withdrawal",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-source-bound-person-creation-replay-concurrency-and-no-implicit-effects",
+          "name": "首次建档同键恢复、并发去重与分段效果隔离",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_source_bound_person_creation_replay_concurrency_and_no_implicit_effects",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-group-explicit-person-creation-and-stale-presentation",
+          "name": "群内明确建档、旧呈现失效与原结果恢复",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_group_explicit_person_creation_and_stale_presentation",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
+        },
+        {
+          "id": "person-collaboration/welcome-source-bound-person-creation-rejects-expiry-existing-and-changes",
+          "name": "建档拒绝失效来源、已有人员及撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/welcome_review_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::welcome_review_tests::welcome_source_bound_person_creation_rejects_expiry_existing_and_changes",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同身份、当前来源、授权、群宿主、事项收据及PostgreSQL事务"],
+            "simulated": ["人员、申请/住宿来源、认证渠道消息与本地传输；无真实群发送"]
+          }
         }
       ]
     },

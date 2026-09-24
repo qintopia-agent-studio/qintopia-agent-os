@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-25 欢迎本地群确认、建档与分页补齐](2026-09-25-welcome-local-completion.md)
+
 - [2026-09-24 欢迎身份关联与运营确认本地实现](2026-09-24-welcome-operations-local-implementation.md)
 
 - [2026-09-24 欢迎身份关联与运营确认审计](2026-09-24-welcome-identity-and-review-audit.md)

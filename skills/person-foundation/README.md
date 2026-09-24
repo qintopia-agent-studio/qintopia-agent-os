@@ -12,7 +12,7 @@ allowlist 或旧 welcome_grants。
 本地 Unix socket 仅在 `QINTOPIA_FOUNDATION_LOCAL_ENABLE=1`
 时可调用，路径与 token 由受控进程环境的 `QINTOPIA_FOUNDATION_SOCKET` 和
 `QINTOPIA_FOUNDATION_TOKEN` 提供，模型不可覆盖。`QINTOPIA_FOUNDATION_GATEWAY_ID`
-为服务端登记的合成网关。token 不进入工具 schema、回复或审计。单个请求为 UTF-8
+为服务端登记的模拟网关。token 不进入工具 schema、回复或审计。单个请求为 UTF-8
 JSON 一行，限 256 KiB，操作固定为 `person_foundation_tool`，协议版本为 1；响应是
 `{ok,result}` 或 `{ok:false,error:{code}}`。服务端还核验同 UID 与本地 token。
 
@@ -43,7 +43,7 @@ adapter 明确记录为
 明确区分仅本次（`case_ref`）与持续安排，支持期限和恢复先审。舍长的自主指令本身就是业务决定；上层发布确认、入住、入群和内容使用许可仍独立核验。此工具只保存，不发送。`welcome_approve`
 绑定展示过的产物、哈希、目标与版本。
 
-这些工具可供 Hermes 原生对话调用；当前可信 socket 仍为本地合成门禁，不代表生产微信已接线。Web 对话仍明确标注固定例句，MD 导入与临时代理有直接表单入口。验证工具注册和业务服务不等于验证真实模型理解。
+这些工具可供 Hermes 原生对话调用；当前可信 socket 仍为本地模拟门禁，不代表生产微信已接线。Web 对话仍明确标注固定例句，MD 导入与临时代理有直接表单入口。验证工具注册和业务服务不等于验证真实模型理解。
 
 ## 验证与恢复
 
@@ -54,7 +54,7 @@ pnpm skills:qintopia-tools:check
 pnpm registry:check
 ```
 
-本批隔离实例及其受控 socket 已启动、进程环境已设置合成网关与本地认证绑定后，可执行真实 Python
+本批隔离实例及其受控 socket 已启动、进程环境已设置模拟网关与本地认证绑定后，可执行真实 Python
 SDK → Rust broker → PostgreSQL 校验：
 
 ```sh
@@ -70,3 +70,21 @@ QINTOPIA_FOUNDATION_SMOKE_ENABLE=1 python3 skills/person-foundation/tests/local_
 
 二花现有 qintopia-tools 注册入口按需加载本包，因此本包源文件变更归属既有 `hermes-erhua`
 重启目标。该登记经负责人确认，只复用原有部署流程，不新增服务或启用工具；本地开关、可信网关与生产接入门禁保持独立。岸岸测试替身位于 fixtures，真实岸岸接入须先核对 Runtime。
+
+## 本地客房核对宿主
+
+`welcome_host.py` 的 `WelcomeHost(broker, SimulatedTransport(), local_enabled=True)`
+接受岸岸宿主注入的 broker 调用函数；没有生产发送器、凭据加载或模型工具注册。`deliver(work_item)`
+先准备并持久领取呈现，再使用内存模拟传输，最后登记回执。未知结果通过
+`recover(presentation, claim)` 回读原传输，不重发；`callback()`
+只触发服务端读取已认证持久群消息。
+
+沿用 Unix 协议 `schema_version:1`、`agent:anan`、`trusted_context`，操作为
+`person_foundation_ingress`，须独立 HOST_TOKEN。工具 `welcome_group_host`
+的 action 为 pending、prepare、claim、receipt、status、callback；来源投影使用
+`welcome_source_projection`。DTO 与字段规范见[本地补齐契约](../../docs/plans/active/welcome-local-completion.md)及
+[005数据设计](../../runtime/postgres/docs/data-design/2026-09-24-welcome-source-and-group-projection.md)。
+
+群内使用明确事项引用及编号，例如“确认 W-… 人员1 账号1 关联住宿 关联账号 内容”，也可仅确认已核对的段。普通“同意”不产生批准。首次建档使用“建档 W-…”，姓名来自已验证申请投影。UI 与群共用确认收据、当前版本与授权，列表和办理记录分页；不新增独立欢迎导航分类。
+
+工作账号确认的个人链接须有匹配的持久收据和具体账号/人员效果，二花普通群聊与私聊才可复用。改昵称不改变链接；撤销后旧身份失效。工作账号本身不成为自然人，PMS 的 gateway_actor 保持原门禁。早期收据缺少具体关联效果时不能自动升级成个人会话证明，须重新核对。
