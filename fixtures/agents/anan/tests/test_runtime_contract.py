@@ -25,12 +25,17 @@ class AnanRuntimeContract(unittest.TestCase):
             result = json.loads(ctx.tools["qintopia_person_context"]["handler"]({}))
         self.assertEqual(result, {"ok": False, "error": {"code": "foundation_disabled"}})
 
-    def test_registration_never_enables_a_production_runtime(self):
-        for path in ("runtime/hermes/profile-registry.yaml", "deploy/restart-target-rules.yaml",
+    def test_fixture_is_not_deployed_or_enrolled_in_core_upgrade(self):
+        # The real Anan service is now managed. This simulated runtime must remain
+        # excluded from its payload and launch chain; core enrollment is separate.
+        for path in ("tools/deploy/build-deploy-bundle.mjs", "deploy/restart-target-rules.yaml",
                      "deploy/runner/smoke-release.sh"):
             text = (ROOT / path).read_text()
-            self.assertNotIn("hermes-anan", text)
-            self.assertNotIn("agents/anan/agent.yaml", text)
+            self.assertNotIn('"fixtures/agents"', text)
+            self.assertNotIn("fixtures/agents/anan", text)
+        registry = (ROOT / "runtime/hermes/profile-registry.yaml").read_text()
+        self.assertNotIn("hermes-anan", registry)
+        self.assertNotIn("agents/anan/agent.yaml", registry)
 
 
 if __name__ == "__main__":
