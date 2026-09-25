@@ -23,9 +23,9 @@ OS 共同服务拥有可信人员、当次授权、WorkItem、确认、执行键
 ## 本地配置与验证
 
 `GREENPMS_BASE_URL`、`GREENPMS_API_TOKEN`
-是本包绑定名，不是 Hermes 内置配置。本批客户端只允许显式 `QINTOPIA_PMS_LOCAL_ENABLE=1`
-的 loopback
-HTTP 模拟服务。正式 HTTPS/Token 隔离及 Profile 发布待独立评审；不读取用户现有 Profile。
+是本包绑定名，不是 Hermes 内置配置。当前插件仍仅在显式 `QINTOPIA_PMS_LOCAL_ENABLE=1`
+下连接 loopback
+HTTP 模拟服务。客户端的独立生产 HTTPS 模式见文末；插件尚未接入该模式。Token 隔离及 Profile 发布仍待完成，不读取用户现有 Profile。
 
 ```sh
 python3 -m unittest discover -s skills/pms-operations/tests -v
