@@ -22,6 +22,7 @@ def _module(name, filename):
 
 client = _module("client", "client.py")
 host = _module("host", "host.py")
+credentials = _module("credentials", "credentials.py")
 CATALOG = json.loads(Path(__file__).with_name("operations.json").read_text())["operations"]
 
 
@@ -29,11 +30,22 @@ def enabled():
     return os.environ.get("QINTOPIA_PMS_LOCAL_ENABLE") == "1" and os.environ.get("QINTOPIA_FOUNDATION_LOCAL_ENABLE") == "1"
 
 
+def credential_values():
+    path = os.environ.get("QINTOPIA_PMS_CREDENTIALS_FILE")
+    if path is not None:
+        from hermes_constants import get_hermes_home
+        return credentials.load(path, profile_home=str(get_hermes_home()))
+    # Legacy environment credentials are supported only by the local simulator.
+    if not enabled():
+        raise ValueError("pms_disabled")
+    return {key: os.environ.get(key, "") for key in credentials.KEYS}
+
+
 def transport(request, *, host=False):
     if not enabled():
         raise ValueError("pms_disabled")
     path = Path(os.environ.get("QINTOPIA_FOUNDATION_SOCKET", ""))
-    token = os.environ.get("QINTOPIA_FOUNDATION_HOST_TOKEN" if host else "QINTOPIA_FOUNDATION_TOKEN", "")
+    token = credential_values()["QINTOPIA_FOUNDATION_HOST_TOKEN" if host else "QINTOPIA_FOUNDATION_TOKEN"]
     if not path.is_absolute() or path.is_symlink() or not 32 <= len(token) <= 256:
         raise ValueError("foundation_unavailable")
     info = path.stat()
@@ -301,7 +313,7 @@ def register(ctx):
         def handler(arguments, _name=name, **_):
             if not enabled(): return json.dumps({"ok": False, "error": {"code": "pms_disabled"}})
             try:
-                pms = client.Client(os.environ.get("GREENPMS_BASE_URL", ""), os.environ.get("GREENPMS_API_TOKEN", ""), local_enabled=True)
+                pms = client.Client(os.environ.get("GREENPMS_BASE_URL", ""), credential_values()["GREENPMS_API_TOKEN"], local_enabled=True)
                 result = Operations(pms).invoke(_name, arguments)
             except (ValueError, client.PmsError) as exc:
                 code = getattr(exc, "code", str(exc))

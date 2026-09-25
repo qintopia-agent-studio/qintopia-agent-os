@@ -287,3 +287,24 @@ READ 凭据和独立 Foundation HOST_TOKEN 运行； `synchronize(work_item)` �
 目标，以系统信任库验证 TLS 证书和主机名。生产模式与本地模拟模式互斥，不接受任意 origin、明文 HTTP、代理或重定向。
 
 此入口不注册新工具，不改变插件的本地开关，不把生产凭据注入 Hermes。凭据隔离、可信宿主认证、安装接线与用户触发验收完成前不得生产启用。HTTP 只用于本地模拟，生产传输测试使用模拟连接，不调用真实 PMS。
+
+## 私有凭据文件输入
+
+`QINTOPIA_PMS_CREDENTIALS_FILE` 指定 Profile 外的绝对 JSON 路径。
+
+文件包含三个键：`GREENPMS_API_TOKEN`、`QINTOPIA_FOUNDATION_TOKEN`、`QINTOPIA_FOUNDATION_HOST_TOKEN`。
+
+三个值必须不同。Foundation Token 为 32–256 个可打印非空白 ASCII 字符，PMS
+Token 为 16–512 个。
+
+文件仅当前运行用户所有、权限 0600、无软链接或硬链接。父目录仅 root 或当前用户所有，其他用户不可写。
+
+不要把文件放在共享临时目录、Profile、Skill 或工具挂载目录。
+
+启用文件输入后，三个同名环境变量必须全部移除，包括空值。文件错误直接拒绝，不回退环境变量；内容和路径不进入工具错误。
+
+未配置文件时，仅原有显式本地模拟模式可沿用环境变量。此输入不启用生产插件，也不证明工具隔离。
+
+官方远端工具会接受 Skill 声明的自定义环境变量，因此生产不能把这些 Token 放进 Gateway 环境。
+
+部署须证明模型文件工具、Skill 凭据挂载和远端执行均不能读取私有路径，且不会自动挂载 Gateway 的宿主目录。
