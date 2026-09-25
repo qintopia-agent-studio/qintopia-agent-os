@@ -82,6 +82,7 @@ rules:
     reason: Existing Anan gateway and dormant PMS capability release ownership.
     paths:
       - "agents/anan/**"
+      - "runtime/hermes/restart_anan.py"
       - "skills/pms-operations/**"
       - "skills/person-foundation/**"
 

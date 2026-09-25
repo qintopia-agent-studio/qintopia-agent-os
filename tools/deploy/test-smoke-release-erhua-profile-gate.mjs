@@ -62,13 +62,14 @@ exit 0
     );
   }
 
+  writeExecutable("bin/id", "#!/usr/bin/env bash\necho 1000\n");
   const ananCalls = path.join(tmpRoot, "anan-calls");
   writeExecutable(
     "bin/runuser",
     `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> '${ananCalls}'
 case "$*" in
-  *"systemctl --user restart hermes-gateway-anan.service"*|*"systemctl --user is-active --quiet hermes-gateway-anan.service"*) exit 0 ;;
+  *"/home/ubuntu/.local/share/hermes-releases/v2026.9.21/venv/bin/python"*"/runtime/hermes/restart_anan.py"*) exit 0 ;;
   *) exit 43 ;;
 esac
 `
@@ -76,10 +77,10 @@ esac
   const ananRestart = runSmoke([], "hermes-anan");
   if (
     ananRestart.status !== 0 ||
-    fs.readFileSync(ananCalls, "utf8").trim().split("\n").length !== 2
+    fs.readFileSync(ananCalls, "utf8").trim().split("\n").length !== 1
   ) {
     throw new Error(
-      `Anan must restart and verify only its existing service: ${ananRestart.stderr}`
+      `Anan must invoke only the pinned reversible-drain helper: ${ananRestart.stderr}`
     );
   }
   writeExecutable("bin/runuser", "#!/usr/bin/env bash\nexit 44\n");
@@ -87,7 +88,7 @@ esac
   if (
     ananFailure.status === 0 ||
     !ananFailure.stderr.includes(
-      "target=hermes-anan;phase=restart;subject=hermes-gateway-anan.service"
+      "target=hermes-anan;phase=drain-or-restart;subject=hermes-gateway-anan.service"
     )
   ) {
     throw new Error("Anan restart failure must propagate with a safe marker");

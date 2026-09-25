@@ -884,6 +884,8 @@ until its separate compatibility and rollback checks pass.
 
 Before the first release using this target, verify that the installed runner supports it
 and that the rollback runner accepts it. Preserve the prior immutable release and
-service entrypoint; drain current work before restart. Source delivery and service
-liveness are not PMS business acceptance. Follow the
+service entrypoint. Anan restart uses the pinned official reversible drain protocol,
+waits at most 600 seconds for a fresh zero-work snapshot, and cancels its own drain on
+timeout without restarting or killing the gateway. Source delivery and service liveness
+are not PMS business acceptance. Follow the
 [Anan rollout plan](../../docs/plans/active/anan-production-rollout.md).
