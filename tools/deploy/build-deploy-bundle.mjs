@@ -35,6 +35,7 @@ if (
 }
 
 const sourceFiles = [
+  "runtime/hermes/restart_anan.py",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
