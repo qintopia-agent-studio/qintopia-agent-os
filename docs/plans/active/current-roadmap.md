@@ -1,6 +1,12 @@
 # Current Roadmap
 
-Updated: 2026-09-09
+Updated: 2026-09-25
+
+Foundation/welcome, Anan/PMS and Green PMS have completed the agreed local integration.
+Agent OS is closing its single PR #721; Green PMS feature and acceptance docs are
+merged. See the [coordination plan](agent-os-dual-track-coordination.md) for exact
+versions, review gates, archive ownership and outstanding external acceptance. Local
+completion does not mean production deployment or real-channel acceptance.
 
 Command handoff checkpoint (2026-09-22): the new decision conversation inherits the full
 project scope. Read the

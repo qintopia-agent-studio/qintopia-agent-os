@@ -104,3 +104,9 @@ packages source nor bypasses unmatched production-adjacent path checks.
 
 This distinction was explicitly approved on 2026-09-24 through the command task; see
 [the scoped proposal](../plans/active/anan-pms-contract-proposal.md).
+
+The first integrated PMS PR demonstrated this remaining gate: identity registration
+passed, but Light check rejected unmatched `skills/pms-operations/` paths. See the
+[PR #721 evidence and disposition](../reports/2026-09-25-pr721-integration-review.md).
+Resolve package ownership through its reviewed contract before merge; do not broaden
+restart patterns or remove checks merely to make validation pass.

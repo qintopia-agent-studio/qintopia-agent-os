@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-25 PR #721 集成检查与审查](2026-09-25-pr721-integration-review.md)
+
 - [2026-09-25 Foundation broker 提前断连修复](2026-09-25-foundation-broker-disconnect.md)
 
 - [2026-09-25 欢迎本地群确认、建档与分页补齐](2026-09-25-welcome-local-completion.md)
