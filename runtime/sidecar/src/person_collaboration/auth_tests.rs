@@ -28,6 +28,9 @@ fn password() -> String {
     format!("Synthetic-{}", Uuid::new_v4())
 }
 async fn fixture() -> Result<(Store, Actor, Value, String)> {
+    // Share the HTTP fixtures' once-only gate before taking the baseline snapshot.
+    // Account lifecycle assertions still compare the entire authorization state.
+    super::foundation_server::enable_test_http();
     let db = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
     let store = Store::local(
         &db,

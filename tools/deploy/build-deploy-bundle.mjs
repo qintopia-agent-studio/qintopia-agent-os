@@ -35,6 +35,7 @@ if (
 }
 
 const sourceFiles = [
+  "runtime/hermes/restart_anan.py",
   "deploy/sidecar/scripts/hermes/qintopia-context-mcp",
   "deploy/sidecar/scripts/fetch-cos-artifact.sh",
   "deploy/sidecar/scripts/fetch-staging-sidecar-artifact.sh",
@@ -271,6 +272,9 @@ const sourceFiles = [
   "skills/feishu-base/plugin.yaml",
 ];
 const sourceDirs = [
+  "agents/anan",
+  "skills/pms-operations",
+  "skills/person-foundation",
   "agents/xiaoman/profile-bundle",
   "fixtures/qiwe/event-mappings",
   "fixtures/qiwe/system",

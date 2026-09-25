@@ -86,3 +86,27 @@ and the collaboration policy check in the same PR.
 - `runtime/_template/manifest.yaml`
 - `deploy/_template/manifest.yaml`
 - `deprecated/_template/manifest.yaml`
+
+## Agent identity and managed runtime
+
+An Agent manifest may explicitly set `runtime.management: unmanaged` with no other
+runtime fields. This registers capability identity without claiming Agent OS owns the
+Profile deployment; an independently created live Profile may already exist. All other
+Agent package requirements still apply. Unmanaged Agents must be absent from the
+reviewed Profile registry, restart targets/rules, production request targets, smoke
+service cases and deploy-bundle payload list.
+
+Omitted management retains the existing managed contract; explicit `managed` requires
+the same restart target and service. The default Agent's existing special contract and
+non-Agent runtime schemas are unchanged. Moving to managed requires the full reviewed
+release, installation, smoke and rollback contract. Identity registration neither
+packages source nor bypasses unmatched production-adjacent path checks.
+
+This distinction was explicitly approved on 2026-09-24 through the command task; see
+[the scoped proposal](../plans/active/anan-pms-contract-proposal.md).
+
+The first integrated PMS PR demonstrated this remaining gate: identity registration
+passed, but Light check rejected unmatched `skills/pms-operations/` paths. See the
+[PR #721 evidence and disposition](../reports/2026-09-25-pr721-integration-review.md).
+Resolve package ownership through its reviewed contract before merge; do not broaden
+restart patterns or remove checks merely to make validation pass.

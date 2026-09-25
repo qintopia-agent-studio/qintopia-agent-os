@@ -873,3 +873,19 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
   preserve a distinct `previous` target. Production release and staging roots must be
   created explicitly as `0755` so the validation contract does not depend on ambient
   `umask`.
+
+## Anan service ownership
+
+`hermes-anan` maps to the existing `hermes-gateway-anan.service`. Ordinary releases
+carry the Anan/PMS/Foundation source and can restart that service; they do not install
+PMS plugins, enable local test flags, inject credentials, or replace Profile files. The
+existing Anan core entrypoint remains outside the seven-profile core upgrade registry
+until its separate compatibility and rollback checks pass.
+
+Before the first release using this target, verify that the installed runner supports it
+and that the rollback runner accepts it. Preserve the prior immutable release and
+service entrypoint. Anan restart uses the pinned official reversible drain protocol,
+waits at most 600 seconds for a fresh zero-work snapshot, and cancels its own drain on
+timeout without restarting or killing the gateway. Source delivery and service liveness
+are not PMS business acceptance. Follow the
+[Anan rollout plan](../../docs/plans/active/anan-production-rollout.md).

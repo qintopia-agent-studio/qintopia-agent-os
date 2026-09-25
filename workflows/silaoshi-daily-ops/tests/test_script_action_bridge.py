@@ -7,6 +7,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -182,6 +183,82 @@ class ScriptActionBridgeTest(unittest.TestCase):
         self.conn.close()
         self.conn = self.bridge.connect_db(self.cfg)
         self.assertEqual(self.conn.execute("SELECT status FROM jobs").fetchone()[0], "retry")
+
+    def application_mode(self):
+        self.cfg["application_intake"] = {"local_only": True,
+            "resource_alias": "resident-application", "record_path": ["record_id"]}
+        return patch.dict(os.environ, {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "1"})
+
+    def test_application_mode_is_explicit_and_does_not_execute_legacy_jobs(self):
+        self.bridge.enqueue(self.conn, self.envelope(), now=1000)
+        with self.application_mode():
+            self.assertFalse(self.bridge.run_one(self.conn, self.cfg, now=1000))
+            self.assertEqual(self.conn.execute("SELECT status,attempts FROM jobs").fetchone(), ("queued", 0))
+        with patch.dict(os.environ, {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "0"}):
+            with self.assertRaises(self.bridge.BridgeError):
+                self.bridge.run_one(self.conn, self.cfg, now=1000)
+
+    def test_same_record_callback_wakes_again_even_when_legacy_delivery_already_exists(self):
+        envelope = self.envelope()
+        self.bridge.enqueue(self.conn, envelope, now=1000)
+        with self.application_mode(), patch.object(self.bridge, "application_readback", return_value={"status": "accepted"}) as read:
+            self.bridge.enqueue(self.conn, envelope, now=1000, cfg=self.cfg)
+            self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1000))
+            self.bridge.enqueue(self.conn, envelope, now=1001, cfg=self.cfg)
+            self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1001))
+            self.assertEqual(read.call_count, 2)
+            self.assertEqual(self.conn.execute("SELECT requested_version,completed_version FROM application_wakes").fetchone(), (2, 2))
+            self.assertEqual(self.conn.execute("SELECT attempts FROM jobs").fetchone()[0], 0)
+
+    def test_readback_failure_preserves_hint_without_running_old_script(self):
+        with self.application_mode(), patch.object(self.bridge, "application_readback", side_effect=ValueError("private-source-body")):
+            self.bridge.enqueue(self.conn, self.envelope(), now=1000, cfg=self.cfg)
+            self.bridge.run_one(self.conn, self.cfg, now=1000)
+            self.assertFalse(self.bridge.run_one(self.conn, self.cfg, now=1001))
+            self.assertEqual(self.conn.execute("SELECT requested_version,completed_version,last_error_code FROM application_wakes").fetchone(), (1, 0, "readback_pending"))
+            self.assertEqual(self.conn.execute("SELECT count(*) FROM jobs").fetchone()[0], 0)
+
+    def test_callback_arriving_during_readback_remains_pending(self):
+        def readback(*_):
+            self.bridge.enqueue(self.conn, self.envelope(), now=1001, cfg=self.cfg)
+            return {"status": "duplicate"}
+        with self.application_mode(), patch.object(self.bridge, "application_readback", side_effect=readback):
+            self.bridge.enqueue(self.conn, self.envelope(), now=1000, cfg=self.cfg)
+            self.bridge.run_one(self.conn, self.cfg, now=1000)
+            self.assertEqual(self.conn.execute("SELECT requested_version,completed_version FROM application_wakes").fetchone(), (2, 1))
+
+    def test_committed_source_followup_pending_retries_without_losing_new_wake(self):
+        for key, state in [("candidate_projection", "projection_unconfirmed"),
+                           ("welcome", "handoff_unconfirmed")]:
+            with self.subTest(state=state):
+                self.conn.execute("DELETE FROM application_wakes")
+                self.conn.execute("DELETE FROM jobs")
+                self.conn.commit()
+                self.bridge.enqueue(self.conn, self.envelope(), now=999)
+                with self.application_mode():
+                    self.bridge.enqueue(self.conn, self.envelope(), now=1000, cfg=self.cfg)
+                    with patch.object(self.bridge, "application_readback", return_value={"status": "accepted", key: {"status": state}}):
+                        self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1000))
+                        self.assertFalse(self.bridge.run_one(self.conn, self.cfg, now=1001))
+                    self.assertEqual(self.conn.execute("SELECT requested_version,completed_version,last_error_code FROM application_wakes").fetchone(), (1, 0, "followup_pending"))
+                    def recovered(*_):
+                        self.bridge.enqueue(self.conn, self.envelope(), now=1031, cfg=self.cfg)
+                        return {"status": "duplicate", "candidate_projection": {"stored": True}, "welcome": {"status": "awaiting_reliable_stay_link"}}
+                    with patch.object(self.bridge, "application_readback", side_effect=recovered):
+                        self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1030))
+                    self.assertEqual(self.conn.execute("SELECT requested_version,completed_version,last_error_code FROM application_wakes").fetchone(), (2, 1, None))
+                    with patch.object(self.bridge, "application_readback", return_value={"status": "duplicate", "candidate_projection": {"status": "not_eligible"}, "welcome": {"status": "awaiting_confirmation"}}):
+                        self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1031))
+                    self.assertEqual(self.conn.execute("SELECT requested_version,completed_version FROM application_wakes").fetchone(), (2, 2))
+                    self.assertEqual(self.conn.execute("SELECT status,attempts FROM jobs").fetchone(), ("queued", 0))
+
+    def test_new_intake_uses_only_configured_reference_and_stores_no_payload(self):
+        payload = {"record_id": "recABCDEFGH", "person": "private-person", "withdrawn": True, "approved": True}
+        with self.application_mode():
+            self.bridge.enqueue(self.conn, self.envelope(payload), now=1000, cfg=self.cfg)
+            self.assertNotIn("private-person", str(self.conn.execute("SELECT * FROM application_wakes").fetchall()))
+            with self.assertRaises(self.bridge.BridgeError):
+                self.bridge.enqueue(self.conn, self.envelope({"nested": payload}), now=1001, cfg=self.cfg)
 
 
 if __name__ == "__main__":

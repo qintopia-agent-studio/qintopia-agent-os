@@ -55,7 +55,7 @@
     "pr:tools:check": "node tools/agents/check-pr-tools.mjs && pnpm agents:space-programming-extension:test && pnpm agents:space-agent-turn:test",
     "agents:space-programming-extension:test": "node tools/agents/test-space-programming-extension-runner.mjs",
     "agents:space-agent-turn:test": "PYTHONDONTWRITEBYTECODE=1 python3 tools/agents/test_run_space_agent_turn.py",
-    "agents:check": "node tools/agents/check-agents.mjs",
+    "agents:check": "node tools/agents/check-agents.mjs && node tools/agents/test-agent-runtime-management.mjs",
     "agents:profile-bundles:check": "node tools/agents/check-profile-bundles.mjs && python3 agents/xiaoman/profile-bundle/render.py --check-only && python3 agents/xiaoman/profile-bundle/migrate_values.py --check-only && python3 -m unittest discover -s agents/xiaoman/profile-bundle/tests -p 'test_*.py'",
     "collaboration:check": "node tools/policy/check-collaboration.mjs",
     "policy:check": "node tools/policy/check-anti-drift.mjs",

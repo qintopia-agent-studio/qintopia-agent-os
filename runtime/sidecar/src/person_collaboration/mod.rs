@@ -1,10 +1,13 @@
 //! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
+mod application_ingress;
 pub mod auth_server;
+mod business_ingress;
 mod foundation_server;
 pub(crate) use foundation_server::error_code as foundation_error_code;
 pub mod local_server;
 mod model;
 mod store;
+pub(crate) mod welcome_model;
 pub use model::{Assignment, Change, Command, Delegation};
 pub use store::foundation::{
     authorize_current, can_inspect_current, effective_knowledge_in, put_knowledge_in, Authority,
@@ -67,3 +70,11 @@ async fn connect_local(input: &str) -> Result<PgPool> {
 
 #[cfg(test)]
 mod rule_lifecycle_tests;
+
+#[cfg(test)]
+pub(crate) mod business_tests;
+
+#[cfg(test)]
+mod welcome_review_tests;
+
+pub(crate) use store::welcome_review::assert_operations_review as assert_welcome_operations_review;

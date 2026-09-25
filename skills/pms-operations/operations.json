@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "agent": "anan",
+  "domain": "hospitality",
+  "operations": {
+    "pms.read.availability": { "action": "read_business", "query": "availability" },
+    "pms.read.room_status": { "action": "read_business", "query": "room_status" },
+    "pms.read.orders": { "action": "read_business", "query": "orders" },
+    "pms.read.order": { "action": "read_business", "query": "order" },
+    "pms.read.members": { "action": "read_business", "query": "members" },
+    "pms.read.member": { "action": "read_business", "query": "member" },
+    "pms.read.payments": { "action": "read_business", "query": "payments" },
+    "pms.read.reference_catalog": {
+      "action": "read_business",
+      "query": "reference_catalog"
+    },
+    "pms.quote": { "action": "read_business", "command": "CREATE_QUOTE" },
+    "pms.command.CREATE_ORDER": {
+      "action": "execute_business",
+      "command": "CREATE_ORDER"
+    },
+    "pms.command.RECORD_COLLECTION": {
+      "action": "execute_business",
+      "command": "RECORD_COLLECTION"
+    },
+    "pms.command.CHECK_IN": { "action": "execute_business", "command": "CHECK_IN" },
+    "pms.command.CHECK_OUT": { "action": "execute_business", "command": "CHECK_OUT" },
+    "pms.command.RESCHEDULE_STAY": {
+      "action": "execute_business",
+      "command": "RESCHEDULE_STAY"
+    },
+    "pms.command.EXTEND_STAY": {
+      "action": "execute_business",
+      "command": "EXTEND_STAY"
+    },
+    "pms.command.SHORTEN_STAY": {
+      "action": "execute_business",
+      "command": "SHORTEN_STAY"
+    },
+    "pms.command.MOVE_UNIT": { "action": "execute_business", "command": "MOVE_UNIT" },
+    "pms.command.CANCEL_ORDER": {
+      "action": "execute_business",
+      "command": "CANCEL_ORDER"
+    }
+  }
+}

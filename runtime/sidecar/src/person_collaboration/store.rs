@@ -6,7 +6,19 @@ use serde_json::{json, Value};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
+mod application_welcome;
+pub(crate) mod applications;
 mod auth;
+pub(crate) mod business;
+pub(crate) mod business_events;
+mod business_manual;
+pub(crate) mod business_reminders;
+mod business_sources;
+pub(crate) mod welcome_candidates;
+pub(crate) mod welcome_contacts;
+pub(crate) mod welcome_host;
+pub(crate) mod welcome_pages;
+pub(crate) mod welcome_review;
 pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
 pub(crate) mod foundation;
@@ -99,9 +111,20 @@ impl Store {
         if let Some(hash) = &actor.session_hash {
             self.verify_session(tx, hash, actor.person).await?;
         }
-        let row=sqlx::query("SELECT l.person_id,l.version,l.status,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL FOR SHARE OF l,p")
+        let row=sqlx::query("SELECT l.person_id,l.version,l.status,l.confirmed_by,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL FOR SHARE OF l,p")
             .bind(actor.link).bind(&actor.identity_namespace).fetch_optional(&mut **tx).await?
             .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
+        let personally_confirmed = row.get::<Option<Uuid>, _>("confirmed_by").is_some();
+        let work_confirmed = if !personally_confirmed && actor.gateway.is_some() {
+            self.work_account_person_proof(tx, actor.link, actor.person)
+                .await?
+        } else {
+            false
+        };
+        ensure!(
+            personally_confirmed || work_confirmed,
+            "verified_identity_required"
+        );
         ensure!(
             row.get::<Uuid, _>("person_id") == actor.person
                 && row.get::<i64, _>("version") == actor.identity_version

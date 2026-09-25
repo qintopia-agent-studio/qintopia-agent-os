@@ -62,6 +62,38 @@ exit 0
     );
   }
 
+  writeExecutable("bin/id", "#!/usr/bin/env bash\necho 1000\n");
+  const ananCalls = path.join(tmpRoot, "anan-calls");
+  writeExecutable(
+    "bin/runuser",
+    `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> '${ananCalls}'
+case "$*" in
+  *"/home/ubuntu/.local/share/hermes-releases/v2026.9.21/venv/bin/python"*"/runtime/hermes/restart_anan.py"*) exit 0 ;;
+  *) exit 43 ;;
+esac
+`
+  );
+  const ananRestart = runSmoke([], "hermes-anan");
+  if (
+    ananRestart.status !== 0 ||
+    fs.readFileSync(ananCalls, "utf8").trim().split("\n").length !== 1
+  ) {
+    throw new Error(
+      `Anan must invoke only the pinned reversible-drain helper: ${ananRestart.stderr}`
+    );
+  }
+  writeExecutable("bin/runuser", "#!/usr/bin/env bash\nexit 44\n");
+  const ananFailure = runSmoke([], "hermes-anan");
+  if (
+    ananFailure.status === 0 ||
+    !ananFailure.stderr.includes(
+      "target=hermes-anan;phase=drain-or-restart;subject=hermes-gateway-anan.service"
+    )
+  ) {
+    throw new Error("Anan restart failure must propagate with a safe marker");
+  }
+
   writeExecutable(
     "bin/systemctl",
     `#!/usr/bin/env bash

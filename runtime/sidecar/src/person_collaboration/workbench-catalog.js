@@ -163,7 +163,7 @@ function renderLedgerDetail(item, host) {
     panel.append(
       el(
         "div",
-        "群来自可访问的合成清单；范围绑定与工作触达分别配置，不创建或解散外部群。",
+        "群来自可访问的模拟清单；范围绑定与工作触达分别配置，不创建或解散外部群。",
         "qo-note"
       )
     );

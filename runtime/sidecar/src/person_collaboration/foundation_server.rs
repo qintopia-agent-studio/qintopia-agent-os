@@ -69,7 +69,30 @@ pub(super) async fn dispatch(
             crate::strict_json::registry_json_limits(256 * 1024),
         )?;
     }
+    if path.starts_with("/api/foundation/operations/") {
+        return super::store::welcome_review::http_dispatch(store, actor, path, body).await;
+    }
     match path {
+        "/api/foundation/business/authorize" => {
+            let a: Value = serde_json::from_slice(body)?;
+            only_keys(&a, &["binding", "operation"])?;
+            Ok(serde_json::to_value(
+                store
+                    .business_authorize(
+                        actor,
+                        serde_json::from_value(a["binding"].clone())?,
+                        a["operation"].as_str().unwrap_or(""),
+                    )
+                    .await?,
+            )?)
+        }
+        "/api/foundation/business/delegate" => {
+            let a: Value = serde_json::from_slice(body)?;
+            only_keys(&a, &["target_grant", "binding", "operation", "until"])?;
+            Ok(
+                json!({"operation_grant":store.business_delegate(actor,serde_json::from_value(a["target_grant"].clone())?,serde_json::from_value(a["binding"].clone())?,a["operation"].as_str().unwrap_or(""),serde_json::from_value(a["until"].clone())?).await?}),
+            )
+        }
         "/api/foundation/state" => {
             let person = store.verified_person(actor).await?;
             let welcome = crate::resident_welcome::store::Store {
@@ -940,18 +963,18 @@ pub(super) async fn card(store: &Store, actor: &Actor, artifact: Uuid) -> Result
             return Ok(row.get("content"));
         }
     }
-    anyhow::bail!("scope_access_denied")
+    store.welcome_review_card(actor, artifact).await
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TrustedContext {
-    platform: String,
-    chat_type: String,
-    chat_id: String,
-    sender_id: String,
-    message_id: String,
-    gateway_id: String,
+pub(super) struct TrustedContext {
+    pub(super) platform: String,
+    pub(super) chat_type: String,
+    pub(super) chat_id: String,
+    pub(super) sender_id: String,
+    pub(super) message_id: String,
+    pub(super) gateway_id: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -998,7 +1021,12 @@ pub(super) async fn broker(store: Store) -> Result<()> {
     let owner = std::fs::metadata(path)?.uid();
     loop {
         let (stream, _) = listener.accept().await?;
-        if stream.peer_cred()?.uid() != owner {
+        // A client can disconnect after connect but before accept/peer inspection.
+        // Unreadable credentials reject this connection, not the listening broker.
+        let Ok(credentials) = stream.peer_cred() else {
+            continue;
+        };
+        if credentials.uid() != owner {
             continue;
         }
         let (read, mut writer) = stream.into_split();
@@ -1033,7 +1061,19 @@ pub(super) async fn broker(store: Store) -> Result<()> {
         raw.zeroize();
         let result = match parsed {
             Ok(request) => {
-                if !super::digest(request.token.as_bytes()).eq(&super::digest(token.as_bytes())) {
+                let expected = if request.operation == "person_foundation_ingress" {
+                    std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")
+                        .ok()
+                        .filter(|v| {
+                            (32..=256).contains(&v.len())
+                                && super::digest(v.as_bytes()) != super::digest(token.as_bytes())
+                        })
+                } else {
+                    Some(token.to_string())
+                };
+                if !expected.as_ref().is_some_and(|value| {
+                    super::digest(request.token.as_bytes()) == super::digest(value.as_bytes())
+                }) {
                     Err(anyhow::anyhow!("authentication_required"))
                 } else {
                     broker_invoke(&store, &gateway, &profile, request).await
@@ -1058,10 +1098,122 @@ pub(super) async fn broker_invoke(
     r: ToolRequest,
 ) -> Result<Value> {
     ensure!(
-        r.operation == "person_foundation_tool" && r.schema_version == 1 && r.agent == profile,
+        matches!(
+            r.operation.as_str(),
+            "person_foundation_tool" | "person_foundation_ingress"
+        ) && r.schema_version == 1
+            && r.agent == profile,
         "agent_tool_denied"
     );
     let t = r.trusted_context;
+    if r.operation == "person_foundation_tool" && r.tool.starts_with("welcome_operations_") {
+        return super::store::welcome_review::broker_invoke(
+            store,
+            gateway,
+            profile,
+            t,
+            &r.tool,
+            r.arguments,
+        )
+        .await;
+    }
+    if r.operation == "person_foundation_ingress" {
+        if r.tool == "welcome_group_host" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            return store
+                .welcome_host(gateway, t, serde_json::from_value(r.arguments)?)
+                .await;
+        }
+        if r.tool == "welcome_stay_contacts" {
+            ensure!(
+                profile == "anan"
+                    && t.gateway_id == gateway
+                    && std::env::var("QINTOPIA_APPLICATION_LOCAL_ENABLE").as_deref() == Ok("1"),
+                "agent_tool_denied"
+            );
+            return store
+                .welcome_stay_contacts(
+                    gateway,
+                    Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?,
+                    &std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?,
+                    &t,
+                    serde_json::from_value(r.arguments)?,
+                )
+                .await;
+        }
+        if r.tool == "welcome_source_projection" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            let request: super::store::welcome_candidates::SourceProjection =
+                serde_json::from_value(r.arguments)?;
+            ensure!(
+                std::env::var("QINTOPIA_APPLICATION_LOCAL_ENABLE").as_deref() == Ok("1")
+                    && Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?
+                        == request.binding,
+                "application_source_mismatch"
+            );
+            let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.business_property_bindings b ON b.tenant_key=g.tenant_key AND b.scope_id=g.scope_id JOIN qintopia_agent_os.application_intake_states i ON i.tenant_key=b.tenant_key AND i.binding_id=b.id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND b.active AND b.id=$3 AND i.application_id=$4 AND i.resource_alias=$5)")
+                .bind(&store.tenant).bind(gateway).bind(request.binding).bind(request.application).bind(std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?).fetch_one(&store.pool).await?;
+            ensure!(bound, "application_source_mismatch");
+            return store.welcome_project_source(&request).await;
+        }
+        if r.tool == "pms_application_intake" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            return super::application_ingress::invoke(store, r.arguments).await;
+        }
+        if r.tool == "pms_reminder" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway && t.platform == "host",
+                "agent_tool_denied"
+            );
+            return super::store::business_reminders::invoke(store, gateway, r.arguments).await;
+        }
+        if r.tool == "pms_payment_feed" {
+            ensure!(
+                profile == "anan" && t.gateway_id == gateway,
+                "agent_tool_denied"
+            );
+            return super::business_ingress::feed(store, &r.arguments).await;
+        }
+        ensure!(
+            profile == "anan" && r.tool == "pms_capture" && t.gateway_id == gateway,
+            "agent_tool_denied"
+        );
+        only_keys(&r.arguments, &["text"])?;
+        let turn = super::store::business::HostTurn {
+            platform: t.platform,
+            chat_type: t.chat_type,
+            chat_id: t.chat_id,
+            sender_id: t.sender_id,
+            message_id: t.message_id,
+            text: r.arguments["text"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("invalid_arguments"))?
+                .into(),
+        };
+        return store.business_capture_turn(gateway, &turn).await;
+    }
+    if r.tool.starts_with("pms_") {
+        ensure!(
+            profile == "anan"
+                && t.gateway_id == gateway
+                && t.platform == "wecom"
+                && matches!(t.chat_type.as_str(), "direct" | "group"),
+            "agent_tool_denied"
+        );
+        let actor = store.gateway_actor(gateway, &t.sender_id).await?;
+        return store
+            .business_invoke(&actor, &t.message_id, &t.chat_id, &r.tool, &r.arguments)
+            .await;
+    }
     ensure!(
         t.gateway_id == gateway
             && t.platform == "qiwe"
@@ -1071,7 +1223,7 @@ pub(super) async fn broker_invoke(
             && t.sender_id.len() <= 240,
         "trusted_context_unavailable"
     );
-    let actor = store.gateway_actor(gateway, &t.sender_id).await?;
+    let actor = store.conversation_actor(gateway, &t.sender_id).await?;
     let scope = store.gateway_scope(&actor).await?;
     if t.chat_type == "group" {
         let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.chat_id=$3 AND c.status='active')")

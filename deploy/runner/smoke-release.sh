@@ -205,6 +205,16 @@ for target in "${targets[@]}"; do
     hermes-huabaosi)
       restart_hermes_service hermes-huabaosi hermes-gateway-huabaosi.service
       ;;
+    hermes-anan)
+      # The helper drains only hermes-gateway-anan.service; no forced timeout restart.
+      anan_helper="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)/runtime/hermes/restart_anan.py"
+      if ! runuser -u "$hermes_systemd_user" -- env \
+        "XDG_RUNTIME_DIR=/run/user/$(id -u "$hermes_systemd_user")" \
+        /home/ubuntu/.local/share/hermes-releases/v2026.9.21/venv/bin/python "$anan_helper"; then
+        emit_safe_failure hermes-anan drain-or-restart hermes-gateway-anan.service
+        exit 1
+      fi
+      ;;
     hermes-guanerye)
       restart_hermes_service hermes-guanerye hermes-gateway-guanerye.service
       ;;

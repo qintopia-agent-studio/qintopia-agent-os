@@ -36,6 +36,38 @@ socket is mode 0600.
 
 ## Production Boundary
 
+### Local application readback branch
+
+The optional `application_intake` config uses the existing signed Unix ingress. It
+requires `local_only: true`, a fixed `resource_alias`, an exact `record_path` array and
+`QINTOPIA_APPLICATION_LOCAL_ENABLE=1`. Without this config the old route is unchanged.
+With it, callbacks durably wake readback by resource/record; a repeated record-only
+delivery is not swallowed by the legacy jobs table. The branch never runs the legacy
+action or notification command, including previously queued legacy jobs.
+
+The fixed `skills/pms-operations/application_intake.py` host adapter reads a local
+allowlisted source and commits through the independently authenticated foundation host
+broker. Failed readback keeps the wake pending with bounded backoff; a newer wake during
+processing remains pending. Only references and counters enter this queue. Content
+dedupe and revision fencing belong to the shared PostgreSQL service.
+
+An accepted/duplicate source save can still have an unconfirmed candidate projection or
+welcome handoff. The two explicit technical states `projection_unconfirmed` and
+`handoff_unconfirmed` retain the existing wake and backoff as `followup_pending`; they
+do not relabel the committed source as failed. A fresh readback resumes that same
+source. Ineligible candidates, missing reliable stay links and human review waits are
+business states, not technical retries. No private fields enter this queue.
+
+This branch is local-only, not an installed replacement for the real Feishu Workflow.
+Source callbacks do not authorize booking, payment, identity linking or welcome sends.
+Silaoshi's `application_review` is an operating follow-up, not mandatory order approval.
+Keep queued state when disabling; do not replay it through the old card/send script.
+
+See the
+[source/version design](../../runtime/postgres/docs/data-design/2026-09-24-application-event-intake.md).
+
+### Existing production route
+
 - The bridge may invoke only the pinned server-local resident action and notification
   adapter.
 - The service runs as the unprivileged Hermes owner and writes only its socket, job

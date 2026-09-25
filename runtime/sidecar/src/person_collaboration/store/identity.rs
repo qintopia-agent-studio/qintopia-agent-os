@@ -550,11 +550,41 @@ impl Store {
         tx.commit().await?;
         Ok(result)
     }
+    /// A personal channel can be confirmed by an explicitly authorized work account.
+    /// This validates the recorded effect, not merely the presence of an account UUID.
+    pub(super) async fn work_account_person_proof(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        link: Uuid,
+        person: Uuid,
+    ) -> Result<bool> {
+        Ok(sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.work_accounts w ON w.id=l.confirmed_by_work_account AND w.tenant_key=$1 JOIN qintopia_agent_os.welcome_review_receipts r ON r.id=l.evidence_ref AND r.tenant_key=w.tenant_key AND r.subject_kind='work_account' AND r.subject_id=w.id JOIN qintopia_agent_os.welcome_review_items i ON i.work_item_id=r.work_item_id AND i.tenant_key=r.tenant_key JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.scope_id=i.scope_id AND g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE l.id=$2 AND l.person_id=$3 AND l.status='confirmed' AND g.active AND g.account_kind<>'shared' AND r.effects->>'decision'='confirm' AND r.effects->>'channel_person'='true' AND r.effects->>'person'=$3::text AND r.effects->>'channel'=$2::text AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_review_receipts revoked WHERE revoked.work_item_id=r.work_item_id AND revoked.effects->>'decision'='revoke' AND revoked.created_at>r.created_at))")
+            .bind(&self.tenant).bind(link).bind(person).fetch_one(&mut **tx).await?)
+    }
+
     /// `gateway` is deployment/session context, never a model supplied namespace.
     pub(crate) async fn gateway_actor(&self, gateway: &str, subject_ref: &str) -> Result<Actor> {
+        self.resolve_gateway_actor(gateway, subject_ref, false)
+            .await
+    }
+
+    pub(crate) async fn conversation_actor(
+        &self,
+        gateway: &str,
+        subject_ref: &str,
+    ) -> Result<Actor> {
+        self.resolve_gateway_actor(gateway, subject_ref, true).await
+    }
+
+    async fn resolve_gateway_actor(
+        &self,
+        gateway: &str,
+        subject_ref: &str,
+        work_proof: bool,
+    ) -> Result<Actor> {
         let (mut tx, _, _) = self.begin().await?;
-        let row=sqlx::query("SELECT g.namespace,g.version AS gateway_version,g.scope_id,g.account_kind,l.id,l.person_id,l.version FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key JOIN qintopia_identity.source_identity_links l ON l.namespace=g.namespace AND l.subject_type=g.subject_type JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND s.status='active' AND l.source_ref=$3 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' FOR SHARE OF g,s,l,p")
-            .bind(&self.tenant).bind(gateway).bind(subject_ref).fetch_optional(&mut *tx).await?
+        let row=sqlx::query("SELECT g.namespace,g.version AS gateway_version,g.scope_id,g.account_kind,l.id,l.person_id,l.version FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key JOIN qintopia_identity.source_identity_links l ON l.namespace=g.namespace AND l.subject_type=g.subject_type JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND s.status='active' AND l.source_ref=$3 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND (l.confirmed_by IS NOT NULL OR $4) AND p.status='active' FOR SHARE OF g,s,l,p")
+            .bind(&self.tenant).bind(gateway).bind(subject_ref).bind(work_proof).fetch_optional(&mut *tx).await?
             .ok_or_else(||anyhow::anyhow!("gateway_identity_unconfirmed"))?;
         ensure!(
             row.get::<String, _>("account_kind") != "shared",

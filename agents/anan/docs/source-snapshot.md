@@ -1,11 +1,12 @@
-# 岸岸来源记录
+# 岸岸来源与继承
 
-日期：2026-09-22。来源类型：本地已确认设计；没有服务器 Profile 盘点或复制。
+正式能力规格继承自 PR #720 合并基线 `b42db0d` 上的文档补丁，独立提交
+`adff875`。业务计划位于 `docs/plans/active/anan-pms-event-integration.md`。
 
-- [合并交接 §8](../../../docs/plans/active/person-agent-foundation-parallel-handoff.md#8-合并交接共同底座二花接入与欢迎闭环)
-- [唯一共同契约](../../../docs/plans/active/unified-person-welcome-v1-contract.md)
-- [执行计划](../../../docs/plans/active/person-agent-foundation-execution-plan.md)
+Green PMS 参考基线
+`0254fbabdda0b76b56370248f2ad24e44e4e950a`，只读复用其命令、权限和恢复契约。Hermes 官方 WeCom 本地源码观察基线
+`d337b736aa1e8ebecfab043842d13e4a2d2f48a3`；本地源码观察不证明服务器相同。
 
-技术标识采用
-`anan`，业务名为岸岸。正式登记不证明生产运行存在，欢迎消费者、真实 LLM 与真实渠道的验证证据分别记录。旧四老师 resident
-onboarding 脚本只可作已审查渲染参考，不继承其扫描、姓名去重、直接发送或私人回执。
+用户已建立的 Profile、SOUL、Livecool、渠道、会话和凭据属于 runtime-only，未读取或覆盖。
+`fixtures/agents/anan/`
+保持模拟欢迎来源，未搬回。正式 Plugin 位于能力包，不登记测试运行器为生产组件。

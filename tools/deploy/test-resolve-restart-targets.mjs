@@ -121,6 +121,20 @@ assertSuccess(
   ["hermes-wenyuange"],
   ["--override", "hermes-wenyuange"]
 );
+assertSuccess(
+  "anan-managed-capability",
+  [
+    "agents/anan/agent.yaml",
+    "agents/anan/profile.template.yaml",
+    "skills/pms-operations/client.py",
+  ],
+  ["hermes-anan"]
+);
+assertSuccess(
+  "shared-foundation-consumers",
+  ["skills/person-foundation/__init__.py"],
+  ["hermes-anan", "hermes-erhua"]
+);
 assertFailure("unknown-agent", ["agents/newagent/agent.yaml"]);
 assertFailure("unknown-skill", ["skills/new-skill/manifest.yaml"]);
 

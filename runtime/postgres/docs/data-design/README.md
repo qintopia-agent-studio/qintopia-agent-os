@@ -1,5 +1,9 @@
 # Data Design
 
+## Welcome source and group projection
+
+- [2026-09-24 welcome source and group projection](2026-09-24-welcome-source-and-group-projection.md)
+
 This directory records versioned database design decisions for the Qintopia message and
 Agent OS data layer.
 
@@ -14,6 +18,15 @@ Agent OS data layer.
 - Database credentials and environment-specific URLs must not be committed.
 
 ## Versions
+
+- `2026-09-24.004`:
+  [Application readback and dispatch](2026-09-24-application-event-intake.md)
+
+- `2026-09-24.002`:
+  [Payment event ingress](2026-09-24-business-payment-event-ingress.md)
+
+- `2026-09-24.001`:
+  [Business operation execution](2026-09-24-business-operation-execution.md)
 
 - `2026-09-23.009`: [Steward review delegation](2026-09-23-steward-review-delegation.md)
 
@@ -67,3 +80,5 @@ Agent OS data layer.
 - `2026-08-08.001`: `2026-08-08-xiaoman-daily-case-report-auto-publish.md`
 - `2026-08-14.001`: `2026-08-14-erhua-conversational-self-extension.md`
 - `2026-08-15.001`: `2026-08-15-space-execution-runner-contract.md`
+
+- [Welcome subject confirmation](2026-09-24-welcome-subject-confirmation.md).

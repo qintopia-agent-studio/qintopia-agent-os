@@ -114,6 +114,12 @@ pnpm test:report
 `qintopia_test`
 重跑完整数据库 tier，不删除旧成员或放宽权限校验。见[2026-09-23 约定生命周期检查记录](../reports/2026-09-23-rule-lifecycle-local-acceptance.md)。
 
+一次性数据库的 URL 通过 runner 的 loopback 校验，不保证通过图像 staging 的固定 URL 哈希校验。若最后
+`operations-control-plane-apply-smoke.sh` 报
+`database URL hash is not in the reviewed allowlist`，记录此前 Rust
+PG 用例结果和该 smoke 的失败边界；不要改 allowlist、复用 staging 凭据或将总 tier 记为通过。既有固定 CI
+URL 有合法哈希；先核对本机 5432 归属，不能停用或写入其他任务的库。随机端口适配方案见[独立测试契约提案](../plans/active/disposable-postgres-boundary-review.md)，尚未批准实施。见[岸岸本地验收记录](../reports/2026-09-24-anan-pms-local-acceptance.md)。
+
 ## 欢迎渲染与跨平台任期回归
 
 PostgreSQL 欢迎集成使用业务包固定 PNG 夹具，继续执行真实进程协议、产物登记、审批与版本失效检查，不依赖 Pillow 或字库，不声称验证了实际排版。业务测试自行准备本地 HTTP 开关；生产默认门禁不变。

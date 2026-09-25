@@ -1,5 +1,37 @@
 # Data Design Changelog
 
+## 2026-09-24.005 — Welcome matching and group presentations
+
+- Add expiring source hints and durable version-bound local presentations.
+- Design: [welcome projection](2026-09-24-welcome-source-and-group-projection.md).
+
+## 2026-09-24.004 — Application readback and dispatch
+
+- Fence trusted local source reads and reuse welcome application projections.
+- Keep identity fingerprints separate from content; preserve confirmation audit.
+- Dispatch distinct Anan and Silaoshi work without financial authority or external sends.
+- Design: [application readback](2026-09-24-application-event-intake.md).
+
+## 2026-09-24.003 — Welcome subject confirmation
+
+- Add scoped work-account subjects, operations confirmation and identity attribution.
+- Preserve personal/PMS authority and building publication rules.
+- Design: [welcome subject confirmation](2026-09-24-welcome-subject-confirmation.md).
+
+## 2026-09-24.002 — Payment event ingress
+
+- Persist immutable source/property/binding snapshots for inbox and checkpoints.
+- Deduplicate events and sequences within the trusted source domain.
+- Reject unsafe reconstruction of preexisting unscoped event rows.
+- Design: [payment event ingress](2026-09-24-business-payment-event-ingress.md).
+
+## 2026-09-24.001 — Business operation execution
+
+- New exact operation grants, trusted host turn evidence and independent PMS action records on WorkItems.
+- Extend role/duty selectable actions and grant constraints without assigning any existing person new authority.
+- Durable event inbox and checkpoints; default capability remains disabled and synthetic only.
+- Design: [business execution](2026-09-24-business-operation-execution.md).
+
 ## 2026-09-23.009 — Steward review delegation
 
 - Add scoped, time-bounded resident review assignments sourced from existing designate and review authority.
