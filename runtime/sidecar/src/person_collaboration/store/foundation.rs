@@ -11,6 +11,7 @@ use uuid::Uuid;
 pub(super) async fn load_policy(
     tx: &mut Transaction<'_, Postgres>,
     tenant: &str,
+    identity_namespace: &str,
     now: DateTime<Utc>,
 ) -> Result<Policy> {
     let rows=sqlx::query("SELECT id,parent_scope_id,status FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1")
@@ -23,8 +24,8 @@ pub(super) async fn load_policy(
             active: r.get::<String, _>("status") == "active",
         })
         .collect();
-    let rows=sqlx::query("SELECT g.*,a.person_id,a.scope_id,c.agent_key,c.domain_key,c.duty_id,(g.status='active' AND c.status='active' AND a.status='active' AND p.status='active' AND role.status='active' AND (c.duty_id IS NULL OR duty.status='active') AND a.valid_from<=$2 AND (a.valid_until IS NULL OR a.valid_until>$2) AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.person_id=a.person_id AND l.namespace=$1 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL)) AS effective_now FROM qintopia_agent_os.collaboration_grants g JOIN qintopia_agent_os.agent_collaborations c ON c.id=g.collaboration_id JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_identity.persons p ON p.id=a.person_id JOIN qintopia_agent_os.collaboration_roles role ON role.id=a.role_id LEFT JOIN qintopia_agent_os.collaboration_duties duty ON duty.id=c.duty_id WHERE g.tenant_key=$1")
-            .bind(tenant).bind(now).fetch_all(&mut **tx).await?;
+    let rows=sqlx::query("SELECT g.*,a.person_id,a.scope_id,c.agent_key,c.domain_key,c.duty_id,(g.status='active' AND c.status='active' AND a.status='active' AND p.status='active' AND role.status='active' AND (c.duty_id IS NULL OR duty.status='active') AND a.valid_from<=$2 AND (a.valid_until IS NULL OR a.valid_until>$2) AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.person_id=a.person_id AND l.namespace=$3 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL)) AS effective_now FROM qintopia_agent_os.collaboration_grants g JOIN qintopia_agent_os.agent_collaborations c ON c.id=g.collaboration_id JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id JOIN qintopia_identity.persons p ON p.id=a.person_id JOIN qintopia_agent_os.collaboration_roles role ON role.id=a.role_id LEFT JOIN qintopia_agent_os.collaboration_duties duty ON duty.id=c.duty_id WHERE g.tenant_key=$1")
+            .bind(tenant).bind(now).bind(identity_namespace).fetch_all(&mut **tx).await?;
     let mut grants: Vec<Grant> = rows
         .iter()
         .map(|r| Grant {
@@ -91,7 +92,7 @@ pub async fn authorize_current(
     let now = sqlx::query_scalar("SELECT clock_timestamp()")
         .fetch_one(&mut **tx)
         .await?;
-    let policy = load_policy(tx, tenant, now).await?;
+    let policy = load_policy(tx, tenant, tenant, now).await?;
     let matching: Vec<_> = policy
         .grants
         .iter()
@@ -944,7 +945,7 @@ pub async fn can_inspect_current(
     let now = sqlx::query_scalar("SELECT clock_timestamp()")
         .fetch_one(&mut **tx)
         .await?;
-    Ok(load_policy(tx, tenant, now)
+    Ok(load_policy(tx, tenant, tenant, now)
         .await?
         .can_inspect(person, scope, agent, domain))
 }

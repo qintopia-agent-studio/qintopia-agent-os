@@ -10,6 +10,7 @@ from pathlib import Path
 import socket
 import threading
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import uuid
@@ -190,7 +191,7 @@ class StayContactsTests(unittest.TestCase):
         self.result.update(phone="private", read_token="private", welcome_contact_read_v1={"private": True})
         result = self.run_host()
         self.assertNotIn("private", json.dumps(result))
-        with self.assertRaisesRegex(ValueError, "local_enable_required"):
+        with self.assertRaisesRegex(ValueError, "mode_required"):
             host.StayContactsHost(self.client, self.broker)
         with self.assertRaises(ValueError):
             host.StayContactsHost(self.client, self.broker, local_enabled=True).refresh_contacts(self.work, None)
@@ -255,3 +256,96 @@ class StayContactsTests(unittest.TestCase):
                 self.assertEqual(request["operation"], "person_foundation_ingress")
                 self.assertEqual(request["agent"], "anan")
                 self.assertEqual(request["schema_version"], 1)
+
+    def test_production_factory_preserves_context_and_private_order_projection(self):
+        raw = self.add_order()
+        context = {"gateway_id": "synthetic-gateway", "platform": "wecom", "chat_type": "group",
+                   "chat_id": "synthetic-group", "sender_id": "synthetic-person",
+                   "message_id": "original-confirmation"}
+        original_context = copy.deepcopy(context)
+        calls = []
+        fixture = self
+        class Client:
+            def __init__(inner, origin, token, **kwargs):
+                calls.append(("client", origin, token, kwargs))
+            def read(inner, kind, property_id, *, resource):
+                calls.append(("read", kind, property_id, resource))
+                return raw
+        def transport(request, *, host):
+            fixture.assertTrue(host)
+            fixture.assertEqual(request["trusted_context"], original_context)
+            fixture.assertEqual(request["tool"], "welcome_stay_contacts")
+            action = request["arguments"]["action"]
+            calls.append(("broker", action))
+            if action == "open":
+                result = {**fixture.summary("pending", False), "local_only": False, "reads": fixture.reads}
+                fixture.assertEqual(request["arguments"]["presentation"], fixture.presentation)
+            elif action == "status":
+                result = {**fixture.summary("complete", True), "local_only": False}
+            else:
+                fixture.assertEqual(request["arguments"]["order"]["occupants"][0]["phone"],
+                                    " 138-0000-0000 ")
+                result = {"stored": True}
+            return {"ok": True, "result": result}
+        fake = SimpleNamespace(enabled=lambda: True,
+            production=SimpleNamespace(mode=lambda: "production", require=lambda: calls.append(("require",))),
+            credential_values=lambda: {"GREENPMS_API_TOKEN": "private-pms-token"},
+            client=SimpleNamespace(PRODUCTION_ORIGIN="https://pms.qintopia.cn", Client=Client),
+            transport=transport)
+        env = {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "0",
+               "QINTOPIA_APPLICATION_PRODUCTION_ENABLE": "1",
+               "QINTOPIA_FOUNDATION_GATEWAY_ID": "synthetic-gateway",
+               "QINTOPIA_APPLICATION_BINDING": str(uuid.uuid4()),
+               "QINTOPIA_APPLICATION_RESOURCE_ALIAS": "resident-application"}
+        with patch.object(host, "load_plugin", return_value=fake), patch.dict(os.environ, env, clear=True):
+            runner = host.from_environment(context)
+            context["message_id"] = "changed-after-capture"
+            result = runner.refresh_contacts(self.work, self.presentation)
+        self.assertEqual(calls[0], ("require",))
+        self.assertEqual(calls[1], ("client", "https://pms.qintopia.cn", "private-pms-token",
+                                    {"production_enabled": True}))
+        self.assertEqual(result["local_only"], False)
+        self.assertTrue(result["scan_complete"])
+        self.assertNotIn("138-0000", json.dumps(result))
+        self.assertEqual([call[1] for call in calls if call[0] == "broker"], ["open", "save", "status"])
+
+    def test_production_factory_rejects_unauthorized_or_mixed_mode(self):
+        calls = []
+        fake = SimpleNamespace(enabled=lambda: True,
+            production=SimpleNamespace(mode=lambda: "production",
+                require=lambda: (_ for _ in ()).throw(ValueError("pms_isolation_unavailable"))),
+            credential_values=lambda: calls.append("credentials"),
+            client=SimpleNamespace(), transport=lambda *_args, **_kwargs: None)
+        context = {"gateway_id": "synthetic-gateway"}
+        env = {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "0",
+               "QINTOPIA_APPLICATION_PRODUCTION_ENABLE": "1",
+               "QINTOPIA_FOUNDATION_GATEWAY_ID": "synthetic-gateway",
+               "QINTOPIA_APPLICATION_BINDING": str(uuid.uuid4()),
+               "QINTOPIA_APPLICATION_RESOURCE_ALIAS": "resident-application"}
+        with patch.object(host, "load_plugin", return_value=fake), patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ValueError, "pms_isolation_unavailable"):
+                host.from_environment(context)
+            self.assertEqual(calls, [])
+            with patch.dict(os.environ, {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "1"}):
+                with self.assertRaisesRegex(ValueError, "mode_required"):
+                    host.from_environment(context)
+            del os.environ["QINTOPIA_APPLICATION_RESOURCE_ALIAS"]
+            with self.assertRaisesRegex(ValueError, "mode_required"):
+                host.from_environment(context)
+
+    def test_production_status_rejects_simulated_or_cross_scope_response(self):
+        result = {**self.summary("complete", True), "local_only": False}
+        runner = host.StayContactsHost(self.client, lambda args: {**result, "reads": []},
+                                       production_enabled=True)
+        self.assertFalse(runner.synchronize(self.work)["local_only"])
+        result["local_only"] = True
+        with self.assertRaisesRegex(ValueError, "stay_contacts_incomplete"):
+            runner.synchronize(self.work)
+        result["local_only"] = False
+        result["work_item"] = str(uuid.uuid4())
+        with self.assertRaisesRegex(ValueError, "stay_contacts_incomplete"):
+            runner.synchronize(self.work)
+        result["work_item"] = self.work
+        result["status"] = "stale"
+        result["scan_complete"] = False
+        self.assertEqual(runner.synchronize(self.work)["status"], "stale")

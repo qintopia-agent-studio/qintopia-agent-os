@@ -374,8 +374,8 @@ impl Store {
         tx: &mut Transaction<'_, Postgres>,
         id: Uuid,
     ) -> Result<()> {
-        let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE p.id=$1 AND p.status='active' AND l.namespace=$2 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger WHERE tenant_key=$2 AND kind='person' AND object_ref=$1::text AND status<>'active')")
-            .bind(id).bind(&self.tenant).fetch_one(&mut **tx).await?;
+        let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE p.id=$1 AND p.status='active' AND l.namespace=$3 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger WHERE tenant_key=$2 AND kind='person' AND object_ref=$1::text AND status<>'active')")
+            .bind(id).bind(&self.tenant).bind(&self.identity_namespace).fetch_one(&mut **tx).await?;
         ensure!(known, "person_not_verified");
         Ok(())
     }

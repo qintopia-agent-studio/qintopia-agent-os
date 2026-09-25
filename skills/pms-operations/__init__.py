@@ -23,20 +23,24 @@ def _module(name, filename):
 client = _module("client", "client.py")
 host = _module("host", "host.py")
 credentials = _module("credentials", "credentials.py")
+production = _module("production", "production.py")
+workitem_wake = _module("workitem_wake", "workitem_wake.py")
 CATALOG = json.loads(Path(__file__).with_name("operations.json").read_text())["operations"]
 
 
 def enabled():
-    return os.environ.get("QINTOPIA_PMS_LOCAL_ENABLE") == "1" and os.environ.get("QINTOPIA_FOUNDATION_LOCAL_ENABLE") == "1"
+    return production.mode() != "disabled"
 
 
 def credential_values():
+    if production.mode() == "production":
+        production.require()
     path = os.environ.get("QINTOPIA_PMS_CREDENTIALS_FILE")
     if path is not None:
         from hermes_constants import get_hermes_home
         return credentials.load(path, profile_home=str(get_hermes_home()))
     # Legacy environment credentials are supported only by the local simulator.
-    if not enabled():
+    if production.mode() != "local":
         raise ValueError("pms_disabled")
     return {key: os.environ.get(key, "") for key in credentials.KEYS}
 
@@ -74,6 +78,7 @@ PUBLIC_FIELDS = set("schemaVersion events eventId eventType sequence action work
 
 
 SAFE_ERRORS = {"payment_readback_required", "payment_effect_mismatch","invalid_arguments", "pms_disabled", "pms_property_denied", "pms_command_denied",
+    "pms_isolation_unavailable", "pms_feature_disabled", "private_credentials_required",
     "pms_unavailable", "pms_outcome_unknown", "pms_preview_rejected", "pms_preview_expired", "pms_request_rejected",
     "human_confirmation_required", "business_action_terminal", "business_reconcile_first",
     "business_operation_denied", "business_authority_denied", "business_authority_changed",
@@ -83,6 +88,7 @@ SAFE_ERRORS = {"payment_readback_required", "payment_effect_mismatch","invalid_a
     "manual_effect_verification_required", "business_handoff_required", "manual_order_conflict", "agent_tool_denied",
     "trusted_context_unavailable", "unsupported_command"}
 GROUP_PRIVATE = {"primaryGuest", "members", "member", "occupants", "fullName", "nickname"}
+PUBLIC_FIELDS.update({"bindings", "binding", "property", "operations"})
 
 
 def public(value, *, group=False):
@@ -261,6 +267,7 @@ def obj(properties, required):
 TEXT = {"type": "string", "minLength": 1, "maxLength": 160}
 ACTION = obj({"action": TEXT}, ["action"])
 SCHEMAS = {
+    "context": obj({}, []),
     "read": obj({"binding": TEXT, "query": {"type": "string", "enum": [k[9:] for k in CATALOG if k.startswith("pms.read.")]},
                  "resource": TEXT, "filters": {"type": "object"}}, ["binding", "query"]),
     "prepare": obj({"binding": TEXT, "operation": {"type": "string", "enum": [k for k,v in CATALOG.items() if "command" in v]},
@@ -304,16 +311,42 @@ def validate(name, args):
 
 
 def register(ctx):
+    ctx.register_hook("pre_tool_call", lambda tool_name, args, **kwargs:
+        workitem_wake.guard(tool_name, args, production=production, **kwargs))
+    ctx.register_hook("pre_tool_call", production.guard)
     def hook(event, **_):
+        try:
+            platform = workitem_wake._value(event.source.platform)
+        except Exception:
+            return workitem_wake.SKIP
+        if platform == "webhook":
+            return workitem_wake.inbound(event, production=production)
         if not enabled(): return None
         try: return host.capture(event, transport)
-        except Exception: return {"action": "skip", "reason": "business_evidence_unavailable"}
+        except Exception:
+            # Ordinary conversation is independent of business availability.
+            # Every business operation still requires persisted trusted evidence.
+            host.logger.warning("business_evidence_unavailable")
+            return None
     ctx.register_hook("pre_gateway_dispatch", hook)
+    def wake_handler(arguments, **_):
+        return json.dumps(workitem_wake.read(arguments, transport=transport, production=production),
+                          ensure_ascii=False)
+    ctx.register_tool(name=workitem_wake.TOOL, toolset="qintopia_workitem_read",
+        schema={"name": workitem_wake.TOOL,
+            "description": "只读回查本次 webhook 对应的待办状态。",
+            "parameters": obj({}, [])},
+        handler=wake_handler, check_fn=lambda: workitem_wake.available(production),
+        description="岸岸待办只读回查", emoji="🏠")
     for name, schema in SCHEMAS.items():
         def handler(arguments, _name=name, **_):
             if not enabled(): return json.dumps({"ok": False, "error": {"code": "pms_disabled"}})
             try:
-                pms = client.Client(os.environ.get("GREENPMS_BASE_URL", ""), credential_values()["GREENPMS_API_TOKEN"], local_enabled=True)
+                validate(_name, arguments)
+                live = production.mode() == "production"
+                pms = client.Client("https://pms.qintopia.cn" if live else os.environ.get("GREENPMS_BASE_URL", ""),
+                                    credential_values()["GREENPMS_API_TOKEN"],
+                                    local_enabled=not live, production_enabled=live)
                 result = Operations(pms).invoke(_name, arguments)
             except (ValueError, client.PmsError) as exc:
                 code = getattr(exc, "code", str(exc))

@@ -403,6 +403,15 @@ pub enum Command {
         #[arg(long)]
         init_fixture: bool,
     },
+    /// Serve only Anan's approved PMS conversation tools for an explicitly configured live tenant.
+    RunFoundationProduction,
+    /// Preview or apply one scoped production configuration command as a preconfigured administrator.
+    ConfigureFoundationProduction {
+        #[arg(long)]
+        apply: bool,
+        #[arg(long)]
+        status: bool,
+    },
     /// Provision the first login for an explicitly identified existing authorized Person.
     BootstrapCollaborationAccount {
         #[arg(long)]

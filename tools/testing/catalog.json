@@ -3549,6 +3549,187 @@
             ],
             "simulated": ["本机PMS HTTP响应、群交付和模拟身份；无真实渠道或生产"]
           }
+        },
+        {
+          "id": "anan-pms/live-admin-lifecycle",
+          "name": "真实租户入口的授权生命周期与跨范围拒绝",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_live_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_live_tests::live_admin_lifecycle_and_broker_scope_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享授权、事务、受控入口及实际本机传输"],
+            "simulated": [
+              "隔离数据库与模拟租户、人员、PMS事件；无真实模型、渠道发送或业务写入"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/live-workitem-read",
+          "name": "内部唤醒只读同一范围待办且不产生批准",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_live_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_live_tests::live_payment_workitem_host_read_is_scoped_and_pure",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享授权、事务、受控入口及实际本机传输"],
+            "simulated": [
+              "隔离数据库与模拟租户、人员、PMS事件；无真实模型、渠道发送或业务写入"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/live-person-configuration",
+          "name": "可信宿主观察与增员配置不自动授予业务权限",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_live_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_live_tests::live_host_observation_and_person_cli_do_not_grant_business_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享授权、事务、受控入口及实际本机传输"],
+            "simulated": [
+              "隔离数据库与模拟租户、人员、PMS事件；无真实模型、渠道发送或业务写入"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/live-application-ingress",
+          "name": "申请生产入口的范围、重放、撤回与来源修订",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/application_live_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::application_ingress::live_tests::live_application_host_scope_replay_withdrawal_and_source_change",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享授权、事务、受控入口及实际本机传输"],
+            "simulated": [
+              "隔离数据库与模拟租户、人员、PMS事件；无真实模型、渠道发送或业务写入"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/payment-postcommit-wake",
+          "name": "支付先持久接收后内部唤醒及失败保留原事项",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/production_events_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_ingress::production_events_tests::production_payment_postcommit_wake_preserves_ack_and_scope",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享授权、事务、受控入口及实际本机传输"],
+            "simulated": [
+              "隔离数据库与模拟租户、人员、PMS事件；无真实模型、渠道发送或业务写入",
+              "默认场景使用内部 webhook 模拟服务；固定官方核心与 Unix broker 的跨语言联合分支须显式单独执行"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/payment-production-config",
+          "name": "生产支付配置拒绝混用模式与不安全密钥文件",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/production_events_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_ingress::production_events_tests::production_config_rejects_mixed_modes_and_insecure_key",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实本机进程、文件权限或 socket 生命周期"],
+            "simulated": ["隔离临时文件和模拟凭据；无生产配置变更"]
+          }
+        },
+        {
+          "id": "anan-pms/payment-live-http-receipt",
+          "name": "支付生产入口持久回执与首次基线不创建历史催办",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/production_events_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_ingress::production_events_tests::live_payment_http_ack_and_feed_preserve_baseline_and_review_only",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共享授权、事务、受控入口及实际本机传输"],
+            "simulated": [
+              "隔离数据库与模拟租户、人员、PMS事件；无真实模型、渠道发送或业务写入"
+            ]
+          }
+        },
+        {
+          "id": "anan-pms/foundation-broker-restart",
+          "name": "共同服务中止后清理本属 socket 并恢复监听",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/foundation_server.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::foundation_server::foundation_broker_task_abort_removes_socket_and_restarts",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["真实本机进程、文件权限或 socket 生命周期"],
+            "simulated": ["隔离临时文件和模拟凭据；无生产配置变更"]
+          }
         }
       ]
     }

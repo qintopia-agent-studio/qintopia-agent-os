@@ -758,6 +758,8 @@ async fn welcome_contacts_real_broker_private_host_and_original_confirmation() -
         let store = Store {
             pool: f.store.pool.clone(),
             tenant: f.store.tenant.clone(),
+            identity_namespace: f.store.identity_namespace.clone(),
+            mode: crate::person_collaboration::store::StoreMode::Synthetic,
         };
         let broker = tokio::spawn(super::super::foundation_server::broker(store));
         let outcome:Result<()>=async {

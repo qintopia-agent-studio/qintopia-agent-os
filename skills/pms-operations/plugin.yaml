@@ -3,8 +3,11 @@ label: 岸岸 PMS 客房协作
 kind: standalone
 version: 0.1.0
 description:
-  Local-only Anan PMS tools with shared Person authority and durable recovery.
+  Explicit local or isolated production PMS tools with shared Person authority and
+  durable recovery. Production remains disabled until preflight and activation.
 provides_tools:
+  - qintopia_workitem_read
+  - qintopia_pms_context
   - qintopia_pms_read
   - qintopia_pms_prepare
   - qintopia_pms_execute
@@ -19,7 +22,11 @@ provides_tools:
   - qintopia_pms_reminder_snooze
 provides_hooks:
   - pre_gateway_dispatch
+  - pre_tool_call
 optional_env:
+  - name: QINTOPIA_PMS_WORKITEM_WAKE_ENABLE
+    description: Enables the isolated read-only webhook wake after production preflight.
+    password: false
   - name: GREENPMS_BASE_URL
     description: Explicit synthetic loopback PMS endpoint; no production URL accepted.
     password: false

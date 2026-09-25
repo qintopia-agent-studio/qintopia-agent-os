@@ -84,14 +84,81 @@ pub struct QiweConversion {
 }
 
 impl Store {
+    /// The authenticated Hermes host hook is distinct from verified NATS ingress.
+    /// It records an account observation, never a Person or business authority.
+    pub(crate) async fn observe_wecom_host_turn(
+        &self,
+        gateway: &str,
+        turn: &super::business::HostTurn,
+    ) -> Result<Value> {
+        ensure!(
+            self.is_live()
+                && turn.platform == "wecom"
+                && matches!(turn.chat_type.as_str(), "direct" | "group"),
+            "trusted_context_unavailable"
+        );
+        for value in [gateway, &turn.chat_id, &turn.sender_id, &turn.message_id] {
+            ensure!(
+                !value.is_empty() && value.len() <= 240 && !value.chars().any(char::is_whitespace),
+                "trusted_context_unavailable"
+            );
+        }
+        let (mut tx, _, _) = self.begin().await?;
+        let row=sqlx::query("SELECT g.scope_id,g.namespace FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id AND s.status='active' WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.namespace=$3 AND g.subject_type='wecom_internal' AND g.account_kind='employee' AND g.active AND EXISTS(SELECT 1 FROM qintopia_agent_os.business_property_bindings b WHERE b.tenant_key=$1 AND b.scope_id=g.scope_id AND b.active) AND NOT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways other WHERE other.tenant_key<>$1 AND other.namespace=g.namespace AND other.subject_type=g.subject_type AND other.active) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants other WHERE other.tenant_key<>$1 AND other.identity_namespace=g.namespace) FOR SHARE OF g,s")
+            .bind(&self.tenant).bind(gateway).bind(&self.identity_namespace).fetch_optional(&mut *tx).await?
+            .ok_or_else(||anyhow::anyhow!("live_gateway_unavailable"))?;
+        let scope: Uuid = row.get("scope_id");
+        if turn.chat_type == "group" {
+            let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.tenant_id=$1 AND c.platform='wecom' AND c.chat_type='group' AND c.chat_id=$3 AND c.status='active')")
+                .bind(&self.tenant).bind(scope).bind(&turn.chat_id).fetch_one(&mut *tx).await?;
+            ensure!(bound, "gateway_scope_mismatch");
+        }
+        let namespace: String = row.get("namespace");
+        if let Some(link)=sqlx::query("SELECT id,status,version,adapter_metadata FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND subject_type='wecom_internal' AND source_ref=$2 FOR UPDATE")
+            .bind(&namespace).bind(&turn.sender_id).fetch_optional(&mut *tx).await? {
+            let status:String=link.get("status");
+            if status == "revoked" || link.get::<Value,_>("adapter_metadata")["first_observation_ref"].is_string() {
+                return Ok(json!({"link_ref":link.get::<Uuid,_>("id"),"status":status,"version":link.get::<i64,_>("version"),"person_auto_created":false}));
+            }
+        }
+        let event_key = super::super::digest(&serde_json::to_vec(&json!([
+            self.tenant,
+            gateway,
+            turn.message_id
+        ]))?);
+        let evidence = json!({"tenant_key":self.tenant,"gateway_key":gateway,"namespace":namespace,"scope_ref":scope,
+            "chat_type":turn.chat_type,"chat_hash":super::super::digest(turn.chat_id.as_bytes()),
+            "sender_hash":super::super::digest(turn.sender_id.as_bytes()),
+            "message_hash":super::super::digest(turn.message_id.as_bytes())});
+        sqlx::query("INSERT INTO qintopia_messages.raw_events(event_id,source,subject,received_at,payload,ingress_auth_verified) VALUES($1,'wecom-host','qintopia.wecom.host.observed',clock_timestamp(),$2,false) ON CONFLICT(source,event_id) DO NOTHING")
+            .bind(&event_key).bind(&evidence).execute(&mut *tx).await?;
+        let recorded=sqlx::query("SELECT id,payload FROM qintopia_messages.raw_events WHERE source='wecom-host' AND event_id=$1 AND subject='qintopia.wecom.host.observed' AND NOT ingress_auth_verified")
+            .bind(&event_key).fetch_one(&mut *tx).await?;
+        ensure!(
+            recorded.get::<Value, _>("payload") == evidence,
+            "host_observation_conflict"
+        );
+        let ref_id: Uuid = recorded.get("id");
+        let link=sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal',$2,jsonb_build_object('first_observation_ref',$3::text,'host_observation',true)) ON CONFLICT(namespace,subject_type,source_ref) DO UPDATE SET adapter_metadata=CASE WHEN source_identity_links.adapter_metadata ? 'first_observation_ref' THEN source_identity_links.adapter_metadata ELSE source_identity_links.adapter_metadata || EXCLUDED.adapter_metadata END RETURNING id,status,version")
+            .bind(&namespace).bind(&turn.sender_id).bind(ref_id.to_string()).fetch_one(&mut *tx).await?;
+        let result = json!({"link_ref":link.get::<Uuid,_>("id"),"status":link.get::<String,_>("status"),"version":link.get::<i64,_>("version"),"person_auto_created":false});
+        tx.commit().await?;
+        Ok(result)
+    }
+
     async fn identity_ui_access(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         actor: &Actor,
         now: chrono::DateTime<chrono::Utc>,
+        production_cli: bool,
     ) -> Result<Option<(Vec<Uuid>, bool)>> {
         ensure!(
-            actor.session_hash.is_some() && actor.gateway.is_none(),
+            if production_cli {
+                self.is_live() && actor.session_hash.is_none() && actor.gateway.is_some()
+            } else {
+                actor.session_hash.is_some() && actor.gateway.is_none()
+            },
             "authentication_required"
         );
         self.verify(tx, actor).await?;
@@ -140,13 +207,54 @@ impl Store {
 
     async fn identity_ui_rows(&self, tx: &mut Transaction<'_, Postgres>) -> Result<Vec<PgRow>> {
         // Ambiguous source registries are visible as unavailable, never guessed.
-        Ok(sqlx::query("SELECT l.*,g.gateway_key,g.version AS gateway_version,g.scope_id,g.account_kind,g.active AS gateway_active,s.label AS scope_label,s.status AS scope_status,coalesce(p.preferred_name,p.display_name) AS person_label,(SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type) AS namespace_owners,EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants t WHERE t.identity_namespace=g.namespace) AS reserved_namespace FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE g.tenant_key=$1 ORDER BY s.label,g.gateway_key,l.source_ref,l.id")
+        Ok(sqlx::query("SELECT l.*,g.gateway_key,g.version AS gateway_version,g.scope_id,g.account_kind,g.active AS gateway_active,s.label AS scope_label,s.status AS scope_status,coalesce(p.preferred_name,p.display_name) AS person_label,(SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type) AS namespace_owners,EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants t WHERE t.identity_namespace=g.namespace AND t.tenant_key<>$1) AS reserved_namespace FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE g.tenant_key=$1 ORDER BY s.label,g.gateway_key,l.source_ref,l.id")
             .bind(&self.tenant).fetch_all(&mut **tx).await?)
     }
 
+    async fn host_observation_valid(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        row: &PgRow,
+    ) -> Result<bool> {
+        let metadata: Value = row.get("adapter_metadata");
+        let Some(id) = metadata["first_observation_ref"]
+            .as_str()
+            .and_then(|s| Uuid::parse_str(s).ok())
+        else {
+            return Ok(false);
+        };
+        let observation:Option<Value>=sqlx::query_scalar("SELECT payload FROM qintopia_messages.raw_events WHERE id=$1 AND source='wecom-host' AND subject='qintopia.wecom.host.observed' AND NOT ingress_auth_verified")
+            .bind(id).fetch_optional(&mut **tx).await?;
+        Ok(observation.is_some_and(|proof| {
+            proof["tenant_key"] == json!(self.tenant)
+                && proof["gateway_key"] == json!(row.get::<String, _>("gateway_key"))
+                && proof["namespace"] == json!(row.get::<String, _>("namespace"))
+                && proof["scope_ref"] == json!(row.get::<Uuid, _>("scope_id"))
+                && proof["sender_hash"]
+                    == json!(super::super::digest(
+                        row.get::<String, _>("source_ref").as_bytes()
+                    ))
+        }))
+    }
+
     pub(crate) async fn identities(&self, actor: &Actor, person: Option<Uuid>) -> Result<Value> {
+        self.identity_listing(actor, person, false).await
+    }
+
+    pub(crate) async fn production_identities(&self, actor: &Actor) -> Result<Value> {
+        self.identity_listing(actor, None, true).await
+    }
+
+    async fn identity_listing(
+        &self,
+        actor: &Actor,
+        person: Option<Uuid>,
+        production_cli: bool,
+    ) -> Result<Value> {
         let (mut tx, version, now) = self.begin().await?;
-        let Some((scopes, tenant_wide)) = self.identity_ui_access(&mut tx, actor, now).await?
+        let Some((scopes, tenant_wide)) = self
+            .identity_ui_access(&mut tx, actor, now, production_cli)
+            .await?
         else {
             return Ok(
                 json!({"version":version,"can_manage":false,"links":[],"candidates":[],"people":[]}),
@@ -162,6 +270,8 @@ impl Store {
                 continue;
             }
             let evidence = observed_evidence(&row);
+            let host_observed =
+                !production_cli || self.host_observation_valid(&mut tx, &row).await?;
             let reason = if row.get::<String, _>("account_kind") == "shared" {
                 Some("共享账号不能直接确认成自然人，请使用可核验的个人账号。")
             } else if row.get::<i64, _>("namespace_owners") != 1
@@ -174,6 +284,8 @@ impl Store {
                 Some("该来源或所属范围已停用。")
             } else if evidence.is_none() {
                 Some("尚无可信来源记录，暂不能核验。")
+            } else if !host_observed {
+                Some("尚无可信企微宿主消息记录，暂不能核验。")
             } else {
                 None
             };
@@ -197,7 +309,7 @@ impl Store {
         actor: &Actor,
         command: &IdentityUiCommand,
     ) -> Result<Value> {
-        self.identity_ui_command(actor, command, false).await
+        self.identity_ui_command(actor, command, false, false).await
     }
 
     pub(crate) async fn save_identity(
@@ -205,7 +317,16 @@ impl Store {
         actor: &Actor,
         command: &IdentityUiCommand,
     ) -> Result<Value> {
-        self.identity_ui_command(actor, command, true).await
+        self.identity_ui_command(actor, command, true, false).await
+    }
+
+    pub(crate) async fn production_identity_change(
+        &self,
+        actor: &Actor,
+        command: &IdentityUiCommand,
+        apply: bool,
+    ) -> Result<Value> {
+        self.identity_ui_command(actor, command, apply, true).await
     }
 
     async fn identity_ui_command(
@@ -213,10 +334,11 @@ impl Store {
         actor: &Actor,
         command: &IdentityUiCommand,
         save: bool,
+        production_cli: bool,
     ) -> Result<Value> {
         let (mut tx, version, now) = self.begin().await?;
         let (scopes, tenant_wide) = self
-            .identity_ui_access(&mut tx, actor, now)
+            .identity_ui_access(&mut tx, actor, now, production_cli)
             .await?
             .ok_or_else(|| anyhow::anyhow!("identity_management_denied"))?;
         // Older source consumers do not all take the collaboration tenant lock.
@@ -270,6 +392,15 @@ impl Store {
         );
         let evidence = observed_evidence(row)
             .ok_or_else(|| anyhow::anyhow!("identity_observation_required"))?;
+        if production_cli && !command.revoke {
+            ensure!(
+                row.get::<String, _>("subject_type") == "wecom_internal"
+                    && row.get::<String, _>("account_kind") == "employee"
+                    && row.get::<String, _>("namespace") == self.identity_namespace
+                    && self.host_observation_valid(&mut tx, row).await?,
+                "trusted_source_observation_required"
+            );
+        }
         let current: Option<Uuid> = row.get("person_id");
         let status: String = row.get("status");
         ensure!(

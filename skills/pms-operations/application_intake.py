@@ -1,7 +1,7 @@
 """Host-only application readback; callbacks are hints, never identity or approval.
 
-Only explicit loopback fixtures are supported. No production Feishu credential,
-arbitrary URL, model tool, attachment download or external write is accepted here.
+Production uses a fixed Feishu HTTPS origin and a private host-owned config file.
+No arbitrary URL, model tool, attachment download or external write is accepted here.
 """
 from __future__ import annotations
 
@@ -12,6 +12,9 @@ import ipaddress
 import json
 import os
 import re
+import socket
+import ssl
+import stat
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -20,6 +23,18 @@ IDENTITY_FIELDS = ("name", "nickname", "phone")
 CONTENT_FIELDS = ("arrival", "nights", "room_type", "occupation", "interests")
 FIELDS = (*IDENTITY_FIELDS, *CONTENT_FIELDS, "consent", "status")
 MAX_BYTES = 128 * 1024
+PRIVATE_MAX_BYTES = 16 * 1024
+FEISHU_HOST = "open.feishu.cn"
+PRODUCTION_CONFIG_ROOT = Path("/etc/qintopia")
+PRODUCTION_CONFIG_KEYS = {"resource_alias", "base_token", "table_id", "fields",
+                          "consent_value", "app_id", "app_secret", "foundation_host_token"}
+MODEL_ENV_SECRETS = ("FEISHU_APP_ID", "FEISHU_APP_SECRET", "LARK_APP_ID", "LARK_APP_SECRET",
+                     "QINTOPIA_FOUNDATION_HOST_TOKEN")
+
+_production_spec = importlib.util.spec_from_file_location(
+    "qintopia_application_production", Path(__file__).with_name("production.py"))
+production = importlib.util.module_from_spec(_production_spec)
+_production_spec.loader.exec_module(production)
 
 
 def require(condition):
@@ -64,24 +79,30 @@ def cell(value):
     require(False)
 
 
-def projection(raw, record, config, *, include_fields=False):
-    require(raw.get("code") == 0)
-    row = raw.get("data", {}).get("record", {})
-    require(row.get("record_id") == record and isinstance(row.get("fields"), dict))
-    mapping = config["fields"]
+def validate_fields(config):
+    mapping = config.get("fields")
     require(isinstance(mapping, dict) and set(mapping) <= set(FIELDS)
             and set(IDENTITY_FIELDS) <= set(mapping) and "consent" in mapping
             and all(isinstance(v, str) and 0 < len(v) <= 100 for v in mapping.values())
             and len(set(mapping.values())) == len(mapping))
+    require(type(config.get("consent_value")) in (str, bool))
+    if "status" in mapping:
+        require(isinstance(config.get("withdrawn_value"), str)
+                and bool(config["withdrawn_value"]))
+    return mapping
+
+
+def projection(raw, record, config, *, include_fields=False):
+    require(type(raw.get("code")) is int and raw["code"] == 0)
+    row = raw.get("data", {}).get("record", {})
+    require(row.get("record_id") == record and isinstance(row.get("fields"), dict))
+    mapping = validate_fields(config)
     values = {key: cell(row["fields"].get(field)) for key, field in mapping.items()}
     # Missing/unknown consent never grants display. Withdrawal requires a real mapped field.
-    require(type(config.get("consent_value")) in (str, bool))
     consent = (type(values["consent"]) is type(config["consent_value"])
                and values["consent"] == config["consent_value"])
     valid = True
     if "status" in mapping:
-        require(isinstance(config.get("withdrawn_value"), str)
-                and bool(config["withdrawn_value"]))
         valid = values["status"] != config["withdrawn_value"]
     identity = {key: values[key] for key in IDENTITY_FIELDS}
     source_version = row.get("last_modified_time")
@@ -120,8 +141,7 @@ class LocalApplicationClient:
     def read(self, record, *, include_fields=False):
         record_ref(record)
         config = self.config
-        path = ("/open-apis/bitable/v1/apps/" + quote(config["base_token"], safe="")
-                + "/tables/" + quote(config["table_id"], safe="") + "/records/" + record)
+        path = record_path(config, record)
         connection = http.client.HTTPConnection(self.host, self.port, timeout=10)
         try:
             connection.request("GET", path, headers={"Authorization": "Bearer " + self.token})
@@ -134,6 +154,137 @@ class LocalApplicationClient:
             raise ValueError("application_readback_unavailable") from None
         finally:
             connection.close()
+
+
+def record_path(config, record):
+    record_ref(record)
+    return ("/open-apis/bitable/v1/apps/" + quote(config["base_token"], safe="")
+            + "/tables/" + quote(config["table_id"], safe="") + "/records/" + record)
+
+
+def load_production_config(path, *, trusted_root=PRODUCTION_CONFIG_ROOT):
+    fd = None
+    try:
+        candidate = Path(path)
+        require(candidate.is_absolute() and candidate != trusted_root
+                and candidate.is_relative_to(trusted_root) and ".." not in candidate.parts
+                and not any(key in os.environ for key in MODEL_ENV_SECRETS))
+        fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+        for index, part in enumerate(candidate.parts[1:]):
+            final = index == len(candidate.parts) - 2
+            flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+            if not final:
+                flags |= os.O_DIRECTORY
+            child = os.open(part, flags, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            info = os.fstat(fd)
+            if final:
+                require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
+                        and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1
+                        and info.st_size <= PRIVATE_MAX_BYTES)
+            else:
+                require(info.st_uid in (0, os.getuid()) and not info.st_mode & 0o022)
+        config = decode(os.read(fd, PRIVATE_MAX_BYTES + 1))
+        require(set(config) in (PRODUCTION_CONFIG_KEYS, PRODUCTION_CONFIG_KEYS | {"withdrawn_value"}))
+        require(isinstance(config["resource_alias"], str)
+                and re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", config["resource_alias"]))
+        for key in ("base_token", "table_id"):
+            require(isinstance(config[key], str) and re.fullmatch(r"[A-Za-z0-9_-]{1,160}", config[key]))
+        validate_fields(config)
+        require(isinstance(config["app_id"], str) and re.fullmatch(r"[A-Za-z0-9_-]{1,160}", config["app_id"]))
+        for key, minimum, maximum in (("app_secret", 16, 512), ("foundation_host_token", 32, 256)):
+            value = config[key]
+            require(isinstance(value, str) and minimum <= len(value) <= maximum
+                    and value.isascii() and all(33 <= ord(char) <= 126 for char in value))
+        require(config["app_secret"] != config["foundation_host_token"])
+        return config
+    except Exception:
+        raise ValueError("application_readback_unavailable") from None
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+class ProductionApplicationClient:
+    def __init__(self, config):
+        self.config = config
+
+    def __repr__(self):
+        return "<ApplicationClient production>"
+
+    def _request(self, method, path, *, body=None, token=None):
+        headers = {"Accept": "application/json"}
+        if token is not None:
+            headers["Authorization"] = "Bearer " + token
+        if body is not None:
+            headers["Content-Type"] = "application/json"
+        connection = http.client.HTTPSConnection(
+            FEISHU_HOST, 443, timeout=10, context=ssl.create_default_context())
+        try:
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            raw = response.read(MAX_BYTES + 1)
+            require(response.status == 200 and len(raw) <= MAX_BYTES)
+            return decode(raw)
+        except Exception:
+            raise ValueError("application_readback_unavailable") from None
+        finally:
+            connection.close()
+
+    def read(self, record, *, include_fields=False):
+        try:
+            record_ref(record)
+            body = json.dumps({"app_id": self.config["app_id"],
+                               "app_secret": self.config["app_secret"]}, separators=(",", ":")).encode()
+            require(len(body) <= 2048)
+            issued = self._request("POST", "/open-apis/auth/v3/tenant_access_token/internal", body=body)
+            token = issued.get("tenant_access_token")
+            require(type(issued.get("code")) is int and issued["code"] == 0
+                    and isinstance(token, str) and 16 <= len(token) <= 512
+                    and token.isascii() and all(33 <= ord(char) <= 126 for char in token))
+            source = self._request("GET", record_path(self.config, record), token=token)
+            return projection(source, record, self.config, include_fields=include_fields)
+        except Exception:
+            raise ValueError("application_readback_unavailable") from None
+
+
+def application_mode():
+    local = [os.environ.get(key) == "1" for key in
+             ("QINTOPIA_APPLICATION_LOCAL_ENABLE", "QINTOPIA_FOUNDATION_LOCAL_ENABLE")]
+    production = [os.environ.get(key) == "1" for key in
+                  ("QINTOPIA_APPLICATION_PRODUCTION_ENABLE", "QINTOPIA_FOUNDATION_PRODUCTION_ENABLE")]
+    if any(local) and any(production):
+        return "disabled"
+    if all(local):
+        return "local"
+    if all(production):
+        return "production"
+    return "disabled"
+
+
+def production_transport(config):
+    path = Path(os.environ.get("QINTOPIA_FOUNDATION_SOCKET", ""))
+    require(path.is_absolute() and not path.is_symlink())
+    info = path.stat()
+    require(stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid())
+    token = config["foundation_host_token"]
+
+    def transport(request):
+        raw = json.dumps({**request, "token": token}, ensure_ascii=False, allow_nan=False).encode() + b"\n"
+        require(len(raw) <= 256 * 1024)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(10)
+            connection.connect(str(path))
+            connection.sendall(raw)
+            received = bytearray()
+            while not received.endswith(b"\n"):
+                chunk = connection.recv(min(4096, 256 * 1024 + 1 - len(received)))
+                require(chunk and len(received) + len(chunk) <= 256 * 1024)
+                received.extend(chunk)
+        return decode(received)
+
+    return transport
 
 
 def candidate_fields(values):
@@ -179,33 +330,46 @@ def synchronize(record, client, host_call, *, project_candidates=None):
 
 
 def readback_one(resource_alias, record):
-    require(os.environ.get("QINTOPIA_APPLICATION_LOCAL_ENABLE") == "1")
-    config = decode(Path(os.environ["QINTOPIA_APPLICATION_LOCAL_CONFIG"]).read_bytes())
-    require(config.get("resource_alias") == resource_alias)
-    client = LocalApplicationClient(config, os.environ["QINTOPIA_APPLICATION_LOCAL_API_TOKEN"],
-                                    enabled=True)
-    spec = importlib.util.spec_from_file_location("qintopia_application_plugin",
-                                                  Path(__file__).with_name("__init__.py"))
-    plugin = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(plugin)
-    require(plugin.enabled())
+    mode = application_mode()
+    if mode == "local":
+        config = decode(Path(os.environ["QINTOPIA_APPLICATION_LOCAL_CONFIG"]).read_bytes())
+        client = LocalApplicationClient(config, os.environ["QINTOPIA_APPLICATION_LOCAL_API_TOKEN"],
+                                        enabled=True)
+        spec = importlib.util.spec_from_file_location("qintopia_application_plugin",
+                                                      Path(__file__).with_name("__init__.py"))
+        plugin = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(plugin)
+        require(plugin.enabled())
+
+        def transport(request):
+            return plugin.transport(request, host=True)
+    elif mode == "production":
+        config_path = os.environ["QINTOPIA_APPLICATION_PRODUCTION_CONFIG"]
+        production.require(private_paths=(config_path,))
+        config = load_production_config(config_path)
+        client = ProductionApplicationClient(config)
+        transport = production_transport(config)
+    else:
+        require(False)
+    require(config.get("resource_alias") == resource_alias
+            and os.environ.get("QINTOPIA_APPLICATION_RESOURCE_ALIAS") == resource_alias)
 
     def host_call(arguments):
-        response = plugin.transport({"operation": "person_foundation_ingress", "schema_version": 1,
+        response = transport({"operation": "person_foundation_ingress", "schema_version": 1,
             "agent": "anan", "tool": "pms_application_intake", "arguments": {
                 **arguments, "resource_alias": resource_alias},
             "trusted_context": {"gateway_id": os.environ["QINTOPIA_FOUNDATION_GATEWAY_ID"],
-                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}}, host=True)
+                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}})
         require(response.get("ok") is True)
         return response["result"]
 
     def project_candidates(application, fields):
-        response = plugin.transport({"operation": "person_foundation_ingress", "schema_version": 1,
+        response = transport({"operation": "person_foundation_ingress", "schema_version": 1,
             "agent": "anan", "tool": "welcome_source_projection",
             "arguments": {"binding": os.environ["QINTOPIA_APPLICATION_BINDING"],
                           "application": application, "fields": fields},
             "trusted_context": {"gateway_id": os.environ["QINTOPIA_FOUNDATION_GATEWAY_ID"],
-                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}}, host=True)
+                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}})
         require(response.get("ok") is True)
         return response["result"]
 

@@ -187,7 +187,51 @@ class ScriptActionBridgeTest(unittest.TestCase):
     def application_mode(self):
         self.cfg["application_intake"] = {"local_only": True,
             "resource_alias": "resident-application", "record_path": ["record_id"]}
-        return patch.dict(os.environ, {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "1"})
+        return patch.dict(os.environ, {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "1",
+            "QINTOPIA_FOUNDATION_LOCAL_ENABLE": "1",
+            "QINTOPIA_APPLICATION_PRODUCTION_ENABLE": "0",
+            "QINTOPIA_FOUNDATION_PRODUCTION_ENABLE": "0",
+            "QINTOPIA_APPLICATION_RESOURCE_ALIAS": "resident-application"})
+
+    def production_application_mode(self):
+        self.cfg["application_intake"] = {"production_only": True,
+            "resource_alias": "resident-application", "record_path": ["record_id"]}
+        return patch.dict(os.environ, {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "0",
+            "QINTOPIA_FOUNDATION_LOCAL_ENABLE": "0",
+            "QINTOPIA_APPLICATION_PRODUCTION_ENABLE": "1",
+            "QINTOPIA_FOUNDATION_PRODUCTION_ENABLE": "1",
+            "QINTOPIA_APPLICATION_RESOURCE_ALIAS": "resident-application",
+            "QINTOPIA_APPLICATION_PRODUCTION_CONFIG": "/etc/qintopia/anan-application.json"})
+
+    def test_production_application_config_is_exclusive_and_bound(self):
+        with self.production_application_mode():
+            self.assertIs(self.bridge.application_config(self.cfg), self.cfg["application_intake"])
+            for changed in ({"QINTOPIA_FOUNDATION_PRODUCTION_ENABLE": "0"},
+                            {"QINTOPIA_APPLICATION_LOCAL_ENABLE": "1"},
+                            {"QINTOPIA_APPLICATION_RESOURCE_ALIAS": "other"},
+                            {"QINTOPIA_APPLICATION_PRODUCTION_CONFIG": "/tmp/private.json"}):
+                with patch.dict(os.environ, changed):
+                    with self.assertRaises(self.bridge.BridgeError):
+                        self.bridge.application_config(self.cfg)
+            for extra in ({"local_only": True}, {"production_only": False}):
+                self.cfg["application_intake"].update(extra)
+                with self.assertRaises(self.bridge.BridgeError):
+                    self.bridge.application_config(self.cfg)
+                self.cfg["application_intake"].pop(next(iter(extra)))
+
+    def test_production_wake_reuses_same_queue_and_never_runs_legacy_action(self):
+        self.bridge.enqueue(self.conn, self.envelope(), now=1000)
+        with self.production_application_mode():
+            self.bridge.enqueue(self.conn, self.envelope(), now=1000, cfg=self.cfg)
+            with patch.object(self.bridge, "application_readback", side_effect=ValueError("private-source")):
+                self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1000))
+            self.assertEqual(self.conn.execute("SELECT requested_version,completed_version,last_error_code FROM application_wakes").fetchone(),
+                             (1, 0, "readback_pending"))
+            with patch.object(self.bridge, "application_readback", return_value={"status": "duplicate"}) as read:
+                self.assertTrue(self.bridge.run_one(self.conn, self.cfg, now=1030))
+                read.assert_called_once_with("resident-application", "recABCDEFGH")
+            self.assertEqual(self.conn.execute("SELECT requested_version,completed_version FROM application_wakes").fetchone(), (1, 1))
+            self.assertEqual(self.conn.execute("SELECT status,attempts FROM jobs").fetchone(), ("queued", 0))
 
     def test_application_mode_is_explicit_and_does_not_execute_legacy_jobs(self):
         self.bridge.enqueue(self.conn, self.envelope(), now=1000)

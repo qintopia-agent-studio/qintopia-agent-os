@@ -1,4 +1,4 @@
-//! Shared person/Agent control plane. F1 exposes only an isolated synthetic UI.
+//! Shared person/Agent control plane with separate local and live entry points.
 mod application_ingress;
 pub mod auth_server;
 mod business_ingress;
@@ -38,6 +38,8 @@ mod ontology_ui_tests;
 mod tests;
 
 use anyhow::{ensure, Result};
+use serde::Deserialize;
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use url::Url;
@@ -66,6 +68,134 @@ async fn connect_local(input: &str) -> Result<PgPool> {
         .connect(input)
         .await
         .map_err(|_| anyhow::anyhow!("local_database_unavailable"))
+}
+
+async fn production_store() -> Result<Store> {
+    ensure!(
+        std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() == Ok("1"),
+        "production_foundation_disabled"
+    );
+    let tenant = std::env::var("QINTOPIA_FOUNDATION_TENANT")?;
+    let namespace = std::env::var("QINTOPIA_FOUNDATION_IDENTITY_NAMESPACE")?;
+    let database = std::env::var("QINTOPIA_FOUNDATION_DATABASE_URL")?;
+    let url = Url::parse(&database).map_err(|_| anyhow::anyhow!("invalid_foundation_database"))?;
+    ensure!(
+        matches!(url.scheme(), "postgres" | "postgresql")
+            && url.host_str().is_some()
+            && !matches!(url.path(), "" | "/" | "/qintopia_test")
+            && url.fragment().is_none(),
+        "production_database_required"
+    );
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database)
+        .await
+        .map_err(|_| anyhow::anyhow!("foundation_database_unavailable"))?;
+    Store::live(pool, &tenant, &namespace).await
+}
+
+pub async fn run_production_broker() -> Result<()> {
+    let store = production_store().await?;
+    foundation_server::broker_live(store).await
+}
+
+pub async fn run_production_payment_events(port: u16) -> Result<()> {
+    let store = production_store().await?;
+    business_ingress::run_production_events(store, port).await
+}
+
+#[derive(Deserialize)]
+#[serde(
+    tag = "area",
+    content = "command",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+enum ProductionConfiguration {
+    Collaboration(model::Command),
+    Business(store::business_config::BusinessConfigCommand),
+    PersonDraft(ProductionPersonDraft),
+    Identity(store::IdentityUiCommand),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProductionPersonDraft {
+    source_link: uuid::Uuid,
+    command: model::Command,
+}
+
+pub async fn run_production_configuration(apply: bool, status: bool) -> Result<()> {
+    use std::io::Read;
+
+    let store = production_store().await?;
+    let gateway = std::env::var("QINTOPIA_FOUNDATION_ADMIN_GATEWAY_ID")?;
+    let sender = std::env::var("QINTOPIA_FOUNDATION_ADMIN_SENDER_ID")?;
+    let actor = store.production_admin_actor(&gateway, &sender).await?;
+    if status {
+        ensure!(!apply, "invalid_configuration_request");
+        let state = store.state(&actor).await?;
+        let business = store.business_configuration_state(&actor).await?;
+        let identity = store.production_identities(&actor).await?;
+        println!(
+            "{}",
+            serde_json::to_string(&json!({
+                "version":state["version"],
+                "people":state["people"],
+                "scopes":state["scopes"],
+                "roles":state["roles"],
+                "duties":state["duties"],
+                "relations":state["relations"],
+                "grants":state["grants"],
+                "business":business,
+                "identity":identity
+            }))?
+        );
+        return Ok(());
+    }
+    let mut raw = Vec::new();
+    std::io::stdin().take(64 * 1024 + 1).read_to_end(&mut raw)?;
+    ensure!(
+        !raw.is_empty() && raw.len() <= 64 * 1024,
+        "invalid_configuration_request"
+    );
+    let value = crate::strict_json::parse_strict_bounded_slice(
+        &raw,
+        crate::strict_json::registry_json_limits(64 * 1024),
+    )?;
+    let command: ProductionConfiguration = serde_json::from_value(value)?;
+    let result = match command {
+        ProductionConfiguration::Collaboration(command) => {
+            ensure!(
+                matches!(
+                    &command.change,
+                    model::Change::Assign(_)
+                        | model::Change::ConfigureWork { .. }
+                        | model::Change::RevokeGrant { .. }
+                        | model::Change::EndAppointment { .. }
+                        | model::Change::EndCollaboration { .. }
+                        | model::Change::SetGroups { .. }
+                ),
+                "production_configuration_change_denied"
+            );
+            store.command(&actor, &command, apply).await?
+        }
+        ProductionConfiguration::Business(command) => {
+            store.business_configure(&actor, &command, apply).await?
+        }
+        ProductionConfiguration::PersonDraft(request) => {
+            store
+                .production_person_draft(&actor, request.source_link, &request.command, apply)
+                .await?
+        }
+        ProductionConfiguration::Identity(command) => {
+            store
+                .production_identity_change(&actor, &command, apply)
+                .await?
+        }
+    };
+    println!("{}", serde_json::to_string(&result)?);
+    Ok(())
 }
 
 #[cfg(test)]

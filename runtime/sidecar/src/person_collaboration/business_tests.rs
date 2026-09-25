@@ -9,6 +9,8 @@ use uuid::Uuid;
 
 #[path = "application_tests.rs"]
 mod application_tests;
+#[path = "business_live_tests.rs"]
+mod business_live_tests;
 #[path = "business_manual_tests.rs"]
 mod business_manual_tests;
 #[path = "business_reminder_tests.rs"]

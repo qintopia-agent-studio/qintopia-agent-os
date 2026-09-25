@@ -109,6 +109,38 @@ mod xiaoman_real_activity_evidence;
 use anyhow::Result;
 use clap::Parser;
 use config::{Cli, Command};
+use std::future::Future;
+
+async fn run_with_optional_task<C, B, F>(
+    enabled: bool,
+    consumer: C,
+    task: F,
+    exited_code: &'static str,
+    unavailable_code: &'static str,
+) -> Result<()>
+where
+    C: Future<Output = Result<()>>,
+    B: Future<Output = Result<()>> + Send + 'static,
+    F: FnOnce() -> B + Send + 'static,
+{
+    let task = enabled.then(|| {
+        tokio::spawn(async move {
+            match task().await {
+                Ok(()) => tracing::error!(code = exited_code, "optional service stopped"),
+                Err(error) => tracing::error!(
+                    code = unavailable_code,
+                    reason = %person_collaboration::foundation_error_code(&error),
+                    "optional service unavailable"
+                ),
+            }
+        })
+    });
+    let result = consumer.await;
+    if let Some(task) = task {
+        task.abort();
+    }
+    result
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -125,13 +157,44 @@ async fn main() -> Result<()> {
         Command::RunCollaborationLocal { port, init_fixture } => {
             person_collaboration::local_server::run(port, init_fixture).await
         }
+        Command::RunFoundationProduction => person_collaboration::run_production_broker().await,
+        Command::ConfigureFoundationProduction { apply, status } => {
+            person_collaboration::run_production_configuration(apply, status)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(person_collaboration::foundation_error_code(&error))
+                })
+        }
         Command::BootstrapCollaborationAccount { person, username } => {
             person_collaboration::auth_server::bootstrap(person, &username).await
         }
         Command::RunWelcomeLocal { port } => resident_welcome::local_server::run(port).await,
         Command::Check => health::check(&cli).await,
         Command::Migrate => migrate(&cli).await,
-        Command::Run => consumer::run(cli).await,
+        Command::Run => {
+            let broker_enabled =
+                std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() == Ok("1");
+            let events_enabled =
+                std::env::var("QINTOPIA_PMS_EVENTS_PRODUCTION_ENABLE").as_deref() == Ok("1");
+            run_with_optional_task(
+                broker_enabled,
+                run_with_optional_task(
+                    events_enabled,
+                    consumer::run(cli),
+                    || async {
+                        let port =
+                            std::env::var("QINTOPIA_PMS_EVENTS_PRODUCTION_PORT")?.parse::<u16>()?;
+                        person_collaboration::run_production_payment_events(port).await
+                    },
+                    "pms_payment_listener_exited",
+                    "pms_payment_listener_unavailable",
+                ),
+                person_collaboration::run_production_broker,
+                "foundation_broker_exited",
+                "foundation_broker_unavailable",
+            )
+            .await
+        }
         Command::RunEmbeddingWorker { check_only } => embedding_worker::run(cli, check_only).await,
         Command::RunIdentityWorker {
             check_only,
@@ -1001,4 +1064,51 @@ async fn migrate(cli: &Cli) -> Result<()> {
     db::run_migrations(&pool).await?;
     println!("migrations applied");
     Ok(())
+}
+
+#[cfg(test)]
+mod foundation_broker_lifecycle_tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+
+    #[tokio::test]
+    async fn disabled_broker_does_not_start_or_change_consumer_result() -> Result<()> {
+        let started = Arc::new(AtomicBool::new(false));
+        let observed = Arc::clone(&started);
+        run_with_optional_task(
+            false,
+            async { Ok(()) },
+            move || async move {
+                observed.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+            "foundation_broker_exited",
+            "foundation_broker_unavailable",
+        )
+        .await?;
+        assert!(!started.load(Ordering::SeqCst));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn broker_failure_leaves_consumer_running() -> Result<()> {
+        let (ready, wait) = tokio::sync::oneshot::channel::<()>();
+        run_with_optional_task(
+            true,
+            async move {
+                wait.await?;
+                Ok(())
+            },
+            move || async move {
+                let _ = ready.send(());
+                anyhow::bail!("live_gateway_unavailable")
+            },
+            "foundation_broker_exited",
+            "foundation_broker_unavailable",
+        )
+        .await
+    }
 }
