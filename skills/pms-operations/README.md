@@ -279,3 +279,11 @@ READ 凭据和独立 Foundation HOST_TOKEN 运行； `synchronize(work_item)` �
 `from_environment(trusted_context)`
 只接受宿主捕获的上下文，固定网关必须一致；要求现有 PMS/Foundation 本地开关及
 `QINTOPIA_APPLICATION_LOCAL_ENABLE=1`。凭据沿原 GREENPMS 配置，仍仅显式 loopback 模拟。号码和读取 token 只经私有宿主请求，不返回模型、群、日志或普通工具；停用调用入口即可停止回读，保留服务端原事项与恢复状态。
+
+## 生产传输准备（尚未启用）
+
+受控执行层可显式构造 `Client(..., production_enabled=True)`，只接受固定
+`https://pms.qintopia.cn`
+目标，以系统信任库验证 TLS 证书和主机名。生产模式与本地模拟模式互斥，不接受任意 origin、明文 HTTP、代理或重定向。
+
+此入口不注册新工具，不改变插件的本地开关，不把生产凭据注入 Hermes。凭据隔离、可信宿主认证、安装接线与用户触发验收完成前不得生产启用。HTTP 只用于本地模拟，生产传输测试使用模拟连接，不调用真实 PMS。

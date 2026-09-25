@@ -1,7 +1,7 @@
 """Bounded Green PMS transport. Persistence and human authority belong to the broker.
 
 No retry, redirects, proxy inheritance, arbitrary endpoint, or response-body logging.
-Only explicitly enabled loopback synthetic services are supported in this local slice.
+Production transport is fixed-origin HTTPS; plugin activation remains separately gated.
 """
 from __future__ import annotations
 
@@ -9,8 +9,10 @@ import http.client
 import ipaddress
 import json
 import re
+import ssl
 from urllib.parse import urlencode, urlsplit, quote
 
+PRODUCTION_ORIGIN = "https://pms.qintopia.cn"
 MAX_BYTES = 256 * 1024
 COMMANDS = frozenset({"CREATE_ORDER", "RECORD_COLLECTION", "CHECK_IN", "CHECK_OUT",
     "RESCHEDULE_STAY", "EXTEND_STAY", "SHORTEN_STAY", "MOVE_UNIT", "CANCEL_ORDER"})
@@ -73,23 +75,28 @@ def redact(value):
 
 
 class Client:
-    def __init__(self, base_url: str, token: str, *, local_enabled: bool = False, timeout=30):
+    def __init__(self, base_url: str, token: str, *, local_enabled: bool = False, production_enabled: bool = False, timeout=30):
+        require(type(local_enabled) is bool and type(production_enabled) is bool
+                and local_enabled != production_enabled, "pms_configuration_required")
         try:
             url = urlsplit(base_url)
             valid = (local_enabled and url.scheme == "http" and url.hostname is not None
                      and ipaddress.ip_address(url.hostname).is_loopback and url.port is not None
                      and not url.username and not url.password and not url.query and not url.fragment
                      and url.path in {"", "/"})
+            if production_enabled:
+                valid = base_url in {PRODUCTION_ORIGIN, PRODUCTION_ORIGIN + "/"}
         except (ValueError, TypeError):
             valid = False
-        require(valid, "pms_local_configuration_required")
+        require(valid, "pms_configuration_required")
         require(isinstance(token, str) and 16 <= len(token) <= 512
                 and all(33 <= ord(c) <= 126 for c in token), "pms_credential_unavailable")
         require(isinstance(timeout, (int, float)) and 0 < timeout <= 30)
         self._host, self._port, self._token, self._timeout = url.hostname, url.port, token, timeout
+        self._production = production_enabled
 
     def __repr__(self):
-        return "<PmsClient local-only>"
+        return "<PmsClient production>" if self._production else "<PmsClient local-only>"
 
     def _request(self, method, path, *, payload=None, key=None, correlation=None):
         require(path.startswith("/api/v1/") and "\r" not in path and "\n" not in path)
@@ -105,7 +112,9 @@ class Client:
             require(len(body) <= MAX_BYTES)
             headers.update({"Content-Type": "application/json", "Idempotency-Key": key,
                             "X-Correlation-ID": correlation})
-        connection = http.client.HTTPConnection(self._host, self._port, timeout=self._timeout)
+        connection = (http.client.HTTPSConnection(
+            self._host, self._port, timeout=self._timeout, context=ssl.create_default_context())
+            if self._production else http.client.HTTPConnection(self._host, self._port, timeout=self._timeout))
         attempted = False
         try:
             attempted = True

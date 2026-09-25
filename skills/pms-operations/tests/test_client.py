@@ -2,6 +2,8 @@ import importlib.util
 import json
 from pathlib import Path
 import socket
+import ssl
+from unittest.mock import patch
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -150,6 +152,62 @@ class ClientTests(unittest.TestCase):
 
     def test_disclosure_strips_nested_private_fields(self):
         self.assertEqual(pms.redact({"order": {"phone": "private", "identity_card_number": "private", "id": "order_1"}, "tokenSecret": TOKEN}), {"order": {"id": "order_1"}})
+
+
+class ProductionTransportTests(unittest.TestCase):
+    def test_only_explicit_fixed_https_origin_is_accepted(self):
+        for origin in ["http://pms.qintopia.cn", "https://example.invalid", "https://pms.qintopia.cn.evil.invalid",
+                       "https://pms.qintopia.cn:444", "https://pms.qintopia.cn/api", "https://u:p@pms.qintopia.cn",
+                       "https://pms.qintopia.cn?x=1", "https://pms.qintopia.cn#x", "http://127.0.0.1:4100"]:
+            with self.subTest(origin=origin), self.assertRaises(pms.PmsError):
+                pms.Client(origin, TOKEN, production_enabled=True)
+        for flags in [{}, {"local_enabled": True}, {"local_enabled": True, "production_enabled": True},
+                      {"production_enabled": "1"}]:
+            with self.subTest(flags=flags), self.assertRaises(pms.PmsError):
+                pms.Client(pms.PRODUCTION_ORIGIN, TOKEN, **flags)
+        self.assertNotIn(TOKEN, repr(pms.Client(pms.PRODUCTION_ORIGIN, TOKEN, production_enabled=True)))
+
+    def test_production_get_returns_response_without_real_network(self):
+        with patch.object(pms.http.client, "HTTPSConnection") as https:
+            response = https.return_value.getresponse.return_value
+            response.status = 200
+            response.read.return_value = b'{"ok":true}'
+            client = pms.Client(pms.PRODUCTION_ORIGIN, TOKEN, production_enabled=True)
+            self.assertEqual(client._request("GET", "/api/v1/me"), {"ok": True})
+            self.assertEqual(https.return_value.request.call_args.args, ("GET", "/api/v1/me"))
+            self.assertEqual(https.return_value.request.call_count, 1)
+
+    def test_verified_tls_and_redirect_does_not_follow_or_fall_back(self):
+        with patch.object(pms.http.client, "HTTPSConnection") as https, patch.object(pms.http.client, "HTTPConnection") as http:
+            response = https.return_value.getresponse.return_value
+            response.status = 302
+            response.read.return_value = b'{}'
+            client = pms.Client(pms.PRODUCTION_ORIGIN, TOKEN, production_enabled=True)
+            with self.assertRaises(pms.PmsError):
+                client._request("GET", "/api/v1/me")
+            context = https.call_args.kwargs["context"]
+            self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+            self.assertTrue(context.check_hostname)
+            self.assertEqual(https.call_args.args, ("pms.qintopia.cn", None))
+            self.assertEqual(https.call_args.kwargs["timeout"], 30)
+            self.assertEqual(https.return_value.request.call_count, 1)
+            https.return_value.close.assert_called_once()
+            http.assert_not_called()
+
+    def test_certificate_error_fails_closed_and_post_timeout_keeps_unknown(self):
+        for method, error in [("GET", ssl.SSLCertVerificationError("private detail")),
+                              ("POST", TimeoutError("private detail"))]:
+            with self.subTest(method=method), patch.object(pms.http.client, "HTTPSConnection") as https:
+                https.return_value.request.side_effect = error
+                client = pms.Client(pms.PRODUCTION_ORIGIN, TOKEN, production_enabled=True)
+                with self.assertRaises(pms.PmsError) as raised:
+                    client._request(method, "/api/v1/command-previews/preview_1/confirm",
+                                    payload={}, key="original_key", correlation="correlation_1")
+                self.assertEqual(raised.exception.outcome_unknown, method == "POST")
+                self.assertNotIn("private detail", str(raised.exception))
+                self.assertNotIn(TOKEN, str(raised.exception))
+                self.assertEqual(https.return_value.request.call_count, 1)
+                https.return_value.close.assert_called_once()
 
 
 if __name__ == "__main__": unittest.main()
