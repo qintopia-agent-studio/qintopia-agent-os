@@ -79,10 +79,6 @@ def systemctl(*args):
 
 
 def main():
-    def interrupted(*_):
-        raise Deferred("restart_interrupted")
-    signal.signal(signal.SIGTERM, interrupted)
-    signal.signal(signal.SIGINT, interrupted)
     expected_python = str(CORE / "venv/bin/python")
     # Do not silently import a drifting core or act on a differently owned unit.
     if sys.executable != expected_python:
@@ -120,6 +116,10 @@ def main():
 
 
 if __name__ == "__main__":
+    def interrupted(*_):
+        raise Deferred("restart_interrupted")
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         main()
     except Exception:
