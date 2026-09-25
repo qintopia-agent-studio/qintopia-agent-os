@@ -8,6 +8,7 @@ allowed_targets:
   - hermes-silaoshi
   - hermes-huabaosi
   - hermes-guanerye
+  - hermes-anan
   - hermes-core
 
 independent_targets:
@@ -77,6 +78,13 @@ production_adjacent_paths:
   - "pnpm-workspace.yaml"
 
 rules:
+  - target: hermes-anan
+    reason: Existing Anan gateway and dormant PMS capability release ownership.
+    paths:
+      - "agents/anan/**"
+      - "skills/pms-operations/**"
+      - "skills/person-foundation/**"
+
   - target: hermes-erhua
     reason:
       Erhua profile, QiWe consultation, context MCP, weather, and Erhua plugin behavior.

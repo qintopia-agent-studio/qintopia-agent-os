@@ -205,6 +205,9 @@ for target in "${targets[@]}"; do
     hermes-huabaosi)
       restart_hermes_service hermes-huabaosi hermes-gateway-huabaosi.service
       ;;
+    hermes-anan)
+      restart_hermes_service hermes-anan hermes-gateway-anan.service
+      ;;
     hermes-guanerye)
       restart_hermes_service hermes-guanerye hermes-gateway-guanerye.service
       ;;

@@ -271,6 +271,9 @@ const sourceFiles = [
   "skills/feishu-base/plugin.yaml",
 ];
 const sourceDirs = [
+  "agents/anan",
+  "skills/pms-operations",
+  "skills/person-foundation",
   "agents/xiaoman/profile-bundle",
   "fixtures/qiwe/event-mappings",
   "fixtures/qiwe/system",

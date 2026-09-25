@@ -39,11 +39,9 @@ pnpm check:pr:auto
 
 ## 身份、确认与发布边界
 
-正式 `anan`
-身份按[已获批的 A 专项方案](../../docs/plans/active/anan-pms-contract-proposal.md)登记为
-`runtime.management: unmanaged`。已修改获批的 schema、两检查器及既有验证入口；没有修改 resolver、restart
-rules、安装 payload 或生产 Profile registry。未受管表示 Agent
-OS 尚未接管发布，不表示用户服务器不存在岸岸 Profile。新增业务包仍受发布路径门禁约束。
+`anan`
+已按[生产接入方案](../../docs/plans/active/anan-production-rollout.md)登记为 managed，现有服务的重启目标为
+`hermes-anan`。发布包含本包源码；不自动安装插件或打开本地开关访问真实 PMS。核心入口、凭据隔离、生产接线与真实验收保持独立门禁。未知包路径仍被拒绝。
 
 自然确认如“确认预订”“确认登记这笔收款”“确认已到店，办理入住”，只绑定同人、同会话内唯一且未过期的当前对应方案。
 

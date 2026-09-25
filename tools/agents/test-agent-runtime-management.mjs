@@ -39,7 +39,10 @@ try {
     fs.readFileSync(path.join(root, "registry/schemas/package-manifest.schema.json"))
   );
   const validate = new Ajv2020({ strict: false }).compile(schema);
-  const base = readYaml("agents/anan/agent.yaml");
+  const base = {
+    ...readYaml("agents/anan/agent.yaml"),
+    runtime: { management: "unmanaged" },
+  };
   assert.equal(validate(base), true, JSON.stringify(validate.errors));
   for (const runtime of [
     { management: "future" },

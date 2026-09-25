@@ -12,10 +12,12 @@ source:
 production_boundary:
   external_sends: false
   database_writes: true
-  runtime_profile: false
+  runtime_profile: true
   secrets: true
 runtime:
-  management: unmanaged
+  management: managed
+  restart_target: hermes-anan
+  systemd_user_service: hermes-gateway-anan.service
 validation:
   commands:
     - pnpm agents:check

@@ -3,7 +3,7 @@
 岸岸是配合小客服和刘珊操作 Green
 PMS 的客房协作智能体。负责人已于 2026-09-24 确认在 Hermes
 Runtime 建立岸岸；该实际 Profile 的模型、工具、权限与发布归属尚待后续联调核对。本目录保留能力文档，欢迎测试替身位于
-`fixtures/agents/anan/`，本批不接管真实 Profile 部署。
+`fixtures/agents/anan/`，本批接管现有服务的发布归属，不覆盖真实 Profile 或启用 PMS 生产能力。
 
 ## 职责与接入
 
@@ -24,9 +24,10 @@ Runtime 建立岸岸；该实际 Profile 的模型、工具、权限与发布归
 
 ## 生产边界与恢复
 
-`hermes-anan` / `hermes-gateway-anan.service`
-是测试模板中的预留名称，不据此推断真实服务配置。本地替身已移至
-`fixtures/agents/anan/`，不登记为生产 Agent，也不进入部署白名单或重启规则。本批只用模拟资料与测试上传/发送适配器，完整订房、支付、真实 LLM 和真实渠道验收另行记录。
+2026-09-25 只读核实 `hermes-gateway-anan.service` 已运行。`hermes-anan`
+现在登记为该现有服务的受管重启目标；发布包含能力源码，但不自动安装插件、注入凭据或覆盖 Profile。现有 Hermes
+v2026.9.21 核心入口保持不变，不加入会改写核心入口的七 Profile 升级清单。本地替身仍位于
+`fixtures/agents/anan/`，不部署为真实服务。本批只用模拟资料与测试上传/发送适配器，完整订房、支付、真实 LLM 和真实渠道验收另行记录。
 
 本地停用入口或停止消费者可撤回接入；保留持久任务及审计，未知外部结果不得自动重试。未来启用生产须独立评审不可变发布、Profile 与凭据绑定、渠道权限、回滚及真实效果。
 
@@ -34,7 +35,7 @@ Runtime 建立岸岸；该实际 Profile 的模型、工具、权限与发布归
 [开发交接](../../docs/plans/active/anan-pms-development-handoff.md)：先实现岸岸专用 Skill/插件工具与 PMS 客户端，完成直接对话办理；再接 PMS 收款及飞书申请，复用同一办理流程。
 
 事件和新共享中转服务不是对话能力的前置。正式能力包位于
-[skills/pms-operations](../../skills/pms-operations/README.md)，Agent 身份以 unmanaged 登记。已通过模拟身份、官方 Hermes
+[skills/pms-operations](../../skills/pms-operations/README.md)，Agent 身份以 managed 登记，PMS 生产能力仍关闭。已通过模拟身份、官方 Hermes
 ContextVar、真实本地 broker 和未修改 Green
 PMS 的联合办理子集；完整 T01—T14 的实际状态见本批验收报告。真实 Bot、Livecool 模型、生产 PMS 和欢迎送达尚未验收，不把 Gateway 连通或本地运行器当作已上线。
 
@@ -48,3 +49,5 @@ pnpm deploy:runner:check
 python3 -m unittest discover -s fixtures/agents/anan/tests -v
 pnpm test:business -- --feature person-foundation
 ```
+
+发布接管、生产验收与回退步骤见[上线计划](../../docs/plans/active/anan-production-rollout.md)。

@@ -156,6 +156,7 @@ allowed_targets = {
     "hermes-silaoshi",
     "hermes-huabaosi",
     "hermes-guanerye",
+    "hermes-anan",
     "hermes-core",
 }
 sha = re.compile(r"^[0-9a-f]{40}$")
