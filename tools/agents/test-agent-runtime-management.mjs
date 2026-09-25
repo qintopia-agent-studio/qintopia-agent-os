@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import Ajv2020 from "ajv/dist/2020.js";
 import YAML from "yaml";
 
 const root = process.cwd();
-const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "agent-management-"));
+// Nested deploy fixtures validate every parent: Linux /tmp (1777) is not a
+// valid repository parent. Use the ignored local workspace without weakening checks.
+const fixtureParent = path.join(root, ".local-workspace");
+fs.mkdirSync(fixtureParent, { recursive: true, mode: 0o755 });
+const fixture = fs.mkdtempSync(path.join(fixtureParent, "agent-management-"));
 // Existing release-boundary fixtures require a 0755 repository root.
 fs.chmodSync(fixture, 0o755);
 const readYaml = (p) => YAML.parse(fs.readFileSync(path.join(fixture, p), "utf8"));
