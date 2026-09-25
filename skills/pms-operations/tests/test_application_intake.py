@@ -236,13 +236,26 @@ class ApplicationReadbackTests(unittest.TestCase):
             self.assertEqual(adapter.application_mode(), "disabled")
 
     def test_private_config_rejects_unsafe_path_mode_link_and_schema(self):
-        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {}, clear=True):
+        # Production validates every ancestor. Linux /tmp is deliberately
+        # world-writable, so use the existing private-credential fixture pattern.
+        workspace = Path(__file__).resolve().parents[3] / ".local-workspace"
+        workspace.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="application-config-", dir=workspace) as directory, \
+                patch.dict(os.environ, {}, clear=True):
             root = Path(directory).resolve()
             path = root / "application.json"
             path.write_text(json.dumps(self.production_config()))
             path.chmod(0o600)
             self.assertEqual(adapter.load_production_config(path, trusted_root=root)["resource_alias"],
                              "resident-application")
+            unsafe = root / "writable-parent"
+            unsafe.mkdir()
+            unsafe.chmod(0o777)
+            unsafe_file = unsafe / "application.json"
+            unsafe_file.write_text(json.dumps(self.production_config()))
+            unsafe_file.chmod(0o600)
+            with self.assertRaises(ValueError):
+                adapter.load_production_config(unsafe_file, trusted_root=root)
             with self.assertRaises(ValueError):
                 adapter.load_production_config(path, trusted_root=root / "different")
             alias = root / "alias.json"
