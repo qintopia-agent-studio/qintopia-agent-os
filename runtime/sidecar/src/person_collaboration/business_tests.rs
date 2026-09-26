@@ -143,7 +143,11 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         .fetch_one(&f.store.pool)
         .await
     };
-    assert!(f.store.gateway_actor(&gateway, sender).await.is_err());
+    assert!(f
+        .store
+        .business_gateway_actor(&gateway, sender)
+        .await
+        .is_err());
     let registered = f
         .store
         .business_configure(
@@ -160,7 +164,8 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         )
         .await?;
     let account: Uuid = serde_json::from_value(registered["change"]["account"].clone())?;
-    let actor = f.store.gateway_actor(&gateway, sender).await?;
+    assert!(f.store.gateway_actor(&gateway, sender).await.is_err());
+    let actor = f.store.business_gateway_actor(&gateway, sender).await?;
     assert!(f
         .store
         .gateway_actor(&gateway, "模拟共用账号")
@@ -345,7 +350,11 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
             true,
         )
         .await?;
-    assert!(f.store.gateway_actor(&gateway, sender).await.is_err());
+    assert!(f
+        .store
+        .business_gateway_actor(&gateway, sender)
+        .await
+        .is_err());
     assert!(f
         .store
         .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
@@ -365,7 +374,7 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
             true,
         )
         .await?;
-    let fresh = f.store.gateway_actor(&gateway, sender).await?;
+    let fresh = f.store.business_gateway_actor(&gateway, sender).await?;
     assert!(f
         .store
         .business_authorize(&fresh, f.binding, "pms.command.RECORD_COLLECTION")

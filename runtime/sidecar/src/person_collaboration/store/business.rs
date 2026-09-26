@@ -412,7 +412,9 @@ impl Store {
             );
         }
         ensure!(turn.text.len() <= 16000, "invalid_arguments");
-        let actor = self.gateway_actor(gateway, &turn.sender_id).await?;
+        let actor = self
+            .business_gateway_actor(gateway, &turn.sender_id)
+            .await?;
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, &actor).await?;
         let subject:String=sqlx::query_scalar("SELECT subject_type FROM qintopia_identity.person_identity_gateways WHERE tenant_key=$1 AND gateway_key=$2 AND active")
