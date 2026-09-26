@@ -1061,6 +1061,8 @@ pub(crate) async fn assert_operations_review(
     let store = Store {
         pool: pool.clone(),
         tenant: tenant.into(),
+        identity_namespace: tenant.into(),
+        mode: super::StoreMode::Synthetic,
     };
     let saved: Value = row.get("snapshot");
     let ids = artifact_ids(&saved)?;

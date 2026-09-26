@@ -32,6 +32,12 @@ struct WorkRequest {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct PaymentWorkitemReadRequest {
+    binding: Uuid,
+    work_item: Uuid,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RuleDecisionRequest {
     scope: Uuid,
     work_item_id: Uuid,
@@ -997,27 +1003,251 @@ pub(super) fn parse_broker_request(raw: &[u8]) -> Result<ToolRequest> {
 }
 
 pub(super) async fn broker(store: Store) -> Result<()> {
+    ensure!(!store.is_live(), "synthetic_broker_required");
+    serve_broker(store).await
+}
+
+pub(super) async fn broker_live(store: Store) -> Result<()> {
+    ensure!(store.is_live(), "live_broker_required");
+    ensure!(
+        std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() == Ok("1")
+            && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1")
+            && std::env::var("QINTOPIA_FOUNDATION_PROFILE").as_deref() == Ok("anan"),
+        "live_broker_configuration_required"
+    );
+    let token = std::env::var("QINTOPIA_FOUNDATION_TOKEN")?;
+    let host_token = std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")?;
+    ensure!(
+        (32..=256).contains(&token.len())
+            && (32..=256).contains(&host_token.len())
+            && token != host_token,
+        "private_foundation_tokens_required"
+    );
+    let gateway = std::env::var("QINTOPIA_FOUNDATION_GATEWAY_ID")?;
+    store.preflight_business_gateway(&gateway).await?;
+    serve_broker(store).await
+}
+
+struct FoundationSocketGuard {
+    path: std::path::PathBuf,
+    owner: u32,
+    inode: Option<u64>,
+    _lock: std::fs::File,
+}
+
+impl FoundationSocketGuard {
+    async fn prepare(path: &std::path::Path) -> Result<Self> {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
+        ensure!(path.is_absolute(), "private_foundation_socket_required");
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("invalid_socket_path"))?;
+        let parent_meta = std::fs::symlink_metadata(parent)
+            .map_err(|_| anyhow::anyhow!("private_foundation_socket_directory_required"))?;
+        ensure!(
+            parent_meta.is_dir()
+                && !parent_meta.file_type().is_symlink()
+                && parent_meta.permissions().mode() & 0o022 == 0,
+            "private_foundation_socket_directory_required"
+        );
+        let lock_path = path.with_extension("lock");
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .open(&lock_path)
+            .map_err(|_| anyhow::anyhow!("private_foundation_socket_lock_required"))?;
+        let lock_meta = std::fs::symlink_metadata(&lock_path)?;
+        ensure!(
+            lock_meta.is_file()
+                && !lock_meta.file_type().is_symlink()
+                && lock_meta.uid() == parent_meta.uid()
+                && lock_meta.permissions().mode() & 0o077 == 0,
+            "private_foundation_socket_lock_required"
+        );
+        lock.try_lock()
+            .map_err(|_| anyhow::anyhow!("foundation_broker_active"))?;
+        match std::fs::symlink_metadata(path) {
+            Ok(meta) => {
+                ensure!(
+                    meta.file_type().is_socket() && meta.uid() == lock_meta.uid(),
+                    "private_foundation_socket_conflict"
+                );
+                match tokio::net::UnixStream::connect(path).await {
+                    Ok(_) => anyhow::bail!("foundation_broker_active"),
+                    Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
+                        let current = std::fs::symlink_metadata(path)?;
+                        ensure!(
+                            current.file_type().is_socket()
+                                && current.uid() == lock_meta.uid()
+                                && current.ino() == meta.ino(),
+                            "private_foundation_socket_conflict"
+                        );
+                        std::fs::remove_file(path)?;
+                    }
+                    Err(_) => anyhow::bail!("private_foundation_socket_conflict"),
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => anyhow::bail!("private_foundation_socket_conflict"),
+        }
+        Ok(Self {
+            path: path.to_owned(),
+            owner: lock_meta.uid(),
+            inode: None,
+            _lock: lock,
+        })
+    }
+
+    fn bound(&mut self) -> Result<()> {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        let meta = std::fs::symlink_metadata(&self.path)?;
+        ensure!(
+            meta.file_type().is_socket() && meta.uid() == self.owner,
+            "private_foundation_socket_conflict"
+        );
+        self.inode = Some(meta.ino());
+        Ok(())
+    }
+}
+
+impl Drop for FoundationSocketGuard {
+    fn drop(&mut self) {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        if let (Some(inode), Ok(meta)) = (self.inode, std::fs::symlink_metadata(&self.path)) {
+            if meta.file_type().is_socket() && meta.uid() == self.owner && meta.ino() == inode {
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn foundation_socket_restarts_without_replacing_active_listener() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("foundation.sock");
+    let mut first = FoundationSocketGuard::prepare(&path).await?;
+    let listener = tokio::net::UnixListener::bind(&path)?;
+    first.bound()?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    assert!(tokio::net::UnixStream::connect(&path).await.is_ok());
+    assert!(FoundationSocketGuard::prepare(&path).await.is_err());
+    assert!(tokio::net::UnixStream::connect(&path).await.is_ok());
+    drop(listener);
+    drop(first);
+    assert!(!path.exists());
+
+    let stale = tokio::net::UnixListener::bind(&path)?;
+    drop(stale);
+    assert!(path.exists());
+    let mut recovered = FoundationSocketGuard::prepare(&path).await?;
+    assert!(!path.exists());
+    let listener = tokio::net::UnixListener::bind(&path)?;
+    recovered.bound()?;
+    drop(listener);
+    drop(recovered);
+    assert!(!path.exists());
+
+    std::fs::write(&path, b"not a socket")?;
+    assert!(FoundationSocketGuard::prepare(&path).await.is_err());
+    assert!(path.is_file());
+    Ok(())
+}
+
+#[cfg(test)]
+#[tokio::test]
+#[ignore = "isolated process environment required"]
+async fn foundation_broker_task_abort_removes_socket_and_restarts() -> Result<()> {
+    if std::env::var("QINTOPIA_SOCKET_TEST_CHILD").as_deref() != Ok("1") {
+        let output = tokio::task::spawn_blocking(|| {
+            std::process::Command::new(std::env::current_exe()?)
+                .arg("person_collaboration::foundation_server::foundation_broker_task_abort_removes_socket_and_restarts")
+                .args(["--exact", "--ignored", "--nocapture"])
+                .env("QINTOPIA_SOCKET_TEST_CHILD", "1")
+                .output()
+        })
+        .await??;
+        ensure!(
+            output.status.success(),
+            "foundation_socket_child_failed: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Ok(());
+    }
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("foundation.sock");
+    std::env::set_var("QINTOPIA_FOUNDATION_SOCKET", &path);
+    std::env::set_var(
+        "QINTOPIA_FOUNDATION_TOKEN",
+        "simulated-model-token-32-characters",
+    );
+    std::env::set_var("QINTOPIA_FOUNDATION_GATEWAY_ID", "simulated-gateway");
+    let make_store = || -> Result<Store> {
+        Ok(Store {
+            pool: sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy("postgres://simulated@127.0.0.1:1/qintopia_test")?,
+            tenant: "synthetic-collaboration-socket-lifecycle".into(),
+            identity_namespace: "synthetic-collaboration-socket-lifecycle".into(),
+            mode: super::store::StoreMode::Synthetic,
+        })
+    };
+    let first = tokio::spawn(broker(make_store()?));
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if tokio::net::UnixStream::connect(&path).await.is_ok() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), broker(make_store()?))
+            .await?
+            .is_err()
+    );
+    assert!(tokio::net::UnixStream::connect(&path).await.is_ok());
+    first.abort();
+    let _ = first.await;
+    assert!(!path.exists());
+    let second = tokio::spawn(broker(make_store()?));
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            if tokio::net::UnixStream::connect(&path).await.is_ok() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    second.abort();
+    let _ = second.await;
+    assert!(!path.exists());
+    Ok(())
+}
+
+async fn serve_broker(store: Store) -> Result<()> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    let socket = std::env::var("QINTOPIA_FOUNDATION_SOCKET")?;
+    let socket = std::env::var("QINTOPIA_FOUNDATION_SOCKET")
+        .map_err(|_| anyhow::anyhow!("private_foundation_socket_required"))?;
     let token = zeroize::Zeroizing::new(std::env::var("QINTOPIA_FOUNDATION_TOKEN")?);
     let gateway = std::env::var("QINTOPIA_FOUNDATION_GATEWAY_ID")?;
     let profile = std::env::var("QINTOPIA_FOUNDATION_PROFILE").unwrap_or_else(|_| "erhua".into());
     let path = std::path::Path::new(&socket);
-    ensure!(
-        path.is_absolute() && !path.exists() && token.len() >= 32,
-        "private_foundation_socket_required"
-    );
-    let parent = path
-        .parent()
-        .ok_or_else(|| anyhow::anyhow!("invalid_socket_path"))?;
-    let meta = std::fs::symlink_metadata(parent)?;
-    ensure!(
-        meta.is_dir() && !meta.file_type().is_symlink() && meta.mode() & 0o022 == 0,
-        "private_foundation_socket_directory_required"
-    );
-    let listener = tokio::net::UnixListener::bind(path)?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+    ensure!(token.len() >= 32, "private_foundation_socket_required");
+    let mut socket = FoundationSocketGuard::prepare(path).await?;
+    let listener = tokio::net::UnixListener::bind(path)
+        .map_err(|_| anyhow::anyhow!("private_foundation_socket_unavailable"))?;
+    socket.bound()?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|_| anyhow::anyhow!("private_foundation_socket_permissions_failed"))?;
+    tracing::info!(code = "foundation_broker_ready", "PMS broker listening");
     let owner = std::fs::metadata(path)?.uid();
     loop {
         let (stream, _) = listener.accept().await?;
@@ -1091,12 +1321,87 @@ pub(super) async fn broker(store: Store) -> Result<()> {
     }
 }
 
+fn production_tool_allowed(operation: &str, tool: &str) -> bool {
+    match operation {
+        "person_foundation_ingress" => matches!(
+            tool,
+            "pms_capture"
+                | "pms_payment_feed"
+                | "pms_workitem_read"
+                | "pms_application_intake"
+                | "welcome_source_projection"
+                | "welcome_stay_contacts"
+        ),
+        "person_foundation_tool" => matches!(
+            tool,
+            "pms_context"
+                | "pms_authorize"
+                | "pms_event_context"
+                | "pms_start"
+                | "pms_status"
+                | "pms_claim_preview"
+                | "pms_reject_preview"
+                | "pms_save_preview"
+                | "pms_claim_execute"
+                | "pms_save_result"
+                | "pms_recovery"
+                | "pms_pause"
+                | "pms_resume"
+                | "pms_cancel"
+                | "pms_handoff_context"
+                | "pms_handoff"
+                | "pms_manual_context"
+                | "pms_save_manual"
+                | "pms_link_context"
+                | "pms_link"
+        ),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn live_broker_allows_payment_followup_without_exposing_host_ingress() {
+    for tool in ["pms_event_context", "pms_link_context", "pms_link"] {
+        assert!(production_tool_allowed("person_foundation_tool", tool));
+        assert!(!production_tool_allowed("person_foundation_ingress", tool));
+    }
+    assert!(production_tool_allowed(
+        "person_foundation_ingress",
+        "pms_capture"
+    ));
+    assert!(production_tool_allowed(
+        "person_foundation_ingress",
+        "pms_payment_feed"
+    ));
+    assert!(!production_tool_allowed(
+        "person_foundation_tool",
+        "pms_payment_feed"
+    ));
+    assert!(production_tool_allowed(
+        "person_foundation_ingress",
+        "pms_workitem_read"
+    ));
+    assert!(!production_tool_allowed(
+        "person_foundation_tool",
+        "pms_workitem_read"
+    ));
+}
+
 pub(super) async fn broker_invoke(
     store: &Store,
     gateway: &str,
     profile: &str,
     r: ToolRequest,
 ) -> Result<Value> {
+    if store.is_live() {
+        ensure!(
+            profile == "anan"
+                && r.agent == "anan"
+                && production_tool_allowed(&r.operation, &r.tool),
+            "agent_tool_denied"
+        );
+    }
     ensure!(
         matches!(
             r.operation.as_str(),
@@ -1118,6 +1423,29 @@ pub(super) async fn broker_invoke(
         .await;
     }
     if r.operation == "person_foundation_ingress" {
+        if r.tool == "pms_workitem_read" {
+            ensure!(
+                store.is_live()
+                    && profile == "anan"
+                    && t.gateway_id == gateway
+                    && t.platform == "host"
+                    && t.chat_type.is_empty()
+                    && t.chat_id.is_empty()
+                    && t.sender_id.is_empty()
+                    && t.message_id.is_empty()
+                    && std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() == Ok("1")
+                    && std::env::var("QINTOPIA_PMS_EVENTS_PRODUCTION_ENABLE").as_deref() == Ok("1")
+                    && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1")
+                    && std::env::var("QINTOPIA_PMS_EVENTS_LOCAL_ENABLE").as_deref() != Ok("1"),
+                "agent_tool_denied"
+            );
+            let request: PaymentWorkitemReadRequest = serde_json::from_value(r.arguments)?;
+            let binding = Uuid::parse_str(&std::env::var("QINTOPIA_PMS_EVENT_BINDING")?)?;
+            ensure!(request.binding == binding, "business_binding_changed");
+            return store
+                .business_payment_workitem_read(gateway, binding, request.work_item)
+                .await;
+        }
         if r.tool == "welcome_group_host" {
             ensure!(
                 profile == "anan" && t.gateway_id == gateway,
@@ -1131,14 +1459,17 @@ pub(super) async fn broker_invoke(
             ensure!(
                 profile == "anan"
                     && t.gateway_id == gateway
-                    && std::env::var("QINTOPIA_APPLICATION_LOCAL_ENABLE").as_deref() == Ok("1"),
+                    && (t.platform == "host" || (t.platform == "wecom" && t.chat_type == "group")),
                 "agent_tool_denied"
             );
+            let binding = Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?;
+            let alias = std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?;
+            super::application_ingress::authorize_host(store, gateway, binding, &alias).await?;
             return store
                 .welcome_stay_contacts(
                     gateway,
-                    Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?,
-                    &std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?,
+                    binding,
+                    &alias,
                     &t,
                     serde_json::from_value(r.arguments)?,
                 )
@@ -1146,17 +1477,18 @@ pub(super) async fn broker_invoke(
         }
         if r.tool == "welcome_source_projection" {
             ensure!(
-                profile == "anan" && t.gateway_id == gateway,
+                profile == "anan" && t.gateway_id == gateway && t.platform == "host",
                 "agent_tool_denied"
             );
             let request: super::store::welcome_candidates::SourceProjection =
                 serde_json::from_value(r.arguments)?;
-            ensure!(
-                std::env::var("QINTOPIA_APPLICATION_LOCAL_ENABLE").as_deref() == Ok("1")
-                    && Uuid::parse_str(&std::env::var("QINTOPIA_APPLICATION_BINDING")?)?
-                        == request.binding,
-                "application_source_mismatch"
-            );
+            super::application_ingress::authorize_host(
+                store,
+                gateway,
+                request.binding,
+                &std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?,
+            )
+            .await?;
             let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.business_property_bindings b ON b.tenant_key=g.tenant_key AND b.scope_id=g.scope_id JOIN qintopia_agent_os.application_intake_states i ON i.tenant_key=b.tenant_key AND i.binding_id=b.id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND b.active AND b.id=$3 AND i.application_id=$4 AND i.resource_alias=$5)")
                 .bind(&store.tenant).bind(gateway).bind(request.binding).bind(request.application).bind(std::env::var("QINTOPIA_APPLICATION_RESOURCE_ALIAS")?).fetch_one(&store.pool).await?;
             ensure!(bound, "application_source_mismatch");
@@ -1164,10 +1496,10 @@ pub(super) async fn broker_invoke(
         }
         if r.tool == "pms_application_intake" {
             ensure!(
-                profile == "anan" && t.gateway_id == gateway,
+                profile == "anan" && t.gateway_id == gateway && t.platform == "host",
                 "agent_tool_denied"
             );
-            return super::application_ingress::invoke(store, r.arguments).await;
+            return super::application_ingress::invoke(store, gateway, r.arguments).await;
         }
         if r.tool == "pms_reminder" {
             ensure!(
@@ -1178,13 +1510,18 @@ pub(super) async fn broker_invoke(
         }
         if r.tool == "pms_payment_feed" {
             ensure!(
-                profile == "anan" && t.gateway_id == gateway,
+                profile == "anan" && t.gateway_id == gateway && t.platform == "host",
                 "agent_tool_denied"
             );
             return super::business_ingress::feed(store, &r.arguments).await;
         }
         ensure!(
-            profile == "anan" && r.tool == "pms_capture" && t.gateway_id == gateway,
+            profile == "anan"
+                && r.tool == "pms_capture"
+                && t.gateway_id == gateway
+                && (!store.is_live()
+                    || (t.platform == "wecom"
+                        && matches!(t.chat_type.as_str(), "direct" | "group"))),
             "agent_tool_denied"
         );
         only_keys(&r.arguments, &["text"])?;
@@ -1199,6 +1536,16 @@ pub(super) async fn broker_invoke(
                 .ok_or_else(|| anyhow::anyhow!("invalid_arguments"))?
                 .into(),
         };
+        if store.is_live() {
+            let observed = store.observe_wecom_host_turn(gateway, &turn).await?;
+            if observed["status"] == "pending" {
+                return Ok(json!({"status":"identity_pending","person_confirmed":false}));
+            }
+            ensure!(
+                observed["status"] == "confirmed",
+                "gateway_identity_unconfirmed"
+            );
+        }
         return store.business_capture_turn(gateway, &turn).await;
     }
     if r.tool.starts_with("pms_") {
@@ -1210,6 +1557,12 @@ pub(super) async fn broker_invoke(
             "agent_tool_denied"
         );
         let actor = store.gateway_actor(gateway, &t.sender_id).await?;
+        if r.tool == "pms_context" {
+            only_keys(&r.arguments, &[])?;
+            return store
+                .business_context(&actor, &t.platform, &t.chat_type, &t.chat_id)
+                .await;
+        }
         return store
             .business_invoke(&actor, &t.message_id, &t.chat_id, &r.tool, &r.arguments)
             .await;

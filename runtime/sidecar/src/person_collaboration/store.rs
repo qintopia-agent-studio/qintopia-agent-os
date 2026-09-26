@@ -10,6 +10,7 @@ mod application_welcome;
 pub(crate) mod applications;
 mod auth;
 pub(crate) mod business;
+pub(crate) mod business_config;
 pub(crate) mod business_events;
 mod business_manual;
 pub(crate) mod business_reminders;
@@ -37,6 +38,23 @@ pub use memory::{MemoryChange, MemoryCommand, MemoryEvidence, ReplyCondition, Re
 pub struct Store {
     pub(super) pool: PgPool,
     pub(super) tenant: String,
+    pub(super) identity_namespace: String,
+    pub(super) mode: StoreMode,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum StoreMode {
+    Synthetic,
+    Live,
+}
+
+impl StoreMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Synthetic => "synthetic",
+            Self::Live => "live",
+        }
+    }
 }
 
 // Constructed only from the trusted local session, never deserialized from browser input.
@@ -59,7 +77,82 @@ impl Store {
         Ok(Self {
             pool: super::connect_local(database).await?,
             tenant: tenant.into(),
+            identity_namespace: tenant.into(),
+            mode: StoreMode::Synthetic,
         })
+    }
+
+    /// The caller supplies a trusted pool and fixed deployment identity, never request fields.
+    pub async fn live(pool: PgPool, tenant: &str, identity_namespace: &str) -> Result<Self> {
+        ensure!(
+            !tenant.is_empty()
+                && tenant.len() <= 100
+                && !tenant.starts_with("synthetic-collaboration-")
+                && !identity_namespace.is_empty()
+                && identity_namespace.len() <= 200,
+            "live_tenant_configuration_required"
+        );
+        let store = Self {
+            pool,
+            tenant: tenant.into(),
+            identity_namespace: identity_namespace.into(),
+            mode: StoreMode::Live,
+        };
+        store.begin().await?;
+        Ok(store)
+    }
+
+    pub(super) fn is_live(&self) -> bool {
+        self.mode == StoreMode::Live
+    }
+
+    pub(crate) async fn preflight_business_gateway(&self, gateway: &str) -> Result<()> {
+        ensure!(
+            self.is_live() && !gateway.is_empty(),
+            "live_gateway_required"
+        );
+        let (mut tx, _, _) = self.begin().await?;
+        let row=sqlx::query("SELECT g.namespace,g.subject_type,g.account_kind,g.scope_id FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND s.status='active'")
+            .bind(&self.tenant).bind(gateway).fetch_optional(&mut *tx).await?
+            .ok_or_else(||anyhow::anyhow!("live_gateway_unavailable"))?;
+        let namespace: String = row.get("namespace");
+        ensure!(
+            row.get::<String, _>("subject_type") == "wecom_internal"
+                && row.get::<String, _>("account_kind") == "employee",
+            "live_gateway_identity_type_required"
+        );
+        let conflict: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g WHERE g.tenant_key<>$1 AND g.namespace=$2 AND g.subject_type='wecom_internal' AND g.active) OR EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants t WHERE t.tenant_key<>$1 AND t.identity_namespace=$2)")
+            .bind(&self.tenant).bind(&namespace).fetch_one(&mut *tx).await?;
+        ensure!(!conflict, "live_gateway_namespace_conflict");
+        let scope: Uuid = row.get("scope_id");
+        let configured: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_property_bindings b WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.active) AND EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.tenant_id=$1 AND c.platform='wecom' AND c.status='active')")
+            .bind(&self.tenant).bind(scope).fetch_one(&mut *tx).await?;
+        ensure!(configured, "live_gateway_scope_unconfigured");
+        Ok(())
+    }
+
+    pub(crate) async fn production_admin_actor(
+        &self,
+        gateway: &str,
+        sender: &str,
+    ) -> Result<Actor> {
+        ensure!(self.is_live(), "live_tenant_required");
+        let actor = self.gateway_actor(gateway, sender).await?;
+        let (mut tx, _, now) = self.begin().await?;
+        self.verify(&mut tx, &actor).await?;
+        let employee: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.subject_type='wecom_internal' AND g.account_kind='employee' AND g.active)")
+            .bind(&self.tenant).bind(gateway).fetch_one(&mut *tx).await?;
+        let policy = self.policy(&mut tx, now).await?;
+        ensure!(
+            employee
+                && policy.grants.iter().any(|grant| {
+                    grant.person == actor.person
+                        && grant.action == "manage"
+                        && policy.effective(grant)
+                }),
+            "management_denied"
+        );
+        Ok(actor)
     }
 
     async fn begin(&self) -> Result<(Transaction<'_, Postgres>, i64, DateTime<Utc>)> {
@@ -68,10 +161,10 @@ impl Store {
             .bind(&self.tenant).fetch_optional(&mut *tx).await?
             .ok_or_else(||anyhow::anyhow!("tenant_not_initialized"))?;
         ensure!(
-            row.get::<String, _>("mode") == "synthetic"
+            row.get::<String, _>("mode") == self.mode.as_str()
                 && row.get::<bool, _>("initialized")
-                && row.get::<String, _>("identity_namespace") == self.tenant,
-            "synthetic_tenant_required"
+                && row.get::<String, _>("identity_namespace") == self.identity_namespace,
+            "tenant_mode_or_namespace_changed"
         );
         // After the lock wait: transaction-start now() can predate an expiring grant.
         let now = sqlx::query_scalar("SELECT clock_timestamp()")
@@ -83,14 +176,14 @@ impl Store {
     pub async fn actor(&self, link: Uuid) -> Result<Actor> {
         let (mut tx, _, _) = self.begin().await?;
         let row=sqlx::query("SELECT l.person_id,l.version FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' FOR SHARE OF l,p")
-            .bind(link).bind(&self.tenant).fetch_optional(&mut *tx).await?
+            .bind(link).bind(&self.identity_namespace).fetch_optional(&mut *tx).await?
             .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
         Ok(Actor {
             link,
             session_hash: None,
             person: row.get("person_id"),
             identity_version: row.get("version"),
-            identity_namespace: self.tenant.clone(),
+            identity_namespace: self.identity_namespace.clone(),
             gateway: None,
             tenant: self.tenant.clone(),
         })
@@ -104,7 +197,7 @@ impl Store {
             ensure!(active, "gateway_changed_or_revoked");
         } else {
             ensure!(
-                actor.identity_namespace == self.tenant,
+                actor.identity_namespace == self.identity_namespace,
                 "identity_namespace_unbound"
             );
         }
@@ -140,7 +233,7 @@ impl Store {
         tx: &mut Transaction<'_, Postgres>,
         now: DateTime<Utc>,
     ) -> Result<Policy> {
-        foundation::load_policy(tx, &self.tenant, now).await
+        foundation::load_policy(tx, &self.tenant, &self.identity_namespace, now).await
     }
 
     // Persisted permissions must remain editable/revocable before their term starts.
@@ -241,8 +334,52 @@ impl Store {
     }
 
     pub async fn command(&self, actor: &Actor, command: &Command, apply: bool) -> Result<Value> {
+        self.command_with_person_source(actor, command, apply, None)
+            .await
+    }
+
+    pub(crate) async fn production_person_draft(
+        &self,
+        actor: &Actor,
+        source_link: Uuid,
+        command: &Command,
+        apply: bool,
+    ) -> Result<Value> {
+        ensure!(
+            self.is_live() && actor.gateway.is_some() && actor.session_hash.is_none(),
+            "authentication_required"
+        );
+        ensure!(
+            command.operation_id == source_link,
+            "person_draft_source_operation_required"
+        );
+        ensure!(
+            matches!(&command.change,
+            Change::SaveLedger { id: None, object, reference: None, owner: None, draft: true, scope: Some(_), .. }
+                if object == "person"),
+            "production_configuration_change_denied"
+        );
+        self.command_with_person_source(actor, command, apply, Some(source_link))
+            .await
+    }
+
+    async fn command_with_person_source(
+        &self,
+        actor: &Actor,
+        command: &Command,
+        apply: bool,
+        source_link: Option<Uuid>,
+    ) -> Result<Value> {
         let (mut tx, version, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
+        if self.is_live() {
+            match &command.change {
+                Change::Assign(assignment) | Change::ConfigureWork { assignment, .. } => {
+                    ensure!(assignment.person != actor.person, "self_grant_denied");
+                }
+                _ => {}
+            }
+        }
         let hash = digest(&serde_json::to_vec(command)?);
         if let Some(row)=sqlx::query("SELECT request_hash,result,actor_identity_id FROM qintopia_agent_os.collaboration_commands WHERE id=$1 AND tenant_key=$2")
             .bind(command.operation_id).bind(&self.tenant).fetch_optional(&mut *tx).await? {
@@ -259,6 +396,36 @@ impl Store {
             "configuration_version_conflict"
         );
         let policy = self.policy(&mut tx, now).await?;
+        if let Some(source_link) = source_link {
+            let row=sqlx::query("SELECT l.status,l.person_id,l.source_ref,g.gateway_key,g.scope_id,g.account_kind,g.subject_type,r.payload AS observation FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type AND g.tenant_key=$1 AND g.active JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id AND s.status='active' JOIN qintopia_messages.raw_events r ON r.id::text=l.adapter_metadata->>'first_observation_ref' AND r.source='wecom-host' AND r.subject='qintopia.wecom.host.observed' AND NOT r.ingress_auth_verified WHERE l.id=$2 AND l.namespace=$3 FOR SHARE OF l,g,s,r")
+                .bind(&self.tenant).bind(source_link).bind(&self.identity_namespace).fetch_optional(&mut *tx).await?
+                .ok_or_else(||anyhow::anyhow!("trusted_source_observation_required"))?;
+            let scope: Uuid = row.get("scope_id");
+            let expected_scope = match &command.change {
+                Change::SaveLedger {
+                    scope: Some(scope), ..
+                } => *scope,
+                _ => unreachable!(),
+            };
+            let observation: Value = row.get("observation");
+            ensure!(
+                row.get::<String, _>("status") == "pending"
+                    && row.get::<Option<Uuid>, _>("person_id").is_none()
+                    && row.get::<String, _>("account_kind") == "employee"
+                    && row.get::<String, _>("subject_type") == "wecom_internal"
+                    && scope == expected_scope
+                    && observation["tenant_key"] == json!(self.tenant)
+                    && observation["gateway_key"] == json!(row.get::<String, _>("gateway_key"))
+                    && observation["namespace"] == json!(self.identity_namespace)
+                    && observation["scope_ref"] == json!(scope)
+                    && observation["sender_hash"]
+                        == json!(digest(row.get::<String, _>("source_ref").as_bytes()))
+                    && policy
+                        .manager(actor.person, scope, "default", "organization", "identity")
+                        .is_some(),
+                "identity_management_denied"
+            );
+        }
         let before = self.audit_snapshot(&mut tx, &command.change, None).await?;
         let mut result = self
             .change(&mut tx, actor, &policy, &command.change, now)
@@ -296,7 +463,7 @@ impl Store {
                 vec!["只变更所选工作安排；没有启用真实消息或上传。"],
             _ => vec!["保存配置与历史记录；登记或恢复对象不自动增加业务权限。"],
         });
-        let result = json!({"persisted":apply,"version":if apply{version+1}else{version},"change":result,"replayed":false,"runtime_connected":false});
+        let result = json!({"persisted":apply,"version":if apply{version+1}else{version},"change":result,"replayed":false,"runtime_connected":self.is_live()});
         if !apply {
             tx.rollback().await?;
             return Ok(result);
@@ -305,7 +472,9 @@ impl Store {
             .bind(&self.tenant).execute(&mut *tx).await?;
         sqlx::query("INSERT INTO qintopia_agent_os.collaboration_commands(id,tenant_key,actor_identity_id,actor_person_id,request_hash,expected_version,result) VALUES($1,$2,$3,$4,$5,$6,$7)")
             .bind(command.operation_id).bind(&self.tenant).bind(actor.link).bind(actor.person).bind(&hash).bind(version).bind(&result).execute(&mut *tx).await?;
-        sqlx::query("INSERT INTO qintopia_agent_os.tool_invocation_audit(profile_id,tool_name,purpose,input_summary,output_summary,risk_level) VALUES('collaboration-local','collaboration.configure','synthetic_configuration',$1,$2,'high')")
+        sqlx::query("INSERT INTO qintopia_agent_os.tool_invocation_audit(profile_id,tool_name,purpose,input_summary,output_summary,risk_level) VALUES($1,'collaboration.configure',$2,$3,$4,'high')")
+            .bind(if self.is_live() { "anan" } else { "collaboration-local" })
+            .bind(if self.is_live() { "live_configuration" } else { "synthetic_configuration" })
             .bind(json!({"command_ref":command.operation_id,"actor_ref":actor.person,"identity_version":actor.identity_version,"request_hash":hash}))
             .bind(json!({"version":version+1,"persisted":true,"external_effects":false})).execute(&mut *tx).await?;
         tx.commit().await?;
@@ -588,7 +757,7 @@ impl Store {
             }
         }
         let known:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE p.id=$1 AND p.status='active' AND l.namespace=$2 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL)")
-            .bind(a.person).bind(&self.tenant).fetch_one(&mut **tx).await?;
+            .bind(a.person).bind(&self.identity_namespace).fetch_one(&mut **tx).await?;
         ensure!(known, "verified_person_required");
         let available: Option<Vec<String>>=sqlx::query_scalar("SELECT available_actions FROM qintopia_agent_os.collaboration_roles WHERE id=$1 AND tenant_key=$2 AND status='active'")
             .bind(a.role).bind(&self.tenant).fetch_optional(&mut **tx).await?;
@@ -746,7 +915,7 @@ impl Store {
             ensure!(!visible.is_empty(), "management_denied");
         }
         let people:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(x ORDER BY x->>'label'),'[]') FROM (SELECT DISTINCT jsonb_build_object('id',p.id,'label',coalesce(p.preferred_name,p.display_name),'display_name',p.display_name) x FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE l.namespace=$1 AND l.status='confirmed' AND p.status='active') s")
-            .bind(&self.tenant).fetch_one(&mut *tx).await?;
+            .bind(&self.identity_namespace).fetch_one(&mut *tx).await?;
         let scopes:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'parent',parent_scope_id,'label',label,'kind',kind,'version',version,'status',status) ORDER BY label),'[]') FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2)")
             .bind(&self.tenant).bind(&visible).fetch_one(&mut *tx).await?;
         let mut roles:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'label',label,'description',description,'available_actions',available_actions,'status',status,'version',version,'duty_ids',ARRAY(SELECT duty_id FROM qintopia_agent_os.collaboration_role_duties rd WHERE rd.tenant_key=r.tenant_key AND rd.role_id=r.id ORDER BY duty_id)) ORDER BY label,id),'[]') FROM qintopia_agent_os.collaboration_roles r WHERE tenant_key=$1")
@@ -895,7 +1064,7 @@ impl Store {
             .filter(|key| !personal || grants.iter().any(|g| g["action"] == **key))
             .collect();
         Ok(
-            json!({"version":version,"actor_person":actor.person,"delegated_reviews":delegated_reviews,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":"synthetic","runtime_connected":false}),
+            json!({"version":version,"actor_person":actor.person,"delegated_reviews":delegated_reviews,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":!self.is_live() && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":self.mode.as_str(),"runtime_connected":self.is_live()}),
         )
     }
 

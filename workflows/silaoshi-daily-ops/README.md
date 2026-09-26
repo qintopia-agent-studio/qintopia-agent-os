@@ -36,18 +36,24 @@ socket is mode 0600.
 
 ## Production Boundary
 
-### Local application readback branch
+### Application readback branch
 
 The optional `application_intake` config uses the existing signed Unix ingress. It
-requires `local_only: true`, a fixed `resource_alias`, an exact `record_path` array and
-`QINTOPIA_APPLICATION_LOCAL_ENABLE=1`. Without this config the old route is unchanged.
-With it, callbacks durably wake readback by resource/record; a repeated record-only
-delivery is not swallowed by the legacy jobs table. The branch never runs the legacy
-action or notification command, including previously queued legacy jobs.
+accepts either `local_only: true` with both Application/Foundation LOCAL gates, or
+`production_only: true` with both PRODUCTION gates and no LOCAL gate. Both require a
+fixed `resource_alias` matching `QINTOPIA_APPLICATION_RESOURCE_ALIAS` and an exact
+`record_path` array. Production also requires `QINTOPIA_APPLICATION_PRODUCTION_CONFIG`
+under `/etc/qintopia/`; the adapter validates the owner-only file before reading it.
+Without this config the old route is unchanged. With it, callbacks durably wake readback
+by resource/record; a repeated record-only delivery is not swallowed by the legacy jobs
+table. The branch never runs the legacy action or notification command, including
+previously queued legacy jobs.
 
-The fixed `skills/pms-operations/application_intake.py` host adapter reads a local
+The fixed `skills/pms-operations/application_intake.py` host adapter reads an
 allowlisted source and commits through the independently authenticated foundation host
-broker. Failed readback keeps the wake pending with bounded backoff; a newer wake during
+broker. Production uses fixed Feishu HTTPS tenant-token and single-record GET endpoints;
+credentials stay in the private host config and never enter the callback or SQLite.
+Failed readback keeps the wake pending with bounded backoff; a newer wake during
 processing remains pending. Only references and counters enter this queue. Content
 dedupe and revision fencing belong to the shared PostgreSQL service.
 
@@ -58,10 +64,11 @@ do not relabel the committed source as failed. A fresh readback resumes that sam
 source. Ineligible candidates, missing reliable stay links and human review waits are
 business states, not technical retries. No private fields enter this queue.
 
-This branch is local-only, not an installed replacement for the real Feishu Workflow.
-Source callbacks do not authorize booking, payment, identity linking or welcome sends.
-Silaoshi's `application_review` is an operating follow-up, not mandatory order approval.
-Keep queued state when disabling; do not replay it through the old card/send script.
+Production mode is an implementation path, not an installed replacement for the real
+Feishu Workflow or evidence of live acceptance. Source callbacks do not authorize
+booking, payment, identity linking or welcome sends. Silaoshi's `application_review` is
+an operating follow-up, not mandatory order approval. Keep queued state when disabling;
+do not replay it through the old card/send script.
 
 See the
 [source/version design](../../runtime/postgres/docs/data-design/2026-09-24-application-event-intake.md).

@@ -68,15 +68,30 @@ def application_config(cfg: dict[str, Any]) -> dict[str, Any] | None:
     intake = cfg.get("application_intake")
     if intake is None:
         return None
-    if (not isinstance(intake, dict) or intake.get("local_only") is not True
-            or os.environ.get("QINTOPIA_APPLICATION_LOCAL_ENABLE") != "1"
-            or set(intake) != {"local_only", "resource_alias", "record_path"}
+    if not isinstance(intake, dict):
+        raise BridgeError("application intake configuration is invalid")
+    local = intake.get("local_only") is True and set(intake) == {"local_only", "resource_alias", "record_path"}
+    production = (intake.get("production_only") is True
+                  and set(intake) == {"production_only", "resource_alias", "record_path"})
+    local_flags = [os.environ.get(key) == "1" for key in
+                   ("QINTOPIA_APPLICATION_LOCAL_ENABLE", "QINTOPIA_FOUNDATION_LOCAL_ENABLE")]
+    production_flags = [os.environ.get(key) == "1" for key in
+                        ("QINTOPIA_APPLICATION_PRODUCTION_ENABLE", "QINTOPIA_FOUNDATION_PRODUCTION_ENABLE")]
+    config_path = Path(os.environ.get("QINTOPIA_APPLICATION_PRODUCTION_CONFIG", ""))
+    if (not (local ^ production)
+            or local and (not all(local_flags) or any(production_flags))
+            or production and (not all(production_flags) or any(local_flags)
+                               or not config_path.is_absolute()
+                               or not config_path.is_relative_to("/etc/qintopia")
+                               or config_path == Path("/etc/qintopia")
+                               or ".." in config_path.parts)
+            or os.environ.get("QINTOPIA_APPLICATION_RESOURCE_ALIAS") != intake.get("resource_alias")
             or not isinstance(intake.get("resource_alias"), str)
             or not re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", intake["resource_alias"])
             or not isinstance(intake.get("record_path"), list)
             or not 1 <= len(intake["record_path"]) <= 6
             or not all(isinstance(key, str) and 0 < len(key) <= 100 for key in intake["record_path"])):
-        raise BridgeError("local application intake configuration is invalid")
+        raise BridgeError("application intake configuration is invalid")
     return intake
 
 

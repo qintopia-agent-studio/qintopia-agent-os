@@ -9,6 +9,7 @@ import copy
 import importlib.util
 import os
 from pathlib import Path
+import re
 import uuid
 
 
@@ -52,11 +53,11 @@ def project_order(raw, read):
             "version": order["version"], "occupants": occupants}
 
 
-def public_status(result, work_item):
+def public_status(result, work_item, *, local_only):
     require(isinstance(result, dict) and result.get("work_item") == work_item)
     uuid_reference(result.get("application"))
     require(result.get("status") in {"pending", "complete", "incomplete", "awaiting_source_sync", "stale"}
-            and type(result.get("scan_complete")) is bool and result.get("local_only") is True)
+            and type(result.get("scan_complete")) is bool and result.get("local_only") is local_only)
     for key in ("pool_count", "orders_total", "orders_done", "failed_count"):
         require(type(result.get(key)) is int and 0 <= result[key] <= 200)
     return {key: result[key] for key in ("work_item", "application", "status", "pool_count",
@@ -64,10 +65,11 @@ def public_status(result, work_item):
 
 
 class StayContactsHost:
-    def __init__(self, client, broker, *, local_enabled=False):
-        if not local_enabled:
-            raise ValueError("stay_contacts_local_enable_required")
-        self.client, self.broker = client, broker
+    def __init__(self, client, broker, *, local_enabled=False, production_enabled=False):
+        if (type(local_enabled) is not bool or type(production_enabled) is not bool
+                or local_enabled == production_enabled):
+            raise ValueError("stay_contacts_mode_required")
+        self.client, self.broker, self.local_only = client, broker, local_enabled
 
     def refresh_contacts(self, work_item, presentation):
         uuid_reference(presentation)
@@ -81,7 +83,7 @@ class StayContactsHost:
             if presentation is not None:
                 request.update(refresh=True, presentation=uuid_reference(presentation))
             opened = self.broker(request)
-            public_status(opened, work_item)
+            public_status(opened, work_item, local_only=self.local_only)
             reads = opened.get("reads")
             require(isinstance(reads, list) and len(reads) <= 200)
             seen, tokens = set(), set()
@@ -114,22 +116,44 @@ class StayContactsHost:
                     # A lost save acknowledgement is not a failed HTTP read. Never
                     # overwrite it with failed or resend the private payload here.
                     pass
-            return public_status(self.broker({"action": "status", "work_item": work_item}), work_item)
+            return public_status(self.broker({"action": "status", "work_item": work_item}),
+                                 work_item, local_only=self.local_only)
         except Exception:
             raise ValueError("stay_contacts_incomplete") from None
 
 
-def from_environment(trusted_context):
-    """Capture the original authenticated context; caller is a private host only."""
+def load_plugin():
     spec = importlib.util.spec_from_file_location("pms_stay_contacts_plugin", Path(__file__).with_name("__init__.py"))
     plugin = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plugin)
-    if not plugin.enabled() or os.environ.get("QINTOPIA_APPLICATION_LOCAL_ENABLE") != "1":
-        raise ValueError("stay_contacts_local_enable_required")
+    return plugin
+
+
+def from_environment(trusted_context):
+    """Capture the original authenticated context; caller is a private host only."""
+    plugin = load_plugin()
+    mode = plugin.production.mode()
+    application_local = os.environ.get("QINTOPIA_APPLICATION_LOCAL_ENABLE") == "1"
+    application_production = os.environ.get("QINTOPIA_APPLICATION_PRODUCTION_ENABLE") == "1"
+    if (not plugin.enabled() or mode not in {"local", "production"}
+            or application_local == application_production):
+        raise ValueError("stay_contacts_mode_required")
+    if (mode == "local") != application_local:
+        raise ValueError("stay_contacts_mode_required")
     context = copy.deepcopy(trusted_context)
     if not isinstance(context, dict) or context.get("gateway_id") != os.environ.get("QINTOPIA_FOUNDATION_GATEWAY_ID") or not context.get("gateway_id"):
         raise ValueError("stay_contacts_gateway_required")
-    client = plugin.client.Client(os.environ["GREENPMS_BASE_URL"], os.environ["GREENPMS_API_TOKEN"], local_enabled=True)
+    if mode == "production":
+        uuid_reference(os.environ.get("QINTOPIA_APPLICATION_BINDING"))
+        alias = os.environ.get("QINTOPIA_APPLICATION_RESOURCE_ALIAS")
+        if not isinstance(alias, str) or not re.fullmatch(r"[a-z][a-z0-9_-]{0,79}", alias):
+            raise ValueError("stay_contacts_mode_required")
+        plugin.production.require()
+        credentials = plugin.credential_values()
+        client = plugin.client.Client(plugin.client.PRODUCTION_ORIGIN,
+                                      credentials["GREENPMS_API_TOKEN"], production_enabled=True)
+    else:
+        client = plugin.client.Client(os.environ["GREENPMS_BASE_URL"], os.environ["GREENPMS_API_TOKEN"], local_enabled=True)
 
     def broker(arguments):
         response = plugin.transport({"operation": "person_foundation_ingress", "schema_version": 1,
@@ -139,4 +163,5 @@ def from_environment(trusted_context):
             raise ValueError("stay_contacts_broker_rejected")
         return response["result"]
 
-    return StayContactsHost(client, broker, local_enabled=True)
+    return StayContactsHost(client, broker, local_enabled=mode == "local",
+                            production_enabled=mode == "production")

@@ -23,9 +23,50 @@ OS 共同服务拥有可信人员、当次授权、WorkItem、确认、执行键
 ## 本地配置与验证
 
 `GREENPMS_BASE_URL`、`GREENPMS_API_TOKEN`
-是本包绑定名，不是 Hermes 内置配置。本批客户端只允许显式 `QINTOPIA_PMS_LOCAL_ENABLE=1`
-的 loopback
-HTTP 模拟服务。正式 HTTPS/Token 隔离及 Profile 发布待独立评审；不读取用户现有 Profile。
+是本包绑定名，不是 Hermes 内置配置。本地模式要求 PMS/Foundation 的 LOCAL 开关同时为 1，只连接 loopback
+HTTP 模拟服务。
+
+本批候选生产入口要求对应 PRODUCTION 开关同时为 1、拒绝 LOCAL 混用，并在读取 Profile 外私有凭据前检查官方工具隔离配置。固定 HTTPS、受信会话与共享 live
+broker 已有本地接线；完整隔离、生产安装与业务验收尚未完成。
+
+收款补拉和申请回读的独立宿主入口也须先通过同一候选隔离检查，再打开私有文件；申请配置文件须额外纳入实际容器的受保护路径。
+
+当前不提供独立宿主豁免：缺少受管岸岸运行条件时拒绝读取和外联，Bridge 保留原待回读事项。Bridge 的真实宿主安装接线仍待完成，单独打开 PRODUCTION 开关不能替代它。
+
+尤其不能把 terminal
+Docker 的模拟结果外推为浏览器隔离通过。当前默认关闭，待完成[生产接入计划](../../docs/plans/active/anan-production-rollout.md)中的剩余路径和授权配置后才能启用。
+
+生产受管配置须位于完整 root 所有且不可被其他用户改写的真实目录链。末级目录及
+`config.yaml`
+不可公开读取，服务受控组可读、不可写；不接受符号链接、硬链接或其他文件类型。
+
+当前官方核心的部分浏览器路径直接读取 Profile 原始配置，未应用受管覆盖。安装时须保留既有 Profile 内容，仅将已审阅的浏览器隔离字段与受管配置对齐；预检同时检查两处及实际容器。只有受管文件正确、Profile 仍使用默认路由时必须拒绝执行，不能退回宿主浏览器。
+
+MCP stdio 运行在宿主，不继承 terminal
+Docker。候选策略在读取凭据前核对有效 native 配置、已加载 portable 配置及当前 Profile 与全局注册的 MCP 工具；存在未经隔离核验的启用项或残留工具时拒绝。
+
+这只是调用时的检查：官方配置调和可能先启动 MCP，插件加载失败也会继续启动 Gateway。
+
+因此还须在安装真实凭据前验证固定插件加载及实际工具集合，并维持配置来源不可变和正确的启动顺序。
+
+当前尚未完成该生产启动接线，不能用一次成功预检或工具拒绝代替进程隔离。
+
+显式隔离模拟脚本分别为 `tests/production_isolation_journey.py`（官方工具与 Docker）、
+`tests/browser_isolation_journey.py`（离线路由）、
+`tests/browser_container_journey.py`（真实容器文件系统与 CDP 发现，无页面自动操作）及
+`tests/managed_policy_journey.py`（一次性 Linux 容器内的真实目录权限）。它们的环境前提、实际结果与范围见接线报告；默认单元套件不代表这些检查已经执行。
+
+官方 Generic webhook 的签名、route 解析、事件构造与入站 hook 回归在
+`tests/workitem_official_hook_journey.py`，不进入默认单元套件。显式设置
+`ANAN_HERMES_SOURCE` 为干净的官方核心 checkout（脚本固定核对提交
+`d337b736aa1e8ebecfab043842d13e4a2d2f48a3`），用具备该核心运行依赖的 Python
+3.12 执行；缺少来源或版本不符会失败。默认单元仍覆盖 WorkItem
+body、会话权限及六字段投影。
+
+`tests/workitem_broker_journey.py`
+是隔离 PostgreSQL 集成模拟的显式子进程接头，由 Sidecar 测试驱动：PMS 接收事务提交后，实际发送内部 HMAC
+webhook，经官方 HTTP handler、入站 hook 和 ContextVar，再由原插件传输回读真实 Unix
+broker 的同一 WorkItem。该联合模拟明确替代安装与隔离前提；完整 Linux 工具隔离另有独立记录，没有模型、渠道外发或 PMS 业务写入。
 
 ```sh
 python3 -m unittest discover -s skills/pms-operations/tests -v
@@ -84,21 +125,29 @@ head 后原子初始化 baseline/checkpoint，后续每次先读持久游标。 
 
 MATCHED、REFUND、历史事件不新建收款催办；无可靠联系人时保持待联系，不发送消息。本地同 UID 宿主隔离仍不等于生产强隔离；正式配置与真实渠道尚未启用。
 
-## 本地申请回读
+## 申请回读
 
-四老师统一 Bridge 的本地申请模式调用
+四老师统一 Bridge 的申请模式调用
 `application_intake.py`，不注册模型工具。固定宿主配置包含
 `QINTOPIA_APPLICATION_LOCAL_ENABLE=1`、`QINTOPIA_APPLICATION_BINDING`、
 `QINTOPIA_APPLICATION_RESOURCE_ALIAS`、`QINTOPIA_APPLICATION_LOCAL_CONFIG` 和
 `QINTOPIA_APPLICATION_LOCAL_API_TOKEN`，沿既有独立 HOST_TOKEN 访问 broker。
 
-私有 JSON 配置仅指向显式 loopback 模拟 HTTP，包含 base_url、base_token、table_id、resource_alias、fields、consent_value，可选 withdrawn_value。
+本地 JSON 配置仅指向显式 loopback 模拟 HTTP，包含 base_url、base_token、table_id、resource_alias、fields、consent_value，可选 withdrawn_value。
 
 fields 将 name/nickname/phone、consent 及可选 arrival/nights/room_type/occupation/interests/status 映射到许可字段名。
 
 只读固定记录，不跟随重定向、不取附件、不输出字段正文或凭据。
 
-生产 Feishu URL 当前被拒绝。
+生产模式需同时设置 `QINTOPIA_APPLICATION_PRODUCTION_ENABLE=1` 和
+`QINTOPIA_FOUNDATION_PRODUCTION_ENABLE=1`，且两个 LOCAL 开关均不得为 `1`。
+`QINTOPIA_APPLICATION_PRODUCTION_CONFIG` 固定指向 `/etc/qintopia/` 下的宿主私有0600
+JSON，`QINTOPIA_APPLICATION_RESOURCE_ALIAS` 与 JSON 的 `resource_alias`
+必须一致。JSON 只接受 `resource_alias`、`base_token`、`table_id`、`fields`、
+`consent_value`、可选 `withdrawn_value`、受管应用 `app_id/app_secret` 与独立
+`foundation_host_token`；目录不得被其他用户改写，文件不得为链接或进入 Profile。宿主只向固定
+`https://open.feishu.cn` 取得租户 Token 并 GET 单条 Base 记录，然后通过原 Unix
+broker 保存观察、投影候选并交接欢迎。非 200、权限拒绝、404、响应错误或来源暂不可读保留原唤醒待回读，不解释为撤回。
 
 回调只唤醒授权回读。
 
@@ -277,5 +326,39 @@ READ 凭据和独立 Foundation HOST_TOKEN 运行； `synchronize(work_item)` �
 读取代次不充当人类确认依据；相同业务依据继续原确认一次，实际变化由服务端拒绝。本模块不实现人员匹配、关系确认、消息发送或额外重试。
 
 `from_environment(trusted_context)`
-只接受宿主捕获的上下文，固定网关必须一致；要求现有 PMS/Foundation 本地开关及
-`QINTOPIA_APPLICATION_LOCAL_ENABLE=1`。凭据沿原 GREENPMS 配置，仍仅显式 loopback 模拟。号码和读取 token 只经私有宿主请求，不返回模型、群、日志或普通工具；停用调用入口即可停止回读，保留服务端原事项与恢复状态。
+只接受宿主捕获的上下文，固定网关必须一致。本地模式沿原 PMS/Foundation/Application 三项 LOCAL 开关和 loopback 模拟。生产模式要求三项 PRODUCTION 开关均为
+`1`、三项 LOCAL 均不为 `1`，先执行 `production.require()`
+隔离检查，再从 Profile 外受管 PMS 凭据文件读取 Token；
+`Client(..., production_enabled=True)` 固定通过 HTTPS 回读 PMS，原独立 Foundation
+HOST_TOKEN 只经私有 Unix broker 使用。群确认刷新继续保留原可信消息上下文与完整池
+`open/GET/save/failed/status` 流程；响应 `local_only`
+必须与实际模式一致。号码和读取 token 只经私有宿主请求，不返回模型、群、日志或普通工具；停用调用入口即可停止回读，保留服务端原事项与恢复状态。真实生产凭据、群确认和通知未在本地验证。
+
+## 生产传输准备（尚未启用）
+
+受控执行层可显式构造 `Client(..., production_enabled=True)`，只接受固定
+`https://pms.qintopia.cn`
+目标，以系统信任库验证 TLS 证书和主机名。生产模式与本地模拟模式互斥，不接受任意 origin、明文 HTTP、代理或重定向。
+
+此入口不注册新工具，不改变插件的本地开关，不把生产凭据注入 Hermes。凭据隔离、可信宿主认证、安装接线与用户触发验收完成前不得生产启用。HTTP 只用于本地模拟，生产传输测试使用模拟连接，不调用真实 PMS。
+
+## 私有凭据文件输入
+
+`QINTOPIA_PMS_CREDENTIALS_FILE` 指定 Profile 外的绝对 JSON 路径。
+
+文件包含三个键：`GREENPMS_API_TOKEN`、`QINTOPIA_FOUNDATION_TOKEN`、`QINTOPIA_FOUNDATION_HOST_TOKEN`。
+
+三个值必须不同。Foundation Token 为 32–256 个可打印非空白 ASCII 字符，PMS
+Token 为 16–512 个。
+
+文件仅当前运行用户所有、权限 0600、无软链接或硬链接。父目录仅 root 或当前用户所有，其他用户不可写。
+
+不要把文件放在共享临时目录、Profile、Skill 或工具挂载目录。
+
+启用文件输入后，三个同名环境变量必须全部移除，包括空值。文件错误直接拒绝，不回退环境变量；内容和路径不进入工具错误。
+
+未配置文件时，仅原有显式本地模拟模式可沿用环境变量。此输入不启用生产插件，也不证明工具隔离。
+
+官方远端工具会接受 Skill 声明的自定义环境变量，因此生产不能把这些 Token 放进 Gateway 环境。
+
+部署须证明模型文件工具、Skill 凭据挂载和远端执行均不能读取私有路径，且不会自动挂载 Gateway 的宿主目录。

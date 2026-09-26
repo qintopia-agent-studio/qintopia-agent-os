@@ -140,10 +140,10 @@ fn state_status(c: &Context, now: DateTime<Utc>) -> &'static str {
         "pending"
     }
 }
-fn summary(c: &Context, now: DateTime<Utc>) -> Value {
+fn summary(c: &Context, now: DateTime<Utc>, local_only: bool) -> Value {
     let status = state_status(c, now);
     let reads = c.state.as_ref().map_or(&c.reads, |s| &s.reads);
-    json!({"work_item":c.work,"application":c.application,"status":status,"pool_count":c.reads.iter().map(|r|r.cases.len()).sum::<usize>(),"orders_total":c.reads.len(),"orders_done":reads.iter().filter(|r|r.status=="complete").count(),"failed_count":reads.iter().filter(|r|r.status=="failed").count(),"scan_complete":status=="complete","local_only":true})
+    json!({"work_item":c.work,"application":c.application,"status":status,"pool_count":c.reads.iter().map(|r|r.cases.len()).sum::<usize>(),"orders_total":c.reads.len(),"orders_done":reads.iter().filter(|r|r.status=="complete").count(),"failed_count":reads.iter().filter(|r|r.status=="failed").count(),"scan_complete":status=="complete","local_only":local_only})
 }
 fn evidence(c: &Context, now: DateTime<Utc>) -> Result<Value> {
     if state_status(c, now) != "complete" {
@@ -247,7 +247,7 @@ impl Store {
         let now: DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
             .fetch_one(&mut **tx)
             .await?;
-        let mut result = summary(&c, now);
+        let mut result = summary(&c, now, !self.is_live());
         result["evidence"] = evidence(&c, now)?;
         Ok(result)
     }
@@ -326,7 +326,7 @@ impl Store {
                     });
                     self.save_contacts(&mut tx, &c).await?;
                 }
-                let mut result = summary(&c, now);
+                let mut result = summary(&c, now, !self.is_live());
                 result["reads"]=json!(c.state.as_ref().unwrap().reads.iter().filter(|r|r.status=="pending").map(|r|json!({"read_token":r.token,"order_id":r.order,"property_id":r.property,"order_revision":r.revision})).collect::<Vec<_>>());
                 tx.commit().await?;
                 Ok(result)
@@ -399,7 +399,7 @@ impl Store {
                 if !replayed {
                     self.save_contacts(&mut tx, &c).await?;
                 }
-                let mut result = summary(&c, now);
+                let mut result = summary(&c, now, !self.is_live());
                 result["stored"] = json!(true);
                 result["replayed"] = json!(replayed);
                 result["read_status"] = json!(read_status);
@@ -426,13 +426,13 @@ impl Store {
                 );
                 read.status = "failed".into();
                 self.save_contacts(&mut tx, &c).await?;
-                let mut result = summary(&c, now);
+                let mut result = summary(&c, now, !self.is_live());
                 result["stored"] = json!(true);
                 result["read_status"] = json!("failed");
                 tx.commit().await?;
                 Ok(result)
             }
-            Request::Status { .. } => Ok(summary(&c, now)),
+            Request::Status { .. } => Ok(summary(&c, now, !self.is_live())),
         }
     }
     async fn save_contacts(&self, tx: &mut Transaction<'_, Postgres>, c: &Context) -> Result<()> {

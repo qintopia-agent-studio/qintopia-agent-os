@@ -198,6 +198,74 @@ pub(super) async fn operation_in(
 }
 
 impl Store {
+    pub(crate) async fn business_context(
+        &self,
+        actor: &Actor,
+        platform: &str,
+        chat_type: &str,
+        chat_id: &str,
+    ) -> Result<Value> {
+        ensure!(
+            platform == "wecom" && matches!(chat_type, "direct" | "group"),
+            "trusted_context_unavailable"
+        );
+        let scope = actor
+            .gateway
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("trusted_context_unavailable"))?
+            .2;
+        let (mut tx, _, now) = self.begin().await?;
+        self.verify(&mut tx, actor).await?;
+        if chat_type == "group" {
+            let bound: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.tenant_id=$1 AND c.chat_id=$3 AND c.platform=$4 AND c.status='active')")
+                .bind(&self.tenant).bind(scope).bind(chat_id).bind(platform).fetch_one(&mut *tx).await?;
+            ensure!(bound, "gateway_scope_mismatch");
+        }
+        let policy = self.policy(&mut tx, now).await?;
+        let rows = sqlx::query("SELECT b.id,b.property_id,g.operation_key FROM qintopia_agent_os.business_property_bindings b JOIN qintopia_agent_os.business_operation_grants g ON g.tenant_key=b.tenant_key AND g.binding_id=b.id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.active AND g.revoked_at IS NULL AND (g.valid_until IS NULL OR g.valid_until>$3) ORDER BY b.id,g.operation_key LIMIT 257")
+            .bind(&self.tenant).bind(scope).bind(now).fetch_all(&mut *tx).await?;
+        ensure!(rows.len() <= 256, "business_context_too_large");
+        let mut bindings = std::collections::BTreeMap::<Uuid, (String, Vec<String>)>::new();
+        for row in rows {
+            let binding: Uuid = row.get("id");
+            let key: String = row.get("operation_key");
+            match operation_in(
+                &mut tx,
+                &self.tenant,
+                &policy,
+                actor.person,
+                binding,
+                &key,
+                now,
+            )
+            .await
+            {
+                Ok(_) => {
+                    let entry = bindings
+                        .entry(binding)
+                        .or_insert_with(|| (row.get("property_id"), vec![]));
+                    if !entry.1.contains(&key) {
+                        entry.1.push(key);
+                    }
+                }
+                Err(error)
+                    if matches!(
+                        error.to_string().as_str(),
+                        "unsupported_business_operation"
+                            | "business_authority_denied"
+                            | "business_operation_denied"
+                            | "business_operation_revoked"
+                            | "business_delegation_invalid"
+                    ) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(
+            json!({"bindings":bindings.into_iter().map(|(binding,(property,operations))|
+            json!({"binding":binding,"property":property,"operations":operations})).collect::<Vec<_>>() }),
+        )
+    }
+
     pub(crate) async fn business_authorize(
         &self,
         actor: &Actor,
@@ -208,7 +276,9 @@ impl Store {
         ensure!(agents().contains(&"anan"), "business_agent_not_registered");
         let (mut tx, _, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        let policy = super::foundation::load_policy(&mut tx, &self.tenant, now).await?;
+        let policy =
+            super::foundation::load_policy(&mut tx, &self.tenant, &self.identity_namespace, now)
+                .await?;
         let result = operation_in(
             &mut tx,
             &self.tenant,
@@ -239,7 +309,9 @@ impl Store {
         let (mut tx, _, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
         ensure!(until > now, "invalid_effective_window");
-        let policy = super::foundation::load_policy(&mut tx, &self.tenant, now).await?;
+        let policy =
+            super::foundation::load_policy(&mut tx, &self.tenant, &self.identity_namespace, now)
+                .await?;
         let held = operation_in(
             &mut tx,
             &self.tenant,
@@ -324,7 +396,7 @@ impl Store {
             "gateway_platform_mismatch"
         );
         if turn.chat_type == "group" {
-            let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.chat_id=$3 AND c.platform=$4 AND c.status='active')")
+            let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.tenant_id=$1 AND c.chat_id=$3 AND c.platform=$4 AND c.status='active')")
                 .bind(&self.tenant).bind(actor.gateway.as_ref().unwrap().2).bind(&turn.chat_id).bind(&turn.platform).fetch_one(&mut *tx).await?;
             ensure!(bound, "gateway_scope_mismatch");
         }
@@ -503,7 +575,9 @@ impl Store {
         let evidence = self
             .business_evidence_in(&mut tx, actor, gateway, message, chat)
             .await?;
-        let policy = super::foundation::load_policy(&mut tx, &self.tenant, now).await?;
+        let policy =
+            super::foundation::load_policy(&mut tx, &self.tenant, &self.identity_namespace, now)
+                .await?;
         if tool == "pms_reminder_snooze" {
             let binding = parse("binding")?;
             let work = parse("work_item")?;
@@ -661,8 +735,11 @@ impl Store {
                 self.canonical_business_work(&mut tx, work, &input, key)
                     .await?
             } else {
-                sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload,metadata) VALUES('business_operation','queued','anan','anan','anan.pms','客房办理','synthetic_business',$1,$1,'{}','{\"local_only\":true}') RETURNING id")
-                    .bind(format!("business/{}/{evidence}/{hash}",self.tenant)).fetch_one(&mut *tx).await?
+                sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload,metadata) VALUES('business_operation','queued','anan','anan','anan.pms','客房办理',$1,$2,$2,'{}',$3) RETURNING id")
+                    .bind(if self.is_live() { "hospitality_business" } else { "synthetic_business" })
+                    .bind(format!("business/{}/{evidence}/{hash}",self.tenant))
+                    .bind(if self.is_live() { json!({"mode":"live"}) } else { json!({"local_only":true}) })
+                    .fetch_one(&mut *tx).await?
             };
             // Quote identity and an explicitly selected source matter survive new
             // messages and process restarts. Do not replace an unknown booking.

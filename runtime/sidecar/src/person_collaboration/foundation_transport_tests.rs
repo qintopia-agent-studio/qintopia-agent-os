@@ -94,6 +94,8 @@ async fn foundation_broker_early_disconnect_preserves_listener_and_authenticatio
     let store = crate::person_collaboration::Store {
         pool,
         tenant: "synthetic-collaboration-disconnect".into(),
+        identity_namespace: "synthetic-collaboration-disconnect".into(),
+        mode: super::super::store::StoreMode::Synthetic,
     };
     let mut server = tokio::spawn(super::super::foundation_server::broker(store));
     tokio::time::timeout(Duration::from_secs(3), async {

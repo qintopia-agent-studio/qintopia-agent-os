@@ -6,6 +6,10 @@ verified Person and an active scoped gateway. Internal/bot events cannot confirm
 from __future__ import annotations
 
 import os
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def _value(value):
@@ -63,9 +67,11 @@ def capture(event, transport):
         "message_id": event.message_id, "gateway_id": os.environ.get("QINTOPIA_FOUNDATION_GATEWAY_ID", "")})
     text = getattr(event, "text", None)
     if not isinstance(text, str) or len(text.encode()) > 16000:
-        return {"action": "skip", "reason": "business_evidence_unavailable"}
+        logger.warning("business_evidence_unavailable")
+        return None
     response = transport({"operation": "person_foundation_ingress", "schema_version": 1,
         "agent": "anan", "tool": "pms_capture", "trusted_context": context, "arguments": {"text": text}}, host=True)
     if not response.get("ok"):
-        return {"action": "skip", "reason": "business_evidence_unavailable"}
+        logger.warning("business_evidence_unavailable")
+        return None
     return None

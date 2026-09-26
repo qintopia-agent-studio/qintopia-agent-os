@@ -1444,6 +1444,8 @@ async fn welcome_host_model_token_wrong_profile_and_gateway_are_denied() -> Resu
     let store = Store {
         pool: f.store.pool.clone(),
         tenant: f.store.tenant.clone(),
+        identity_namespace: f.store.identity_namespace.clone(),
+        mode: super::store::StoreMode::Synthetic,
     };
     let server = tokio::spawn(super::foundation_server::broker(store));
     let result:Result<()>=async{

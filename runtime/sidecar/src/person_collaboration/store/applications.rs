@@ -247,8 +247,12 @@ impl Store {
                 id
             } else {
                 let key = format!("application/{application}/{agent}");
-                sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,source_type,dedupe_key,idempotency_key,payload,metadata) VALUES($1,'awaiting_review','anan',$2,$3,'申请待核对','synthetic_application','application_readback',$4,$4,'{}','{\"local_only\":true,\"event_is_not_authority\":true}') RETURNING id")
-                    .bind(kind).bind(agent).bind(capability).bind(key).fetch_one(&mut *tx).await?
+                sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,source_type,dedupe_key,idempotency_key,payload,metadata) VALUES($1,'awaiting_review','anan',$2,$3,'申请待核对',$4,'application_readback',$5,$5,'{}',$6) RETURNING id")
+                    .bind(kind).bind(agent).bind(capability)
+                    .bind(if self.is_live() {"application_review"} else {"synthetic_application"})
+                    .bind(key)
+                    .bind(json!({"local_only":!self.is_live(),"event_is_not_authority":true}))
+                    .fetch_one(&mut *tx).await?
             };
             if changed {
                 // Terminal work remains terminal. Updates ask for review, never replay PMS actions.

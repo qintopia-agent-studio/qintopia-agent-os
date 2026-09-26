@@ -9,6 +9,8 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import socket
+import stat
 
 
 def synchronize(client, host_call, *, max_pages=10):
@@ -36,19 +38,61 @@ def synchronize(client, host_call, *, max_pages=10):
     return {"cursor": result["cursor"], "caught_up": False}
 
 
+def _production_host(plugin):
+    plugin.production.require()
+    from hermes_constants import get_hermes_home
+
+    credentials = plugin.credentials.load(
+        os.environ["QINTOPIA_PMS_CREDENTIALS_FILE"], profile_home=str(get_hermes_home()))
+    path = Path(os.environ.get("QINTOPIA_FOUNDATION_SOCKET", ""))
+    token = credentials["QINTOPIA_FOUNDATION_HOST_TOKEN"]
+    if not path.is_absolute() or path.is_symlink():
+        raise ValueError("foundation_unavailable")
+    info = path.stat()
+    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError("foundation_unavailable")
+
+    def transport(request):
+        raw = json.dumps({**request, "token": token}, ensure_ascii=False, allow_nan=False).encode() + b"\n"
+        if len(raw) > plugin.client.MAX_BYTES:
+            raise ValueError("invalid_arguments")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+            connection.settimeout(10)
+            connection.connect(str(path))
+            connection.sendall(raw)
+            received = bytearray()
+            while not received.endswith(b"\n"):
+                chunk = connection.recv(min(4096, plugin.client.MAX_BYTES + 1 - len(received)))
+                if not chunk or len(received) + len(chunk) > plugin.client.MAX_BYTES:
+                    raise ValueError("outcome_unknown")
+                received.extend(chunk)
+        return plugin.client.decode(received)
+
+    pms = plugin.client.Client(plugin.client.PRODUCTION_ORIGIN,
+                               credentials["GREENPMS_API_TOKEN"], production_enabled=True)
+    return pms, transport
+
+
 def main():
     spec = importlib.util.spec_from_file_location("qintopia_pms_feed_plugin", Path(__file__).with_name("__init__.py"))
     plugin = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(plugin)
-    if not plugin.enabled() or os.environ.get("QINTOPIA_PMS_EVENTS_LOCAL_ENABLE") != "1":
+    mode = plugin.production.mode()
+    if mode == "local" and os.environ.get("QINTOPIA_PMS_EVENTS_LOCAL_ENABLE") == "1":
+        client = plugin.client.Client(os.environ["GREENPMS_BASE_URL"], os.environ["GREENPMS_API_TOKEN"], local_enabled=True)
+
+        def transport(request):
+            return plugin.transport(request, host=True)
+    elif mode == "production" and os.environ.get("QINTOPIA_PMS_EVENTS_PRODUCTION_ENABLE") == "1":
+        client, transport = _production_host(plugin)
+    else:
         raise ValueError("payment_feed_disabled")
-    client = plugin.client.Client(os.environ["GREENPMS_BASE_URL"], os.environ["GREENPMS_API_TOKEN"], local_enabled=True)
 
     def host_call(arguments):
-        response = plugin.transport({"operation": "person_foundation_ingress", "schema_version": 1,
+        response = transport({"operation": "person_foundation_ingress", "schema_version": 1,
             "agent": "anan", "tool": "pms_payment_feed", "arguments": arguments,
             "trusted_context": {"gateway_id": os.environ["QINTOPIA_FOUNDATION_GATEWAY_ID"],
-                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}}, host=True)
+                "platform": "host", "chat_type": "", "chat_id": "", "sender_id": "", "message_id": ""}})
         if not response.get("ok"):
             raise ValueError("payment_feed_rejected")
         return response["result"]

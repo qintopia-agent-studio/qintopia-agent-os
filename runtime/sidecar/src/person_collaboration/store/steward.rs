@@ -46,7 +46,7 @@ impl Store {
         let now = sqlx::query_scalar("SELECT clock_timestamp()")
             .fetch_one(&mut **tx)
             .await?;
-        let policy = load_policy(tx, &self.tenant, now).await?;
+        let policy = load_policy(tx, &self.tenant, &self.identity_namespace, now).await?;
         let audience: Audience = serde_json::from_value(
             json!({"groups":[],"people":[],"residents":"current","reply":"autonomous","proactive":"denied","reviewer":null,"visibility":"public","topics":""}),
         )?;
@@ -214,6 +214,8 @@ pub(crate) async fn content_reviewer(
     let store = Store {
         pool: pool.clone(),
         tenant: tenant.into(),
+        identity_namespace: tenant.into(),
+        mode: super::StoreMode::Synthetic,
     };
     let mut review = authorize_current(
         tx,

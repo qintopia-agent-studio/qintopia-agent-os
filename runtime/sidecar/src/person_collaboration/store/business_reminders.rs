@@ -136,7 +136,8 @@ impl Store {
         };
         let rule: Rule = serde_json::from_value(knowledge.content.clone())?;
         rule.validate()?;
-        let policy = foundation::load_policy(tx, &self.tenant, now).await?;
+        let policy =
+            foundation::load_policy(tx, &self.tenant, &self.identity_namespace, now).await?;
         ensure!(
             policy
                 .grants

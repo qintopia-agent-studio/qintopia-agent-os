@@ -1,4 +1,9 @@
-//! Local signed payment ingress. Events do not grant business authority.
+//! Signed payment ingress. Events do not grant business authority.
+#[path = "production_events.rs"]
+mod production_events;
+#[cfg(test)]
+#[path = "production_events_tests.rs"]
+mod production_events_tests;
 use super::{
     store::business_events::{PaymentEvent, PAYMENT_SCHEMA},
     Store,
@@ -22,9 +27,26 @@ impl Config {
     pub(super) fn local() -> Result<Self> {
         ensure!(
             std::env::var("QINTOPIA_PMS_EVENTS_LOCAL_ENABLE").as_deref() == Ok("1")
-                && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1"),
+                && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1")
+                && std::env::var("QINTOPIA_PMS_EVENTS_PRODUCTION_ENABLE").as_deref() != Ok("1")
+                && std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() != Ok("1"),
             "payment_ingress_disabled"
         );
+        Self::from_environment(false)
+    }
+
+    pub(super) fn production() -> Result<Self> {
+        ensure!(
+            std::env::var("QINTOPIA_PMS_EVENTS_PRODUCTION_ENABLE").as_deref() == Ok("1")
+                && std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() == Ok("1")
+                && std::env::var("QINTOPIA_PMS_EVENTS_LOCAL_ENABLE").as_deref() != Ok("1")
+                && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1"),
+            "payment_ingress_disabled"
+        );
+        Self::from_environment(true)
+    }
+
+    fn from_environment(production: bool) -> Result<Self> {
         let binding = Uuid::parse_str(&std::env::var("QINTOPIA_PMS_EVENT_BINDING")?)?;
         let source = std::env::var("QINTOPIA_PMS_EVENT_SOURCE")?;
         let property = std::env::var("QINTOPIA_PMS_EVENT_PROPERTY")?;
@@ -47,7 +69,8 @@ impl Config {
         {
             use std::os::unix::fs::PermissionsExt;
             ensure!(
-                metadata.permissions().mode() & 0o077 == 0,
+                metadata.permissions().mode() & 0o077 == 0
+                    && (!production || metadata.permissions().mode() & 0o777 == 0o600),
                 "invalid_payment_key_file"
             );
         }
@@ -69,6 +92,12 @@ impl Config {
             },
         })
     }
+}
+
+/// Called by the existing Sidecar service as an isolated task; failure is local to this listener.
+#[allow(dead_code)] // The shared production entry point is wired by the foundation owner.
+pub(super) async fn run_production_events(store: Store, port: u16) -> Result<()> {
+    production_events::run(store, port).await
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -171,7 +200,11 @@ pub(super) async fn feed(
     store: &Store,
     arguments: &serde_json::Value,
 ) -> Result<serde_json::Value> {
-    let config = Config::local()?;
+    let config = if store.is_live() {
+        Config::production()?
+    } else {
+        Config::local()?
+    };
     let object = arguments
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("invalid_arguments"))?;
