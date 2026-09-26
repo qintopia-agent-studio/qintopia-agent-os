@@ -48,7 +48,7 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
         }
     };
     // A single independently signed ingress, never a cookie/CSRF bypass for UI routes.
-    if r.path == crate::resident_welcome::protocol::PATH {
+    if !store.is_live() && r.path == crate::resident_welcome::protocol::PATH {
         let response = match super::business_ingress::Config::local() {
             Ok(config) => {
                 super::business_ingress::receive(store, &config, &r, chrono::Utc::now().timestamp())
@@ -112,6 +112,10 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
             "/workbench-organization.js" => Some((
                 "text/javascript; charset=utf-8",
                 include_str!("workbench-organization.js"),
+            )),
+            "/workbench-business.js" => Some((
+                "text/javascript; charset=utf-8",
+                include_str!("workbench-business.js"),
             )),
             _ => None,
         };

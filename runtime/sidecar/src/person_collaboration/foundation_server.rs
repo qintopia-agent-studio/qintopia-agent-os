@@ -1556,7 +1556,7 @@ pub(super) async fn broker_invoke(
                 && matches!(t.chat_type.as_str(), "direct" | "group"),
             "agent_tool_denied"
         );
-        let actor = store.gateway_actor(gateway, &t.sender_id).await?;
+        let actor = store.business_gateway_actor(gateway, &t.sender_id).await?;
         if r.tool == "pms_context" {
             only_keys(&r.arguments, &[])?;
             return store

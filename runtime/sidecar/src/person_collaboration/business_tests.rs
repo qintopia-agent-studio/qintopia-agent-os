@@ -1,5 +1,6 @@
 //! Real shared-service persistence; only PMS HTTP and channel source are synthetic boundaries.
 #![cfg(feature = "postgres-integration-tests")]
+use super::store::business_config::{BusinessConfigChange, BusinessConfigCommand};
 use super::{store::business::HostTurn, Actor, Store};
 use anyhow::Result;
 use chrono::{Duration, Utc};
@@ -110,6 +111,281 @@ impl Fixture {
         let saved=self.call("start","pms_save_preview",json!({"action":a["action"],"claim":claim["claim"],"preview":{"previewId":"preview_1","propertyId":"property_a","commandType":"CREATE_ORDER","effectHash":"a".repeat(64),"effect":{"amountMinor":12000},"expiresAt":(Utc::now()+Duration::minutes(10)).to_rfc3339()}})).await?;
         Ok((a, saved))
     }
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn shared_work_account_confirms_collection_and_revocation_stops_recovery() -> Result<()> {
+    let f = Fixture::new().await?;
+    let scope: Uuid = sqlx::query_scalar(
+        "SELECT scope_id FROM qintopia_agent_os.business_property_bindings WHERE id=$1",
+    )
+    .bind(f.binding)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let namespace = format!("synthetic-shared-{}", Uuid::new_v4());
+    let gateway = format!("synthetic-shared-gateway-{}", Uuid::new_v4());
+    let sender = "stable_shared_account";
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'shared',true)")
+        .bind(&f.store.tenant).bind(&gateway).bind(&namespace).bind(scope).execute(&f.store.pool).await?;
+    let link:Uuid=sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal',$2,jsonb_build_object('first_observation_ref',$3::text,'display_name','模拟共用账号')) RETURNING id")
+        .bind(&namespace).bind(sender).bind(Uuid::new_v4()).fetch_one(&f.store.pool).await?;
+    let command = |version, change| BusinessConfigCommand {
+        operation_id: Uuid::new_v4(),
+        expected_version: version,
+        change,
+    };
+    let version = || async {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT version FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1",
+        )
+        .bind(&f.store.tenant)
+        .fetch_one(&f.store.pool)
+        .await
+    };
+    assert!(f
+        .store
+        .business_gateway_actor(&gateway, sender)
+        .await
+        .is_err());
+    let registered = f
+        .store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::RegisterAccount {
+                    gateway: gateway.clone(),
+                    source_link: link,
+                    label: "模拟共用账号".into(),
+                },
+            ),
+            true,
+        )
+        .await?;
+    let account: Uuid = serde_json::from_value(registered["change"]["account"].clone())?;
+    assert!(f.store.gateway_actor(&gateway, sender).await.is_err());
+    let actor = f.store.business_gateway_actor(&gateway, sender).await?;
+    assert!(f
+        .store
+        .gateway_actor(&gateway, "模拟共用账号")
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    let grant = f
+        .store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.command.RECORD_COLLECTION".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
+    let grant: Uuid = serde_json::from_value(grant["change"]["grant"].clone())?;
+    assert_eq!(
+        f.store
+            .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+            .await?
+            .operation_grant,
+        grant
+    );
+    let other_scope:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_scopes(tenant_key,parent_scope_id,label,kind) VALUES($1,$2,'模拟其他物业','business') RETURNING id")
+        .bind(&f.store.tenant).bind(scope).fetch_one(&f.store.pool).await?;
+    let other_binding:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_property_bindings(tenant_key,scope_id,source_instance,property_id) VALUES($1,$2,'simulated-other','other_property') RETURNING id")
+        .bind(&f.store.tenant).bind(other_scope).fetch_one(&f.store.pool).await?;
+    assert!(f
+        .store
+        .business_authorize(&actor, other_binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    let turn = HostTurn {
+        platform: "wecom".into(),
+        chat_type: "direct".into(),
+        chat_id: "shared_chat".into(),
+        sender_id: sender.into(),
+        message_id: "shared-instruction".into(),
+        text: "请为订单「order_1」登记企微收款12.00元，流水号「pay_1」。".into(),
+    };
+    f.store.business_capture_turn(&gateway, &turn).await?;
+    let input = json!({"orderId":"order_1","method":"WECOM","amountMinor":1200,"transactionReference":"pay_1"});
+    let action=f.store.business_invoke(&actor,&turn.message_id,&turn.chat_id,"pms_start",&json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","input":input,"reason":{"code":"OPERATOR_REQUEST","note":"模拟交办"}})).await?;
+    let claim = f
+        .store
+        .business_invoke(
+            &actor,
+            &turn.message_id,
+            &turn.chat_id,
+            "pms_claim_preview",
+            &json!({"action":action["action"]}),
+        )
+        .await?;
+    let preview = json!({"previewId":"preview_shared","propertyId":"property_a","commandType":"RECORD_COLLECTION","effectHash":"a".repeat(64),"effect":{"orderId":"order_1","method":"WECOM","amountMinor":1200,"transactionReference":"pay_1","currency":"CNY","note":""},"expiresAt":(Utc::now()+Duration::minutes(10)).to_rfc3339()});
+    let saved = f
+        .store
+        .business_invoke(
+            &actor,
+            &turn.message_id,
+            &turn.chat_id,
+            "pms_save_preview",
+            &json!({"action":action["action"],"claim":claim["claim"],"preview":preview}),
+        )
+        .await?;
+    assert_eq!(saved["confirmation_reused"], true);
+    let executing = f
+        .store
+        .business_invoke(
+            &actor,
+            &turn.message_id,
+            &turn.chat_id,
+            "pms_claim_execute",
+            &json!({"action":action["action"]}),
+        )
+        .await?;
+    assert_eq!(
+        executing["execution_key"],
+        format!("anan_execute_{}", action["action"].as_str().unwrap())
+    );
+    assert!(f
+        .store
+        .business_invoke(
+            &actor,
+            &turn.message_id,
+            &turn.chat_id,
+            "pms_claim_execute",
+            &json!({"action":action["action"]})
+        )
+        .await
+        .is_err());
+    let unknown=f.store.business_invoke(&actor,&turn.message_id,&turn.chat_id,"pms_save_result",&json!({"action":action["action"],"claim":executing["claim"],"result":{"executionStatus":"UNKNOWN"},"readback":null})).await?;
+    assert_eq!(unknown["phase"], "unknown");
+    let recovery = f
+        .store
+        .business_invoke(
+            &actor,
+            &turn.message_id,
+            &turn.chat_id,
+            "pms_recovery",
+            &json!({"action":action["action"]}),
+        )
+        .await?;
+    assert_eq!(recovery["execution_key"], executing["execution_key"]);
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::RevokeOperation { grant },
+            ),
+            true,
+        )
+        .await?;
+    assert!(f
+        .store
+        .business_invoke(
+            &actor,
+            &turn.message_id,
+            &turn.chat_id,
+            "pms_recovery",
+            &json!({"action":action["action"]})
+        )
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    let expiring = f
+        .store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.command.RECORD_COLLECTION".into(),
+                    valid_until: Some(Utc::now() + Duration::minutes(1)),
+                },
+            ),
+            true,
+        )
+        .await?;
+    let expiring: Uuid = serde_json::from_value(expiring["change"]["grant"].clone())?;
+    sqlx::query("UPDATE qintopia_agent_os.business_operation_grants SET valid_until=clock_timestamp()-interval '1 second' WHERE id=$1")
+        .bind(expiring).execute(&f.store.pool).await?;
+    assert!(f
+        .store
+        .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    let account_version: i64 =
+        sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
+            .bind(account)
+            .fetch_one(&f.store.pool)
+            .await?;
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::DisableAccount {
+                    account,
+                    expected_account_version: account_version,
+                },
+            ),
+            true,
+        )
+        .await?;
+    assert!(f
+        .store
+        .business_gateway_actor(&gateway, sender)
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::RegisterAccount {
+                    gateway: gateway.clone(),
+                    source_link: link,
+                    label: "模拟共用账号".into(),
+                },
+            ),
+            true,
+        )
+        .await?;
+    let fresh = f.store.business_gateway_actor(&gateway, sender).await?;
+    assert!(f
+        .store
+        .business_authorize(&fresh, f.binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+        .await
+        .is_err());
+    Ok(())
 }
 
 #[tokio::test]

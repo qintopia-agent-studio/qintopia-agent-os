@@ -100,8 +100,8 @@ impl Store {
         hash: &str,
         person: Uuid,
     ) -> Result<()> {
-        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_sessions s JOIN qintopia_agent_os.collaboration_accounts a ON a.id=s.account_id AND a.tenant_key=s.tenant_key JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE s.token_hash=$1 AND s.tenant_key=$2 AND a.person_id=$3 AND a.status='active' AND s.account_version=a.version AND s.identity_version=l.version AND l.person_id=a.person_id AND l.namespace=a.tenant_key AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp())")
-            .bind(hash).bind(&self.tenant).bind(person).fetch_one(&mut **tx).await?;
+        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_sessions s JOIN qintopia_agent_os.collaboration_accounts a ON a.id=s.account_id AND a.tenant_key=s.tenant_key JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE s.token_hash=$1 AND s.tenant_key=$2 AND a.person_id=$3 AND a.status='active' AND s.account_version=a.version AND s.identity_version=l.version AND l.person_id=a.person_id AND l.namespace=$4 AND s.revoked_at IS NULL AND s.expires_at>clock_timestamp())")
+            .bind(hash).bind(&self.tenant).bind(person).bind(&self.identity_namespace).fetch_one(&mut **tx).await?;
         ensure!(valid, "authentication_required");
         Ok(())
     }
@@ -113,8 +113,8 @@ impl Store {
         hash: &str,
         person: Uuid,
     ) -> Result<()> {
-        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_sessions s JOIN qintopia_agent_os.collaboration_accounts a ON a.id=s.account_id AND a.tenant_key=s.tenant_key JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE s.token_hash=$1 AND s.tenant_key=$2 AND a.person_id=$3 AND a.status='active' AND s.account_version=a.version AND s.identity_version=l.version AND l.person_id=a.person_id AND l.namespace=a.tenant_key)")
-            .bind(hash).bind(&self.tenant).bind(person).fetch_one(&mut **tx).await?;
+        let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_sessions s JOIN qintopia_agent_os.collaboration_accounts a ON a.id=s.account_id AND a.tenant_key=s.tenant_key JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE s.token_hash=$1 AND s.tenant_key=$2 AND a.person_id=$3 AND a.status='active' AND s.account_version=a.version AND s.identity_version=l.version AND l.person_id=a.person_id AND l.namespace=$4)")
+            .bind(hash).bind(&self.tenant).bind(person).bind(&self.identity_namespace).fetch_one(&mut **tx).await?;
         ensure!(valid, "request_account_changed_or_disabled");
         Ok(())
     }
@@ -131,8 +131,9 @@ impl Store {
         let actor = Actor {
             link: row.get("identity_link_id"),
             person: row.get("person_id"),
+            work_account: None,
             identity_version: row.get("identity_version"),
-            identity_namespace: self.tenant.clone(),
+            identity_namespace: self.identity_namespace.clone(),
             gateway: None,
             tenant: self.tenant.clone(),
             session_hash: Some(hash),
@@ -160,8 +161,8 @@ impl Store {
                 bail!("login_rate_limited");
             }
         }
-        let row=sqlx::query("SELECT a.*,l.version AS identity_version FROM qintopia_agent_os.collaboration_accounts a JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id JOIN qintopia_identity.persons p ON p.id=a.person_id WHERE a.tenant_key=$1 AND a.username=$2 AND a.status='active' AND l.namespace=$1 AND l.person_id=a.person_id AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=$1 AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active')")
-            .bind(&self.tenant).bind(&name).fetch_optional(&mut *tx).await?;
+        let row=sqlx::query("SELECT a.*,l.version AS identity_version FROM qintopia_agent_os.collaboration_accounts a JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id JOIN qintopia_identity.persons p ON p.id=a.person_id WHERE a.tenant_key=$1 AND a.username=$2 AND a.status='active' AND l.namespace=$3 AND l.person_id=a.person_id AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=$1 AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active')")
+            .bind(&self.tenant).bind(&name).bind(&self.identity_namespace).fetch_optional(&mut *tx).await?;
         let valid = if let Some(r) = &row {
             matches_password(&credentials.password, &r.get::<String, _>("password_hash"))
         } else {
@@ -255,10 +256,10 @@ impl Store {
         );
         // Availability mirrors login's current identity and ledger predicates.
         // It is a read-only explanation, never a login ticket or account mutation.
-        let accounts:Value=sqlx::query_scalar("WITH current_accounts AS (SELECT a.id,a.person_id AS person,a.username,a.status,coalesce(p.preferred_name,p.display_name) AS label,CASE WHEN a.status<>'active' THEN 'disabled' WHEN l.id IS NULL OR l.namespace<>a.tenant_key OR l.person_id IS DISTINCT FROM a.person_id OR l.status<>'confirmed' OR l.evidence_ref IS NULL OR l.confirmed_by IS NULL THEN 'identity_invalid' WHEN p.status<>'active' THEN 'person_inactive' WHEN EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=a.tenant_key AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active') THEN 'person_unavailable' ELSE 'ready' END AS login_state FROM qintopia_agent_os.collaboration_accounts a JOIN qintopia_identity.persons p ON p.id=a.person_id LEFT JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE a.tenant_key=$1) SELECT coalesce(jsonb_agg(to_jsonb(a)||jsonb_build_object('login_available',a.login_state='ready') ORDER BY a.username),'[]') FROM current_accounts a")
-            .bind(&self.tenant).fetch_one(&mut *tx).await?;
-        let people:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(x ORDER BY x->>'label'),'[]') FROM (SELECT DISTINCT jsonb_build_object('id',p.id,'label',coalesce(p.preferred_name,p.display_name)) x FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE l.namespace=$1 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_accounts a WHERE a.tenant_key=$1 AND a.person_id=p.id) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=$1 AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active')) s")
-            .bind(&self.tenant).fetch_one(&mut *tx).await?;
+        let accounts:Value=sqlx::query_scalar("WITH current_accounts AS (SELECT a.id,a.person_id AS person,a.username,a.status,coalesce(p.preferred_name,p.display_name) AS label,CASE WHEN a.status<>'active' THEN 'disabled' WHEN l.id IS NULL OR l.namespace<>$2 OR l.person_id IS DISTINCT FROM a.person_id OR l.status<>'confirmed' OR l.evidence_ref IS NULL OR l.confirmed_by IS NULL THEN 'identity_invalid' WHEN p.status<>'active' THEN 'person_inactive' WHEN EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=a.tenant_key AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active') THEN 'person_unavailable' ELSE 'ready' END AS login_state FROM qintopia_agent_os.collaboration_accounts a JOIN qintopia_identity.persons p ON p.id=a.person_id LEFT JOIN qintopia_identity.source_identity_links l ON l.id=a.identity_link_id WHERE a.tenant_key=$1) SELECT coalesce(jsonb_agg(to_jsonb(a)||jsonb_build_object('login_available',a.login_state='ready') ORDER BY a.username),'[]') FROM current_accounts a")
+            .bind(&self.tenant).bind(&self.identity_namespace).fetch_one(&mut *tx).await?;
+        let people:Value=sqlx::query_scalar("SELECT coalesce(jsonb_agg(x ORDER BY x->>'label'),'[]') FROM (SELECT DISTINCT jsonb_build_object('id',p.id,'label',coalesce(p.preferred_name,p.display_name)) x FROM qintopia_identity.persons p JOIN qintopia_identity.source_identity_links l ON l.person_id=p.id WHERE l.namespace=$2 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND p.status='active' AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_accounts a WHERE a.tenant_key=$1 AND a.person_id=p.id) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger x WHERE x.tenant_key=$1 AND x.kind='person' AND x.object_ref=p.id::text AND x.status<>'active')) s")
+            .bind(&self.tenant).bind(&self.identity_namespace).fetch_one(&mut *tx).await?;
         Ok(json!({"accounts":accounts,"people":people}))
     }
 
@@ -271,7 +272,7 @@ impl Store {
     ) -> Result<Uuid> {
         self.known_person(tx, person).await?;
         let link:Uuid=sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed' AND evidence_ref IS NOT NULL AND confirmed_by IS NOT NULL ORDER BY id LIMIT 1")
-            .bind(&self.tenant).bind(person).fetch_one(&mut **tx).await?;
+            .bind(&self.identity_namespace).bind(person).fetch_one(&mut **tx).await?;
         let id=sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_accounts(tenant_key,person_id,identity_link_id,username,password_hash) VALUES($1,$2,$3,$4,$5) RETURNING id")
             .bind(&self.tenant).bind(person).bind(link).bind(username(name)?).bind(hash_password(password)?)
             .fetch_one(&mut **tx).await.map_err(|_|anyhow::anyhow!("account_conflict"))?;
@@ -333,12 +334,13 @@ impl Store {
         .await?;
         ensure!(count == 0, "accounts_already_initialized");
         let row=sqlx::query("SELECT id,version FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed' AND evidence_ref IS NOT NULL AND confirmed_by IS NOT NULL ORDER BY id LIMIT 1")
-            .bind(&self.tenant).bind(person).fetch_one(&mut *tx).await?;
+            .bind(&self.identity_namespace).bind(person).fetch_one(&mut *tx).await?;
         let actor = Actor {
             link: row.get("id"),
             person,
+            work_account: None,
             identity_version: row.get("version"),
-            identity_namespace: self.tenant.clone(),
+            identity_namespace: self.identity_namespace.clone(),
             gateway: None,
             tenant: self.tenant.clone(),
             session_hash: None,

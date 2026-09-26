@@ -717,5 +717,51 @@ async fn live_host_observation_and_person_cli_do_not_grant_business_authority() 
     }.await;
     broker.abort();
     let _ = broker.await;
-    result
+    result?;
+
+    let business_collaboration:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.agent_collaborations(tenant_key,appointment_id,agent_key,domain_key,responsibility_text) VALUES($1,$2,'anan','hospitality','模拟岸岸管理') RETURNING id")
+        .bind(&tenant).bind(appointment).fetch_one(&pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,include_descendants,managed_agents,managed_domains,managed_actions,delegation_depth) VALUES($1,$2,'manage',true,ARRAY['anan']::text[],ARRAY['hospitality']::text[],ARRAY['read_business']::text[],1)")
+        .bind(&tenant).bind(business_collaboration).execute(&pool).await?;
+    let shared_gateway = format!("shared-person-cli-gateway-{}", Uuid::new_v4());
+    let shared_namespace = format!("shared-person-cli-identity-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'shared',true)")
+        .bind(&tenant).bind(&shared_gateway).bind(&shared_namespace).bind(scope).execute(&pool).await?;
+    let shared_socket = socket_dir.path().join("shared-foundation.sock");
+    std::env::set_var("QINTOPIA_FOUNDATION_SOCKET", &shared_socket);
+    std::env::set_var("QINTOPIA_FOUNDATION_GATEWAY_ID", &shared_gateway);
+    let shared_broker = tokio::spawn(super::super::foundation_server::broker_live(
+        Store::live(pool.clone(), &tenant, &namespace).await?,
+    ));
+    let shared_result:Result<()> = async {
+        tokio::time::timeout(std::time::Duration::from_secs(5),async {
+            loop { if shared_socket.exists() { break; } tokio::task::yield_now().await; }
+        }).await?;
+        let sender = "simulated-shared-staff";
+        let capture = |message:&str| json!({"operation":"person_foundation_ingress","schema_version":1,"agent":"anan","tool":"pms_capture","trusted_context":{"platform":"wecom","chat_type":"group","chat_id":chat,"sender_id":sender,"message_id":message,"gateway_id":shared_gateway},"arguments":{"text":"模拟客房询问"},"token":host_token});
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-first")).await?["result"]["status"],"identity_pending");
+        let link:Uuid=sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND subject_type='wecom_internal' AND source_ref=$2")
+            .bind(&shared_namespace).bind(sender).fetch_one(&pool).await?;
+        assert!(store.gateway_actor(&shared_gateway,sender).await.is_err());
+        let registered=store.business_configure(&admin,&config(version(&store).await?,BusinessConfigChange::RegisterAccount { gateway:shared_gateway.clone(),source_link:link,label:"模拟共用账号".into() }),true).await?;
+        let account:Uuid=serde_json::from_value(registered["change"]["account"].clone())?;
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-registered")).await?["ok"],true);
+        assert!(store.business_gateway_actor(&shared_gateway,sender).await.is_ok());
+        sqlx::query("UPDATE qintopia_identity.person_identity_gateways SET version=version+1 WHERE tenant_key=$1 AND gateway_key=$2")
+            .bind(&tenant).bind(&shared_gateway).execute(&pool).await?;
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-drift")).await?["result"]["status"],"identity_pending");
+        assert!(store.business_gateway_actor(&shared_gateway,sender).await.is_err());
+        store.business_configure(&admin,&config(version(&store).await?,BusinessConfigChange::RegisterAccount { gateway:shared_gateway.clone(),source_link:link,label:"模拟共用账号重新登记".into() }),true).await?;
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-registered")).await?["ok"],false);
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-renewed")).await?["ok"],true);
+        let account_version:i64=sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
+            .bind(account).fetch_one(&pool).await?;
+        store.business_configure(&admin,&config(version(&store).await?,BusinessConfigChange::DisableAccount { account,expected_account_version:account_version }),true).await?;
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-disabled")).await?["result"]["status"],"identity_pending");
+        assert!(store.business_gateway_actor(&shared_gateway,sender).await.is_err());
+        Ok(())
+    }.await;
+    shared_broker.abort();
+    let _ = shared_broker.await;
+    shared_result
 }

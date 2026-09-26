@@ -222,10 +222,13 @@ async function readState() {
   if (!next.organization || !Array.isArray(next.relations))
     throw new Error("配置响应不完整，请检查本地服务版本。");
   state = next;
+  state.business = await api("/api/business");
   ontologyRequests.clear();
   updateWorkspaceNavigation();
+  $("workspace-mode").textContent =
+    state.mode === "live" ? "受控业务管理" : "本地模拟资料 · 真实渠道未启用";
   $("result").textContent = state.management_available
-    ? `已读取配置版本 ${state.version} · 本地验收`
+    ? `已读取配置版本 ${state.version}`
     : "已读取最新工作安排";
   $("recovery").hidden = true;
 }
@@ -233,7 +236,8 @@ function availablePage(next) {
   return (
     next === "overview" ||
     (next === "settings" && state.management_available === true) ||
-    (next === "ledger" && state.catalog_admin === true)
+    (next === "ledger" && state.catalog_admin === true && state.mode !== "live") ||
+    (next === "business" && state.business?.can_manage === true)
   );
 }
 function updateWorkspaceNavigation() {
@@ -248,7 +252,7 @@ function updateWorkspaceNavigation() {
       : "我的管理范围"
     : "我的工作";
   const navigation = document.querySelector(".qo-tabs");
-  navigation.hidden = !manager;
+  navigation.hidden = !manager && !state.business?.can_manage;
   navigation.setAttribute("aria-label", manager ? "工作管理" : "我的工作");
   $("overview").setAttribute("role", manager ? "tabpanel" : "region");
   if (manager) {
@@ -269,14 +273,15 @@ function updateWorkspaceNavigation() {
     discardPreview();
   }
   // Revocation must remove stale management forms, not merely hide the tab.
-  for (const id of ["settings", "ledger"])
+  for (const id of ["settings", "ledger", "business"])
     if (!availablePage(id)) $(id).replaceChildren();
   for (const item of document.querySelectorAll("[data-page]")) {
     const selected = item.dataset.page === page;
     item.setAttribute("aria-selected", String(selected));
     item.tabIndex = selected ? 0 : -1;
   }
-  for (const id of ["overview", "settings", "ledger"]) $(id).hidden = id !== page;
+  for (const id of ["overview", "settings", "ledger", "business"])
+    $(id).hidden = id !== page;
 }
 function navigate(next) {
   if (busy || !state) return;
@@ -287,10 +292,12 @@ function navigate(next) {
     b.setAttribute("aria-selected", String(yes));
     b.tabIndex = yes ? 0 : -1;
   });
-  for (const id of ["overview", "settings", "ledger"]) $(id).hidden = id !== page;
+  for (const id of ["overview", "settings", "ledger", "business"])
+    $(id).hidden = id !== page;
   if (page === "overview") renderOrganization();
   if (page === "ledger") renderLedger();
   if (page === "settings") renderSettings();
+  if (page === "business") renderBusiness();
   notice("");
 }
 async function preview(change, summary, host, onSaved) {
@@ -361,7 +368,7 @@ async function savePending() {
     const result = await api(operation.savePath || "/api/save", operation.command);
     if (
       operation.savePath
-        ? result.saved !== true && result.replayed !== true
+        ? result.saved !== true && result.persisted !== true && result.replayed !== true
         : result.persisted !== true
     )
       throw new Error("服务端未确认持久保存，请核对状态后重试。");
@@ -426,6 +433,7 @@ $("reload-state").addEventListener("click", async () => {
         }
       }
     }
+    if (page === "business") renderBusiness();
     notice("已读取最新配置。未保存的输入仍保留，请核对最新安排后再次预览。");
   } catch (e) {
     onError(e);

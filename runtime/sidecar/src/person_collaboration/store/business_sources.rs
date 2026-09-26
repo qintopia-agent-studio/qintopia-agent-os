@@ -82,7 +82,7 @@ impl Store {
         let payment:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND binding_id=$2 AND binding_version=$3 AND work_item_id=$4 AND source_instance=$5 AND property_id=$6 AND feed='pms.payments.v1' AND NOT baseline)")
             .bind(&self.tenant).bind(auth.binding).bind(auth.binding_version).bind(source).bind(&auth.source).bind(&auth.property).fetch_one(&mut **tx).await?;
         ensure!(application || payment, "business_work_denied");
-        let row=sqlx::query("SELECT work_item_id,readback,result,phase,confirmed_by FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND id=$2 AND binding_id=$3 AND binding_version=$4 AND operation_key='pms.command.CREATE_ORDER' AND phase IN ('completed','manual_completed')")
+        let row=sqlx::query("SELECT work_item_id,readback,result,phase,confirmed_by,confirmed_by_work_account FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND id=$2 AND binding_id=$3 AND binding_version=$4 AND operation_key='pms.command.CREATE_ORDER' AND phase IN ('completed','manual_completed')")
             .bind(&self.tenant).bind(action).bind(auth.binding).bind(auth.binding_version).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("completed_booking_required"))?;
         let work: Uuid = row.get("work_item_id");
         sqlx::query(
@@ -102,7 +102,10 @@ impl Store {
                 && result["executionStatus"] == "EXECUTED"
                 && result["businessCommitted"] == true)
                 || (row.get::<String, _>("phase") == "manual_completed"
-                    && row.get::<Option<Uuid>, _>("confirmed_by").is_some()
+                    && (row.get::<Option<Uuid>, _>("confirmed_by").is_some()
+                        || row
+                            .get::<Option<Uuid>, _>("confirmed_by_work_account")
+                            .is_some())
                     && readback["manual_evidence"]["kind"] == "human_order_adoption"),
             "completed_booking_required"
         );
@@ -116,7 +119,7 @@ impl Store {
                 && current["order"]["version"].is_i64(),
             "current_order_readback_required"
         );
-        let evidence_row=sqlx::query("SELECT person_id,gateway_key,chat_hash,content_hash,explicit_intent,observed_at,observed_at>clock_timestamp()-interval '15 minutes' AS fresh FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2")
+        let evidence_row=sqlx::query("SELECT person_id,work_account_id,gateway_key,chat_hash,content_hash,explicit_intent,observed_at,observed_at>clock_timestamp()-interval '15 minutes' AS fresh FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2")
             .bind(&self.tenant).bind(evidence).fetch_one(&mut **tx).await?;
         let source_row=sqlx::query("SELECT metadata,brief_summary FROM qintopia_agent_os.work_items WHERE id=$1 FOR UPDATE")
             .bind(source).fetch_one(&mut **tx).await?;
@@ -133,7 +136,10 @@ impl Store {
         // proposal. Natural confirmation is captured by the trusted host only.
         let application_state:Option<Value>=sqlx::query_scalar("SELECT jsonb_build_object('application',a.id,'revision',a.revision,'hash',a.field_hash,'person',a.person_id) FROM qintopia_agent_os.application_intake_states i JOIN qintopia_agent_os.welcome_applications a ON a.id=i.application_id WHERE i.tenant_key=$1 AND i.anan_work_id=$2")
             .bind(&self.tenant).bind(source).fetch_optional(&mut **tx).await?;
-        let person: Uuid = evidence_row.get("person_id");
+        let person: Uuid = evidence_row
+            .get::<Option<Uuid>, _>("person_id")
+            .or_else(|| evidence_row.get("work_account_id"))
+            .ok_or_else(|| anyhow::anyhow!("business_subject_changed"))?;
         let gateway: String = evidence_row.get("gateway_key");
         let chat: String = evidence_row.get("chat_hash");
         let snapshot = json!({"source":source,"action":action,"order":order,"version":current["order"]["version"],"status":current["order"]["status"],"application":application_state,"binding_version":auth.binding_version,"person":person,"gateway":gateway,"chat":chat});

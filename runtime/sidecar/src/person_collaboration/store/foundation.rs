@@ -752,6 +752,7 @@ impl Store {
         let mut actor = Actor {
             link: row.get("actor_identity_id"),
             person: row.get("person_id"),
+            work_account: None,
             identity_version: row.get("identity_version"),
             identity_namespace: serde_json::from_value(payload["identity_namespace"].clone())?,
             gateway: serde_json::from_value(payload["gateway"].clone())?,
@@ -779,7 +780,7 @@ impl Store {
                 if auth.status=="confirmation_required" {
                     ensure!(auth.reviewer==row.get::<Option<Uuid>,_>("approval_person_id") && row.get::<Option<String>,_>("approved_input_hash")==Some(row.get("request_hash")),"designated_confirmation_required");
                     let proof=&payload["approval_authority"];
-                    let reviewer=Actor{link:serde_json::from_value(proof["identity_link_id"].clone())?,person:serde_json::from_value(proof["person_id"].clone())?,identity_version:serde_json::from_value(proof["identity_version"].clone())?,identity_namespace:serde_json::from_value(proof["identity_namespace"].clone())?,gateway:serde_json::from_value(proof["gateway"].clone())?,session_hash:None,tenant:self.tenant.clone()};
+                    let reviewer=Actor{link:serde_json::from_value(proof["identity_link_id"].clone())?,person:serde_json::from_value(proof["person_id"].clone())?,work_account:None,identity_version:serde_json::from_value(proof["identity_version"].clone())?,identity_namespace:serde_json::from_value(proof["identity_namespace"].clone())?,gateway:serde_json::from_value(proof["gateway"].clone())?,session_hash:None,tenant:self.tenant.clone()};
                     self.verify(&mut tx,&reviewer).await?;
                     if lifecycle {
                         if let Some(hash)=proof["session_hash"].as_str() {

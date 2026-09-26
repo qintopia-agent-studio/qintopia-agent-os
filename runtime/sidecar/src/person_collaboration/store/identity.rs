@@ -104,7 +104,7 @@ impl Store {
             );
         }
         let (mut tx, _, _) = self.begin().await?;
-        let row=sqlx::query("SELECT g.scope_id,g.namespace FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id AND s.status='active' WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.namespace=$3 AND g.subject_type='wecom_internal' AND g.account_kind='employee' AND g.active AND EXISTS(SELECT 1 FROM qintopia_agent_os.business_property_bindings b WHERE b.tenant_key=$1 AND b.scope_id=g.scope_id AND b.active) AND NOT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways other WHERE other.tenant_key<>$1 AND other.namespace=g.namespace AND other.subject_type=g.subject_type AND other.active) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants other WHERE other.tenant_key<>$1 AND other.identity_namespace=g.namespace) FOR SHARE OF g,s")
+        let row=sqlx::query("SELECT g.scope_id,g.namespace FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id AND s.status='active' WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.subject_type='wecom_internal' AND g.account_kind IN ('employee','shared') AND (g.account_kind='shared' OR g.namespace=$3) AND g.active AND EXISTS(SELECT 1 FROM qintopia_agent_os.business_property_bindings b WHERE b.tenant_key=$1 AND b.scope_id=g.scope_id AND b.active) AND NOT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways other WHERE other.tenant_key<>$1 AND other.namespace=g.namespace AND other.subject_type=g.subject_type AND other.active) AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants other WHERE other.tenant_key<>$1 AND other.identity_namespace=g.namespace) FOR SHARE OF g,s")
             .bind(&self.tenant).bind(gateway).bind(&self.identity_namespace).fetch_optional(&mut *tx).await?
             .ok_or_else(||anyhow::anyhow!("live_gateway_unavailable"))?;
         let scope: Uuid = row.get("scope_id");
@@ -118,7 +118,10 @@ impl Store {
             .bind(&namespace).bind(&turn.sender_id).fetch_optional(&mut *tx).await? {
             let status:String=link.get("status");
             if status == "revoked" || link.get::<Value,_>("adapter_metadata")["first_observation_ref"].is_string() {
-                return Ok(json!({"link_ref":link.get::<Uuid,_>("id"),"status":status,"version":link.get::<i64,_>("version"),"person_auto_created":false}));
+                let registered:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key WHERE w.tenant_key=$1 AND w.gateway_key=$2 AND w.source_link_id=$3 AND w.active AND w.source_version=$4 AND w.gateway_version=g.version AND g.active AND g.namespace=$5 AND g.subject_type='wecom_internal' AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1)")
+                    .bind(&self.tenant).bind(gateway).bind(link.get::<Uuid,_>("id")).bind(link.get::<i64,_>("version")).bind(&namespace).fetch_one(&mut *tx).await?;
+                let observed_status=if status != "revoked" && registered { "confirmed" } else { &status };
+                return Ok(json!({"link_ref":link.get::<Uuid,_>("id"),"status":observed_status,"version":link.get::<i64,_>("version"),"person_auto_created":false}));
             }
         }
         let event_key = super::super::digest(&serde_json::to_vec(&json!([
@@ -695,7 +698,16 @@ impl Store {
 
     /// `gateway` is deployment/session context, never a model supplied namespace.
     pub(crate) async fn gateway_actor(&self, gateway: &str, subject_ref: &str) -> Result<Actor> {
-        self.resolve_gateway_actor(gateway, subject_ref, false)
+        self.resolve_gateway_actor(gateway, subject_ref, false, false)
+            .await
+    }
+
+    pub(crate) async fn business_gateway_actor(
+        &self,
+        gateway: &str,
+        subject_ref: &str,
+    ) -> Result<Actor> {
+        self.resolve_gateway_actor(gateway, subject_ref, false, true)
             .await
     }
 
@@ -704,7 +716,8 @@ impl Store {
         gateway: &str,
         subject_ref: &str,
     ) -> Result<Actor> {
-        self.resolve_gateway_actor(gateway, subject_ref, true).await
+        self.resolve_gateway_actor(gateway, subject_ref, true, false)
+            .await
     }
 
     async fn resolve_gateway_actor(
@@ -712,8 +725,24 @@ impl Store {
         gateway: &str,
         subject_ref: &str,
         work_proof: bool,
+        allow_work_account: bool,
     ) -> Result<Actor> {
         let (mut tx, _, _) = self.begin().await?;
+        if allow_work_account {
+            if let Some(account)=sqlx::query("SELECT w.id AS account_id,w.version AS account_version,l.id AS link_id,l.version AS link_version,g.namespace,g.version AS gateway_version,g.scope_id FROM qintopia_identity.work_accounts w JOIN qintopia_identity.source_identity_links l ON l.id=w.source_link_id JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id WHERE w.tenant_key=$1 AND g.gateway_key=$2 AND l.source_ref=$3 AND w.active AND g.active AND s.status='active' AND w.gateway_version=g.version AND w.source_version=l.version AND l.namespace=g.namespace AND l.subject_type=g.subject_type AND l.person_id IS NULL AND l.status<>'revoked' AND l.adapter_metadata ? 'first_observation_ref' AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1 FOR SHARE OF w,l,g,s")
+            .bind(&self.tenant).bind(gateway).bind(subject_ref).fetch_optional(&mut *tx).await? {
+            let actor=Actor {
+                link:account.get("link_id"), person:Uuid::nil(),
+                work_account:Some((account.get("account_id"),account.get("account_version"))),
+                identity_version:account.get("link_version"),
+                identity_namespace:account.get("namespace"),
+                gateway:Some((gateway.into(),account.get("gateway_version"),account.get("scope_id"))),
+                session_hash:None,tenant:self.tenant.clone(),
+            };
+            self.verify(&mut tx,&actor).await?;
+            return Ok(actor);
+        }
+        }
         let row=sqlx::query("SELECT g.namespace,g.version AS gateway_version,g.scope_id,g.account_kind,l.id,l.person_id,l.version FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key JOIN qintopia_identity.source_identity_links l ON l.namespace=g.namespace AND l.subject_type=g.subject_type JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.active AND s.status='active' AND l.source_ref=$3 AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND (l.confirmed_by IS NOT NULL OR $4) AND p.status='active' FOR SHARE OF g,s,l,p")
             .bind(&self.tenant).bind(gateway).bind(subject_ref).bind(work_proof).fetch_optional(&mut *tx).await?
             .ok_or_else(||anyhow::anyhow!("gateway_identity_unconfirmed"))?;
@@ -724,6 +753,7 @@ impl Store {
         let actor = Actor {
             link: row.get("id"),
             person: row.get("person_id"),
+            work_account: None,
             identity_version: row.get("version"),
             identity_namespace: row.get("namespace"),
             gateway: Some((
