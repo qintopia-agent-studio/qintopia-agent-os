@@ -96,9 +96,58 @@ promoter 的真实顺序是：在 staging 下载主/伴随运行制品和 bundle
 未中断的同一 fixture 得到 T/O。旧 runner 现有 fixture 的 installer 失败及 smoke 失败会进入同步自动回退；`SIGKILL`
 不运行错误处理、installer 补偿或结果写入。因此 O/O、T/O 是首次接管必须覆盖的中断状态；T 未落盘时不存在本次指针改变。固定 T 入口可在 O/O 与 T/O 状态从完整 T 树运行，但必须先核验其 bundle 和原签名过渡请求。
 
-故障注入位于完整命令之间，尚未证明 Linux `ln -sfn`
-在命令内部被中断时的状态。实施前要用隔离 Linux
-fixture 覆盖该窗口；若出现缺失指针，须按实际证据补充固定恢复状态并重新评审。最新只读服务器复核仍为 O/P，T 目录不存在。
+另在独立 Ubuntu 24.04 Linux 容器对 GNU `ln -sfn`
+的命令内部窗口做系统调用核查。容器 coreutils 为 `9.4-3ubuntu6.3`；生产为
+`9.4-3ubuntu6.1`，生产 release 目录在 ext4 上。容器成功轨迹先以 `symlinkat`
+创建同目录随机名临时链接，再用单次 `renameat` 覆盖已有 `current`，没有先删除目标。将
+`renameat` 入口定点延迟并 `SIGKILL` 后，旧 `current`
+仍指向 old，随机名临时链接指向 new。因此这一命令内部中断不产生缺失的 current/previous 指针，无需扩大上表的允许恢复状态；残留临时链接须作为证据核对，不自动清理。
+
+两包修订之间的 Ubuntu changelog 只列出 `du` 和 `sort` 的代码变更，没有 `ln`
+变更；但实验使用 arm64 容器二进制，不是生产 x86_64 `9.4-3ubuntu6.1`
+二进制的逐字节执行。结论基于相同 coreutils
+9.4 逻辑与同目录原子 rename 语义，不声称覆盖 Linux 内核或存储故障。最新只读服务器复核仍为 O/P，T 目录不存在。
+
+脱敏复核命令如下；均只作用于 `docker run --rm` 的独立容器临时目录，`old/new/current`
+是模拟路径，不是生产 Release 指针：
+
+```bash
+docker run --rm -i --cap-add SYS_PTRACE ubuntu:24.04 sh -s <<'SH'
+set -eu
+apt-get update -qq
+apt-get install -y -qq strace >/dev/null
+dir=$(mktemp -d)
+mkdir "$dir/old" "$dir/new"
+old="$dir/old"
+new="$dir/new"
+current="$dir/current"
+trace="$dir/trace"
+ln -s "$old" "$current"
+strace -o "$trace" -e trace=symlinkat,renameat ln -sfn "$new" "$current"
+cat "$trace"
+ln -sfn "$old" "$current"
+strace -o "$trace" -e trace=symlinkat,renameat \
+  -e inject=renameat:delay_enter=10s \
+  sh -c 'echo $$ > "$1/pid"; exec ln -sfn "$1/new" "$1/current"' sh "$dir" &
+tracer=$!
+while [ ! -s "$dir/pid" ]; do sleep 0.05; done
+sleep 1
+kill -9 "$(cat "$dir/pid")"
+wait "$tracer" || true
+cat "$trace"
+readlink "$current"
+find "$dir" -maxdepth 1 -type l -printf '%f -> %l\n'
+SH
+```
+
+成功轨迹的关键 syscall 为 `symlinkat(new, temporary)=0`、
+`renameat(temporary, current)=0`；定点中断轨迹为
+`symlinkat(new, temporary)=0`、`renameat(temporary, current)=?`、
+`killed by SIGKILL`，随后 `readlink current=old`。脱敏证据记录在本报告及
+`docs/reports/README.md` 索引；容器内 `/tmp` trace 随 `--rm`
+销毁，未保存服务器配置、凭据或原始日志。生产只读核对命令为
+`ln --version`、`dpkg-query -W coreutils`、
+`findmnt -no FSTYPE --target /home/ubuntu/qintopia-agent-os-releases`。
 
 ## 回退缺口与约束
 
@@ -316,7 +365,9 @@ runner 消费新的六目标请求；R→T 用 R/T 的 exact-previous 回退，T
 
 首次接管硬中断时，T 未落盘且指针 O/P 则只读核对并停止；T 已落盘而指针 O/O 或 T/O，由固定 T 一次性入口消费**另一条**审批、签名且绑定 request
 ID 的恢复请求，CAS 回到 O/P，运行 O
-installer 与 smoke 并签名回执。后续回退硬中断也用同一固定 T 入口处理已记录事务。任何新 pointer 错配、目标树不可信、CAS 冲突或恢复失败都停止，不能重放原请求。此入口和恢复事务尚未实现，当前部署状态仍是 O/P；不应将本报告视为上线许可。
+installer 与 smoke 并签名回执。后续回退硬中断也用同一固定 T 入口处理已记录事务。任何新 pointer 错配、目标树不可信、CAS 冲突或恢复失败都停止，不能重放原请求。
+
+此入口和恢复事务尚未实现，当前部署状态仍是 O/P；不应将本报告视为上线许可。O/P/T/R 只作为本次审定的运行参数，不在通用源码中硬编码为智能体或版本放行特例。
 
 ## 验证和交接
 
