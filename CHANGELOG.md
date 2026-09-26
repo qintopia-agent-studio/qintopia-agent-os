@@ -6,6 +6,41 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.3](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.2...v0.3.3) (2026-09-26)
+
+
+### Features
+
+* **anan:** integrate PMS operations and welcome confirmation ([#721](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/721)) ([470c450](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/470c4505dff745a48d2967b884de25436da527c6))
+* **anan:** wire gated live authorization and PMS event intake ([#722](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/722)) ([70e7984](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/70e7984fab92ddab956009585212d0e9729767b5))
+* **person-collaboration:** complete governed ontology UI ([70abd52](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/70abd52d6a5ff2dacf5db495e7da4539c98774df))
+* **person-collaboration:** complete steward workspace and temporary review ([ee00407](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ee0040732d3dcebc5dc8ae7df86600bc78a8ec8c))
+* **person-foundation:** complete scoped steward workspace and local welcome flow ([b42db0d](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b42db0d8b8388c65dcf62c1f1fd41a7325298c5e))
+* **person-foundation:** connect Erhua authority and local welcome runtime ([19957ef](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/19957ef21d5e9f0ec89b61a9c43088a538d82386))
+* **workbench:** add local password login and account lifecycle ([#717](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/717)) ([6be9ac1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6be9ac1dcf2d742dfa913a4be18716509ad7d7b6))
+
+
+### Bug Fixes
+
+* **ci:** restore Evans workflow and contract checks ([2d5a526](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/2d5a526efd73011e70f3603d747d341de7cae884))
+* **foundation:** isolate test fixtures and restore CI contracts ([7a99794](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/7a99794c1b63706369d53448e0792266abafa183))
+* **foundation:** repair CI setup and cross-platform revision checks ([39bf1c2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/39bf1c2d1cd58f225028c0859351ef62089c3621))
+* **person-collaboration:** complete scoped rule lifecycle and review ([759efe0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/759efe0c6b7346d4145dca834e358567bbf18adb))
+* **person-collaboration:** enable scoped personal rule settings ([b195194](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/b1951943fc5d847e6665107b63eee02e9d8bd4ed))
+* **person-collaboration:** scope workbench to current account ([85a274b](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/85a274b2a8338975e14d028b3da84a9cda7fc6d9))
+* **welcome:** preserve stored outcomes during executor downtime ([a128cf9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a128cf989f673d5655e8f44e8af9b1c8f3c3e2de))
+
+
+### Documentation
+
+* consolidate community ontology and first-batch handoff ([#719](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/719)) ([a2999e2](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/a2999e28fbe8fa7ce327b85dbb50d283fe860509))
+* **person-foundation:** close out local delivery and acceptance handoff ([4919708](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/49197085ee91054526726d85d66724ba26d580d3))
+
+
+### Reverts
+
+* **deploy:** restore restart ownership configuration ([3030d67](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3030d6746317849e62a694e121f77fb07f86f59e))
+
 ## [0.3.2](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.1...v0.3.2) (2026-09-17)
 
 
