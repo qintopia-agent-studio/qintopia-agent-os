@@ -513,9 +513,9 @@ impl Store {
             sqlx::query("UPDATE qintopia_agent_os.work_items SET metadata=metadata-'business_link_proposal' WHERE metadata->'business_link_proposal'->>'tenant'=$1 AND metadata->'business_link_proposal'->>'person'=$2 AND metadata->'business_link_proposal'->>'gateway'=$3 AND metadata->'business_link_proposal'->>'chat'=$4")
                 .bind(&self.tenant).bind(actor.business_id().to_string()).bind(gateway).bind(&chat_hash).execute(&mut *tx).await?;
         }
-        if let Some(r)=sqlx::query("SELECT id,person_id,work_account_id,content_hash,chat_hash FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3")
+        if let Some(r)=sqlx::query("SELECT id,person_id,work_account_id,work_account_version,content_hash,chat_hash FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3")
             .bind(&self.tenant).bind(gateway).bind(&message_hash).fetch_optional(&mut *tx).await? {
-            ensure!(r.get::<Option<Uuid>,_>("person_id")==actor.business_person() && r.get::<Option<Uuid>,_>("work_account_id")==actor.work_account.map(|v|v.0) && r.get::<String,_>("content_hash")==content_hash && r.get::<String,_>("chat_hash")==chat_hash,"trusted_message_conflict");
+            ensure!(r.get::<Option<Uuid>,_>("person_id")==actor.business_person() && r.get::<Option<Uuid>,_>("work_account_id")==actor.work_account.map(|v|v.0) && r.get::<Option<i64>,_>("work_account_version")==actor.work_account.map(|v|v.1) && r.get::<String,_>("content_hash")==content_hash && r.get::<String,_>("chat_hash")==chat_hash,"trusted_message_conflict");
             return Ok(json!({"evidence":r.get::<Uuid,_>("id"),"replayed":true}));
         }
         let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_turn_evidence(tenant_key,gateway_key,platform,chat_hash,chat_type,message_hash,person_id,identity_id,identity_version,content_hash,confirmation_code,explicit_intent,work_account_id,work_account_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id")

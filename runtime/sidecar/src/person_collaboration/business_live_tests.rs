@@ -752,6 +752,8 @@ async fn live_host_observation_and_person_cli_do_not_grant_business_authority() 
         assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-drift")).await?["result"]["status"],"identity_pending");
         assert!(store.business_gateway_actor(&shared_gateway,sender).await.is_err());
         store.business_configure(&admin,&config(version(&store).await?,BusinessConfigChange::RegisterAccount { gateway:shared_gateway.clone(),source_link:link,label:"模拟共用账号重新登记".into() }),true).await?;
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-registered")).await?["ok"],false);
+        assert_eq!(payment_workitem_socket_request(&shared_socket,capture("shared-renewed")).await?["ok"],true);
         let account_version:i64=sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
             .bind(account).fetch_one(&pool).await?;
         store.business_configure(&admin,&config(version(&store).await?,BusinessConfigChange::DisableAccount { account,expected_account_version:account_version }),true).await?;
