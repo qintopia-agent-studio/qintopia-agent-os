@@ -99,6 +99,51 @@ pub async fn run_production_broker() -> Result<()> {
     foundation_server::broker_live(store).await
 }
 
+pub async fn run_production_ui(port: u16) -> Result<()> {
+    use tokio::{io::AsyncWriteExt, net::TcpListener};
+    let store = production_store().await?;
+    ensure!(
+        std::env::var("QINTOPIA_COLLABORATION_LOCAL_ENABLE").as_deref() != Ok("1")
+            && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1"),
+        "production_ui_local_mode_denied"
+    );
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+    loop {
+        let (mut stream, peer) = listener.accept().await?;
+        if !peer.ip().is_loopback() {
+            continue;
+        }
+        if !matches!(
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                auth_server::handle(&mut stream, &store, port)
+            )
+            .await,
+            Ok(Ok(()))
+        ) {
+            let _ = stream.shutdown().await;
+        }
+    }
+}
+
+pub async fn bootstrap_production_account(person: uuid::Uuid, username: &str) -> Result<()> {
+    use std::io::Read;
+    use zeroize::Zeroizing;
+    let store = production_store().await?;
+    ensure!(
+        std::env::var("QINTOPIA_COLLABORATION_LOCAL_ENABLE").as_deref() != Ok("1"),
+        "production_ui_local_mode_denied"
+    );
+    let mut password = Zeroizing::new(String::new());
+    std::io::stdin().take(1024).read_to_string(&mut password)?;
+    ensure!(password.len() < 1024, "password_length");
+    store
+        .bootstrap_account(person, username, password.trim_end_matches(['\r', '\n']))
+        .await?;
+    println!("Account initialized; no business permissions added.");
+    Ok(())
+}
+
 pub async fn run_production_payment_events(port: u16) -> Result<()> {
     let store = production_store().await?;
     business_ingress::run_production_events(store, port).await

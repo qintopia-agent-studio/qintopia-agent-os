@@ -61,11 +61,21 @@ impl StoreMode {
 pub struct Actor {
     link: Uuid,
     person: Uuid,
+    work_account: Option<(Uuid, i64)>,
     identity_version: i64,
     identity_namespace: String,
     gateway: Option<(String, i64, Uuid)>,
     session_hash: Option<String>,
     tenant: String,
+}
+
+impl Actor {
+    fn business_id(&self) -> Uuid {
+        self.work_account.map_or(self.person, |(id, _)| id)
+    }
+    fn business_person(&self) -> Option<Uuid> {
+        self.work_account.is_none().then_some(self.person)
+    }
 }
 
 impl Store {
@@ -118,7 +128,10 @@ impl Store {
         let namespace: String = row.get("namespace");
         ensure!(
             row.get::<String, _>("subject_type") == "wecom_internal"
-                && row.get::<String, _>("account_kind") == "employee",
+                && matches!(
+                    row.get::<String, _>("account_kind").as_str(),
+                    "employee" | "shared"
+                ),
             "live_gateway_identity_type_required"
         );
         let conflict: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g WHERE g.tenant_key<>$1 AND g.namespace=$2 AND g.subject_type='wecom_internal' AND g.active) OR EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants t WHERE t.tenant_key<>$1 AND t.identity_namespace=$2)")
@@ -182,6 +195,7 @@ impl Store {
             link,
             session_hash: None,
             person: row.get("person_id"),
+            work_account: None,
             identity_version: row.get("version"),
             identity_namespace: self.identity_namespace.clone(),
             gateway: None,
@@ -191,6 +205,17 @@ impl Store {
 
     async fn verify(&self, tx: &mut Transaction<'_, Postgres>, actor: &Actor) -> Result<()> {
         ensure!(actor.tenant == self.tenant, "tenant_mismatch");
+        if let Some((account, version)) = actor.work_account {
+            ensure!(
+                actor.person.is_nil() && actor.session_hash.is_none() && actor.gateway.is_some(),
+                "trusted_context_unavailable"
+            );
+            let (gateway, gateway_version, scope) = actor.gateway.as_ref().unwrap();
+            let valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.work_accounts w JOIN qintopia_identity.source_identity_links l ON l.id=w.source_link_id JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id WHERE w.tenant_key=$1 AND w.id=$2 AND w.version=$3 AND w.source_link_id=$4 AND w.source_version=$5 AND w.gateway_key=$6 AND w.gateway_version=$7 AND g.version=$7 AND g.scope_id=$8 AND g.namespace=$9 AND w.active AND g.active AND s.status='active' AND l.namespace=g.namespace AND l.subject_type=g.subject_type AND l.version=w.source_version AND l.person_id IS NULL AND l.status<>'revoked' AND l.adapter_metadata ? 'first_observation_ref' AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1)")
+                .bind(&self.tenant).bind(account).bind(version).bind(actor.link).bind(actor.identity_version).bind(gateway).bind(gateway_version).bind(scope).bind(&actor.identity_namespace).fetch_one(&mut **tx).await?;
+            ensure!(valid, "work_account_changed_or_revoked");
+            return Ok(());
+        }
         if let Some((gateway, version, scope)) = &actor.gateway {
             let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND g.version=$3 AND g.scope_id=$4 AND g.namespace=$5 AND g.active AND g.account_kind<>'shared' AND s.status='active' AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.id=$6 AND l.namespace=g.namespace AND l.subject_type=g.subject_type))")
                 .bind(&self.tenant).bind(gateway).bind(version).bind(scope).bind(&actor.identity_namespace).bind(actor.link).fetch_one(&mut **tx).await?;

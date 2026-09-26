@@ -208,8 +208,36 @@ pub(super) async fn dispatch(
     r: crate::local_http::Request,
 ) -> Result<()> {
     let result: Result<Value> = async {
+        if store.is_live()
+            && !matches!(
+                (r.method.as_str(), r.path.as_str()),
+                ("GET", "/api/state" | "/api/business")
+                    | (
+                        "POST",
+                        "/api/business/preview"
+                            | "/api/business/save"
+                            | "/api/preview"
+                            | "/api/save"
+                    )
+            )
+        {
+            anyhow::bail!("production_configuration_change_denied");
+        }
         match (r.method.as_str(), r.path.as_str()) {
-            ("GET", "/api/state") => store.state(actor).await,
+            ("GET", "/api/state") => {
+                let mut state = store.state(actor).await?;
+                state["mode"] = json!(if store.is_live() { "live" } else { "synthetic" });
+                Ok(state)
+            }
+            ("GET", "/api/business") => store.business_configuration_state(actor).await,
+            ("POST", "/api/business/preview" | "/api/business/save") => {
+                let command: super::store::business_config::BusinessConfigCommand =
+                    serde_json::from_slice(&r.body)
+                        .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                store
+                    .business_configure(actor, &command, r.path.ends_with("/save"))
+                    .await
+            }
             ("GET", path) if path.starts_with("/api/ontology?scope=") => {
                 let scope = Uuid::parse_str(path.trim_start_matches("/api/ontology?scope="))
                     .map_err(|_| anyhow::anyhow!("invalid_command"))?;
@@ -284,6 +312,20 @@ pub(super) async fn dispatch(
             ("POST", "/api/preview" | "/api/save") => {
                 let command: Command = serde_json::from_slice(&r.body)
                     .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                if store.is_live() {
+                    ensure!(
+                        matches!(
+                            &command.change,
+                            super::model::Change::Assign(_)
+                                | super::model::Change::ConfigureWork { .. }
+                                | super::model::Change::RevokeGrant { .. }
+                                | super::model::Change::EndAppointment { .. }
+                                | super::model::Change::EndCollaboration { .. }
+                                | super::model::Change::SetGroups { .. }
+                        ),
+                        "production_configuration_change_denied"
+                    );
+                }
                 if let super::model::Change::Assign(a) = &command.change {
                     ensure!(
                         a.duty.is_some() && a.actions.is_empty(),

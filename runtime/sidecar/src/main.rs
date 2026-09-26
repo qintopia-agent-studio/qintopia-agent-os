@@ -157,6 +157,9 @@ async fn main() -> Result<()> {
         Command::RunCollaborationLocal { port, init_fixture } => {
             person_collaboration::local_server::run(port, init_fixture).await
         }
+        Command::RunCollaborationProductionUi { port } => {
+            person_collaboration::run_production_ui(port).await
+        }
         Command::RunFoundationProduction => person_collaboration::run_production_broker().await,
         Command::ConfigureFoundationProduction { apply, status } => {
             person_collaboration::run_production_configuration(apply, status)
@@ -167,6 +170,9 @@ async fn main() -> Result<()> {
         }
         Command::BootstrapCollaborationAccount { person, username } => {
             person_collaboration::auth_server::bootstrap(person, &username).await
+        }
+        Command::BootstrapCollaborationProductionAccount { person, username } => {
+            person_collaboration::bootstrap_production_account(person, &username).await
         }
         Command::RunWelcomeLocal { port } => resident_welcome::local_server::run(port).await,
         Command::Check => health::check(&cli).await,

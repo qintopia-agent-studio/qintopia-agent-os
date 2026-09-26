@@ -403,6 +403,11 @@ pub enum Command {
         #[arg(long)]
         init_fixture: bool,
     },
+    /// Authenticated loopback management UI for the explicitly configured live tenant.
+    RunCollaborationProductionUi {
+        #[arg(long)]
+        port: u16,
+    },
     /// Serve only Anan's approved PMS conversation tools for an explicitly configured live tenant.
     RunFoundationProduction,
     /// Preview or apply one scoped production configuration command as a preconfigured administrator.
@@ -414,6 +419,13 @@ pub enum Command {
     },
     /// Provision the first login for an explicitly identified existing authorized Person.
     BootstrapCollaborationAccount {
+        #[arg(long)]
+        person: uuid::Uuid,
+        #[arg(long)]
+        username: String,
+    },
+    /// Provision the first live UI login from an existing verified management Person.
+    BootstrapCollaborationProductionAccount {
         #[arg(long)]
         person: uuid::Uuid,
         #[arg(long)]

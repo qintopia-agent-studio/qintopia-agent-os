@@ -197,6 +197,49 @@ pub(super) async fn operation_in(
     })
 }
 
+async fn operation_for_actor_in(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant: &str,
+    policy: &Policy,
+    actor: &Actor,
+    binding: Uuid,
+    key: &str,
+    now: DateTime<Utc>,
+) -> Result<BusinessAuthority> {
+    let Some((account, version)) = actor.work_account else {
+        return operation_in(tx, tenant, policy, actor.person, binding, key, now).await;
+    };
+    let spec = operation(key)?;
+    let action = spec["action"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("unsupported_business_operation"))?;
+    let row=sqlx::query("SELECT b.scope_id,b.property_id,b.source_instance,b.version,o.id,o.authority_grant_id,o.issued_by FROM qintopia_agent_os.business_property_bindings b JOIN qintopia_agent_os.business_operation_grants o ON o.tenant_key=b.tenant_key AND o.binding_id=b.id WHERE b.tenant_key=$1 AND b.id=$2 AND b.active AND o.work_account_id=$3 AND o.work_account_version=$4 AND o.operation_key=$5 AND o.revoked_at IS NULL AND (o.valid_until IS NULL OR o.valid_until>$6)")
+        .bind(tenant).bind(binding).bind(account).bind(version).bind(key).bind(now).fetch_optional(&mut **tx).await?
+        .ok_or_else(||anyhow::anyhow!("business_operation_denied"))?;
+    let scope: Uuid = row.get("scope_id");
+    ensure!(
+        actor.gateway.as_ref().is_some_and(|g| g.2 == scope),
+        "gateway_scope_mismatch"
+    );
+    let manager = policy
+        .manager(row.get("issued_by"), scope, "anan", "hospitality", action)
+        .ok_or_else(|| anyhow::anyhow!("business_authority_denied"))?;
+    ensure!(
+        manager.id == row.get::<Uuid, _>("authority_grant_id"),
+        "business_authority_changed"
+    );
+    Ok(BusinessAuthority {
+        operation_grant: row.get("id"),
+        binding,
+        binding_version: row.get("version"),
+        property: row.get("property_id"),
+        source: row.get("source_instance"),
+        scope,
+        operation: key.into(),
+        action: action.into(),
+    })
+}
+
 impl Store {
     pub(crate) async fn business_context(
         &self,
@@ -229,16 +272,8 @@ impl Store {
         for row in rows {
             let binding: Uuid = row.get("id");
             let key: String = row.get("operation_key");
-            match operation_in(
-                &mut tx,
-                &self.tenant,
-                &policy,
-                actor.person,
-                binding,
-                &key,
-                now,
-            )
-            .await
+            match operation_for_actor_in(&mut tx, &self.tenant, &policy, actor, binding, &key, now)
+                .await
             {
                 Ok(_) => {
                     let entry = bindings
@@ -279,16 +314,9 @@ impl Store {
         let policy =
             super::foundation::load_policy(&mut tx, &self.tenant, &self.identity_namespace, now)
                 .await?;
-        let result = operation_in(
-            &mut tx,
-            &self.tenant,
-            &policy,
-            actor.person,
-            binding,
-            key,
-            now,
-        )
-        .await?;
+        let result =
+            operation_for_actor_in(&mut tx, &self.tenant, &policy, actor, binding, key, now)
+                .await?;
         if let Some((_, _, scope)) = actor.gateway {
             ensure!(scope == result.scope, "gateway_scope_mismatch");
         }
@@ -423,8 +451,8 @@ impl Store {
             .filter(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit()))
             .map(str::to_owned);
         if let Some(command) = natural_command {
-            let candidates:Vec<String>=sqlx::query_scalar("SELECT a.confirmation_code FROM qintopia_agent_os.business_actions a JOIN qintopia_agent_os.business_turn_evidence e ON e.id=a.source_evidence_id AND e.tenant_key=a.tenant_key WHERE a.tenant_key=$1 AND a.actor_person_id=$2 AND e.gateway_key=$3 AND e.chat_hash=$4 AND a.phase='awaiting_confirmation' AND ($5='' OR a.operation_key=$5)")
-                .bind(&self.tenant).bind(actor.person).bind(gateway).bind(&chat_hash).bind(command).fetch_all(&mut *tx).await?;
+            let candidates:Vec<String>=sqlx::query_scalar("SELECT a.confirmation_code FROM qintopia_agent_os.business_actions a JOIN qintopia_agent_os.business_turn_evidence e ON e.id=a.source_evidence_id AND e.tenant_key=a.tenant_key WHERE a.tenant_key=$1 AND ((a.actor_person_id=$2 AND $6::uuid IS NULL) OR a.actor_work_account_id=$6) AND e.gateway_key=$3 AND e.chat_hash=$4 AND a.phase='awaiting_confirmation' AND ($5='' OR a.operation_key=$5)")
+                .bind(&self.tenant).bind(actor.business_person()).bind(gateway).bind(&chat_hash).bind(command).bind(actor.work_account.map(|v|v.0)).fetch_all(&mut *tx).await?;
             if candidates.len() == 1 {
                 confirmation = Some(candidates[0].clone());
             }
@@ -456,7 +484,7 @@ impl Store {
             });
         if turn.text.trim() == "确认此订单承接原订房事项" {
             let proposals:Vec<Value>=sqlx::query_scalar("SELECT readback->'order_proposal' FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND phase='manual_handoff' AND readback->'order_proposal'->>'person'=$2 AND readback->'order_proposal'->>'gateway'=$3 AND readback->'order_proposal'->>'chat'=$4 AND (readback->'order_proposal'->>'expires')::timestamptz>clock_timestamp()")
-                .bind(&self.tenant).bind(actor.person.to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
+                .bind(&self.tenant).bind(actor.business_id().to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
             if proposals.len() == 1 {
                 intent = Some(
                     json!({"manual_order":proposals[0]["order"],"manual_order_adoption":proposals[0]["hash"]}),
@@ -465,7 +493,7 @@ impl Store {
         }
         if turn.text.trim() == "确认这笔人工收款是本事项的办理结果" {
             let proposals:Vec<Value>=sqlx::query_scalar("SELECT readback->'manual_proposal' FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND phase='manual_handoff' AND readback->'manual_proposal'->>'person'=$2 AND readback->'manual_proposal'->>'gateway'=$3 AND readback->'manual_proposal'->>'chat'=$4 AND (readback->'manual_proposal'->>'expires')::timestamptz>clock_timestamp()")
-                .bind(&self.tenant).bind(actor.person.to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
+                .bind(&self.tenant).bind(actor.business_id().to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
             if proposals.len() == 1 {
                 intent = Some(
                     json!({"manual_order":proposals[0]["order"],"manual_fact_confirmation":proposals[0]["hash"]}),
@@ -474,22 +502,22 @@ impl Store {
         }
         if turn.text.trim() == "确认关联" {
             let proposals:Vec<String>=sqlx::query_scalar("SELECT metadata->'business_link_proposal'->>'hash' FROM qintopia_agent_os.work_items WHERE metadata->'business_link_proposal'->>'tenant'=$1 AND metadata->'business_link_proposal'->>'person'=$2 AND metadata->'business_link_proposal'->>'gateway'=$3 AND metadata->'business_link_proposal'->>'chat'=$4 AND (metadata->'business_link_proposal'->>'expires')::timestamptz>clock_timestamp()")
-                .bind(&self.tenant).bind(actor.person.to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
+                .bind(&self.tenant).bind(actor.business_id().to_string()).bind(gateway).bind(&chat_hash).fetch_all(&mut *tx).await?;
             if proposals.len() == 1 {
                 intent = Some(json!({"source_link":proposals[0]}));
             }
         }
         if turn.text.trim() == "取消关联" {
             sqlx::query("UPDATE qintopia_agent_os.work_items SET metadata=metadata-'business_link_proposal' WHERE metadata->'business_link_proposal'->>'tenant'=$1 AND metadata->'business_link_proposal'->>'person'=$2 AND metadata->'business_link_proposal'->>'gateway'=$3 AND metadata->'business_link_proposal'->>'chat'=$4")
-                .bind(&self.tenant).bind(actor.person.to_string()).bind(gateway).bind(&chat_hash).execute(&mut *tx).await?;
+                .bind(&self.tenant).bind(actor.business_id().to_string()).bind(gateway).bind(&chat_hash).execute(&mut *tx).await?;
         }
-        if let Some(r)=sqlx::query("SELECT id,person_id,content_hash,chat_hash FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3")
+        if let Some(r)=sqlx::query("SELECT id,person_id,work_account_id,content_hash,chat_hash FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3")
             .bind(&self.tenant).bind(gateway).bind(&message_hash).fetch_optional(&mut *tx).await? {
-            ensure!(r.get::<Uuid,_>("person_id")==actor.person && r.get::<String,_>("content_hash")==content_hash && r.get::<String,_>("chat_hash")==chat_hash,"trusted_message_conflict");
+            ensure!(r.get::<Option<Uuid>,_>("person_id")==actor.business_person() && r.get::<Option<Uuid>,_>("work_account_id")==actor.work_account.map(|v|v.0) && r.get::<String,_>("content_hash")==content_hash && r.get::<String,_>("chat_hash")==chat_hash,"trusted_message_conflict");
             return Ok(json!({"evidence":r.get::<Uuid,_>("id"),"replayed":true}));
         }
-        let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_turn_evidence(tenant_key,gateway_key,platform,chat_hash,chat_type,message_hash,person_id,identity_id,identity_version,content_hash,confirmation_code,explicit_intent) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id")
-            .bind(&self.tenant).bind(gateway).bind(&turn.platform).bind(chat_hash).bind(&turn.chat_type).bind(message_hash).bind(actor.person).bind(actor.link).bind(actor.identity_version).bind(content_hash).bind(confirmation).bind(intent).fetch_one(&mut *tx).await?;
+        let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_turn_evidence(tenant_key,gateway_key,platform,chat_hash,chat_type,message_hash,person_id,identity_id,identity_version,content_hash,confirmation_code,explicit_intent,work_account_id,work_account_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id")
+            .bind(&self.tenant).bind(gateway).bind(&turn.platform).bind(chat_hash).bind(&turn.chat_type).bind(message_hash).bind(actor.business_person()).bind(actor.link).bind(actor.identity_version).bind(content_hash).bind(confirmation).bind(intent).bind(actor.work_account.map(|v|v.0)).bind(actor.work_account.map(|v|v.1)).fetch_one(&mut *tx).await?;
         tx.commit().await?;
         Ok(json!({"evidence":id,"replayed":false}))
     }
@@ -504,8 +532,8 @@ impl Store {
         message: &str,
         chat: &str,
     ) -> Result<Uuid> {
-        let row=sqlx::query("SELECT id,identity_id,identity_version,observed_at,chat_type,platform FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3 AND chat_hash=$4 AND person_id=$5")
-            .bind(&self.tenant).bind(gateway).bind(digest(message.as_bytes())).bind(digest(chat.as_bytes())).bind(actor.person).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("trusted_message_evidence_required"))?;
+        let row=sqlx::query("SELECT id,identity_id,identity_version,observed_at,chat_type,platform FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND gateway_key=$2 AND message_hash=$3 AND chat_hash=$4 AND person_id IS NOT DISTINCT FROM $5::uuid AND work_account_id IS NOT DISTINCT FROM $6::uuid AND work_account_version IS NOT DISTINCT FROM $7::bigint")
+            .bind(&self.tenant).bind(gateway).bind(digest(message.as_bytes())).bind(digest(chat.as_bytes())).bind(actor.business_person()).bind(actor.work_account.map(|v|v.0)).bind(actor.work_account.map(|v|v.1)).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("trusted_message_evidence_required"))?;
         ensure!(
             row.get::<Uuid, _>("identity_id") == actor.link
                 && row.get::<i64, _>("identity_version") == actor.identity_version,
@@ -587,17 +615,48 @@ impl Store {
                 actor.gateway.as_ref().is_some_and(|(_, _, s)| *s == scope),
                 "gateway_scope_mismatch"
             );
-            let auth = super::foundation::authorize_current(
-                &mut tx,
-                &self.tenant,
-                actor.person,
-                scope,
-                "anan",
-                "hospitality",
-                "execute_business",
-            )
-            .await?;
-            ensure!(auth.status == "autonomous", "business_authority_denied");
+            let allowed = policy.grants.iter().any(|g| {
+                actor.work_account.is_none()
+                    && g.person == actor.person
+                    && g.agent == "anan"
+                    && g.domain == "hospitality"
+                    && g.action == "execute_business"
+                    && g.mode == PermissionMode::Autonomous
+                    && policy.effective(g)
+                    && policy.in_scope(scope, g.scope, g.descendants)
+            });
+            let account_allowed = if actor.work_account.is_some() {
+                let catalog: Value = serde_json::from_str(include_str!(
+                    "../../../../../skills/pms-operations/operations.json"
+                ))?;
+                let mut found = false;
+                for (key, spec) in catalog["operations"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|o| o.iter())
+                {
+                    if spec["action"] == "execute_business"
+                        && operation_for_actor_in(
+                            &mut tx,
+                            &self.tenant,
+                            &policy,
+                            actor,
+                            binding,
+                            key,
+                            now,
+                        )
+                        .await
+                        .is_ok()
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                found
+            } else {
+                false
+            };
+            ensure!(allowed || account_allowed, "business_authority_denied");
             ensure!(
                 context["merged_into"].is_null(),
                 "reminder_use_canonical_work"
@@ -608,13 +667,13 @@ impl Store {
                 "invalid_reminder_snooze"
             );
             sqlx::query("UPDATE qintopia_agent_os.work_items SET metadata=jsonb_set(metadata,'{pms_reminder}',coalesce(metadata->'pms_reminder','{}') || jsonb_build_object('snooze_until',$2::text,'snoozed_by',$3::text)),updated_at=clock_timestamp() WHERE id=$1")
-                .bind(work).bind(until.to_rfc3339()).bind(actor.person).execute(&mut *tx).await?;
+                .bind(work).bind(until.to_rfc3339()).bind(actor.business_id()).execute(&mut *tx).await?;
             super::foundation::work_event(
                 &mut tx,
                 work,
                 "pms_reminder_snoozed",
                 "human",
-                &json!({"person":actor.person,"until":until,"evidence":evidence}),
+                &json!({"subject":{"kind":if actor.work_account.is_some(){"work_account"}else{"person"},"id":actor.business_id()},"until":until,"evidence":evidence}),
             )
             .await?;
             tx.commit().await?;
@@ -624,11 +683,11 @@ impl Store {
             let key = a["operation"]
                 .as_str()
                 .ok_or_else(|| anyhow::anyhow!("invalid_arguments"))?;
-            let auth = operation_in(
+            let auth = operation_for_actor_in(
                 &mut tx,
                 &self.tenant,
                 &policy,
-                actor.person,
+                actor,
                 parse("binding")?,
                 key,
                 now,
@@ -691,10 +750,11 @@ impl Store {
                     .as_str()
                     .filter(|s| !s.is_empty())
                 {
-                    if let Some(prior)=sqlx::query("SELECT id,input FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND input->>'transactionReference'=$4 AND input->>'method'=$5 AND phase NOT IN ('cancelled','preview_rejected','not_executed') LIMIT 1")
+                    if let Some(prior)=sqlx::query("SELECT id,input,actor_person_id,actor_work_account_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND input->>'transactionReference'=$4 AND input->>'method'=$5 AND phase NOT IN ('cancelled','preview_rejected','not_executed') LIMIT 1")
                         .bind(&self.tenant).bind(auth.binding).bind(key).bind(reference).bind(input["method"].as_str()).fetch_optional(&mut *tx).await? {
                         let old:Value=prior.get("input");
                         ensure!(old["orderId"]==input["orderId"] && old["amountMinor"]==input["amountMinor"],"business_payment_conflict");
+                        ensure!(prior.get::<Option<Uuid>,_>("actor_person_id")==actor.business_person() && prior.get::<Option<Uuid>,_>("actor_work_account_id")==actor.work_account.map(|v|v.0),"business_subject_changed");
                         let id:Uuid=prior.get("id");tx.commit().await?;return Ok(json!({"action":id,"replayed":true}));
                     }
                 }
@@ -708,8 +768,8 @@ impl Store {
             }
             let work = if a.get("work_item").is_some() {
                 let work = parse("work_item")?;
-                let owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND work_item_id=$2 AND binding_id=$3 AND actor_person_id=$4)")
-                    .bind(&self.tenant).bind(work).bind(auth.binding).bind(actor.person).fetch_one(&mut *tx).await?;
+                let owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND work_item_id=$2 AND binding_id=$3 AND actor_person_id IS NOT DISTINCT FROM $4::uuid AND actor_work_account_id IS NOT DISTINCT FROM $5::uuid)")
+                    .bind(&self.tenant).bind(work).bind(auth.binding).bind(actor.business_person()).bind(actor.work_account.map(|v|v.0)).fetch_one(&mut *tx).await?;
                 let source_payment = &a["source_payment"];
                 let event_owned = if !owned && key == "pms.command.RECORD_COLLECTION" {
                     sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND binding_id=$2 AND binding_version=$3 AND work_item_id=$4 AND feed='pms.payments.v1' AND subject_ref=$5 AND source_instance=$6 AND property_id=$7 AND NOT baseline AND payload->>'kind'='COLLECTION' AND payload->>'eventType'='DISCOVERED')")
@@ -744,13 +804,17 @@ impl Store {
             // Quote identity and an explicitly selected source matter survive new
             // messages and process restarts. Do not replace an unknown booking.
             if key == "pms.command.CREATE_ORDER" {
-                let prior=sqlx::query("SELECT id,request_hash,actor_person_id,source_evidence_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND phase NOT IN ('cancelled','preview_rejected','not_executed') AND (work_item_id=$4 OR input->>'quoteId'=$5) ORDER BY created_at LIMIT 1")
+                let prior=sqlx::query("SELECT id,request_hash,actor_person_id,actor_work_account_id,source_evidence_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND phase NOT IN ('cancelled','preview_rejected','not_executed') AND (work_item_id=$4 OR input->>'quoteId'=$5) ORDER BY created_at LIMIT 1")
                     .bind(&self.tenant).bind(auth.binding).bind(key).bind(work).bind(input["quoteId"].as_str()).fetch_optional(&mut *tx).await?;
                 if let Some(prior) = prior {
                     let same_origin:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2 AND gateway_key=$3 AND chat_hash=$4)")
                         .bind(&self.tenant).bind(prior.get::<Uuid,_>("source_evidence_id")).bind(gateway).bind(digest(chat.as_bytes())).fetch_one(&mut *tx).await?;
                     ensure!(
-                        same_origin && prior.get::<Uuid, _>("actor_person_id") == actor.person,
+                        same_origin
+                            && prior.get::<Option<Uuid>, _>("actor_person_id")
+                                == actor.business_person()
+                            && prior.get::<Option<Uuid>, _>("actor_work_account_id")
+                                == actor.work_account.map(|v| v.0),
                         "business_conversation_mismatch"
                     );
                     ensure!(
@@ -763,9 +827,9 @@ impl Store {
                 }
             }
             let id = Uuid::new_v4();
-            sqlx::query("INSERT INTO qintopia_agent_os.business_actions(id,tenant_key,work_item_id,binding_id,binding_version,operation_key,actor_person_id,actor_identity_id,identity_version,source_evidence_id,authority_operation_id,request_hash,input,phase,preview_key,execution_key,resolution_key,correlation_id,confirmation_code,reason) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16,$17,$18,$19)")
-                .bind(id).bind(&self.tenant).bind(work).bind(auth.binding).bind(auth.binding_version).bind(key).bind(actor.person).bind(actor.link).bind(actor.identity_version).bind(evidence).bind(auth.operation_grant).bind(hash).bind(input)
-                .bind(format!("anan_preview_{id}")).bind(format!("anan_execute_{id}")).bind(format!("anan_resolve_{id}")).bind(format!("anan_correlation_{id}")).bind(Uuid::new_v4().simple().to_string()).bind(&a["reason"]).execute(&mut *tx).await?;
+            sqlx::query("INSERT INTO qintopia_agent_os.business_actions(id,tenant_key,work_item_id,binding_id,binding_version,operation_key,actor_person_id,actor_identity_id,identity_version,source_evidence_id,authority_operation_id,request_hash,input,phase,preview_key,execution_key,resolution_key,correlation_id,confirmation_code,reason,actor_work_account_id,actor_work_account_version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16,$17,$18,$19,$20,$21)")
+                .bind(id).bind(&self.tenant).bind(work).bind(auth.binding).bind(auth.binding_version).bind(key).bind(actor.business_person()).bind(actor.link).bind(actor.identity_version).bind(evidence).bind(auth.operation_grant).bind(hash).bind(input)
+                .bind(format!("anan_preview_{id}")).bind(format!("anan_execute_{id}")).bind(format!("anan_resolve_{id}")).bind(format!("anan_correlation_{id}")).bind(Uuid::new_v4().simple().to_string()).bind(&a["reason"]).bind(actor.work_account.map(|v|v.0)).bind(actor.work_account.map(|v|v.1)).execute(&mut *tx).await?;
             super::foundation::work_event(
                 &mut tx,
                 work,
@@ -783,16 +847,9 @@ impl Store {
             .bind(&self.tenant).bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||anyhow::anyhow!("business_action_unavailable"))?;
         let key: String = row.get("operation_key");
         let binding: Uuid = row.get("binding_id");
-        let auth = operation_in(
-            &mut tx,
-            &self.tenant,
-            &policy,
-            actor.person,
-            binding,
-            &key,
-            now,
-        )
-        .await?;
+        let auth =
+            operation_for_actor_in(&mut tx, &self.tenant, &policy, actor, binding, &key, now)
+                .await?;
         ensure!(
             actor.gateway.as_ref().is_some_and(|g| g.2 == auth.scope),
             "gateway_scope_mismatch"
@@ -810,26 +867,43 @@ impl Store {
         let same_chat:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2 AND gateway_key=$3 AND chat_hash=$4)")
             .bind(&self.tenant).bind(source).bind(gateway).bind(digest(chat.as_bytes())).fetch_one(&mut *tx).await?;
         ensure!(same_chat, "business_conversation_mismatch");
-        let original_person: Uuid = row.get("actor_person_id");
+        let original_person: Option<Uuid> = row.get("actor_person_id");
+        let original_account: Option<Uuid> = row.get("actor_work_account_id");
+        if let Some(account) = original_account {
+            ensure!(
+                actor.work_account == Some((account, row.get("actor_work_account_version"))),
+                "business_subject_changed"
+            );
+        }
         // Revalidate the initiator's authority too; a second person cannot revive a revoked plan.
         if matches!(tool, "pms_claim_preview" | "pms_claim_execute") {
-            let original_authority = operation_in(
-                &mut tx,
-                &self.tenant,
-                &policy,
-                original_person,
-                binding,
-                &key,
-                now,
-            )
-            .await?;
+            let original_authority = if original_account.is_some() {
+                operation_for_actor_in(&mut tx, &self.tenant, &policy, actor, binding, &key, now)
+                    .await?
+            } else {
+                operation_in(
+                    &mut tx,
+                    &self.tenant,
+                    &policy,
+                    original_person.ok_or_else(|| anyhow::anyhow!("business_subject_changed"))?,
+                    binding,
+                    &key,
+                    now,
+                )
+                .await?
+            };
             ensure!(
                 original_authority.operation_grant == row.get::<Uuid, _>("authority_operation_id"),
                 "business_authority_changed"
             );
         }
-        let identity_valid:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links WHERE id=$1 AND person_id=$2 AND version=$3 AND status='confirmed' AND evidence_ref IS NOT NULL AND confirmed_by IS NOT NULL)")
-            .bind(row.get::<Uuid,_>("actor_identity_id")).bind(original_person).bind(row.get::<i64,_>("identity_version")).fetch_one(&mut *tx).await?;
+        let identity_valid: bool = if original_account.is_some() {
+            actor.link == row.get::<Uuid, _>("actor_identity_id")
+                && actor.identity_version == row.get::<i64, _>("identity_version")
+        } else {
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links WHERE id=$1 AND person_id=$2 AND version=$3 AND status='confirmed' AND evidence_ref IS NOT NULL AND confirmed_by IS NOT NULL)")
+                .bind(row.get::<Uuid,_>("actor_identity_id")).bind(original_person).bind(row.get::<i64,_>("identity_version")).fetch_one(&mut *tx).await?
+        };
         if matches!(tool, "pms_claim_preview" | "pms_claim_execute") {
             ensure!(identity_valid, "identity_version_conflict");
         }
@@ -877,7 +951,7 @@ impl Store {
             "pms_resume" => {
                 ensure!(phase == "paused", "business_not_paused");
                 // Resume needs a fresh preview and confirmation; never reactivate an old approval.
-                sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='draft',preview=NULL,confirmation_evidence_id=NULL,confirmed_by=NULL,confirmation_code=$3,preview_key=$4,version=version+1,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
+                sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='draft',preview=NULL,confirmation_evidence_id=NULL,confirmed_by=NULL,confirmed_by_work_account=NULL,confirmation_code=$3,preview_key=$4,version=version+1,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
                     .bind(&self.tenant).bind(id).bind(Uuid::new_v4().simple().to_string()).bind(format!("anan_preview_{}",Uuid::new_v4())).execute(&mut *tx).await?;
                 reply = json!({"action":id,"phase":"draft"});
             }
@@ -938,8 +1012,8 @@ impl Store {
                         _ => false,
                     });
                 if covered {
-                    sqlx::query("UPDATE qintopia_agent_os.business_actions SET confirmation_evidence_id=$3,confirmed_by=$4 WHERE tenant_key=$1 AND id=$2")
-                        .bind(&self.tenant).bind(id).bind(source).bind(original_person).execute(&mut *tx).await?;
+                    sqlx::query("UPDATE qintopia_agent_os.business_actions SET confirmation_evidence_id=$3,confirmed_by=$4,confirmed_by_work_account=$5 WHERE tenant_key=$1 AND id=$2")
+                        .bind(&self.tenant).bind(id).bind(source).bind(original_person).bind(original_account).execute(&mut *tx).await?;
                 }
                 reply = json!({"action":id,"phase":"awaiting_confirmation","preview":p,"confirmation_code":row.get::<String,_>("confirmation_code"),"confirmation_reused":covered,"confirmation_hint":if covered {"原明确交办已覆盖本方案，无需再次确认"} else {"请确认当前唯一方案；有多个方案时先取消或暂停其他方案"}});
             }
@@ -956,14 +1030,16 @@ impl Store {
                 let confirmation:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2 AND confirmation_code=$3 AND observed_at>=$4 AND observed_at>$5)")
                     .bind(&self.tenant).bind(evidence).bind(row.get::<String,_>("confirmation_code")).bind(row.get::<DateTime<Utc>,_>("updated_at")).bind(now-chrono::Duration::minutes(15)).fetch_one(&mut *tx).await?;
                 let reuse = row.get::<Option<Uuid>, _>("confirmation_evidence_id") == Some(source)
-                    && row.get::<Option<Uuid>, _>("confirmed_by") == Some(actor.person)
+                    && row.get::<Option<Uuid>, _>("confirmed_by") == actor.business_person()
+                    && row.get::<Option<Uuid>, _>("confirmed_by_work_account")
+                        == actor.work_account.map(|v| v.0)
                     && row.get::<DateTime<Utc>, _>("created_at")
                         > now - chrono::Duration::minutes(15);
                 ensure!(confirmation || reuse, "human_confirmation_required");
                 let confirmed_evidence = if reuse { source } else { evidence };
                 let claimed = Uuid::new_v4();
-                sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='executing',confirmation_evidence_id=$3,confirmed_by=$4,claim_id=$5,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
-                    .bind(&self.tenant).bind(id).bind(confirmed_evidence).bind(actor.person).bind(claimed).execute(&mut *tx).await?;
+                sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='executing',confirmation_evidence_id=$3,confirmed_by=$4,claim_id=$5,confirmed_by_work_account=$6,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
+                    .bind(&self.tenant).bind(id).bind(confirmed_evidence).bind(actor.business_person()).bind(claimed).bind(actor.work_account.map(|v|v.0)).execute(&mut *tx).await?;
                 reply = json!({"action":id,"claim":claimed,"preview":p,"input":row.get::<Value,_>("input"),"reason":row.get::<Value,_>("reason"),"execution_key":row.get::<String,_>("execution_key"),"correlation":row.get::<String,_>("correlation_id")});
             }
             "pms_recovery" => {
@@ -1090,7 +1166,7 @@ impl Store {
                     {
                         let mut base = base.unwrap_or(Value::Null);
                         let hash = digest(&serde_json::to_vec(
-                            &json!({"action":id,"proof":proof,"order_version":readback["order"]["version"],"person":actor.person,"gateway":gateway,"chat":digest(chat.as_bytes())}),
+                            &json!({"action":id,"proof":proof,"order_version":readback["order"]["version"],"person":actor.business_id(),"gateway":gateway,"chat":digest(chat.as_bytes())}),
                         )?);
                         let old = &base["manual_proposal"];
                         let current = old["hash"] == hash
@@ -1100,7 +1176,7 @@ impl Store {
                                 .is_some_and(|t| t > now);
                         if !(current && intent["manual_fact_confirmation"] == hash) {
                             if !current {
-                                base["manual_proposal"] = json!({"hash":hash,"person":actor.person,"gateway":gateway,"chat":digest(chat.as_bytes()),"order":reference,"created":now,"expires":now+chrono::Duration::minutes(15)});
+                                base["manual_proposal"] = json!({"hash":hash,"person":actor.business_id(),"gateway":gateway,"chat":digest(chat.as_bytes()),"order":reference,"created":now,"expires":now+chrono::Duration::minutes(15)});
                                 sqlx::query("UPDATE qintopia_agent_os.business_actions SET readback=$3 WHERE tenant_key=$1 AND id=$2")
                                     .bind(&self.tenant).bind(id).bind(base).execute(&mut *tx).await?;
                             }
@@ -1116,8 +1192,8 @@ impl Store {
                         "exact_pms_effect"
                     });
                     let readback = json!({"order":{"id":reference,"property_id":auth.property,"version":readback["order"]["version"],"status":readback["order"]["status"]},"manual_evidence":proof});
-                    sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='manual_completed',readback=$3,confirmation_evidence_id=$4,confirmed_by=$5,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
-                        .bind(&self.tenant).bind(id).bind(&readback).bind(evidence).bind(actor.person).execute(&mut *tx).await?;
+                    sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='manual_completed',readback=$3,confirmation_evidence_id=$4,confirmed_by=$5,confirmed_by_work_account=$6,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
+                        .bind(&self.tenant).bind(id).bind(&readback).bind(evidence).bind(actor.business_person()).bind(actor.work_account.map(|v|v.0)).execute(&mut *tx).await?;
                     super::foundation::work_event(
                         &mut tx,
                         work,

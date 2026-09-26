@@ -2,7 +2,15 @@
 
 Owner：Agent OS /
 sidecar。风险级别：high（身份和授权）。本目录是现有 sidecar 包的子模块，沿用
-`runtime/sidecar/manifest.yaml`；不是新的业务 workflow 或 Agent。当前提供隔离合成环境的密码工作台、受控工具 broker 和欢迎消费者；没有启用生产登录、生产 Profile 或外部执行。
+`runtime/sidecar/manifest.yaml`；不是新的业务 workflow 或 Agent。模块提供隔离模拟环境的密码工作台、受控工具 broker 和欢迎消费者；生产管理入口与外部执行默认关闭，真实登录和渠道尚未验收。
+
+## 岸岸工作账号管理（2026-09-26）
+
+共同工作台的“岸岸授权”从可信企微来源候选登记
+`work_accounts`，配置物业、operator/admin 业务角色及具体操作，支持停用和撤权。共用账号无 Person；现有 Person 路径仍可使用。授权引用有效组织管理 grant、物业绑定及账号/来源/网关版本，每次业务执行重验。真实名单只在仓库外受限文件；显示名不用于绑定。迁移与回退见[数据设计](../../../postgres/docs/data-design/2026-09-26-anan-work-account-access.md)。
+
+生产管理 UI 使用已有密码会话和受管 live tenant，仅监听
+`127.0.0.1`。首次登录只能由进程所有者为已核验且本来具有组织身份管理权的 Person 从标准输入创建，不产生业务授权；无公开注册或 LOCAL 模式旁路。生产安装、管理员身份核实及真实企微验收仍需单独执行。
 
 ## 舍长工作空间补齐（2026-09-23）
 
