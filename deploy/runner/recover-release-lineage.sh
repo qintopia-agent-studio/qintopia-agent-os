@@ -144,12 +144,13 @@ if journal["direction"] == "O→T":
     if request.get("release_scope") != ["deploy-bundle"] or request.get("restart_targets") != ["qintopia-system-services"]:
         raise SystemExit("first takeover request is not single-system")
 elif journal["direction"] == "T→R":
+    targets = request.get("restart_targets")
     if (request.get("release_rollback") is not None or
             request.get("release_scope") != ["sidecar-runtime", "deploy-bundle", "hermes-plugins"] or
-            set(request.get("restart_targets", [])) != {
-                "qintopia-system-services", "hermes-erhua", "hermes-wenyuange", "hermes-xiaoman",
-                "hermes-silaoshi", "hermes-huabaosi", "hermes-guanerye", "hermes-anan"}):
-        raise SystemExit("mixed forward request is not the fixed full-target live action")
+            not isinstance(targets, list) or len(targets) != 6 or set(targets) != {
+                "qintopia-system-services", "hermes-erhua", "hermes-xiaoman",
+                "hermes-silaoshi", "hermes-huabaosi", "hermes-anan"}):
+        raise SystemExit("mixed forward request is not the approved six-target live action")
 elif request.get("release_rollback") != {
         "expected_current_sha": current_sha, "expected_previous_sha": previous_sha}:
     raise SystemExit("reverse rollback request does not bind R/T")

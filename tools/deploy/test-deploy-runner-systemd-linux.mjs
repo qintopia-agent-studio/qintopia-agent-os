@@ -239,6 +239,336 @@ def runtime_status_pid_is_live(record): return record["pid"] > 0
   }
   process.exit(0);
 }
+if (process.argv[2] === "--takeover-finalize") {
+  const [launcher, waiter, poller, recoveryHelper, holdSource] = process.argv.slice(3);
+  for (const source of [launcher, waiter, poller, recoveryHelper, holdSource]) {
+    assert.ok(
+      source && fs.existsSync(source),
+      "takeover finalization source is missing"
+    );
+  }
+  const state = "/var/lib/qintopia-agent-os-deploy";
+  const recovery = path.join(state, "recovery");
+  const staged = path.join(recovery, "staged");
+  const hold = path.join(recovery, "hold");
+  const dropin =
+    "/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf";
+  const releaseRoot = "/home/ubuntu/qintopia-agent-os-releases";
+  const service = "qintopia-agent-os-deploy-runner.service";
+  const timer = "qintopia-agent-os-deploy-runner.timer";
+  const servicePath = `/run/systemd/system/${service}`;
+  const timerPath = `/run/systemd/system/${timer}`;
+  const oSha = "16e8d56b98001579c6288ba13199b80d6d3dfc74";
+  const pSha = "83d694f2c3bc21fd78a73d25da3197379e2a14d5";
+  const tSha = "70e7984fab92ddab956009585212d0e9729767b5";
+  const rSha = "4".repeat(40);
+  const requestId = "deploy-20260927T010203Z-abcdef0";
+  const key = "simulated-finalize-key";
+  const fixture = fs.mkdtempSync("/tmp/qintopia-takeover-finalize-");
+  const replayed = path.join(fixture, "poller-replayed");
+  const written = [
+    staged,
+    hold,
+    dropin,
+    releaseRoot,
+    servicePath,
+    timerPath,
+    path.join(recovery, "takeover.json"),
+    path.join(recovery, "takeover-consumed"),
+    path.join(recovery, `${requestId}.json`),
+    path.join(state, "requests/processed", `${requestId}.json`),
+    path.join(state, "results", `${requestId}.json`),
+  ];
+  for (const target of written) {
+    assert.equal(
+      fs.existsSync(target),
+      false,
+      `takeover fixture path exists: ${target}`
+    );
+  }
+  const run = (command, args, options = {}) =>
+    spawnSync(command, args, { encoding: "utf8", ...options });
+  const check = (result, label) => {
+    assert.equal(result.status, 0, `${label}: ${result.stderr || result.stdout}`);
+    return result;
+  };
+  const write = (target, content, mode = 0o644) => {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, { mode });
+    fs.chmodSync(target, mode);
+  };
+  const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
+  const canonical = (value) =>
+    Array.isArray(value)
+      ? `[${value.map(canonical).join(",")}]`
+      : value && typeof value === "object"
+        ? `{${Object.keys(value)
+            .sort()
+            .map((name) => `${JSON.stringify(name)}:${canonical(value[name])}`)
+            .join(",")}}`
+        : JSON.stringify(value);
+  const sign = (unsigned, issuer, signedAt, field) => {
+    const metadata = {
+      algorithm: "hmac-sha256",
+      issuer,
+      key_id: "simulated",
+      signed_at: signedAt,
+    };
+    return {
+      ...unsigned,
+      signature: {
+        ...metadata,
+        value: crypto
+          .createHmac("sha256", key)
+          .update(canonical({ [field]: unsigned, signature: metadata }))
+          .digest("hex"),
+      },
+    };
+  };
+  const wrapperDir = path.join(fixture, "bin");
+  write(
+    path.join(wrapperDir, "systemctl"),
+    `#!/bin/bash
+set -euo pipefail
+if [[ "$QINTOPIA_FAULT" == reload-fail && "$1" == daemon-reload ]]; then exit 41; fi
+if [[ "$QINTOPIA_FAULT" == enable-fail && "$1" == enable ]]; then exit 42; fi
+if [[ "$QINTOPIA_FAULT" == kill-after-enable && "$1" == enable ]]; then
+  /usr/bin/systemctl "$@"
+  kill -9 "$PPID"
+  exit 99
+fi
+exec /usr/bin/systemctl "$@"
+`,
+    0o755
+  );
+  write(
+    path.join(wrapperDir, "rm"),
+    `#!/bin/bash
+set -euo pipefail
+if [[ "$QINTOPIA_FAULT" == kill-after-unlink && "$1" == "$QINTOPIA_HOLD_FILE" ]]; then
+  /usr/bin/rm "$@"
+  kill -9 "$PPID"
+  exit 99
+fi
+exec /usr/bin/rm "$@"
+`,
+    0o755
+  );
+  const launch = (mode, fault = "") =>
+    run("bash", [launcher, mode, ...(mode === "prepare" ? [] : [requestId])], {
+      env: {
+        ...process.env,
+        PATH: `${wrapperDir}:${process.env.PATH}`,
+        QINTOPIA_FAULT: fault,
+        QINTOPIA_HOLD_FILE: hold,
+        DEPLOY_REQUEST_SIGNING_KEY: key,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: "simulated",
+      },
+    });
+  try {
+    write(
+      servicePath,
+      `[Unit]\nDescription=Simulated takeover runner\n[Service]\nType=oneshot\nExecStart=/usr/bin/touch ${replayed}\n`
+    );
+    write(
+      timerPath,
+      `[Unit]\nDescription=Simulated takeover timer\n[Timer]\nOnCalendar=daily\n[Install]\nWantedBy=timers.target\n`
+    );
+    check(run("systemctl", ["daemon-reload"]), "fixture daemon reload");
+    check(run("systemctl", ["enable", "--now", timer]), "initial timer enable");
+    const stagedRunner = path.join(staged, "payload/deploy/runner");
+    fs.mkdirSync(stagedRunner, { recursive: true });
+    const stagedFiles = [
+      [poller, "payload/deploy/runner/poll-deploy-requests.sh"],
+      [recoveryHelper, "payload/deploy/runner/recover-release-lineage.sh"],
+      [
+        holdSource,
+        "payload/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf",
+      ],
+      [waiter, "payload/deploy/runner/wait-deploy-result.sh"],
+    ];
+    const manifestFiles = [];
+    for (const [source, relative] of stagedFiles) {
+      const target = path.join(staged, relative);
+      write(target, fs.readFileSync(source), relative.endsWith(".sh") ? 0o755 : 0o644);
+      manifestFiles.push({
+        path: relative,
+        sha256: sha256(fs.readFileSync(target)),
+        size_bytes: fs.statSync(target).size,
+      });
+    }
+    write(
+      path.join(staged, "artifact-manifest.json"),
+      JSON.stringify({
+        schema_version: 1,
+        target: "server-operator-files",
+        files: manifestFiles,
+      }) + "\n"
+    );
+    write(
+      path.join(staged, "SHA256SUMS"),
+      manifestFiles.map((item) => `${item.sha256}  ${item.path}\n`).join("")
+    );
+    const prepareFailed = launch("prepare", "reload-fail");
+    assert.equal(
+      prepareFailed.status,
+      41,
+      `daemon-reload injection: ${prepareFailed.stderr}`
+    );
+    assert.equal(fs.existsSync(hold), true, "daemon-reload failure cleared hold");
+    assert.equal(
+      check(
+        run("systemctl", ["show", timer, "--property=UnitFileState", "--value"]),
+        "timer state after reload failure"
+      ).stdout.trim(),
+      "disabled"
+    );
+    check(run("systemctl", ["daemon-reload"]), "load persistent guard after failure");
+
+    const now = new Date().toISOString();
+    const request = sign(
+      {
+        schema_version: 1,
+        request_id: requestId,
+        environment: "production",
+        repository: "qintopia-agent-studio/qintopia-agent-os",
+        requested_by: "fixture",
+        created_at: now,
+        expires_at: new Date(Date.parse(now) + 3600000).toISOString(),
+        commit_sha: oSha,
+        runtime_sha: pSha,
+        deploy_bundle_sha: rSha,
+        release_sha: tSha,
+        runtime_artifact_profile: "huabaosi-production",
+        release_scope: ["deploy-bundle"],
+        restart_targets: ["qintopia-system-services"],
+        rollback_on_smoke_failure: true,
+        dry_run: false,
+        cos: {
+          bucket: "simulated",
+          region: "simulated",
+          prefix: "qintopia-agent-os",
+          request_key: `qintopia-agent-os/deploy-requests/production/requests/${requestId}.json`,
+          result_key: `qintopia-agent-os/deploy-results/production/${requestId}.json`,
+        },
+      },
+      "github-actions",
+      now,
+      "request"
+    );
+    const result = sign(
+      {
+        schema_version: 1,
+        request_id: requestId,
+        environment: "production",
+        status: "succeeded",
+        started_at: now,
+        finished_at: now,
+        release_sha: tSha,
+        commit_sha: oSha,
+        runtime_sha: pSha,
+        deploy_bundle_sha: rSha,
+        runtime_artifact_profile: "huabaosi-production",
+        release_scope: ["deploy-bundle"],
+        restart_targets: ["qintopia-system-services"],
+        previous_sha: oSha,
+        current_target: path.join(releaseRoot, tSha),
+        checks: [{ name: "deploy-runner", status: "passed" }],
+        rollback: { attempted: false, status: "not_needed" },
+      },
+      "qintopia-deploy-runner",
+      now,
+      "result"
+    );
+    for (const sha of [oSha, tSha])
+      fs.mkdirSync(path.join(releaseRoot, sha), { recursive: true });
+    const oldManifest = { release_sha: oSha, previous_sha: pSha };
+    const tManifest = {
+      release_sha: tSha,
+      previous_sha: oSha,
+      request_id: requestId,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services"],
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      deploy_bundle_sha: rSha,
+      runtime_artifact_profile: "huabaosi-production",
+    };
+    const oldManifestPath = path.join(releaseRoot, oSha, "manifest.json");
+    const tManifestPath = path.join(releaseRoot, tSha, "manifest.json");
+    write(oldManifestPath, JSON.stringify(oldManifest) + "\n");
+    write(tManifestPath, JSON.stringify(tManifest) + "\n");
+    fs.symlinkSync(path.join(releaseRoot, tSha), path.join(releaseRoot, "current"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
+    const requestPath = path.join(state, "requests/processed", `${requestId}.json`);
+    const resultPath = path.join(state, "results", `${requestId}.json`);
+    write(requestPath, JSON.stringify(request) + "\n", 0o600);
+    write(resultPath, JSON.stringify(result) + "\n", 0o600);
+    write(path.join(recovery, "takeover-consumed"), requestId + "\n", 0o600);
+    write(
+      path.join(recovery, `${requestId}.json`),
+      JSON.stringify({
+        direction: "O→T",
+        phase: "intent",
+        request_id: requestId,
+        request_sha256: sha256(fs.readFileSync(requestPath)),
+        original_current_sha: oSha,
+        original_previous_sha: pSha,
+        manifest_sha256: { current: sha256(fs.readFileSync(oldManifestPath)) },
+      }) + "\n",
+      0o600
+    );
+    const failEnable = launch("finalize", "enable-fail");
+    assert.equal(failEnable.status, 75, `timer enable failure: ${failEnable.stderr}`);
+    assert.equal(fs.existsSync(hold), true, "timer enable failure cleared hold");
+    const killedBeforeUnlink = launch("finalize", "kill-after-enable");
+    assert.notEqual(killedBeforeUnlink.status, 0, "caller survived injected SIGKILL");
+    assert.equal(fs.existsSync(hold), true, "caller death cleared hold before unlink");
+    check(run("systemctl", ["start", service]), "held service start");
+    assert.equal(
+      fs.existsSync(replayed),
+      false,
+      "active timer bypassed recovery guard"
+    );
+    check(launch("finalize"), "resume finalization without replay");
+    assert.equal(fs.existsSync(hold), false, "successful finalization retained hold");
+    assert.equal(fs.existsSync(replayed), false, "finalize replayed poller");
+    assert.equal(
+      check(run("systemctl", ["is-active", timer]), "restored timer").stdout.trim(),
+      "active"
+    );
+    write(hold, "", 0o600);
+    const killedAfterUnlink = launch("finalize", "kill-after-unlink");
+    assert.notEqual(
+      killedAfterUnlink.status,
+      0,
+      "post-unlink SIGKILL was not injected"
+    );
+    assert.equal(fs.existsSync(hold), false, "post-unlink death restored stale hold");
+    check(launch("finalize"), "idempotent finalization after caller death");
+    assert.equal(fs.existsSync(replayed), false, "retry replayed poller");
+    console.log("Fixed takeover finalization fault matrix passed.");
+  } finally {
+    run("systemctl", ["disable", "--now", timer]);
+    for (const target of [
+      servicePath,
+      timerPath,
+      dropin,
+      path.join(recovery, "hold"),
+      path.join(recovery, "takeover.json"),
+      path.join(recovery, "takeover-consumed"),
+      path.join(recovery, `${requestId}.json`),
+      path.join(state, "requests/processed", `${requestId}.json`),
+      path.join(state, "results", `${requestId}.json`),
+    ])
+      fs.rmSync(target, { force: true });
+    fs.rmSync(staged, { recursive: true, force: true });
+    fs.rmSync(releaseRoot, { recursive: true, force: true });
+    run("systemctl", ["daemon-reload"]);
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+  process.exit(0);
+}
 if (process.argv[2] === "--recovery-negative") {
   const [recoverySource, waiterSource, holdSource] = process.argv.slice(3);
   for (const source of [recoverySource, waiterSource, holdSource]) {
@@ -1022,6 +1352,7 @@ let installedHoldDropin = false;
 let timerCreated = false;
 let recoveryArtifactsCreated = false;
 let recoveryArtifactPaths = [];
+let cosEnvCreated = false;
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, { encoding: "utf8", ...options });
   if (result.error) throw result.error;
@@ -1452,11 +1783,9 @@ try {
   const targets = [
     "qintopia-system-services",
     "hermes-erhua",
-    "hermes-wenyuange",
     "hermes-xiaoman",
     "hermes-silaoshi",
     "hermes-huabaosi",
-    "hermes-guanerye",
     "hermes-anan",
   ];
   const canonical = (value) =>
@@ -1551,6 +1880,29 @@ try {
       .digest("hex"),
   };
   write(resultPath, JSON.stringify(result) + "\n", 0o600);
+  const cosEnv = "/etc/qintopia/cos-artifacts.env";
+  assert.equal(fs.existsSync(cosEnv), false, "VM contains an existing COS environment");
+  const fakeCoscli = path.join(root, "simulated-coscli");
+  write(
+    fakeCoscli,
+    `#!/bin/bash
+set -euo pipefail
+[[ "$1" == config ]] && exit 0
+[[ "$1" == cp ]] || exit 64
+case "$2" in
+  *deploy-requests*) cp "${requestPath}" "$3" ;;
+  *deploy-results*) cp "${resultPath}" "$3" ;;
+  *) exit 64 ;;
+esac
+`,
+    0o755
+  );
+  write(
+    cosEnv,
+    `export TENCENT_COS_BUCKET=simulated TENCENT_COS_REGION=simulated TENCENT_COS_SECRET_ID=simulated TENCENT_COS_SECRET_KEY=simulated DEPLOY_REQUEST_SIGNING_KEY=${signingKey} DEPLOY_REQUEST_SIGNING_KEY_ID=simulated COSCLI_PATH=${fakeCoscli}\n`,
+    0o600
+  );
+  cosEnvCreated = true;
   const requestBytes = fs.readFileSync(requestPath);
   const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
   const journal = {
@@ -1617,6 +1969,49 @@ try {
       "recovery cleared hold before COS reconciliation"
     );
   }
+  const { signature: _requestSignature, ...unsignedRequest } = request;
+  const extraUnsigned = {
+    ...unsignedRequest,
+    restart_targets: [...targets, "hermes-wenyuange"],
+  };
+  const extraRequest = {
+    ...extraUnsigned,
+    signature: {
+      ...requestMetadata,
+      value: crypto
+        .createHmac("sha256", signingKey)
+        .update(canonical({ request: extraUnsigned, signature: requestMetadata }))
+        .digest("hex"),
+    },
+  };
+  write(requestPath, JSON.stringify(extraRequest) + "\n", 0o600);
+  write(
+    journalPath,
+    JSON.stringify({
+      ...journal,
+      request_sha256: sha256(fs.readFileSync(requestPath)),
+    }) + "\n",
+    0o600
+  );
+  const extra = run("bash", [helper, "--request-id", requestId], {
+    env: {
+      ...process.env,
+      DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+      DEPLOY_REQUEST_SIGNING_KEY_ID: "simulated",
+      QINTOPIA_SYSTEMD_UNIT_DIR: "/run/systemd/system",
+    },
+  });
+  assert.equal(extra.status, 75, `extra target was accepted: ${extra.stderr}`);
+  assert.match(extra.stderr, /approved six-target live action/);
+  assert.equal(
+    fs.realpathSync(path.join(releaseRoot, "current")),
+    path.join(releaseRoot, tSha)
+  );
+  assert.equal(
+    fs.realpathSync(path.join(releaseRoot, "previous")),
+    path.join(releaseRoot, oSha)
+  );
+  assert.equal(fs.existsSync(hold), true);
   console.log(
     JSON.stringify({
       os: "Ubuntu 24.04",
@@ -1632,6 +2027,7 @@ try {
       oldUnitHoldVerified: true,
       candidateOnlyCleanupVerified: true,
       mixedForwardStatesVerified: stateCases.map(({ name }) => name),
+      extraTargetRejected: true,
     })
   );
 } finally {
@@ -1658,6 +2054,7 @@ try {
   if (recoveryArtifactsCreated) {
     for (const file of recoveryArtifactPaths) fs.rmSync(file, { force: true });
   }
+  if (cosEnvCreated) fs.rmSync("/etc/qintopia/cos-artifacts.env", { force: true });
   if (releaseFixtureCreated) {
     fs.rmSync("/run/systemd/system/qintopia-agent-os-deploy-runner.service", {
       force: true,

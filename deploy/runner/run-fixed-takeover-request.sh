@@ -12,7 +12,7 @@ dropin_dir=/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d
 dropin_name=10-recovery-hold.conf
 
 [[ "$(id -u)" -eq 0 ]] || { echo "root is required" >&2; exit 2; }
-[[ $# -ge 1 ]] || { echo "prepare or consume is required" >&2; exit 2; }
+[[ $# -ge 1 ]] || { echo "prepare, consume or finalize is required" >&2; exit 2; }
 mode="$1"
 shift
 
@@ -53,10 +53,14 @@ for relative in ("payload/deploy/runner/poll-deploy-requests.sh",
 PY
 }
 
-verify_hold() {
-  [[ -f "${recovery}/hold" ]] || return 1
+verify_hold_guard() {
   cmp -s "$staged/payload/deploy/runner/qintopia-agent-os-deploy-runner.service.d/$dropin_name" \
     "$dropin_dir/$dropin_name" || return 1
+}
+
+verify_hold() {
+  [[ -f "${recovery}/hold" ]] || return 1
+  verify_hold_guard || return 1
   [[ "$(timer_file_state)" == disabled ]] || return 1
   unit_stopped "$timer" && unit_stopped "$unit"
 }
@@ -117,21 +121,21 @@ PY
     systemctl daemon-reload
     verify_hold
     ;;
-  consume)
+  consume|finalize)
     [[ $# -eq 1 && "$1" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]] || exit 2
     request_id="$1"
     verify_staged_bundle
-    verify_hold
-    old_sha="$(readlink -f "$release_root/current")"
-    [[ "$old_sha" == "$release_root/"* && -x "$old_sha/deploy/runner/qintopia-agent-os-deploy-runner" ]] || exit 2
-    old_sha="${old_sha##*/}"
-    [[ "$old_sha" == 16e8d56b98001579c6288ba13199b80d6d3dfc74 &&
-      "$(sha256sum "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" | awk '{print $1}')" == \
-        04b27ea6900dec7078b3dfb56a28e0f5af3f9b58413b2df85ecaac54784b4dcf ]] || {
-      echo "fixed takeover old runner identity mismatch" >&2
-      exit 75
-    }
-    python3 - "$recovery" "$request_id" <<'PY'
+    old_sha=16e8d56b98001579c6288ba13199b80d6d3dfc74
+    if [[ "$mode" == consume ]]; then
+      verify_hold
+      [[ "$(readlink -f "$release_root/current")" == "$release_root/$old_sha" &&
+        -x "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" &&
+        "$(sha256sum "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" | awk '{print $1}')" == \
+          04b27ea6900dec7078b3dfb56a28e0f5af3f9b58413b2df85ecaac54784b4dcf ]] || {
+        echo "fixed takeover old runner identity mismatch" >&2
+        exit 75
+      }
+      python3 - "$recovery" "$request_id" <<'PY'
 import os
 import sys
 directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
@@ -146,8 +150,8 @@ try:
 finally:
     os.close(directory)
 PY
-    run_output="$(mktemp)"
-    if ! systemd-run --unit=qintopia-agent-os-fixed-takeover.service --service-type=oneshot --wait \
+      run_output="$(mktemp)"
+      if ! systemd-run --unit=qintopia-agent-os-fixed-takeover.service --service-type=oneshot --wait \
       --uid=root --gid=root --property=StateDirectory=qintopia-agent-os-deploy \
       --property=StateDirectoryMode=0700 --property=WorkingDirectory=/var/lib/qintopia-agent-os-deploy \
       --property=NoNewPrivileges=yes --property=PrivateTmp=yes \
@@ -158,11 +162,15 @@ PY
       --property="Environment=QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID=${request_id}" \
       --property="Environment=QINTOPIA_DEPLOY_RUNNER_BIN=${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" \
       "$staged/payload/deploy/runner/poll-deploy-requests.sh" >"$run_output" 2>&1; then
+        rm -f "$run_output"
+        echo "fixed takeover result is uncertain; hold retained" >&2
+        exit 75
+      fi
       rm -f "$run_output"
-      echo "fixed takeover result is uncertain; hold retained" >&2
-      exit 75
+    else
+      [[ -f "${recovery}/takeover-consumed" && ! -L "${recovery}/takeover-consumed" &&
+        "$(cat "${recovery}/takeover-consumed")" == "$request_id" ]] || exit 75
     fi
-    rm -f "$run_output"
     [[ -f "${state}/requests/processed/${request_id}.json" &&
       ! -e "${state}/requests/claimed/${request_id}.json" ]] || exit 75
     "$staged/payload/deploy/runner/wait-deploy-result.sh" \
@@ -220,19 +228,30 @@ for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_
     if manifest.get(key) != request.get(key) or result.get(key) != request.get(key):
         raise SystemExit(f"takeover {key} identity mismatch")
 PY
-    verify_hold
-    rm "$dropin_dir/$dropin_name"
-    rm "${recovery}/hold"
-    systemctl daemon-reload
-    if [[ "$(python3 - "${recovery}/takeover.json" <<'PY'
+    verify_hold_guard
+    timer_was_enabled="$(python3 - "${recovery}/takeover.json" <<'PY'
 import json
 import sys
 with open(sys.argv[1], encoding="utf-8") as fh:
-    print(str(json.load(fh)["timer_was_enabled"]).lower())
+    value = json.load(fh)["timer_was_enabled"]
+if type(value) is not bool:
+    raise SystemExit("takeover timer state is invalid")
+print(str(value).lower())
 PY
-)" == true ]]; then
-      systemctl enable --now "$timer"
+)"
+    if [[ "$timer_was_enabled" == true ]]; then
+      systemctl enable --now "$timer" || { echo "timer restore failed; hold retained" >&2; exit 75; }
+      [[ "$(timer_file_state)" == enabled ]] && systemctl is-active --quiet "$timer" || {
+        echo "timer readiness failed; hold retained" >&2
+        exit 75
+      }
+    else
+      [[ "$(timer_file_state)" == disabled ]] && unit_stopped "$timer" || exit 75
+    fi
+    [[ -f "${recovery}/hold" ]] || [[ "$mode" == finalize ]] || exit 75
+    if [[ -f "${recovery}/hold" ]]; then
+      rm "${recovery}/hold"
     fi
     ;;
-  *) echo "prepare or consume is required" >&2; exit 2 ;;
+  *) echo "prepare, consume or finalize is required" >&2; exit 2 ;;
 esac

@@ -11,7 +11,17 @@ COS pointer read. An unfinished local claim or uncertain signed result blocks ne
 consumption. Recovery distinguishes O→T, T→R and R→T by a durable request-bound journal
 and checks the original request/result and release manifests before changing pointers.
 Normal rollback requires a fresh production-signed request. Neither local validation nor
-a merged implementation PR is production authorization.
+a merged implementation PR is production authorization. After a fixed takeover has
+produced a signed success result, `finalize <request-id>` may repeat only the evidence
+checks and timer restoration; it never replays the deploy request. The reviewed hold
+drop-in remains installed. The hold file is removed only after an originally enabled
+timer is again enabled and active, so an interrupted or failed finalization stays
+blocked and can be resumed from durable evidence. The fixed recovery helper still
+refuses a whole-process crash before any signed result has been written. That refusal is
+not a successful finite recovery: the first live takeover remains blocked until the
+approved missing-result matrix can distinguish a provably absent COS result and stopped
+execution from unreadable, conflicting or successful evidence without replaying the
+original request.
 
 ## Current Server Evidence
 

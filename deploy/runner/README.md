@@ -162,7 +162,15 @@ poller holds `poller.lock` before shared request state and keeps an unfinished c
 any uncertain upload or archive outcome. Maintenance recovery uses a persistent hold,
 direction-bound journal and `poller.lock` before `deploy.lock`; a pointer shape alone
 cannot identify the interrupted direction. This contract does not authorize a production
-takeover or recovery operation.
+takeover or recovery operation. The fixed takeover consumer leaves the hold drop-in
+installed. Its `finalize` mode rechecks the consumed request, signed result, journal,
+manifests and pointers without replaying the request, then restores and verifies the
+timer before removing the hold as its final action. Failure or caller death before that
+unlink leaves consumption blocked; a later `finalize` can resume from the same durable
+evidence. Mixed exact-previous rollback also binds T's original signed success result to
+`previous_sha=O` and the canonical T target, checks the fixed O ancestor manifest and
+installer, and verifies required installed sidecar binaries and modes against the
+immutable fetched archives before any pointer write.
 
 The existing `tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture still
 asserts the former `runuser` Anan branch and therefore fails when the approved transient

@@ -714,12 +714,16 @@ verify_mixed_previous_release() {
   local original_request=""
   local original_result=""
   local artifact_tmp=""
-  original_id="$(python3 - "$target/manifest.json" "$request_file" "$original_current_sha" <<'PY'
+  original_id="$(python3 - "$target/manifest.json" "$request_file" "$original_current_sha" "$RELEASE_ROOT" <<'PY'
+import hashlib
 import json
+import os
 import re
+import stat
 import sys
+from pathlib import Path
 
-manifest_path, request_path, current_sha = sys.argv[1:4]
+manifest_path, request_path, current_sha, release_root = sys.argv[1:5]
 with open(manifest_path, encoding="utf-8") as fh:
     manifest = json.load(fh)
 with open(request_path, encoding="utf-8") as fh:
@@ -730,9 +734,30 @@ for key in ("release_sha", "commit_sha", "runtime_sha", "deploy_bundle_sha", "ru
 if (manifest.get("release_scope") != ["deploy-bundle"] or
         manifest.get("restart_targets") != ["qintopia-system-services"] or
         manifest.get("dry_run") is not False or
+        manifest.get("previous_sha") != "16e8d56b98001579c6288ba13199b80d6d3dfc74" or
         manifest.get("previous_sha") == current_sha or
         not re.fullmatch(r"deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}", manifest.get("request_id", ""))):
     raise SystemExit("original mixed release lineage or request identity is invalid")
+ancestor = Path(release_root) / manifest["previous_sha"]
+if not ancestor.is_dir() or ancestor.is_symlink():
+    raise SystemExit("original mixed release ancestor tree is missing")
+ancestor_manifest = ancestor / "manifest.json"
+installer = ancestor / "deploy/runner/install-release-systemd-units.sh"
+for path, mode in ((ancestor_manifest, 0o444), (installer, 0o755)):
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        raise SystemExit(f"original mixed release ancestor file is missing: {path.name}") from None
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid() or
+            stat.S_IMODE(metadata.st_mode) != mode):
+        raise SystemExit(f"original mixed release ancestor file is invalid: {path.name}")
+with open(ancestor_manifest, encoding="utf-8") as fh:
+    original_ancestor = json.load(fh)
+if (original_ancestor.get("release_sha") != manifest["previous_sha"] or
+        original_ancestor.get("previous_sha") != "83d694f2c3bc21fd78a73d25da3197379e2a14d5"):
+    raise SystemExit("original mixed release ancestor manifest is invalid")
+if hashlib.sha256(installer.read_bytes()).hexdigest() != "04d2ae1de90eed8680a0e2b8dfe80a2a2651c3c28e1a0a18a24db52f9125dcc9":
+    raise SystemExit("original mixed release ancestor installer drifted")
 print(manifest["request_id"])
 PY
   )" || return $?
@@ -744,7 +769,7 @@ PY
   fi
   "${RUNNER_DIR}/wait-deploy-result.sh" --request-file "$original_request" \
     --result-file "$original_result" --verify-archived-request >/dev/null || return $?
-  python3 - "$target/manifest.json" "$original_request" "$original_result" <<'PY' || return $?
+  python3 - "$target/manifest.json" "$original_request" "$original_result" "$target" <<'PY' || return $?
 import json
 import sys
 
@@ -759,6 +784,8 @@ for key in ("release_sha", "commit_sha", "runtime_sha", "deploy_bundle_sha", "ru
         raise SystemExit(f"original mixed release {key} evidence mismatch")
 if (request.get("request_id") != manifest.get("request_id") or
         result.get("request_id") != manifest.get("request_id") or
+        result.get("previous_sha") != manifest.get("previous_sha") or
+        result.get("current_target") != sys.argv[4] or
         request.get("dry_run") is not False or result.get("status") != "succeeded"):
     raise SystemExit("original mixed release is not bound to a successful live request")
 PY
@@ -788,6 +815,29 @@ from pathlib import Path
 
 root = Path(sys.argv[1]).resolve(strict=True)
 fetched = Path(sys.argv[2])
+required_modes = {
+    "manifest.json": 0o444,
+    "deploy/runner/install-release-systemd-units.sh": 0o755,
+    "sidecar/qintopia-message-sidecar": 0o755,
+    "sidecar/artifact-manifest.json": 0o444,
+    "sidecar/SHA256SUMS": 0o444,
+    "sidecar/qintopia-message-sidecar.tar.gz": 0o444,
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar": 0o755,
+    "sidecar-profiles/qiwe-production/artifact-manifest.json": 0o444,
+    "sidecar-profiles/qiwe-production/SHA256SUMS": 0o444,
+    "sidecar-profiles/qiwe-production/qintopia-message-sidecar.tar.gz": 0o444,
+    "deploy-bundle/artifact-manifest.json": 0o444,
+    "deploy-bundle/SHA256SUMS": 0o444,
+    "deploy-bundle/qintopia-agent-os-deploy-bundle.tar.gz": 0o444,
+}
+for relative, expected_mode in required_modes.items():
+    installed = root / relative
+    try:
+        metadata = installed.lstat()
+    except FileNotFoundError:
+        raise SystemExit(f"mixed previous required file is missing: {relative}") from None
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != expected_mode:
+        raise SystemExit(f"mixed previous required file mode mismatch: {relative}")
 for local_name, remote_name in (("sidecar", "sidecar"),
                                 ("sidecar-profiles/qiwe-production", "qiwe"),
                                 ("deploy-bundle", "deploy-bundle")):
@@ -812,8 +862,6 @@ for local_name, remote_name in (("sidecar", "sidecar"),
                 installed = root.joinpath(*relative.parts[1:])
             else:
                 installed = local / relative.name
-                if not installed.exists():
-                    continue
             if installed.is_symlink() or not installed.is_file():
                 raise SystemExit(f"mixed previous installed file missing: {installed}")
             content = archive.extractfile(member).read()
