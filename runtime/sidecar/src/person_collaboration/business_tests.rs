@@ -189,6 +189,74 @@ async fn business_management_scope_is_visible_before_first_binding() -> Result<(
 
 #[tokio::test]
 #[ignore = "explicit task-isolated local database required"]
+async fn employee_pending_identity_cannot_become_business_work_account() -> Result<()> {
+    let f = Fixture::new().await?;
+    let sender = format!("synthetic-employee-pending-{}", Uuid::new_v4());
+    let link: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal',$2,jsonb_build_object('first_observation_ref',$3::text)) RETURNING id")
+        .bind(&f.store.tenant).bind(&sender).bind(Uuid::new_v4()).fetch_one(&f.store.pool).await?;
+    let state = f.store.business_configuration_state(&f.actor).await?;
+    assert!(!state["observed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|candidate| candidate["source_link"] == json!(link)));
+    let version: i64 = sqlx::query_scalar(
+        "SELECT version FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1",
+    )
+    .bind(&f.store.tenant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let command = |change| BusinessConfigCommand {
+        operation_id: Uuid::new_v4(),
+        expected_version: version,
+        change,
+    };
+    assert_eq!(
+        f.store
+            .business_configure(
+                &f.actor,
+                &command(BusinessConfigChange::RegisterAccount {
+                    gateway: f.gateway.clone(),
+                    source_link: link,
+                    label: "模拟员工待核身份".into(),
+                }),
+                true,
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "observed_work_account_required"
+    );
+    let account: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) SELECT $1,l.id,l.version,g.gateway_key,g.version,'模拟异常旧账号',$4,$5 FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE l.id=$2 AND g.gateway_key=$3 RETURNING id")
+        .bind(&f.store.tenant).bind(link).bind(&f.gateway).bind(f.store.verified_person(&f.actor).await?).bind(Uuid::new_v4()).fetch_one(&f.store.pool).await?;
+    assert!(f
+        .store
+        .business_gateway_actor(&f.gateway, &sender)
+        .await
+        .is_err());
+    assert_eq!(
+        f.store
+            .business_configure(
+                &f.actor,
+                &command(BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "admin".into(),
+                    operation: "pms.command.CREATE_ORDER".into(),
+                    valid_until: None,
+                }),
+                true,
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "work_account_unavailable"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
 async fn shared_work_account_confirms_collection_and_revocation_stops_recovery() -> Result<()> {
     let f = Fixture::new().await?;
     let scope: Uuid = sqlx::query_scalar(

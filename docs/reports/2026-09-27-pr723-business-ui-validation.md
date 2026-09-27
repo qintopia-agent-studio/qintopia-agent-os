@@ -25,3 +25,10 @@
   因 32777 数据库 URL 的哈希不在图像 staging 固定白名单内退出 1；后续 `JSONDecodeError`
   是没有成功 JSON 输出的次生错误。`pnpm check:pr:auto`
   总退出码为 1。未更改 CI 或白名单，不能把总检查记为通过。该 smoke 须在原受支持的部署验证环境完成。
+
+## 新 head 审查修订
+
+PR-Agent 对 `7570e566` 指出 `RegisterAccount` 没有限定 `shared`
+网关。注册与候选查询已补该条件，业务账号解析、当前身份校验和新操作 grant 也拒绝普通
+`employee` 网关的异常旧账号。隔离库新增负例通过；修订后整个 `person_collaboration`
+集成组串行 134/134 通过。最终 PR 自动检查和远端 CI 以修订 head 为准。
