@@ -859,6 +859,8 @@ impl Store {
                 actor.work_account == Some((account, row.get("actor_work_account_version"))),
                 "business_subject_changed"
             );
+        } else {
+            ensure!(actor.work_account.is_none(), "business_subject_changed");
         }
         // Revalidate the initiator's authority too; a second person cannot revive a revoked plan.
         if matches!(tool, "pms_claim_preview" | "pms_claim_execute") {

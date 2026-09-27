@@ -99,8 +99,11 @@ impl Store {
                 json!({"id":id,"label":row.get::<String,_>("label"),"read":read,"execute":execute}))
             })
             .collect();
-        let rows = sqlx::query("SELECT id,scope_id,source_instance,property_id,active,version FROM qintopia_agent_os.business_property_bindings WHERE tenant_key=$1 ORDER BY scope_id,property_id LIMIT 257")
-            .bind(&self.tenant).fetch_all(&mut *tx).await?;
+        let catalog: Value = serde_json::from_str(include_str!(
+            "../../../../../skills/pms-operations/operations.json"
+        ))?;
+        let rows = sqlx::query("SELECT id,scope_id,source_instance,property_id,active,version FROM qintopia_agent_os.business_property_bindings WHERE tenant_key=$1 AND scope_id=ANY($2) ORDER BY scope_id,property_id LIMIT 257")
+            .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
         ensure!(rows.len() <= 256, "business_configuration_too_large");
         let mut bindings = Vec::new();
         for row in rows {
@@ -121,8 +124,19 @@ impl Store {
                 continue;
             }
             let binding: Uuid = row.get("id");
-            let grants = sqlx::query("SELECT o.id,o.authority_grant_id,o.work_account_id,o.account_role,o.operation_key,o.valid_until,o.revoked_at FROM qintopia_agent_os.business_operation_grants o WHERE o.tenant_key=$1 AND o.binding_id=$2 ORDER BY o.created_at,o.id LIMIT 257")
-                .bind(&self.tenant).bind(binding).fetch_all(&mut *tx).await?;
+            let allowed_keys: Vec<String> = catalog["operations"]
+                .as_object()
+                .into_iter()
+                .flat_map(|operations| operations.iter())
+                .filter(|(_, spec)| match spec["action"].as_str() {
+                    Some("read_business") => can_read,
+                    Some("execute_business") => can_execute,
+                    _ => false,
+                })
+                .map(|(key, _)| key.clone())
+                .collect();
+            let grants = sqlx::query("SELECT o.id,o.authority_grant_id,o.work_account_id,o.account_role,o.operation_key,o.valid_until,o.revoked_at FROM qintopia_agent_os.business_operation_grants o WHERE o.tenant_key=$1 AND o.binding_id=$2 AND o.operation_key=ANY($3) ORDER BY o.created_at,o.id LIMIT 257")
+                .bind(&self.tenant).bind(binding).bind(&allowed_keys).fetch_all(&mut *tx).await?;
             ensure!(grants.len() <= 256, "business_configuration_too_large");
             bindings.push(json!({
                 "id":binding,"scope":scope,"source":row.get::<String, _>("source_instance"),
@@ -144,20 +158,17 @@ impl Store {
                 })).collect::<Vec<_>>()
             }));
         }
-        let accounts=sqlx::query("SELECT w.id,w.label,w.active,w.version,w.gateway_key,g.scope_id FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key WHERE w.tenant_key=$1 ORDER BY w.label,w.id LIMIT 257")
-            .bind(&self.tenant).fetch_all(&mut *tx).await?;
+        let accounts=sqlx::query("SELECT w.id,w.label,w.active,w.version,w.gateway_key,g.scope_id FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key WHERE w.tenant_key=$1 AND g.scope_id=ANY($2) ORDER BY w.label,w.id LIMIT 257")
+            .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
         ensure!(accounts.len() <= 256, "business_configuration_too_large");
         let accounts:Vec<_>=accounts.iter().filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
             .map(|r|json!({"id":r.get::<Uuid,_>("id"),"label":r.get::<String,_>("label"),"active":r.get::<bool,_>("active"),"version":r.get::<i64,_>("version"),"gateway":r.get::<String,_>("gateway_key"),"scope":r.get::<Uuid,_>("scope_id")})).collect();
-        let observed=sqlx::query("SELECT l.id,g.gateway_key,g.scope_id,coalesce(nullif(l.adapter_metadata->>'display_name',''),'待核对工作账号') AS label FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE g.tenant_key=$1 AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status='pending' AND l.adapter_metadata ? 'first_observation_ref' AND NOT EXISTS(SELECT 1 FROM qintopia_identity.work_accounts w WHERE w.tenant_key=$1 AND w.source_link_id=l.id AND w.active) ORDER BY g.gateway_key,l.id LIMIT 257")
-            .bind(&self.tenant).fetch_all(&mut *tx).await?;
+        let observed=sqlx::query("SELECT l.id,g.gateway_key,g.scope_id,coalesce(nullif(l.adapter_metadata->>'display_name',''),'待核对工作账号') AS label FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE g.tenant_key=$1 AND g.scope_id=ANY($2) AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status='pending' AND l.adapter_metadata ? 'first_observation_ref' AND NOT EXISTS(SELECT 1 FROM qintopia_identity.work_accounts w WHERE w.tenant_key=$1 AND w.source_link_id=l.id AND w.active) ORDER BY g.gateway_key,l.id LIMIT 257")
+            .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
         ensure!(observed.len() <= 256, "business_configuration_too_large");
         let observed:Vec<_>=observed.iter().filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
             .map(|r|json!({"source_link":r.get::<Uuid,_>("id"),"gateway":r.get::<String,_>("gateway_key"),"scope":r.get::<Uuid,_>("scope_id"),"label":r.get::<String,_>("label")})).collect();
         let can_manage = !manageable_scopes.is_empty();
-        let catalog: Value = serde_json::from_str(include_str!(
-            "../../../../../skills/pms-operations/operations.json"
-        ))?;
         Ok(
             json!({"version":version,"can_manage":can_manage,"manageable_scopes":manageable_scopes,"bindings":bindings,"accounts":accounts,"observed":observed,"operations":catalog["operations"]}),
         )

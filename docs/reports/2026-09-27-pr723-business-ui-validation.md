@@ -32,3 +32,11 @@ PR-Agent 对 `7570e566` 指出 `RegisterAccount` 没有限定 `shared`
 网关。注册与候选查询已补该条件，业务账号解析、当前身份校验和新操作 grant 也拒绝普通
 `employee` 网关的异常旧账号。隔离库新增负例通过；修订后整个 `person_collaboration`
 集成组串行 134/134 通过。最终 PR 自动检查和远端 CI 以修订 head 为准。
+
+PR-Agent 对 `9bafc8b9` 又指出旧 Person 动作接续和先按全租户截断配置列表的风险。
+
+后续动作现显式保持原始 Person/工作账号主体类型。绑定、账号、候选和可见操作授权在 SQL 中先按当前管理范围或能力过滤，再应用 256 项上限。
+
+模拟旧 Person 动作与 257 条不可见跨范围数据的 PostgreSQL 负例均通过；修订后整个
+`person_collaboration`
+集成组串行 135/135 通过。最终 PR 自动检查和远端 CI 仍以新 head 结果为准。

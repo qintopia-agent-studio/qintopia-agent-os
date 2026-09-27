@@ -189,6 +189,75 @@ async fn business_management_scope_is_visible_before_first_binding() -> Result<(
 
 #[tokio::test]
 #[ignore = "explicit task-isolated local database required"]
+async fn business_configuration_capacity_only_counts_visible_scope_and_operations() -> Result<()> {
+    let f = Fixture::new().await?;
+    let scope: Uuid = sqlx::query_scalar(
+        "SELECT scope_id FROM qintopia_agent_os.business_property_bindings WHERE id=$1",
+    )
+    .bind(f.binding)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let other_scope: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id<>$2 AND status='active' ORDER BY id LIMIT 1")
+        .bind(&f.store.tenant).bind(scope).fetch_one(&f.store.pool).await?;
+    let link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND source_ref='fixture-person-1'")
+        .bind(&f.store.tenant).fetch_one(&f.store.pool).await?;
+    let colleague = f.store.actor(link).await?;
+    let person = f.store.verified_person(&colleague).await?;
+    let owner = f.store.verified_person(&f.actor).await?;
+    let root: Uuid = sqlx::query_scalar(
+        "SELECT parent_grant_id FROM qintopia_agent_os.collaboration_grants WHERE id=$1",
+    )
+    .bind(f.grant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let appointment: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_appointments(tenant_key,person_id,role_id,scope_id) SELECT a.tenant_key,$2,a.role_id,$3 FROM qintopia_agent_os.collaboration_appointments a JOIN qintopia_agent_os.agent_collaborations c ON c.appointment_id=a.id JOIN qintopia_agent_os.collaboration_grants g ON g.collaboration_id=c.id WHERE g.id=$1 RETURNING id")
+        .bind(f.grant).bind(person).bind(scope).fetch_one(&f.store.pool).await?;
+    let collaboration: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.agent_collaborations(tenant_key,appointment_id,agent_key,domain_key,responsibility_text) VALUES($1,$2,'anan','hospitality','模拟单范围查询管理') RETURNING id")
+        .bind(&f.store.tenant).bind(appointment).fetch_one(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,parent_grant_id,managed_agents,managed_domains,managed_actions,delegation_depth) VALUES($1,$2,'manage',$3,ARRAY['anan'],ARRAY['hospitality'],ARRAY['read_business'],0)")
+        .bind(&f.store.tenant).bind(collaboration).bind(root).execute(&f.store.pool).await?;
+    let before = f.store.business_configuration_state(&colleague).await?;
+    assert!(before["manageable_scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == json!(scope) && item["read"] == true));
+    assert!(!before["manageable_scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == json!(other_scope)));
+
+    sqlx::query("INSERT INTO qintopia_agent_os.business_property_bindings(tenant_key,scope_id,source_instance,property_id) SELECT $1,$2,'simulated-capacity','other-'||n::text FROM generate_series(1,257) n")
+        .bind(&f.store.tenant).bind(other_scope).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.business_operation_grants(tenant_key,authority_grant_id,binding_id,operation_key,issued_by,revoked_at) SELECT $1,$2,$3,'pms.command.CREATE_ORDER',$4,clock_timestamp() FROM generate_series(1,257)")
+        .bind(&f.store.tenant).bind(f.grant).bind(f.binding).bind(owner).execute(&f.store.pool).await?;
+    let namespace = format!("synthetic-capacity-{}", Uuid::new_v4());
+    let gateway = format!("synthetic-capacity-gateway-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'shared',true)")
+        .bind(&f.store.tenant).bind(&gateway).bind(&namespace).bind(other_scope).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) SELECT $1,'wecom_internal','capacity-account-'||n::text,jsonb_build_object('first_observation_ref',$2::text) FROM generate_series(1,257) n")
+        .bind(&namespace).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) SELECT $1,l.id,l.version,g.gateway_key,g.version,l.source_ref,$4,$5 FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE l.namespace=$2 AND g.gateway_key=$3")
+        .bind(&f.store.tenant).bind(&namespace).bind(&gateway).bind(owner).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) SELECT $1,'wecom_internal','capacity-observed-'||n::text,jsonb_build_object('first_observation_ref',$2::text) FROM generate_series(1,257) n")
+        .bind(&namespace).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+    let visible = f.store.business_configuration_state(&colleague).await?;
+    assert_eq!(visible["can_manage"], true);
+    assert!(visible["bindings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |item| item["id"] == json!(f.binding) && item["grants"].as_array().unwrap().is_empty()
+        ));
+    assert!(visible["accounts"].as_array().unwrap().is_empty());
+    assert!(visible["observed"].as_array().unwrap().is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
 async fn employee_pending_identity_cannot_become_business_work_account() -> Result<()> {
     let f = Fixture::new().await?;
     let sender = format!("synthetic-employee-pending-{}", Uuid::new_v4());
@@ -539,6 +608,44 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
             &booking_args,
         )
         .await?;
+    let legacy_turn = HostTurn {
+        platform: booking_turn.platform.clone(),
+        chat_type: booking_turn.chat_type.clone(),
+        chat_id: booking_turn.chat_id.clone(),
+        sender_id: booking_turn.sender_id.clone(),
+        message_id: "shared-person-origin".into(),
+        text: "请预订报价 quote_person_origin。".into(),
+    };
+    f.store
+        .business_capture_turn(&gateway, &legacy_turn)
+        .await?;
+    let legacy = f
+        .store
+        .business_invoke(
+            &actor,
+            &legacy_turn.message_id,
+            &legacy_turn.chat_id,
+            "pms_start",
+            &json!({"binding":f.binding,"operation":"pms.command.CREATE_ORDER","input":{"quoteId":"quote_person_origin"},"reason":{"code":"CREATE_STANDARD_ORDER","note":""}}),
+        )
+        .await?;
+    let legacy_id: Uuid = serde_json::from_value(legacy["action"].clone())?;
+    sqlx::query("UPDATE qintopia_agent_os.business_actions SET actor_person_id=$2,actor_work_account_id=NULL,actor_work_account_version=NULL WHERE id=$1")
+        .bind(legacy_id).bind(f.store.verified_person(&f.actor).await?).execute(&f.store.pool).await?;
+    assert_eq!(
+        f.store
+            .business_invoke(
+                &actor,
+                &legacy_turn.message_id,
+                &legacy_turn.chat_id,
+                "pms_claim_preview",
+                &json!({"action":legacy["action"]}),
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "business_subject_changed"
+    );
     let claim = f
         .store
         .business_invoke(
