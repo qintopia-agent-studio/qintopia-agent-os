@@ -242,10 +242,11 @@ impl Store {
                     .as_str()
                     .and_then(|v| Uuid::parse_str(v).ok())
                     .ok_or_else(|| anyhow::anyhow!("trusted_observation_required"))?;
-                let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_key,source_link_id) DO UPDATE SET active=true,version=work_accounts.version+1,source_version=EXCLUDED.source_version,gateway_version=EXCLUDED.gateway_version,label=EXCLUDED.label,verified_by=EXCLUDED.verified_by,evidence_ref=EXCLUDED.evidence_ref RETURNING id")
-                    .bind(&self.tenant).bind(source_link).bind(row.get::<i64,_>("version")).bind(gateway).bind(row.get::<i64,_>("gateway_version")).bind(label).bind(actor.person).bind(evidence).fetch_one(&mut *tx).await?;
-                sqlx::query("UPDATE qintopia_agent_os.business_operation_grants SET revoked_at=$3 WHERE tenant_key=$1 AND work_account_id=$2 AND revoked_at IS NULL")
-                    .bind(&self.tenant).bind(id).bind(now).execute(&mut *tx).await?;
+                let id:Uuid=sqlx::query_scalar("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_key,source_link_id) DO UPDATE SET active=true,version=work_accounts.version+1,source_version=EXCLUDED.source_version,gateway_version=EXCLUDED.gateway_version,label=EXCLUDED.label,verified_by=EXCLUDED.verified_by,evidence_ref=EXCLUDED.evidence_ref WHERE work_accounts.active=false RETURNING id")
+                    .bind(&self.tenant).bind(source_link).bind(row.get::<i64,_>("version")).bind(gateway).bind(row.get::<i64,_>("gateway_version")).bind(label).bind(actor.person).bind(evidence).fetch_optional(&mut *tx).await?.ok_or_else(||anyhow::anyhow!("work_account_already_active"))?;
+                let has_grants:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_operation_grants WHERE tenant_key=$1 AND work_account_id=$2 AND revoked_at IS NULL)")
+                    .bind(&self.tenant).bind(id).fetch_one(&mut *tx).await?;
+                ensure!(!has_grants, "work_account_grants_still_active");
                 json!({"kind":"work_account","account":id,"active":true,"authority_granted":false})
             }
             BusinessConfigChange::DisableAccount {

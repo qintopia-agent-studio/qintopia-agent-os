@@ -375,20 +375,17 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         .business_gateway_actor(&gateway, sender)
         .await
         .is_err());
+    let registration = command(
+        version().await?,
+        BusinessConfigChange::RegisterAccount {
+            gateway: gateway.clone(),
+            source_link: link,
+            label: "模拟共用账号".into(),
+        },
+    );
     let registered = f
         .store
-        .business_configure(
-            &f.actor,
-            &command(
-                version().await?,
-                BusinessConfigChange::RegisterAccount {
-                    gateway: gateway.clone(),
-                    source_link: link,
-                    label: "模拟共用账号".into(),
-                },
-            ),
-            true,
-        )
+        .business_configure(&f.actor, &registration, true)
         .await?;
     let account: Uuid = serde_json::from_value(registered["change"]["account"].clone())?;
     assert!(f.store.gateway_actor(&gateway, sender).await.is_err());
@@ -464,6 +461,83 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
     f.store.business_capture_turn(&gateway, &turn).await?;
     let input = json!({"orderId":"order_1","method":"WECOM","amountMinor":1200,"transactionReference":"pay_1"});
     let action=f.store.business_invoke(&actor,&turn.message_id,&turn.chat_id,"pms_start",&json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","input":input,"reason":{"code":"OPERATOR_REQUEST","note":"模拟交办"}})).await?;
+    let action_id: Uuid = serde_json::from_value(action["action"].clone())?;
+    let before_action: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(a) FROM qintopia_agent_os.business_actions a WHERE a.id=$1",
+    )
+    .bind(action_id)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let before_account: (i64, bool, String) = sqlx::query_as(
+        "SELECT version,active,label FROM qintopia_identity.work_accounts WHERE id=$1",
+    )
+    .bind(account)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let before_grants: Vec<(Uuid, Option<chrono::DateTime<Utc>>)> = sqlx::query_as("SELECT id,revoked_at FROM qintopia_agent_os.business_operation_grants WHERE tenant_key=$1 AND work_account_id=$2 ORDER BY id")
+        .bind(&f.store.tenant).bind(account).fetch_all(&f.store.pool).await?;
+    assert_eq!(
+        f.store
+            .business_configure(&f.actor, &registration, true)
+            .await?["replayed"],
+        true
+    );
+    let colleague_link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND source_ref='fixture-person-1'")
+        .bind(&f.store.tenant).fetch_one(&f.store.pool).await?;
+    let colleague = f.store.actor(colleague_link).await?;
+    let colleague_person = f.store.verified_person(&colleague).await?;
+    let root: Uuid = sqlx::query_scalar(
+        "SELECT parent_grant_id FROM qintopia_agent_os.collaboration_grants WHERE id=$1",
+    )
+    .bind(f.grant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let appointment: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_appointments(tenant_key,person_id,role_id,scope_id) SELECT a.tenant_key,$2,a.role_id,$3 FROM qintopia_agent_os.collaboration_appointments a JOIN qintopia_agent_os.agent_collaborations c ON c.appointment_id=a.id JOIN qintopia_agent_os.collaboration_grants g ON g.collaboration_id=c.id WHERE g.id=$1 RETURNING id")
+        .bind(f.grant).bind(colleague_person).bind(scope).fetch_one(&f.store.pool).await?;
+    let collaboration: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.agent_collaborations(tenant_key,appointment_id,agent_key,domain_key,responsibility_text) VALUES($1,$2,'anan','hospitality','模拟只读管理') RETURNING id")
+        .bind(&f.store.tenant).bind(appointment).fetch_one(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,parent_grant_id,managed_agents,managed_domains,managed_actions,delegation_depth) VALUES($1,$2,'manage',$3,ARRAY['anan'],ARRAY['hospitality'],ARRAY['read_business'],0)")
+        .bind(&f.store.tenant).bind(collaboration).bind(root).execute(&f.store.pool).await?;
+    let replacement = command(
+        version().await?,
+        BusinessConfigChange::RegisterAccount {
+            gateway: gateway.clone(),
+            source_link: link,
+            label: "模拟越权重登记".into(),
+        },
+    );
+    assert_eq!(
+        f.store
+            .business_configure(&colleague, &replacement, true)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "work_account_already_active"
+    );
+    let after_account: (i64, bool, String) = sqlx::query_as(
+        "SELECT version,active,label FROM qintopia_identity.work_accounts WHERE id=$1",
+    )
+    .bind(account)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let after_grants: Vec<(Uuid, Option<chrono::DateTime<Utc>>)> = sqlx::query_as("SELECT id,revoked_at FROM qintopia_agent_os.business_operation_grants WHERE tenant_key=$1 AND work_account_id=$2 ORDER BY id")
+        .bind(&f.store.tenant).bind(account).fetch_all(&f.store.pool).await?;
+    let after_action: Value = sqlx::query_scalar(
+        "SELECT to_jsonb(a) FROM qintopia_agent_os.business_actions a WHERE a.id=$1",
+    )
+    .bind(action_id)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(after_account, before_account);
+    assert_eq!(after_grants, before_grants);
+    assert_eq!(after_action, before_action);
+    assert_eq!(
+        f.store
+            .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
+            .await?
+            .operation_grant,
+        grant
+    );
     let snooze_turn = HostTurn {
         platform: turn.platform.clone(),
         chat_type: turn.chat_type.clone(),
@@ -828,6 +902,40 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         )
         .await
         .is_err());
+    let disabled_version: i64 =
+        sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
+            .bind(account)
+            .fetch_one(&f.store.pool)
+            .await?;
+    let residual_grant: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_operation_grants(tenant_key,authority_grant_id,binding_id,operation_key,issued_by,work_account_id,work_account_version,account_role) VALUES($1,$2,$3,'pms.command.CREATE_ORDER',$4,$5,$6,'operator') RETURNING id")
+        .bind(&f.store.tenant).bind(f.grant).bind(f.binding).bind(f.store.verified_person(&f.actor).await?).bind(account).bind(disabled_version).fetch_one(&f.store.pool).await?;
+    assert_eq!(
+        f.store
+            .business_configure(
+                &f.actor,
+                &command(
+                    version().await?,
+                    BusinessConfigChange::RegisterAccount {
+                        gateway: gateway.clone(),
+                        source_link: link,
+                        label: "模拟残留授权账号".into(),
+                    },
+                ),
+                true,
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "work_account_grants_still_active"
+    );
+    let unchanged_version: i64 =
+        sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
+            .bind(account)
+            .fetch_one(&f.store.pool)
+            .await?;
+    assert_eq!(unchanged_version, disabled_version);
+    sqlx::query("UPDATE qintopia_agent_os.business_operation_grants SET revoked_at=clock_timestamp() WHERE id=$1")
+        .bind(residual_grant).execute(&f.store.pool).await?;
     f.store
         .business_configure(
             &f.actor,
