@@ -1038,42 +1038,94 @@ if (process.argv[2] === "--recovery-negative") {
       assert.equal(fs.readFileSync(holdPath, "utf8"), `${token}\n`);
     }
     setEvidence("not_started", false);
-    setRemote("absent");
-    fs.rmSync(resultPath, { force: true });
+    setRemote("failed", failedBytes);
+    write(resultPath, failedBytes, 0o600);
     fs.copyFileSync(requestPath, remoteRequest);
-    const assertNoRecoveryEffects = (label, expectedHold = `${token}\n`) => {
+    fs.rmSync(path.join(releaseRoot, "current"));
+    fs.rmSync(path.join(releaseRoot, "previous"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "current"));
+    fs.symlinkSync(path.join(releaseRoot, pSha), path.join(releaseRoot, "previous"));
+    const noClaimControl = launch();
+    assert.equal(
+      noClaimControl.status,
+      0,
+      `no-claim control: ${noClaimControl.stderr}`
+    );
+    assert.match(noClaimControl.stdout, /original pointers unchanged/);
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "current")),
+      path.join(releaseRoot, oSha)
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "previous")),
+      path.join(releaseRoot, pSha)
+    );
+    assert.equal(fs.readFileSync(holdPath, "utf8"), `${token}\n`);
+    assert.equal(fs.readFileSync(resultPath, "utf8"), failedBytes);
+    assert.equal(fs.existsSync(installMarker), false);
+    assert.equal(fs.existsSync(smokeMarker), false);
+    const assertNoRecoveryEffects = (
+      label,
+      expectedError,
+      expectedHold = `${token}\n`,
+      prepare = () => {}
+    ) => {
+      setEvidence("not_started", false);
+      prepare();
       const attempt = launch();
       assert.equal(attempt.status, 75, `${label}: ${attempt.stderr}`);
+      assert.match(attempt.stderr, expectedError, `${label}: wrong rejection`);
       assert.equal(
         fs.realpathSync(path.join(releaseRoot, "current")),
-        path.join(releaseRoot, tSha)
+        path.join(releaseRoot, oSha)
       );
       assert.equal(
         fs.realpathSync(path.join(releaseRoot, "previous")),
-        path.join(releaseRoot, oSha)
+        path.join(releaseRoot, pSha)
       );
       assert.equal(fs.existsSync(installMarker), false, `${label}: installer ran`);
       assert.equal(fs.existsSync(smokeMarker), false, `${label}: smoke ran`);
       assert.equal(fs.readFileSync(holdPath, "utf8"), expectedHold);
+      assert.equal(fs.readFileSync(resultPath, "utf8"), failedBytes);
+      assert.equal(fs.existsSync(processedPath), false, `${label}: request archived`);
     };
     write(holdPath, `${"f".repeat(32)}\n`, 0o600);
-    assertNoRecoveryEffects("no-claim foreign hold", `${"f".repeat(32)}\n`);
+    assertNoRecoveryEffects(
+      "no-claim foreign hold",
+      /legacy recovery hold belongs to another transaction/,
+      `${"f".repeat(32)}\n`
+    );
     write(holdPath, `${token}\n`, 0o600);
-    const { hold_token: _oldToken, ...unboundJournal } = baseJournal;
-    write(journalPath, `${JSON.stringify(unboundJournal)}\n`, 0o600);
-    assertNoRecoveryEffects("no-claim unbound legacy journal");
-    setEvidence("not_started", false);
+    assertNoRecoveryEffects(
+      "no-claim unbound legacy journal",
+      /legacy takeover hold identity conflicts/,
+      `${token}\n`,
+      () => {
+        const { hold_token: _oldToken, ...unboundJournal } = baseJournal;
+        write(journalPath, `${JSON.stringify(unboundJournal)}\n`, 0o600);
+      }
+    );
     const laterJournal = path.join(recovery, "deploy-20260927T020304Z-abcdef0.json");
     write(laterJournal, `${JSON.stringify({ request_id: "later" })}\n`, 0o600);
-    assertNoRecoveryEffects("no-claim later journal");
+    assertNoRecoveryEffects(
+      "no-claim later journal",
+      /a later recovery journal owns the isolation state/
+    );
     fs.rmSync(laterJournal);
     const otherClaim = path.join(
       state,
       "requests/claimed/deploy-20260927T020304Z-abcdef0.json"
     );
     write(otherClaim, "{}\n", 0o600);
-    assertNoRecoveryEffects("no-claim other claim");
+    assertNoRecoveryEffects(
+      "no-claim other claim",
+      /another deploy request claim is present/
+    );
     fs.rmSync(otherClaim);
+    fs.rmSync(path.join(releaseRoot, "current"));
+    fs.rmSync(path.join(releaseRoot, "previous"));
+    fs.symlinkSync(path.join(releaseRoot, tSha), path.join(releaseRoot, "current"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
     fs.copyFileSync(requestPath, remoteRequest);
     fs.rmSync(resultPath, { force: true });
     setEvidence();

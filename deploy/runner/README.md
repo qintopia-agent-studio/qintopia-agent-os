@@ -197,15 +197,16 @@ verified journal and (for O→T) takeover record must still bind the current hol
 Another claim, a later recovery journal, or a hold whose owner cannot be proved stops
 recovery before pointer or service changes.
 
-The existing `tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture still
-asserts the former `runuser` Anan branch and therefore fails when the approved transient
-`systemd-run` branch is used. A separately approved one-file scope extension is needed
-before editing that fixture. The proposed change uses a temporary fixed-SHA release tree
-with the real smoke and `restart_anan.py` paths, checks fixed unit/Python/helper/sandbox
-arguments and one invocation, and tests missing or erroneous `--wait` outcomes. It must
-retain the Erhua, Profile activation sentinel, system-service failure and safe failure
-marker checks. This fixture checks simulated invocation behavior; the standalone Ubuntu
-24.04 PID1 test owns the real namespace, lock and helper-lifetime evidence.
+The owner approved adding the existing
+`tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture to Draft PR #726's
+scope on 2026-09-27, bringing its limit to 18 paths. The required adaptation uses a
+temporary fixed-SHA release tree with the real smoke and `restart_anan.py` paths. It
+checks the fixed unit, official Python, release-local helper, sandbox arguments and one
+`systemd-run` invocation; missing or erroneous `--wait` outcomes must fail. The Erhua,
+Profile activation sentinel, system-service failure and safe failure marker checks must
+remain. This fixture verifies simulated invocation behavior; the separate Ubuntu 24.04
+PID1 test owns the real namespace, lock and helper-lifetime evidence. This test-scope
+approval does not authorize a production takeover, release or deployment.
 
 The runner exists so collaborators can deploy an approved `master` SHA without direct
 server access. GitHub Actions creates an HMAC-signed, schema-validated deploy request in
