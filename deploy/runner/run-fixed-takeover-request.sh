@@ -61,8 +61,65 @@ verify_hold_guard() {
 verify_hold() {
   [[ -f "${recovery}/hold" ]] || return 1
   verify_hold_guard || return 1
+  python3 - "${recovery}/takeover.json" "${recovery}/hold" <<'PY' || return 1
+import json
+import re
+import stat
+import sys
+from pathlib import Path
+
+record_path, hold_path = map(Path, sys.argv[1:3])
+with record_path.open(encoding="utf-8") as fh:
+    token = json.load(fh).get("hold_token", "")
+if not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token):
+    raise SystemExit("takeover hold identity is invalid")
+metadata = hold_path.lstat()
+if not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600:
+    raise SystemExit("takeover hold file is invalid")
+if hold_path.read_text(encoding="ascii") != token + "\n":
+    raise SystemExit("takeover hold belongs to another transaction")
+PY
   [[ "$(timer_file_state)" == disabled ]] || return 1
   unit_stopped "$timer" && unit_stopped "$unit"
+}
+
+verify_finalization_state() {
+  python3 - "$recovery" "${state}/requests/claimed" "$request_id" "$mode" <<'PY'
+import json
+import re
+import stat
+import sys
+from pathlib import Path
+
+recovery, claimed, request_id, mode = sys.argv[1:5]
+recovery = Path(recovery)
+with (recovery / "takeover.json").open(encoding="utf-8") as fh:
+    record = json.load(fh)
+token = record.get("hold_token", "")
+if not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token):
+    raise SystemExit("takeover hold identity is invalid")
+if record.get("request_id") != request_id:
+    raise SystemExit("takeover hold is not bound to this request")
+if any(Path(claimed).glob("*.json")):
+    raise SystemExit("another deploy claim is unfinished")
+takeover_sha = "70e7984fab92ddab956009585212d0e9729767b5"
+for path in recovery.glob("deploy-*.json"):
+    if path.name == request_id + ".json":
+        continue
+    with path.open(encoding="utf-8") as fh:
+        later = json.load(fh)
+    if (path.name > request_id + ".json" or
+            takeover_sha in (later.get("original_current_sha"), later.get("original_previous_sha"))):
+        raise SystemExit("another recovery journal owns the current isolation")
+hold = recovery / "hold"
+if hold.exists() or hold.is_symlink():
+    metadata = hold.lstat()
+    if (not stat.S_ISREG(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) != 0o600 or
+            hold.read_text(encoding="ascii") != token + "\n"):
+        raise SystemExit("current hold belongs to another transaction")
+elif mode != "finalize":
+    raise SystemExit("takeover hold disappeared before finalization")
+PY
 }
 
 unit_stopped() {
@@ -86,6 +143,7 @@ case "$mode" in
     verify_staged_bundle
     mkdir -p -m 0700 "$recovery"
     [[ ! -e "${recovery}/hold" ]] || { echo "recovery hold already exists" >&2; exit 75; }
+    [[ ! -e "${recovery}/takeover-consumed" ]] || { echo "takeover was already consumed" >&2; exit 75; }
     timer_state="$(timer_file_state)" || exit 75
     timer_was_enabled=false
     [[ "$timer_state" != enabled ]] || timer_was_enabled=true
@@ -98,17 +156,20 @@ case "$mode" in
     python3 - "$recovery" "$timer_was_enabled" <<'PY'
 import json
 import os
+import secrets
 import sys
 import tempfile
 directory, enabled = sys.argv[1:3]
+token = secrets.token_hex(16)
 fd, temporary = tempfile.mkstemp(prefix=".prepare-", dir=directory)
 with os.fdopen(fd, "w", encoding="utf-8") as fh:
-    json.dump({"timer_was_enabled": enabled == "true"}, fh)
+    json.dump({"timer_was_enabled": enabled == "true", "hold_token": token}, fh)
     fh.write("\n")
     fh.flush()
     os.fsync(fh.fileno())
 os.replace(temporary, os.path.join(directory, "takeover.json"))
 hold = os.open(os.path.join(directory, "hold"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+os.write(hold, (token + "\n").encode("ascii"))
 os.fsync(hold)
 os.close(hold)
 descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
@@ -136,10 +197,36 @@ PY
         exit 75
       }
       python3 - "$recovery" "$request_id" <<'PY'
+import json
 import os
+import re
 import sys
+import tempfile
 directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
 try:
+    with open(os.path.join(sys.argv[1], "takeover.json"), encoding="utf-8") as fh:
+        record = json.load(fh)
+    token = record.get("hold_token", "")
+    if (not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token) or
+            record.get("request_id") not in (None, sys.argv[2])):
+        raise SystemExit("takeover request binding is invalid")
+    with open(os.path.join(sys.argv[1], "hold"), encoding="ascii") as fh:
+        if fh.read() != token + "\n":
+            raise SystemExit("takeover hold identity changed")
+    record["request_id"] = sys.argv[2]
+    fd, temporary = tempfile.mkstemp(prefix=".takeover-binding-", dir=sys.argv[1])
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(record, fh, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, os.path.join(sys.argv[1], "takeover.json"))
+        os.fsync(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
     marker = os.open("takeover-consumed", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                      0o600, dir_fd=directory)
     with os.fdopen(marker, "w", encoding="utf-8") as fh:
@@ -167,10 +254,14 @@ PY
         exit 75
       fi
       rm -f "$run_output"
-    else
-      [[ -f "${recovery}/takeover-consumed" && ! -L "${recovery}/takeover-consumed" &&
-        "$(cat "${recovery}/takeover-consumed")" == "$request_id" ]] || exit 75
     fi
+    exec 8>"${state}/poller.lock"
+    flock -n 8 || { echo "poller lock is held during takeover finalization" >&2; exit 75; }
+    exec 9>"${state}/deploy.lock"
+    flock -n 9 || { echo "deploy lock is held during takeover finalization" >&2; exit 75; }
+    [[ -f "${recovery}/takeover-consumed" && ! -L "${recovery}/takeover-consumed" &&
+      "$(cat "${recovery}/takeover-consumed")" == "$request_id" ]] || exit 75
+    verify_finalization_state || exit 75
     [[ -f "${state}/requests/processed/${request_id}.json" &&
       ! -e "${state}/requests/claimed/${request_id}.json" ]] || exit 75
     "$staged/payload/deploy/runner/wait-deploy-result.sh" \
@@ -188,7 +279,7 @@ PY
     python3 - "$new_release/manifest.json" "$request_id" \
       "${state}/requests/processed/${request_id}.json" \
       "${state}/results/${request_id}.json" \
-      "${recovery}/${request_id}.json" "$old_sha" "$new_release" <<'PY'
+      "${recovery}/${request_id}.json" "$old_sha" "$new_release" <<'PY' || exit 75
 import hashlib
 import json
 import sys
@@ -204,10 +295,13 @@ with open(result_path, encoding="utf-8") as fh:
     result = json.load(fh)
 with open(journal_path, encoding="utf-8") as fh:
     journal = json.load(fh)
+with open(Path(journal_path).parent / "takeover.json", encoding="utf-8") as fh:
+    takeover = json.load(fh)
 with open(Path(new_release).parent / old_sha / "manifest.json", "rb") as fh:
     old_manifest_bytes = fh.read()
 old_manifest = json.loads(old_manifest_bytes)
 if (journal.get("direction") != "O→T" or journal.get("phase") != "intent" or
+        journal.get("hold_token") != takeover.get("hold_token") or
         journal.get("request_id") != request_id or
         journal.get("request_sha256") != hashlib.sha256(request_bytes).hexdigest() or
         journal.get("original_current_sha") != old_sha or
@@ -239,6 +333,14 @@ if type(value) is not bool:
 print(str(value).lower())
 PY
 )"
+    if [[ ! -e "${recovery}/hold" ]]; then
+      if [[ "$timer_was_enabled" == true ]]; then
+        [[ "$(timer_file_state)" == enabled ]] && systemctl is-active --quiet "$timer" || exit 75
+      else
+        [[ "$(timer_file_state)" == disabled ]] && unit_stopped "$timer" || exit 75
+      fi
+      exit 0
+    fi
     if [[ "$timer_was_enabled" == true ]]; then
       systemctl enable --now "$timer" || { echo "timer restore failed; hold retained" >&2; exit 75; }
       [[ "$(timer_file_state)" == enabled ]] && systemctl is-active --quiet "$timer" || {
@@ -248,7 +350,6 @@ PY
     else
       [[ "$(timer_file_state)" == disabled ]] && unit_stopped "$timer" || exit 75
     fi
-    [[ -f "${recovery}/hold" ]] || [[ "$mode" == finalize ]] || exit 75
     if [[ -f "${recovery}/hold" ]]; then
       rm "${recovery}/hold"
     fi

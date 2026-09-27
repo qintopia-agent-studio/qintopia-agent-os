@@ -7,6 +7,7 @@ release_root=/home/ubuntu/qintopia-agent-os-releases
 unit=qintopia-agent-os-deploy-runner.service
 timer=qintopia-agent-os-deploy-runner.timer
 anan_unit=qintopia-agent-os-anan-drain-restart.service
+fixed_unit=qintopia-agent-os-fixed-takeover.service
 env_file=/etc/qintopia/cos-artifacts.env
 
 [[ "$(id -u)" -eq 0 && $# -eq 2 && "$1" == --request-id &&
@@ -22,20 +23,38 @@ verified_release="${script_path%/deploy/runner/recover-release-lineage.sh}"
 # shellcheck disable=SC1090
 source "$env_file"
 export TENCENT_COS_BUCKET TENCENT_COS_REGION DEPLOY_REQUEST_SIGNING_KEY DEPLOY_REQUEST_SIGNING_KEY_ID
+export TENCENT_COS_AUTH_MODE TENCENT_COS_SECRET_ID TENCENT_COS_SECRET_KEY TENCENT_COS_SESSION_TOKEN
+export TENCENT_COS_CVM_ROLE_NAME TENCENT_COS_ENDPOINT
 journal="${state}/recovery/${request_id}.json"
 hold="${state}/recovery/hold"
 dropin=/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf
-[[ -f "$journal" && -f "$hold" && -f "$dropin" ]] || { echo "recovery journal or hold is absent" >&2; exit 75; }
+[[ -f "$journal" && ! -L "$journal" && ! -L "$hold" && ! -L "$dropin" ]] || {
+  echo "recovery journal or isolation path is invalid" >&2
+  exit 75
+}
 
 unit_stopped() {
-  local properties="" load_state="" active_state="" allow_not_found="${2:-false}"
-  properties="$(systemctl show "$1" --property=LoadState --property=ActiveState 2>/dev/null)" || return 1
+  local properties="" load_state="" active_state="" main_pid="" control_pid="" control_group=""
+  local allow_not_found="${2:-false}"
+  properties="$(systemctl show "$1" --property=LoadState --property=ActiveState \
+    --property=MainPID --property=ControlPID --property=ControlGroup 2>/dev/null)" || return 1
   load_state="$(printf '%s\n' "$properties" | sed -n 's/^LoadState=//p')"
   active_state="$(printf '%s\n' "$properties" | sed -n 's/^ActiveState=//p')"
+  main_pid="$(printf '%s\n' "$properties" | sed -n 's/^MainPID=//p')"
+  control_pid="$(printf '%s\n' "$properties" | sed -n 's/^ControlPID=//p')"
+  control_group="$(printf '%s\n' "$properties" | sed -n 's/^ControlGroup=//p')"
+  if [[ "$1" == *.service ]]; then
+    [[ "$main_pid" == 0 && "$control_pid" == 0 ]] || return 1
+  fi
   if [[ "$load_state" == not-found ]]; then
-    [[ "$allow_not_found" == true && "$active_state" == inactive ]]
+    [[ "$allow_not_found" == true && "$active_state" == inactive ]] || return 1
   else
-    [[ "$load_state" == loaded && ( "$active_state" == inactive || "$active_state" == failed ) ]]
+    [[ "$load_state" == loaded && ( "$active_state" == inactive || "$active_state" == failed ) ]] || return 1
+  fi
+  if [[ -n "$control_group" ]]; then
+    [[ "$control_group" == /* && "$control_group" != *..* ]] || return 1
+    [[ -f "/sys/fs/cgroup${control_group}/cgroup.events" ]] || return 1
+    [[ "$(sed -n 's/^populated //p' "/sys/fs/cgroup${control_group}/cgroup.events")" == 0 ]] || return 1
   fi
 }
 
@@ -46,7 +65,9 @@ for ((i=0; i<120; i++)); do
 done
 unit_stopped "$unit" || { echo "ordinary poller active or state unknown" >&2; exit 75; }
 systemctl daemon-reload
-cmp -s "$dropin" "$verified_release/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" || exit 75
+if [[ -f "$dropin" ]]; then
+  cmp -s "$dropin" "$verified_release/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" || exit 75
+fi
 unit_stopped "$timer" || exit 75
 unit_stopped "$anan_unit" true || {
   echo "Anan drain helper is still active or unknown" >&2
@@ -57,6 +78,9 @@ exec 8>"${state}/poller.lock"
 flock -n 8 || { echo "poller lock is held" >&2; exit 75; }
 exec 9>"${state}/deploy.lock"
 flock -n 9 || { echo "deploy lock is held" >&2; exit 75; }
+unit_stopped "$unit" || { echo "ordinary poller restarted during recovery" >&2; exit 75; }
+unit_stopped "$fixed_unit" true || { echo "fixed takeover consumer remains active" >&2; exit 75; }
+unit_stopped "$anan_unit" true || { echo "Anan helper remains active" >&2; exit 75; }
 
 request_file=""
 for candidate in "${state}/requests/pending/${request_id}.json" \
@@ -160,40 +184,122 @@ PY
 )" || exit 75
 IFS=$'\t' read -r direction original_current original_previous request_release restart_targets <<<"$identity"
 
-result_file="${state}/results/${request_id}.json"
-if [[ ! -f "$result_file" ]]; then
-  echo "local result missing; COS outcome requires separate reconciliation" >&2
-  exit 75
-fi
-"${verified_release}/deploy/runner/wait-deploy-result.sh" --request-file "$request_file" \
-  --result-file "$result_file" --verify-archived-request >/dev/null || exit 75
-result_status="$(python3 - "$result_file" <<'PY'
+claim_file="${state}/requests/claimed/${request_id}.json"
+claim_state="$(python3 - "$journal" "$claim_file" "$request_file" "$release_root" \
+  "$direction" "$original_current" "$request_id" "$hold" "${state}/recovery/takeover.json" <<'PY'
+import hashlib
 import json
+import os
+import re
+import stat
 import sys
-with open(sys.argv[1], encoding="utf-8") as fh:
-    print(json.load(fh).get("status", ""))
-PY
-)"
-if [[ "$result_status" == succeeded ]]; then
-  echo "signed success result exists; only read-only archive reconciliation is permitted" >&2
-  exit 75
-fi
-[[ "$result_status" == failed || "$result_status" == rolled_back ]] || exit 75
+from pathlib import Path
 
-verify_remote_evidence() {
-  local tmp="" coscli="${COSCLI_PATH:-}" config="" alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
+journal_path, claim_path, request_path, release_root, direction, current, request_id, hold_path, takeover_path = sys.argv[1:10]
+with open(journal_path, encoding="utf-8") as fh:
+    journal = json.load(fh)
+with open(request_path, "rb") as fh:
+    request_digest = hashlib.sha256(fh.read()).hexdigest()
+hold = Path(hold_path)
+if not os.path.isfile(claim_path):
+    if not hold.is_file() or hold.is_symlink():
+        raise SystemExit("legacy recovery has no authenticated hold")
+    print("legacy\t\t")
+    raise SystemExit(0)
+with open(claim_path, encoding="utf-8") as fh:
+    claim = json.load(fh)
+if (claim.get("request_id") != request_id or claim.get("request_sha256") != request_digest or
+        claim.get("phase") != "possibly_executing" or claim.get("recovery_eligible") is not True or
+        journal.get("request_sha256") != request_digest or
+        journal.get("execution") != claim.get("execution") or
+        journal.get("result_upload") != claim.get("result_upload") or
+        journal.get("hold_token") != claim.get("hold_token")):
+    raise SystemExit("recovery claim, journal or upload stage conflicts")
+execution = claim.get("execution")
+if not isinstance(execution, dict):
+    raise SystemExit("recovery execution identity is absent")
+expected_path = Path(release_root) / current / "deploy/runner/qintopia-agent-os-deploy-runner"
+actual_path = Path(execution.get("path", ""))
+if actual_path != expected_path or not expected_path.is_file() or expected_path.is_symlink():
+    raise SystemExit("recovery execution release path is invalid")
+metadata = expected_path.stat()
+if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o755:
+    raise SystemExit("recovery execution file owner or mode drifted")
+if hashlib.sha256(expected_path.read_bytes()).hexdigest() != execution.get("sha256"):
+    raise SystemExit("recovery execution file digest drifted")
+expected_unit = ("qintopia-agent-os-fixed-takeover.service" if direction == "O→T" else
+                 "qintopia-agent-os-deploy-runner.service")
+if execution.get("unit") != expected_unit:
+    raise SystemExit("recovery execution unit differs from direction")
+invocation = execution.get("invocation_id", "")
+if not isinstance(invocation, str) or (invocation and not re.fullmatch(r"[0-9a-f]{32}", invocation)):
+    raise SystemExit("recovery invocation identity is invalid")
+if invocation and execution.get("unit_invocation_verified") is not True:
+    raise SystemExit("recovery unit start evidence is absent")
+token = claim.get("hold_token", "")
+if direction == "O→T":
+    with open(takeover_path, encoding="utf-8") as fh:
+        takeover = json.load(fh)
+    if (takeover.get("request_id") != request_id or takeover.get("hold_token") != token or
+            not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token)):
+        raise SystemExit("first takeover hold identity conflicts")
+elif token != request_id:
+    raise SystemExit("recovery hold request identity conflicts")
+if hold.exists() or hold.is_symlink():
+    metadata = hold.lstat()
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or
+            stat.S_IMODE(metadata.st_mode) != 0o600 or
+            hold.read_text(encoding="ascii") != token + "\n"):
+        raise SystemExit("current recovery hold belongs to another transaction")
+print("\t".join((claim["result_upload"].get("phase", ""), token, invocation)))
+PY
+)" || exit 75
+IFS=$'\t' read -r upload_phase hold_token invocation_id <<<"$claim_state"
+
+if [[ ! -f "$hold" ]]; then
+  [[ "$direction" != "O→T" && -n "$hold_token" ]] || exit 75
+  python3 - "$state/recovery" "$hold_token" <<'PY' || exit 75
+import os
+import sys
+directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    descriptor = os.open("hold", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=directory)
+    try:
+        os.write(descriptor, (sys.argv[2] + "\n").encode("ascii"))
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+fi
+mkdir -p "$(dirname "$dropin")"
+install -m 0644 "$verified_release/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" "$dropin"
+systemctl daemon-reload
+cmp -s "$dropin" "$verified_release/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" || exit 75
+unit_stopped "$timer" && unit_stopped "$unit" || exit 75
+
+result_file="${state}/results/${request_id}.json"
+remote_dir="$(mktemp -d)" || exit 75
+chmod 0700 "$remote_dir"
+trap 'rm -rf -- "$remote_dir"' EXIT
+remote_result="${remote_dir}/result.json"
+remote_state_file="${remote_dir}/result.state"
+
+fetch_remote_evidence() {
+  local coscli="${COSCLI_PATH:-}" config="" alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
   [[ -n "${TENCENT_COS_BUCKET:-}" && -n "${TENCENT_COS_REGION:-}" ]] || return 1
   if [[ -z "$coscli" ]]; then
     coscli="$(command -v coscli)" || return 1
   fi
   [[ -x "$coscli" ]] || return 1
-  tmp="$(mktemp -d)" || return 1
-  chmod 0700 "$tmp" || { rm -rf "$tmp"; return 1; }
-  config="$tmp/cos.yaml"
-  touch "$config" || { rm -rf "$tmp"; return 1; }
+  config="$remote_dir/cos.yaml"
+  touch "$config" || return 1
   local status=0
   (
-    cd "$tmp" || exit 1
+    cd "$remote_dir" || exit 1
     if [[ "${TENCENT_COS_AUTH_MODE:-SecretKey}" == CvmRole ]]; then
       [[ -n "${TENCENT_COS_CVM_ROLE_NAME:-}" ]] || exit 1
       "$coscli" config set --mode CvmRole --cvm_role_name "$TENCENT_COS_CVM_ROLE_NAME" \
@@ -212,20 +318,187 @@ verify_remote_evidence() {
     fi
     "$coscli" config add "${bucket_args[@]}" >/dev/null 2>&1 || exit 1
     "$coscli" cp "cos://${alias}/qintopia-agent-os/deploy-requests/production/requests/${request_id}.json" \
-      "$tmp/request.json" -c "$config" --disable-log >/dev/null 2>&1 || exit 1
-    "$coscli" cp "cos://${alias}/qintopia-agent-os/deploy-results/production/${request_id}.json" \
-      "$tmp/result.json" -c "$config" --disable-log >/dev/null 2>&1 || exit 1
-    cmp -s "$request_file" "$tmp/request.json" || exit 1
-    cmp -s "$result_file" "$tmp/result.json" || exit 1
+      "$remote_dir/request.json" -c "$config" --disable-log >/dev/null 2>&1 || exit 1
+    cmp -s "$request_file" "$remote_dir/request.json" || exit 1
   ) || status=$?
-  rm -rf "$tmp"
   return "$status"
 }
 
-verify_remote_evidence || {
-  echo "COS request or result is absent, unreadable, or conflicts with local signed evidence" >&2
+fetch_remote_evidence || {
+  echo "COS original request is absent, unreadable, or conflicts with local signed evidence" >&2
   exit 75
 }
+
+if ! python3 - "$request_id" "$remote_result" "$remote_state_file" <<'PY'
+import hashlib
+import hmac
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+request_id, result_path, state_path = sys.argv[1:4]
+key = f"qintopia-agent-os/deploy-results/production/{request_id}.json"
+bucket = os.environ["TENCENT_COS_BUCKET"]
+region = os.environ["TENCENT_COS_REGION"]
+if not re.fullmatch(r"[A-Za-z0-9-]+", bucket) or not re.fullmatch(r"[a-z0-9-]+", region):
+    raise SystemExit("COS bucket or region identity is invalid")
+endpoint = os.environ.get("TENCENT_COS_ENDPOINT") or f"https://{bucket}.cos.{region}.myqcloud.com"
+if "://" not in endpoint:
+    endpoint = "https://" + endpoint
+parsed = urllib.parse.urlparse(endpoint)
+if (parsed.scheme != "https" and not (parsed.scheme == "http" and
+        parsed.hostname in ("127.0.0.1", "localhost"))) or not parsed.netloc or parsed.path not in ("", "/") or parsed.query:
+    raise SystemExit("COS endpoint is invalid")
+
+auth_mode = os.environ.get("TENCENT_COS_AUTH_MODE") or "SecretKey"
+if auth_mode == "CvmRole":
+    role = os.environ.get("TENCENT_COS_CVM_ROLE_NAME", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", role):
+        raise SystemExit("COS CVM role identity is invalid")
+    metadata_url = "http://metadata.tencentyun.com/latest/meta-data/cam/security-credentials/" + role
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(metadata_url, timeout=5) as response:
+        if response.status != 200:
+            raise SystemExit("COS CVM role credentials are unavailable")
+        credentials = json.loads(response.read(16385))
+    secret_id = credentials.get("TmpSecretId", "")
+    secret_key = credentials.get("TmpSecretKey", "")
+    token = credentials.get("Token", "")
+elif auth_mode == "SecretKey":
+    secret_id = os.environ.get("TENCENT_COS_SECRET_ID", "")
+    secret_key = os.environ.get("TENCENT_COS_SECRET_KEY", "")
+    token = os.environ.get("TENCENT_COS_SESSION_TOKEN", "")
+else:
+    raise SystemExit("COS authentication mode is unsupported")
+if not secret_id or not secret_key or (auth_mode == "CvmRole" and not token):
+    raise SystemExit("COS read credentials are unavailable")
+
+host = parsed.netloc
+uri = "/" + key
+headers = {"host": host}
+if token:
+    headers["x-cos-security-token"] = token
+header_names = sorted(headers)
+header_values = "&".join(f"{name}={urllib.parse.quote(headers[name], safe='~-._')}" for name in header_names)
+start_time = int(time.time())
+key_time = f"{start_time};{start_time + 300}"
+http_string = f"get\n{uri}\n\n{header_values}\n"
+string_to_sign = f"sha1\n{key_time}\n{hashlib.sha1(http_string.encode()).hexdigest()}\n"
+sign_key = hmac.new(secret_key.encode(), key_time.encode(), hashlib.sha1).hexdigest()
+signature = hmac.new(sign_key.encode(), string_to_sign.encode(), hashlib.sha1).hexdigest()
+authorization = (f"q-sign-algorithm=sha1&q-ak={secret_id}&q-sign-time={key_time}&q-key-time={key_time}"
+                 f"&q-header-list={';'.join(header_names)}&q-url-param-list=&q-signature={signature}")
+url = endpoint.rstrip("/") + uri
+request = urllib.request.Request(url, method="GET", headers={**headers, "Authorization": authorization})
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
+    with opener.open(request, timeout=15) as response:
+        if response.status != 200:
+            raise SystemExit("COS result read did not return HTTP 200")
+        payload = response.read(1048577)
+        if len(payload) > 1048576:
+            raise SystemExit("COS result exceeds the fixed size limit")
+        Path(result_path).write_bytes(payload)
+        os.chmod(result_path, 0o600)
+        state = "present"
+except urllib.error.HTTPError as error:
+    body = error.read(8193)
+    if error.code != 404 or len(body) > 8192:
+        raise SystemExit("COS result object request failed") from None
+    try:
+        root = ET.fromstring(body)
+        fields = {child.tag.rsplit("}", 1)[-1]: child.text for child in root}
+    except ET.ParseError:
+        raise SystemExit("COS error response is invalid") from None
+    if (root.tag.rsplit("}", 1)[-1] != "Error" or fields.get("Code") != "NoSuchKey" or
+            fields.get("Key") != key):
+        raise SystemExit("COS result did not return fixed-key NoSuchKey")
+    state = "absent"
+Path(state_path).write_text(state + "\n", encoding="ascii")
+PY
+then
+  echo "COS result state is unreadable or unknown" >&2
+  exit 75
+fi
+remote_state="$(cat "$remote_state_file")"
+
+result_status() {
+  "${verified_release}/deploy/runner/wait-deploy-result.sh" --request-file "$request_file" \
+    --result-file "$1" --verify-archived-request >/dev/null || return 1
+  python3 - "$1" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh).get("status", ""))
+PY
+}
+
+local_status=missing
+if [[ -e "$result_file" || -L "$result_file" ]]; then
+  [[ -f "$result_file" && ! -L "$result_file" ]] || exit 75
+  local_status="$(result_status "$result_file")" || exit 75
+  [[ "$local_status" == succeeded || "$local_status" == failed || "$local_status" == rolled_back ]] || exit 75
+fi
+remote_status=missing
+if [[ "$remote_state" == present ]]; then
+  remote_status="$(result_status "$remote_result")" || exit 75
+  [[ "$remote_status" == succeeded || "$remote_status" == failed || "$remote_status" == rolled_back ]] || exit 75
+  if [[ "$local_status" != missing ]]; then
+    cmp -s "$result_file" "$remote_result" || { echo "local and COS signed results conflict" >&2; exit 75; }
+  fi
+elif [[ "$remote_state" != absent ]]; then
+  exit 75
+fi
+
+if [[ "$remote_state" == absent ]]; then
+  [[ "$local_status" != succeeded ]] || {
+    echo "local signed success exists; missing COS upload cannot authorize reversal" >&2
+    exit 75
+  }
+  [[ "$upload_phase" == not_started && -n "$invocation_id" ]] || {
+    echo "result upload may have started or execution identity is unknown" >&2
+    exit 75
+  }
+elif [[ "$remote_status" == succeeded ]]; then
+  :
+elif [[ "$local_status" != "$remote_status" ||
+        ( "$remote_status" != failed && "$remote_status" != rolled_back ) ]]; then
+  echo "signed remote failure lacks matching local evidence" >&2
+  exit 75
+fi
+
+verify_execution_ended() {
+  [[ -n "$invocation_id" ]] || return 1
+  local consumer=""
+  if [[ "$direction" == "O→T" ]]; then
+    consumer="$fixed_unit"
+    [[ -f "${state}/recovery/takeover-consumed" &&
+      "$(cat "${state}/recovery/takeover-consumed")" == "$request_id" ]] || return 1
+  else
+    consumer="$unit"
+  fi
+  local properties="" load_state="" shown_invocation=""
+  properties="$(systemctl show "$consumer" --property=LoadState --property=InvocationID 2>/dev/null)" || return 1
+  load_state="$(printf '%s\n' "$properties" | sed -n 's/^LoadState=//p')"
+  shown_invocation="$(printf '%s\n' "$properties" | sed -n 's/^InvocationID=//p')"
+  [[ -z "$shown_invocation" || "$shown_invocation" == "$invocation_id" ]] || return 1
+  if [[ "$load_state" == not-found ]]; then
+    [[ "$direction" == "O→T" ]] || return 1
+  fi
+  unit_stopped "$consumer" "$([[ "$direction" == 'O→T' ]] && echo true || echo false)" || return 1
+  unit_stopped "$unit" && unit_stopped "$fixed_unit" true && unit_stopped "$anan_unit" true
+}
+
+if [[ "$remote_state" == absent ]]; then
+  verify_execution_ended || { echo "original consumer or uploader end is unproven" >&2; exit 75; }
+fi
 
 record_recovery_phase() {
   python3 - "$journal" "$1" <<'PY'
@@ -263,6 +536,149 @@ PY
 }
 export QINTOPIA_RECOVERY_REQUEST_ID="$request_id"
 
+python3 - "$journal" "$request_file" "$result_file" "$remote_result" \
+  "$remote_state" "$local_status" "$remote_status" "$upload_phase" "$invocation_id" <<'PY' || exit 75
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+path, request_path, local_path, remote_path, remote_state, local_status, remote_status, upload_phase, invocation = sys.argv[1:10]
+with open(path, encoding="utf-8") as fh:
+    record = json.load(fh)
+request_digest = hashlib.sha256(Path(request_path).read_bytes()).hexdigest()
+if record.get("request_sha256") != request_digest:
+    raise SystemExit("maintenance request identity changed")
+evidence = {
+    "request_sha256": request_digest,
+    "remote_state": remote_state,
+    "remote_status": remote_status,
+    "remote_sha256": hashlib.sha256(Path(remote_path).read_bytes()).hexdigest() if remote_state == "present" else None,
+    "local_status": local_status,
+    "local_sha256": hashlib.sha256(Path(local_path).read_bytes()).hexdigest() if local_status != "missing" else None,
+    "upload_phase": upload_phase,
+    "consumer_invocation_id": invocation,
+}
+prior = record.get("maintenance_evidence")
+if prior is not None:
+    stable_keys = ("request_sha256", "remote_state", "remote_status", "remote_sha256",
+                   "upload_phase", "consumer_invocation_id")
+    if any(prior.get(key) != evidence[key] for key in stable_keys):
+        raise SystemExit("maintenance evidence changed between attempts")
+    if (prior.get("local_status") != evidence["local_status"] or
+            prior.get("local_sha256") != evidence["local_sha256"]):
+        if (remote_status != "succeeded" or prior.get("local_status") != "missing" or
+                evidence["local_status"] != "succeeded" or
+                evidence["local_sha256"] != evidence["remote_sha256"]):
+            raise SystemExit("maintenance local result changed between attempts")
+else:
+    evidence["recorded_at"] = datetime.now(timezone.utc).isoformat()
+    record["maintenance_evidence"] = evidence
+    fd, temporary = tempfile.mkstemp(prefix=".maintenance-", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(record, fh, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+        directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+PY
+
+if [[ "$remote_status" == succeeded ]]; then
+  python3 - "$release_root" "$request_release" "$original_current" "$original_previous" \
+    "$direction" "$request_file" "$remote_result" "$result_file" "$journal" "$claim_file" <<'PY' || exit 75
+import hashlib
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+release_root, target_sha, old_current, old_previous, direction, request_path, remote_path, local_path, journal_path, claim_path = sys.argv[1:11]
+root = Path(release_root).resolve(strict=True)
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(remote_path, encoding="utf-8") as fh:
+    result = json.load(fh)
+with open(journal_path, encoding="utf-8") as fh:
+    journal = json.load(fh)
+target = root / target_sha
+with (target / "manifest.json").open(encoding="utf-8") as fh:
+    manifest = json.load(fh)
+expected_previous = old_current if direction != "R→T" else manifest.get("previous_sha")
+for name, sha in (("current", target_sha), ("previous", expected_previous)):
+    link = root / name
+    if not link.is_symlink() or link.resolve(strict=True) != root / sha:
+        raise SystemExit("signed success pointer state conflicts")
+if (manifest.get("release_sha") != target_sha or manifest.get("previous_sha") != expected_previous or
+        result.get("current_target") != str(target) or result.get("previous_sha") != expected_previous or
+        request.get("release_sha") != target_sha or result.get("request_id") != request.get("request_id") or
+        journal.get("request_id") != request.get("request_id")):
+    raise SystemExit("signed success release identity conflicts")
+for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile", "release_scope", "restart_targets"):
+    if manifest.get(key) != request.get(key) or result.get(key) != request.get(key):
+        raise SystemExit(f"signed success {key} identity conflicts")
+for relative, mode in (("manifest.json", 0o444),
+                       ("deploy/runner/install-release-systemd-units.sh", 0o755),
+                       ("deploy/runner/smoke-release.sh", 0o755)):
+    path = target / relative
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != mode:
+        raise SystemExit("signed success immutable target tree is invalid")
+remote_bytes = Path(remote_path).read_bytes()
+local = Path(local_path)
+if local.exists() or local.is_symlink():
+    if not local.is_file() or local.is_symlink() or local.read_bytes() != remote_bytes:
+        raise SystemExit("signed success local result conflicts")
+source = Path(request_path)
+processed = source.parent.parent / "processed" / source.name
+if source.parent.name == "failed":
+    raise SystemExit("signed success request is archived as failed")
+if source != processed:
+    if processed.exists() or processed.is_symlink():
+        raise SystemExit("signed success processed archive conflicts")
+if os.path.isfile(claim_path):
+    with open(claim_path, encoding="utf-8") as fh:
+        claim = json.load(fh)
+    if (claim.get("request_id") != request.get("request_id") or
+            claim.get("request_sha256") != hashlib.sha256(source.read_bytes()).hexdigest()):
+        raise SystemExit("signed success claim conflicts")
+if not local.exists():
+    descriptor = os.open(local, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "wb") as fh:
+        fh.write(remote_bytes)
+        fh.flush()
+        os.fsync(fh.fileno())
+    directory = os.open(local.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+if source != processed:
+    os.replace(source, processed)
+    for directory_path in (source.parent, processed.parent):
+        directory = os.open(directory_path, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+PY
+  echo "signed COS success reconciled locally; hold and claim remain for separate isolation review"
+  exit 0
+fi
+
 read -r current previous < <(python3 - "$release_root" <<'PY'
 from pathlib import Path
 import sys
@@ -279,6 +695,84 @@ for name in ("current", "previous"):
 print(" ".join(values))
 PY
 )
+
+recovery_phase="$(python3 - "$journal" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh).get("recovery_phase", ""))
+PY
+)"
+if [[ "$recovery_phase" == installer-started || "$recovery_phase" == smoke-started ||
+      "$recovery_phase" == rollback-*-started ]]; then
+  echo "previous installer or smoke attempt has an unknown outcome" >&2
+  exit 75
+fi
+if [[ "$recovery_phase" == smoke-completed ]]; then
+  [[ "$current" == "$original_current" && "$previous" == "$original_previous" ]] || exit 75
+  echo "limited recovery was already completed; hold remains"
+  exit 0
+fi
+resume_installer=false
+resume_smoke=false
+if [[ "$current" == "$original_current" && "$previous" == "$original_previous" ]]; then
+  case "$recovery_phase" in
+    ""|read-only-original-pointers)
+      record_recovery_phase "read-only-original-pointers"
+      echo "original pointers unchanged; no installer, smoke or request replay; hold remains"
+      exit 0 ;;
+    cas-*-started|cas-*-completed)
+      resume_installer=true ;;
+    installer-completed)
+      resume_smoke=true ;;
+    *)
+      echo "prior recovery work has an unknown outcome" >&2
+      exit 75 ;;
+  esac
+fi
+python3 - "$release_root" "$direction" "$original_current" "$original_previous" \
+  "$request_release" "$request_file" "$verified_release" <<'PY' || exit 75
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+release_root, direction, current, previous, target, request_path, helper_release = sys.argv[1:8]
+root = Path(release_root).resolve(strict=True)
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+target_manifest = root / target / "manifest.json"
+with target_manifest.open(encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if manifest.get("release_sha") != target:
+    raise SystemExit("recovery target manifest identity is invalid")
+if direction != "R→T":
+    if (manifest.get("request_id") != request.get("request_id") or
+            manifest.get("previous_sha") != current or
+            any(manifest.get(key) != request.get(key) for key in (
+                "commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile",
+                "release_scope", "restart_targets"))):
+        raise SystemExit("recovery target manifest does not bind original request")
+elif target != previous or manifest.get("previous_sha") == current:
+    raise SystemExit("reverse recovery target lineage is invalid")
+for sha in {current, target}:
+    tree = root / sha
+    if not tree.is_dir() or tree.is_symlink():
+        raise SystemExit("recovery immutable tree is unavailable")
+    for relative, mode in (("manifest.json", 0o444),
+                           ("deploy/runner/install-release-systemd-units.sh", 0o755),
+                           ("deploy/runner/smoke-release.sh", 0o755)):
+        path = tree / relative
+        metadata = path.lstat()
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or
+                stat.S_IMODE(metadata.st_mode) != mode):
+            raise SystemExit("recovery immutable tree file drifted")
+rollback = Path(helper_release) / "deploy/runner/rollback-release.sh"
+metadata = rollback.lstat()
+if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o755:
+    raise SystemExit("recovery rollback primitive drifted")
+PY
 
 cas_pointer() {
   record_recovery_phase "cas-$1-$2-to-$3-started"
@@ -310,8 +804,10 @@ PY
 }
 
 restore_sha=""
+if [[ "$resume_installer" == true || "$resume_smoke" == true ]]; then
+  restore_sha="$original_current"
+else
 case "$direction:$current:$previous" in
-  "O→T:${original_current}:${original_previous}") restore_sha="$original_current" ;;
   "O→T:${original_current}:${original_current}")
     cas_pointer previous "$original_current" "$original_previous"
     restore_sha="$original_current" ;;
@@ -323,7 +819,6 @@ case "$direction:$current:$previous" in
       --restore-previous-sha "$original_previous"
     record_recovery_phase "rollback-O-to-T-completed"
     restore_sha="$original_current" ;;
-  "T→R:${original_current}:${original_previous}") restore_sha="$original_current" ;;
   "T→R:${original_current}:${original_current}")
     cas_pointer previous "$original_current" "$original_previous"
     restore_sha="$original_current" ;;
@@ -335,7 +830,6 @@ case "$direction:$current:$previous" in
       --restore-previous-sha "$original_previous"
     record_recovery_phase "rollback-T-to-R-completed"
     restore_sha="$original_current" ;;
-  "R→T:${original_current}:${original_previous}") restore_sha="$original_current" ;;
   "R→T:${original_previous}:${original_previous}")
     cas_pointer current "$original_previous" "$original_current"
     restore_sha="$original_current" ;;
@@ -353,11 +847,14 @@ PY
     restore_sha="$original_current" ;;
   *) echo "pointer state requires direction-specific manual review" >&2; exit 75 ;;
 esac
+fi
 
-record_recovery_phase "installer-started"
-"${release_root}/${restore_sha}/deploy/runner/install-release-systemd-units.sh" \
-  --release-root "$release_root" --release-sha "$restore_sha"
-record_recovery_phase "installer-completed"
+if [[ "$resume_smoke" != true ]]; then
+  record_recovery_phase "installer-started"
+  "${release_root}/${restore_sha}/deploy/runner/install-release-systemd-units.sh" \
+    --release-root "$release_root" --release-sha "$restore_sha"
+  record_recovery_phase "installer-completed"
+fi
 systemctl daemon-reload
 cmp -s "$dropin" "$verified_release/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
 unit_stopped "$timer"

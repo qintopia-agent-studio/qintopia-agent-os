@@ -163,14 +163,29 @@ any uncertain upload or archive outcome. Maintenance recovery uses a persistent 
 direction-bound journal and `poller.lock` before `deploy.lock`; a pointer shape alone
 cannot identify the interrupted direction. This contract does not authorize a production
 takeover or recovery operation. The fixed takeover consumer leaves the hold drop-in
-installed. Its `finalize` mode rechecks the consumed request, signed result, journal,
-manifests and pointers without replaying the request, then restores and verifies the
-timer before removing the hold as its final action. Failure or caller death before that
-unlink leaves consumption blocked; a later `finalize` can resume from the same durable
-evidence. Mixed exact-previous rollback also binds T's original signed success result to
-`previous_sha=O` and the canonical T target, checks the fixed O ancestor manifest and
-installer, and verifies required installed sidecar binaries and modes against the
-immutable fetched archives before any pointer write.
+installed. Its `finalize` mode takes `poller.lock` before `deploy.lock`, binds the
+current hold to the original takeover record, rejects another claim or later recovery
+journal, and rechecks the consumed request, signed result, manifests and pointers
+without replaying the request. It restores and verifies the timer before removing only
+that takeover's hold as its final action. Failure or caller death before that unlink
+leaves consumption blocked; a later `finalize` can resume from the same durable
+evidence. A later T→R or R→T hold is bound to its own request and cannot be cleared by
+an old `finalize`. Mixed exact-previous rollback also binds T's original signed success
+result to `previous_sha=O` and the canonical T target, checks the fixed O ancestor
+manifest and installer, and verifies required installed sidecar binaries and modes
+against the immutable fetched archives before any pointer write.
+
+For an interrupted request with no signed result, the new poller records a durable
+`not_started` result-upload stage in the request claim and direction-bound journal
+before execution. Before each result PUT it fsyncs an `upload_intent` stage with the
+exact result digest in both records. Limited recovery from a missing result requires the
+new `not_started` evidence, the fixed COS result key's authoritative `NoSuchKey`
+response, and proof that the ordinary/fixed consumer, uploader and Anan helper have
+ended. A missing or older stage, any upload intent, unreadable COS, or conflicting
+evidence keeps the hold and forbids pointer changes. A trusted remote success only
+reconciles local signed bytes and request archive; it does not reverse release pointers.
+Maintenance evidence stays separate from ordinary signed deployment results. This
+contract does not authorize a production request or hold release.
 
 The existing `tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture still
 asserts the former `runuser` Anan branch and therefore fails when the approved transient

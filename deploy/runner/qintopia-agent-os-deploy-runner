@@ -900,9 +900,10 @@ from datetime import datetime, timezone
 path, request_path, direction, phase, current, previous, current_manifest, previous_manifest = sys.argv[1:9]
 with open(request_path, "rb") as fh:
     request_bytes = fh.read()
+request_id = json.loads(request_bytes)["request_id"]
 record = {
     "schema_version": 1,
-    "request_id": json.loads(request_bytes)["request_id"],
+    "request_id": request_id,
     "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
     "direction": direction,
     "original_current_sha": current,
@@ -911,6 +912,18 @@ record = {
     "phase": phase,
     "recorded_at": datetime.now(timezone.utc).isoformat(),
 }
+claim_path = os.path.join(os.path.dirname(os.path.dirname(path)), "requests", "claimed", request_id + ".json")
+if os.path.isfile(claim_path):
+    with open(claim_path, encoding="utf-8") as fh:
+        claim = json.load(fh)
+    if (claim.get("request_id") != request_id or
+            claim.get("request_sha256") != record["request_sha256"] or
+            claim.get("result_upload") != {"phase": "not_started"} or
+            claim.get("hold_token") != request_id):
+        raise SystemExit("recovery claim identity or upload phase changed")
+    record["execution"] = claim.get("execution")
+    record["hold_token"] = claim["hold_token"]
+    record["result_upload"] = {"phase": "not_started"}
 for key, manifest_path in (("current", current_manifest), ("previous", previous_manifest)):
     if os.path.isfile(manifest_path):
         with open(manifest_path, "rb") as fh:
@@ -922,6 +935,11 @@ if os.path.exists(path):
         if prior.get(key) != record[key]:
             raise SystemExit("recovery journal identity changed")
     record["manifest_sha256"] = prior["manifest_sha256"]
+    for key in ("execution", "hold_token", "result_upload"):
+        if key in prior:
+            if key in record and key != "result_upload" and record[key] != prior[key]:
+                raise SystemExit("recovery journal execution identity changed")
+            record[key] = prior[key]
 fd, temporary = tempfile.mkstemp(prefix=".journal-", dir=os.path.dirname(path))
 try:
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -1003,18 +1021,29 @@ install_recovery_hold() {
   local dropin_dir="/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d"
   [[ -f "$dropin_source" ]] || return 1
   mkdir -p -m 0700 "$hold_dir" || return $?
-  python3 - "$hold_dir" <<'PY' || return $?
+  python3 - "$hold_dir" "$request_id" <<'PY' || return $?
 import os
 import stat
 import sys
 directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+request_id = sys.argv[2]
 try:
-    hold = os.open("hold", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+    try:
+        hold = os.open("hold", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                       0o600, dir_fd=directory)
+        created = True
+    except FileExistsError:
+        hold = os.open("hold", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+        created = False
     try:
         metadata = os.fstat(hold)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or
+                stat.S_IMODE(metadata.st_mode) != 0o600):
             raise SystemExit("recovery hold is not a regular private file")
-        os.fchmod(hold, 0o600)
+        if created:
+            os.write(hold, (request_id + "\n").encode("ascii"))
+        elif os.read(hold, 256) != (request_id + "\n").encode("ascii"):
+            raise SystemExit("recovery hold belongs to another request")
         os.fsync(hold)
     finally:
         os.close(hold)

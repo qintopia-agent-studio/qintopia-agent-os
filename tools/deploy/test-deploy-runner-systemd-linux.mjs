@@ -6,6 +6,40 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
+const cosMockServerCode = String.raw`import hashlib, hmac, http.server, json, pathlib, sys, urllib.parse
+config_path, port_path = map(pathlib.Path, sys.argv[1:3])
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        config = json.loads(config_path.read_text())
+        key = config["key"]
+        auth = urllib.parse.parse_qs(self.headers.get("Authorization", ""))
+        times = auth.get("q-key-time", [""])[0]
+        header_value = "host=" + urllib.parse.quote(self.headers.get("Host", ""), safe="~-._")
+        http_string = "get\n" + self.path + "\n\n" + header_value + "\n"
+        sign_text = "sha1\n" + times + "\n" + hashlib.sha1(http_string.encode()).hexdigest() + "\n"
+        sign_key = hmac.new(b"simulated", times.encode(), hashlib.sha1).hexdigest()
+        expected = hmac.new(sign_key.encode(), sign_text.encode(), hashlib.sha1).hexdigest()
+        valid = (self.path == "/" + key and auth.get("q-signature") == [expected] and
+                 auth.get("q-header-list") == ["host"] and auth.get("q-sign-time") == [times])
+        mode = config["mode"] if valid else "unreadable"
+        if mode == "absent":
+            payload = ("<Error><Code>NoSuchKey</Code><Key>" + key + "</Key></Error>").encode()
+            code = 404
+        elif mode == "other-404":
+            payload, code = b"<Error><Code>NoSuchBucket</Code></Error>", 404
+        elif mode == "unreadable":
+            payload, code = b"<Error><Code>AccessDenied</Code></Error>", 403
+        else:
+            payload, code = pathlib.Path(config["result"]).read_bytes(), 200
+        self.send_response(code)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+    def log_message(self, *args): pass
+server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+port_path.write_text(str(server.server_port))
+server.serve_forever()
+`;
 
 if (process.argv[2] === "--anan-helper-only") {
   const helper = process.argv[3];
@@ -363,6 +397,10 @@ exec /usr/bin/rm "$@"
         QINTOPIA_HOLD_FILE: hold,
         DEPLOY_REQUEST_SIGNING_KEY: key,
         DEPLOY_REQUEST_SIGNING_KEY_ID: "simulated",
+        TENCENT_COS_BUCKET: "simulated",
+        TENCENT_COS_REGION: "simulated",
+        TENCENT_COS_SECRET_ID: "simulated",
+        TENCENT_COS_SECRET_KEY: "simulated",
       },
     });
   try {
@@ -504,6 +542,16 @@ exec /usr/bin/rm "$@"
     const resultPath = path.join(state, "results", `${requestId}.json`);
     write(requestPath, JSON.stringify(request) + "\n", 0o600);
     write(resultPath, JSON.stringify(result) + "\n", 0o600);
+    const takeoverRecord = JSON.parse(
+      fs.readFileSync(path.join(recovery, "takeover.json"), "utf8")
+    );
+    assert.match(takeoverRecord.hold_token, /^[0-9a-f]{32}$/);
+    takeoverRecord.request_id = requestId;
+    write(
+      path.join(recovery, "takeover.json"),
+      JSON.stringify(takeoverRecord) + "\n",
+      0o600
+    );
     write(path.join(recovery, "takeover-consumed"), requestId + "\n", 0o600);
     write(
       path.join(recovery, `${requestId}.json`),
@@ -512,12 +560,29 @@ exec /usr/bin/rm "$@"
         phase: "intent",
         request_id: requestId,
         request_sha256: sha256(fs.readFileSync(requestPath)),
+        hold_token: takeoverRecord.hold_token,
         original_current_sha: oSha,
         original_previous_sha: pSha,
         manifest_sha256: { current: sha256(fs.readFileSync(oldManifestPath)) },
       }) + "\n",
       0o600
     );
+    const journalPath = path.join(recovery, `${requestId}.json`);
+    const originalJournal = fs.readFileSync(journalPath, "utf8");
+    write(
+      journalPath,
+      JSON.stringify({ ...JSON.parse(originalJournal), hold_token: "f".repeat(32) }) +
+        "\n",
+      0o600
+    );
+    const wrongJournalToken = launch("finalize");
+    assert.equal(wrongJournalToken.status, 75, wrongJournalToken.stderr);
+    assert.match(
+      wrongJournalToken.stderr,
+      /journal, request, smoke result, and pointers disagree/
+    );
+    assert.equal(fs.existsSync(hold), true);
+    write(journalPath, originalJournal, 0o600);
     const failEnable = launch("finalize", "enable-fail");
     assert.equal(failEnable.status, 75, `timer enable failure: ${failEnable.stderr}`);
     assert.equal(fs.existsSync(hold), true, "timer enable failure cleared hold");
@@ -530,6 +595,30 @@ exec /usr/bin/rm "$@"
       false,
       "active timer bypassed recovery guard"
     );
+    for (const lockName of ["poller.lock", "deploy.lock"]) {
+      const lockPath = path.join(state, lockName);
+      const ready = path.join(fixture, `${lockName}.ready`);
+      const holder = spawn(
+        "bash",
+        ["-c", `exec 8>"${lockPath}"; flock 8; touch "${ready}"; sleep 30`],
+        { detached: true, stdio: "ignore" }
+      );
+      try {
+        for (let attempt = 0; attempt < 100 && !fs.existsSync(ready); attempt++)
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+        assert.equal(fs.existsSync(ready), true, `${lockName} holder did not start`);
+        const contested = launch("finalize");
+        assert.equal(contested.status, 75, `${lockName}: ${contested.stderr}`);
+        assert.equal(fs.readFileSync(hold, "utf8"), takeoverRecord.hold_token + "\n");
+      } finally {
+        process.kill(-holder.pid, "SIGKILL");
+        assert.equal(
+          spawnSync("flock", ["-w", "5", lockPath, "true"]).status,
+          0,
+          lockName + " holder did not release its lock"
+        );
+      }
+    }
     check(launch("finalize"), "resume finalization without replay");
     assert.equal(fs.existsSync(hold), false, "successful finalization retained hold");
     assert.equal(fs.existsSync(replayed), false, "finalize replayed poller");
@@ -537,7 +626,7 @@ exec /usr/bin/rm "$@"
       check(run("systemctl", ["is-active", timer]), "restored timer").stdout.trim(),
       "active"
     );
-    write(hold, "", 0o600);
+    write(hold, takeoverRecord.hold_token + "\n", 0o600);
     const killedAfterUnlink = launch("finalize", "kill-after-unlink");
     assert.notEqual(
       killedAfterUnlink.status,
@@ -547,6 +636,35 @@ exec /usr/bin/rm "$@"
     assert.equal(fs.existsSync(hold), false, "post-unlink death restored stale hold");
     check(launch("finalize"), "idempotent finalization after caller death");
     assert.equal(fs.existsSync(replayed), false, "retry replayed poller");
+    const laterId = "deploy-20260927T020304Z-abcdef1";
+    const laterJournal = path.join(recovery, `${laterId}.json`);
+    write(
+      laterJournal,
+      JSON.stringify({ request_id: laterId, direction: "T→R", phase: "unknown" }) +
+        "\n",
+      0o600
+    );
+    write(hold, laterId + "\n", 0o600);
+    check(run("systemctl", ["disable", "--now", timer]), "later recovery hold");
+    const staleFinalize = launch("finalize");
+    assert.equal(staleFinalize.status, 75, staleFinalize.stderr);
+    assert.equal(fs.readFileSync(hold, "utf8"), laterId + "\n");
+    assert.equal(
+      check(
+        run("systemctl", ["show", timer, "--property=UnitFileState", "--value"]),
+        "timer after stale finalization"
+      ).stdout.trim(),
+      "disabled"
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "current")),
+      path.join(releaseRoot, tSha)
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "previous")),
+      path.join(releaseRoot, oSha)
+    );
+    fs.rmSync(laterJournal);
     console.log("Fixed takeover finalization fault matrix passed.");
   } finally {
     run("systemctl", ["disable", "--now", timer]);
@@ -571,47 +689,65 @@ exec /usr/bin/rm "$@"
 }
 if (process.argv[2] === "--recovery-negative") {
   const [recoverySource, waiterSource, holdSource] = process.argv.slice(3);
-  for (const source of [recoverySource, waiterSource, holdSource]) {
-    assert.ok(source && fs.existsSync(source), "recovery fixture source is missing");
-  }
+  for (const source of [recoverySource, waiterSource, holdSource])
+    assert.ok(source && fs.existsSync(source), "recovery source is missing");
   const releaseRoot = "/home/ubuntu/qintopia-agent-os-releases";
-  const stateRoot = "/var/lib/qintopia-agent-os-deploy";
+  const state = "/var/lib/qintopia-agent-os-deploy";
   const unitDir = "/run/systemd/system";
   const dropin =
     "/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf";
   const envFile = "/etc/qintopia/cos-artifacts.env";
   const service = "qintopia-agent-os-deploy-runner.service";
   const timer = "qintopia-agent-os-deploy-runner.timer";
+  const fixed = "qintopia-agent-os-fixed-takeover.service";
   const requestId = "deploy-20260927T010203Z-abcdef0";
   const oSha = "16e8d56b98001579c6288ba13199b80d6d3dfc74";
   const pSha = "83d694f2c3bc21fd78a73d25da3197379e2a14d5";
   const tSha = "70e7984fab92ddab956009585212d0e9729767b5";
   const rSha = "4".repeat(40);
-  const key = "simulated-recovery-key";
-  const fixtureRoot = fs.mkdtempSync("/tmp/qintopia-recovery-negative-");
-  const written = [
+  const signingKey = "simulated-recovery-key";
+  const token = "a".repeat(32);
+  const invocation = "b".repeat(32);
+  const fixture = fs.mkdtempSync("/tmp/qintopia-recovery-negative-");
+  const recovery = path.join(state, "recovery");
+  const requestPath = path.join(state, "requests/pending", `${requestId}.json`);
+  const processedPath = path.join(state, "requests/processed", `${requestId}.json`);
+  const resultPath = path.join(state, "results", `${requestId}.json`);
+  const claimPath = path.join(state, "requests/claimed", `${requestId}.json`);
+  const journalPath = path.join(recovery, `${requestId}.json`);
+  const holdPath = path.join(recovery, "hold");
+  const runnerPath = path.join(
     releaseRoot,
-    path.join(stateRoot, "recovery", "hold"),
-    path.join(stateRoot, "recovery", `${requestId}.json`),
-    path.join(stateRoot, "requests", "pending", `${requestId}.json`),
-    path.join(stateRoot, "results", `${requestId}.json`),
+    oSha,
+    "deploy/runner/qintopia-agent-os-deploy-runner"
+  );
+  const remoteRequest = path.join(fixture, "request.json");
+  const remoteResult = path.join(fixture, "result.json");
+  const serverConfig = path.join(fixture, "server.json");
+  const serverPort = path.join(fixture, "port");
+  const coscli = path.join(fixture, "coscli");
+  const installMarker = path.join(fixture, "installed");
+  const smokeMarker = path.join(fixture, "smoked");
+  for (const target of [
+    releaseRoot,
+    requestPath,
+    processedPath,
+    claimPath,
+    journalPath,
+    holdPath,
     path.join(unitDir, service),
     path.join(unitDir, timer),
+    path.join(unitDir, fixed),
     dropin,
     envFile,
-  ];
-  for (const target of written) {
-    assert.equal(
-      fs.existsSync(target),
-      false,
-      `recovery fixture path already exists: ${target}`
-    );
-  }
+  ])
+    assert.equal(fs.existsSync(target), false, `fixture path exists: ${target}`);
   const write = (target, value, mode = 0o644) => {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, value, { mode });
     fs.chmodSync(target, mode);
   };
+  const digest = (value) => crypto.createHash("sha256").update(value).digest("hex");
   const canonical = (value) =>
     Array.isArray(value)
       ? `[${value.map(canonical).join(",")}]`
@@ -621,34 +757,24 @@ if (process.argv[2] === "--recovery-negative") {
             .map((name) => `${JSON.stringify(name)}:${canonical(value[name])}`)
             .join(",")}}`
         : JSON.stringify(value);
-  const sign = (unsigned, issuer, signedAt, field) => {
+  const now = new Date().toISOString();
+  const sign = (unsigned, issuer, field) => {
     const metadata = {
       algorithm: "hmac-sha256",
       issuer,
       key_id: "simulated",
-      signed_at: signedAt,
+      signed_at: now,
     };
     return {
       ...unsigned,
       signature: {
         ...metadata,
         value: crypto
-          .createHmac("sha256", key)
+          .createHmac("sha256", signingKey)
           .update(canonical({ [field]: unsigned, signature: metadata }))
           .digest("hex"),
       },
     };
-  };
-  const requestPath = path.join(stateRoot, "requests", "pending", `${requestId}.json`);
-  const resultPath = path.join(stateRoot, "results", `${requestId}.json`);
-  const journalPath = path.join(stateRoot, "recovery", `${requestId}.json`);
-  const now = new Date().toISOString();
-  const cos = {
-    bucket: "simulated",
-    region: "simulated",
-    prefix: "qintopia-agent-os",
-    request_key: `qintopia-agent-os/deploy-requests/production/requests/${requestId}.json`,
-    result_key: `qintopia-agent-os/deploy-results/production/${requestId}.json`,
   };
   const request = sign(
     {
@@ -668,128 +794,99 @@ if (process.argv[2] === "--recovery-negative") {
       restart_targets: ["qintopia-system-services"],
       rollback_on_smoke_failure: true,
       dry_run: false,
-      cos,
+      cos: {
+        bucket: "simulated",
+        region: "simulated",
+        prefix: "qintopia-agent-os",
+        request_key: `qintopia-agent-os/deploy-requests/production/requests/${requestId}.json`,
+        result_key: `qintopia-agent-os/deploy-results/production/${requestId}.json`,
+      },
     },
     "github-actions",
-    now,
     "request"
   );
-  const failed = sign(
-    {
-      schema_version: 1,
-      request_id: requestId,
-      environment: "production",
-      status: "failed",
-      started_at: now,
-      finished_at: now,
-      release_sha: tSha,
-      commit_sha: oSha,
-      runtime_sha: pSha,
-      deploy_bundle_sha: rSha,
-      runtime_artifact_profile: "huabaosi-production",
-      release_scope: ["deploy-bundle"],
-      restart_targets: ["qintopia-system-services"],
-      previous_sha: oSha,
-      current_target: path.join(releaseRoot, tSha),
-      checks: [{ name: "deploy-runner", status: "failed" }],
-      rollback: { attempted: false, status: "not_needed" },
-    },
-    "qintopia-deploy-runner",
-    now,
-    "result"
-  );
-  const { signature: _failedSignature, ...unsignedFailed } = failed;
-  const succeeded = sign(
-    {
-      ...unsignedFailed,
-      status: "succeeded",
-      checks: [{ name: "deploy-runner", status: "passed" }],
-    },
-    "qintopia-deploy-runner",
-    now,
-    "result"
-  );
-  const remoteRequest = path.join(fixtureRoot, "request.json");
-  const remoteResult = path.join(fixtureRoot, "result.json");
-  const remoteSuccess = path.join(fixtureRoot, "success.json");
-  const coscli = path.join(fixtureRoot, "coscli");
-  const touched = path.join(fixtureRoot, "pointer-action");
-  try {
-    for (const sha of [oSha, pSha, tSha]) {
-      fs.mkdirSync(path.join(releaseRoot, sha, "deploy", "runner"), {
-        recursive: true,
-      });
-      write(
-        path.join(releaseRoot, sha, "manifest.json"),
-        `${JSON.stringify({ release_sha: sha, previous_sha: sha === oSha ? pSha : oSha })}\n`
-      );
-    }
-    fs.symlinkSync(path.join(releaseRoot, tSha), path.join(releaseRoot, "current"));
-    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
-    fs.copyFileSync(
-      recoverySource,
-      path.join(releaseRoot, tSha, "deploy/runner/recover-release-lineage.sh")
-    );
-    fs.copyFileSync(
-      waiterSource,
-      path.join(releaseRoot, tSha, "deploy/runner/wait-deploy-result.sh")
-    );
-    fs.chmodSync(
-      path.join(releaseRoot, tSha, "deploy/runner/wait-deploy-result.sh"),
-      0o755
-    );
-    fs.mkdirSync(
-      path.join(
-        releaseRoot,
-        tSha,
-        "deploy/runner/qintopia-agent-os-deploy-runner.service.d"
-      ),
-      { recursive: true }
-    );
-    fs.copyFileSync(
-      holdSource,
-      path.join(
-        releaseRoot,
-        tSha,
-        "deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
-      )
-    );
-    write(
-      path.join(releaseRoot, tSha, "deploy/runner/rollback-release.sh"),
-      `#!/bin/sh\ntouch ${touched}\nexit 99\n`,
-      0o755
-    );
-    write(requestPath, `${JSON.stringify(request)}\n`, 0o600);
-    write(resultPath, `${JSON.stringify(failed)}\n`, 0o600);
-    fs.copyFileSync(requestPath, remoteRequest);
-    fs.copyFileSync(resultPath, remoteResult);
-    write(remoteSuccess, `${JSON.stringify(succeeded)}\n`, 0o600);
-    const manifestDigest = (sha) =>
-      crypto
-        .createHash("sha256")
-        .update(fs.readFileSync(path.join(releaseRoot, sha, "manifest.json")))
-        .digest("hex");
-    write(
-      journalPath,
-      `${JSON.stringify({
+  const result = (status) =>
+    sign(
+      {
         schema_version: 1,
         request_id: requestId,
-        request_sha256: crypto
-          .createHash("sha256")
-          .update(fs.readFileSync(requestPath))
-          .digest("hex"),
-        direction: "O→T",
-        original_current_sha: oSha,
-        original_previous_sha: pSha,
-        manifest_sha256: {
-          current: manifestDigest(oSha),
-          previous: manifestDigest(pSha),
-        },
-        phase: "intent",
-      })}\n`,
+        environment: "production",
+        status,
+        started_at: now,
+        finished_at: now,
+        release_sha: tSha,
+        commit_sha: oSha,
+        runtime_sha: pSha,
+        deploy_bundle_sha: rSha,
+        runtime_artifact_profile: "huabaosi-production",
+        release_scope: ["deploy-bundle"],
+        restart_targets: ["qintopia-system-services"],
+        previous_sha: oSha,
+        current_target: path.join(releaseRoot, tSha),
+        checks: [
+          {
+            name: "deploy-runner",
+            status: status === "succeeded" ? "passed" : "failed",
+          },
+        ],
+        rollback: { attempted: false, status: "not_needed" },
+      },
+      "qintopia-deploy-runner",
+      "result"
+    );
+  const successBytes = `${JSON.stringify(result("succeeded"))}\n`;
+  const failedBytes = `${JSON.stringify(result("failed"))}\n`;
+  const serverCode = cosMockServerCode;
+  let server;
+  try {
+    for (const sha of [pSha, oSha, tSha]) {
+      const tree = path.join(releaseRoot, sha);
+      const manifest = { release_sha: sha, previous_sha: sha === tSha ? oSha : pSha };
+      if (sha === tSha)
+        Object.assign(manifest, {
+          request_id: requestId,
+          commit_sha: oSha,
+          runtime_sha: pSha,
+          deploy_bundle_sha: rSha,
+          runtime_artifact_profile: "huabaosi-production",
+          release_scope: ["deploy-bundle"],
+          restart_targets: ["qintopia-system-services"],
+        });
+      write(path.join(tree, "manifest.json"), `${JSON.stringify(manifest)}\n`, 0o444);
+      write(
+        path.join(tree, "deploy/runner/install-release-systemd-units.sh"),
+        `#!/bin/sh\ntouch ${installMarker}\n`,
+        0o755
+      );
+      write(
+        path.join(tree, "deploy/runner/smoke-release.sh"),
+        `#!/bin/sh\ntouch ${smokeMarker}\n`,
+        0o755
+      );
+    }
+    write(runnerPath, "#!/bin/sh\nexit 0\n", 0o755);
+    const helper = path.join(releaseRoot, tSha, "deploy/runner");
+    fs.copyFileSync(recoverySource, path.join(helper, "recover-release-lineage.sh"));
+    fs.copyFileSync(waiterSource, path.join(helper, "wait-deploy-result.sh"));
+    fs.chmodSync(path.join(helper, "wait-deploy-result.sh"), 0o755);
+    const holdSourcePath = path.join(
+      helper,
+      "qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+    );
+    fs.mkdirSync(path.dirname(holdSourcePath), { recursive: true });
+    fs.copyFileSync(holdSource, holdSourcePath);
+    write(path.join(helper, "rollback-release.sh"), "#!/bin/sh\nexit 99\n", 0o755);
+    fs.symlinkSync(path.join(releaseRoot, tSha), path.join(releaseRoot, "current"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
+    write(requestPath, `${JSON.stringify(request)}\n`, 0o600);
+    fs.copyFileSync(requestPath, remoteRequest);
+    write(
+      path.join(recovery, "takeover.json"),
+      `${JSON.stringify({ request_id: requestId, hold_token: token })}\n`,
       0o600
     );
-    write(path.join(stateRoot, "recovery", "hold"), "", 0o600);
+    write(path.join(recovery, "takeover-consumed"), `${requestId}\n`, 0o600);
+    write(holdPath, `${token}\n`, 0o600);
     fs.mkdirSync(path.dirname(dropin), { recursive: true });
     fs.copyFileSync(holdSource, dropin);
     write(
@@ -798,81 +895,121 @@ if (process.argv[2] === "--recovery-negative") {
     );
     write(
       path.join(unitDir, timer),
-      "[Unit]\nDescription=Simulated runner timer\n[Timer]\nOnCalendar=daily\n[Install]\nWantedBy=timers.target\n"
-    );
-    write(
-      envFile,
-      `export TENCENT_COS_BUCKET=simulated TENCENT_COS_REGION=simulated TENCENT_COS_SECRET_ID=simulated TENCENT_COS_SECRET_KEY=simulated DEPLOY_REQUEST_SIGNING_KEY=${key} DEPLOY_REQUEST_SIGNING_KEY_ID=simulated COSCLI_PATH=${coscli}\n`,
-      0o600
+      "[Unit]\nDescription=Simulated timer\n[Timer]\nOnCalendar=daily\n[Install]\nWantedBy=timers.target\n"
     );
     write(
       coscli,
-      `#!/bin/bash\nset -euo pipefail\n[[ "$1" != cp ]] && exit 0\ncase "$2" in\n  *deploy-requests*) cp "$QINTOPIA_REMOTE_REQUEST_FILE" "$3" ;;\n  *deploy-results*)\n    [[ "$QINTOPIA_FAKE_COS_MODE" == missing ]] && exit 1\n    [[ "$QINTOPIA_FAKE_COS_MODE" == unreadable ]] && exit 2\n    if [[ "$QINTOPIA_FAKE_COS_MODE" == success ]]; then cp "$QINTOPIA_REMOTE_SUCCESS_FILE" "$3"; else cp "$QINTOPIA_REMOTE_RESULT_FILE" "$3"; fi ;;\n  *) exit 3 ;;\nesac\n`,
+      `#!/bin/bash\nset -euo pipefail\n[[ "$1" != cp ]] && exit 0\ncp "${remoteRequest}" "$3"\n`,
       0o755
     );
-    const reload = spawnSync("systemctl", ["daemon-reload"], { encoding: "utf8" });
-    assert.equal(reload.status, 0, reload.stderr);
-    for (const mode of [
-      "missing",
-      "unreadable",
-      "success",
-      "conflict-request",
-      "bad-signature",
-      "local-missing",
-      "local-success",
-      "match",
+    write(
+      serverConfig,
+      JSON.stringify({ mode: "absent", key: request.cos.result_key })
+    );
+    server = spawn("python3", ["-c", serverCode, serverConfig, serverPort], {
+      detached: true,
+      stdio: "ignore",
+    });
+    for (let attempt = 0; attempt < 100 && !fs.existsSync(serverPort); attempt++)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    assert.equal(fs.existsSync(serverPort), true, "mock COS server did not start");
+    write(
+      envFile,
+      `export TENCENT_COS_BUCKET=simulated TENCENT_COS_REGION=simulated TENCENT_COS_SECRET_ID=simulated TENCENT_COS_SECRET_KEY=simulated DEPLOY_REQUEST_SIGNING_KEY=${signingKey} DEPLOY_REQUEST_SIGNING_KEY_ID=simulated COSCLI_PATH=${coscli} TENCENT_COS_ENDPOINT=http://127.0.0.1:${fs.readFileSync(serverPort, "utf8")}\n`,
+      0o600
+    );
+    assert.equal(spawnSync("systemctl", ["daemon-reload"]).status, 0);
+    const requestBytes = fs.readFileSync(requestPath);
+    const baseClaim = {
+      request_id: requestId,
+      request_sha256: digest(requestBytes),
+      phase: "possibly_executing",
+      recovery_eligible: true,
+      hold_token: token,
+      execution: {
+        path: runnerPath,
+        sha256: digest(fs.readFileSync(runnerPath)),
+        unit: fixed,
+        invocation_id: invocation,
+        unit_invocation_verified: true,
+      },
+      result_upload: { phase: "not_started" },
+    };
+    const baseJournal = {
+      schema_version: 1,
+      request_id: requestId,
+      request_sha256: digest(requestBytes),
+      direction: "O→T",
+      original_current_sha: oSha,
+      original_previous_sha: pSha,
+      manifest_sha256: {
+        current: digest(fs.readFileSync(path.join(releaseRoot, oSha, "manifest.json"))),
+        previous: digest(
+          fs.readFileSync(path.join(releaseRoot, pSha, "manifest.json"))
+        ),
+      },
+      phase: "intent",
+      execution: baseClaim.execution,
+      hold_token: token,
+      result_upload: { phase: "not_started" },
+    };
+    const setEvidence = (phase = "not_started", withClaim = true) => {
+      const upload = { phase };
+      write(
+        journalPath,
+        `${JSON.stringify({ ...baseJournal, result_upload: upload })}\n`,
+        0o600
+      );
+      if (withClaim)
+        write(
+          claimPath,
+          `${JSON.stringify({ ...baseClaim, result_upload: upload })}\n`,
+          0o600
+        );
+      else fs.rmSync(claimPath, { force: true });
+    };
+    const setRemote = (mode, bytes = failedBytes) => {
+      write(remoteResult, bytes, 0o600);
+      write(
+        serverConfig,
+        JSON.stringify({ mode, key: request.cos.result_key, result: remoteResult })
+      );
+    };
+    const launch = () =>
+      spawnSync(
+        "bash",
+        [
+          ...(process.env.QINTOPIA_RECOVERY_TRACE ? ["-x"] : []),
+          path.join(helper, "recover-release-lineage.sh"),
+          "--request-id",
+          requestId,
+        ],
+        { encoding: "utf8" }
+      );
+    for (const [label, mode, phase, withClaim] of [
+      ["unknown upload", "absent", "unknown", true],
+      ["upload intent", "absent", "upload_intent", true],
+      ["legacy claim", "absent", "not_started", false],
+      ["authentication failure", "unreadable", "not_started", true],
+      ["other 404", "other-404", "not_started", true],
+      ["conflicting request", "absent", "not_started", true],
+      ["local success and absent COS", "absent", "not_started", true],
+      ["conflicting success", "success", "not_started", true],
     ]) {
-      write(resultPath, `${JSON.stringify(failed)}\n`, 0o600);
+      setEvidence(phase, withClaim);
+      setRemote(mode, successBytes);
+      fs.rmSync(resultPath, { force: true });
       fs.copyFileSync(requestPath, remoteRequest);
-      fs.copyFileSync(resultPath, remoteResult);
-      if (mode === "conflict-request")
+      if (label === "conflicting request")
         write(
           remoteRequest,
           `${JSON.stringify({ ...request, requested_by: "tampered" })}\n`
         );
-      if (mode === "bad-signature")
-        write(remoteResult, `${JSON.stringify({ ...failed, status: "succeeded" })}\n`);
-      if (mode === "local-missing") fs.rmSync(resultPath);
-      if (mode === "local-success")
-        write(resultPath, `${JSON.stringify(succeeded)}\n`, 0o600);
-      const attempt = spawnSync(
-        "bash",
-        [
-          path.join(releaseRoot, tSha, "deploy/runner/recover-release-lineage.sh"),
-          "--request-id",
-          requestId,
-        ],
-        {
-          encoding: "utf8",
-          env: {
-            ...process.env,
-            QINTOPIA_FAKE_COS_MODE: mode,
-            QINTOPIA_REMOTE_REQUEST_FILE: remoteRequest,
-            QINTOPIA_REMOTE_RESULT_FILE: remoteResult,
-            QINTOPIA_REMOTE_SUCCESS_FILE: remoteSuccess,
-          },
-        }
-      );
-      if (mode === "match") {
-        assert.equal(
-          attempt.status,
-          99,
-          `matching evidence did not reach pointer action: ${attempt.stderr}`
-        );
-        assert.equal(fs.existsSync(touched), true);
-        fs.rmSync(touched);
-      } else {
-        assert.equal(attempt.status, 75, `${mode}: ${attempt.stderr}`);
-        assert.match(
-          attempt.stderr,
-          mode === "local-missing"
-            ? /local result missing/
-            : mode === "local-success"
-              ? /signed success result exists/
-              : /COS request or result is absent, unreadable, or conflicts/,
-          `${mode}: recovery did not reach the expected evidence gate`
-        );
-      }
+      if (label === "local success and absent COS")
+        write(resultPath, successBytes, 0o600);
+      if (label === "conflicting success") write(resultPath, failedBytes, 0o600);
+      const attempt = launch();
+      assert.equal(attempt.status, 75, `${label}: ${attempt.stderr}`);
       assert.equal(
         fs.realpathSync(path.join(releaseRoot, "current")),
         path.join(releaseRoot, tSha)
@@ -881,36 +1018,117 @@ if (process.argv[2] === "--recovery-negative") {
         fs.realpathSync(path.join(releaseRoot, "previous")),
         path.join(releaseRoot, oSha)
       );
-      assert.equal(
-        fs.existsSync(touched),
-        false,
-        `${mode}: unexpected pointer action marker`
-      );
+      assert.equal(fs.readFileSync(holdPath, "utf8"), `${token}\n`);
     }
+    fs.copyFileSync(requestPath, remoteRequest);
+    fs.rmSync(resultPath, { force: true });
+    setEvidence();
+    setRemote("absent");
+    write(
+      path.join(unitDir, fixed),
+      "[Unit]\nDescription=Simulated active child\n[Service]\nType=simple\nExecStart=/usr/bin/sleep 30\n"
+    );
+    assert.equal(spawnSync("systemctl", ["daemon-reload"]).status, 0);
+    assert.equal(spawnSync("systemctl", ["start", fixed]).status, 0);
+    const activeChild = launch();
+    assert.equal(activeChild.status, 75, activeChild.stderr);
+    assert.equal(spawnSync("systemctl", ["stop", fixed]).status, 0);
+    fs.rmSync(path.join(unitDir, fixed));
+    assert.equal(spawnSync("systemctl", ["daemon-reload"]).status, 0);
+    fs.rmSync(resultPath, { force: true });
+    fs.rmSync(path.join(releaseRoot, "current"));
+    fs.rmSync(path.join(releaseRoot, "previous"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "current"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
+    setEvidence();
+    const absent = launch();
+    if (absent.status !== 0 && process.env.QINTOPIA_RECOVERY_TRACE)
+      console.error(absent.stderr);
+    assert.equal(absent.status, 0, `missing result recovery: ${absent.stderr}`);
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "current")),
+      path.join(releaseRoot, oSha)
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "previous")),
+      path.join(releaseRoot, pSha)
+    );
+    assert.equal(fs.existsSync(installMarker), true);
+    assert.equal(fs.existsSync(smokeMarker), true);
+    assert.equal(launch().status, 0, "completed recovery should be idempotent");
+    for (const [phase, expected, installerRuns, smokeRuns] of [
+      ["cas-previous-completed", 0, true, true],
+      ["installer-completed", 0, false, true],
+      ["installer-started", 75, false, false],
+      ["smoke-started", 75, false, false],
+      ["rollback-O-to-T-started", 75, false, false],
+    ]) {
+      setEvidence();
+      write(
+        journalPath,
+        `${JSON.stringify({ ...baseJournal, recovery_phase: phase })}\n`,
+        0o600
+      );
+      fs.rmSync(installMarker, { force: true });
+      fs.rmSync(smokeMarker, { force: true });
+      const resumed = launch();
+      assert.equal(resumed.status, expected, `${phase}: ${resumed.stderr}`);
+      assert.equal(fs.existsSync(installMarker), installerRuns, phase);
+      assert.equal(fs.existsSync(smokeMarker), smokeRuns, phase);
+      assert.equal(fs.readFileSync(holdPath, "utf8"), `${token}\n`);
+    }
+    fs.rmSync(path.join(releaseRoot, "current"));
+    fs.rmSync(path.join(releaseRoot, "previous"));
+    fs.symlinkSync(path.join(releaseRoot, tSha), path.join(releaseRoot, "current"));
+    fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
+    setEvidence();
+    setRemote("success", successBytes);
+    const success = launch();
+    assert.equal(success.status, 0, `signed success reconciliation: ${success.stderr}`);
+    assert.deepEqual(fs.readFileSync(resultPath), Buffer.from(successBytes));
+    assert.equal(fs.existsSync(processedPath), true);
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "current")),
+      path.join(releaseRoot, tSha)
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "previous")),
+      path.join(releaseRoot, oSha)
+    );
+    assert.equal(
+      launch().status,
+      0,
+      "signed success reconciliation should be idempotent"
+    );
     console.log(
-      "Recovery COS missing/unreadable/conflict/success/unknown negatives passed."
+      "Recovery missing-result, COS, active-child and success matrix passed."
     );
   } finally {
+    spawnSync("systemctl", ["stop", fixed]);
+    spawnSync("systemctl", ["disable", "--now", timer]);
     for (const target of [
+      path.join(unitDir, fixed),
       path.join(unitDir, service),
       path.join(unitDir, timer),
       dropin,
       envFile,
-    ]) {
+    ])
       fs.rmSync(target, { force: true });
-    }
+    fs.rmSync(releaseRoot, { recursive: true, force: true });
     for (const target of [
       requestPath,
+      processedPath,
       resultPath,
+      claimPath,
       journalPath,
-      path.join(stateRoot, "recovery", "hold"),
-    ]) {
+      holdPath,
+      path.join(recovery, "takeover.json"),
+      path.join(recovery, "takeover-consumed"),
+    ])
       fs.rmSync(target, { force: true });
-    }
-    for (const target of [releaseRoot, fixtureRoot]) {
-      fs.rmSync(target, { recursive: true, force: true });
-    }
     spawnSync("systemctl", ["daemon-reload"]);
+    if (server) process.kill(-server.pid, "SIGKILL");
+    fs.rmSync(fixture, { recursive: true, force: true });
   }
   process.exit(0);
 }
@@ -933,12 +1151,19 @@ if (process.argv[2] === "--fixed-takeover-lock") {
   const fixture = fs.mkdtempSync("/tmp/qintopia-fixed-takeover-");
   const run = (command, args, options = {}) =>
     spawnSync(command, args, { encoding: "utf8", ...options });
-  const waitFor = (target, timeout = 5000) => {
+  const waitFor = (target, timeout = 5000, errorLog = "") => {
     const deadline = Date.now() + timeout;
     while (!fs.existsSync(target) && Date.now() < deadline) {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
-    assert.ok(fs.existsSync(target), `stage not reached: ${target}`);
+    assert.ok(
+      fs.existsSync(target),
+      "stage not reached: " +
+        target +
+        (errorLog && fs.existsSync(errorLog)
+          ? "\n" + fs.readFileSync(errorLog, "utf8")
+          : "")
+    );
   };
   const canonical = (value) =>
     Array.isArray(value)
@@ -1073,7 +1298,13 @@ if (process.argv[2] === "--fixed-takeover-lock") {
           result_key: cos.result_key,
         })}\n`
       );
-      write(path.join(state, "recovery", "hold"), "", 0o600);
+      const holdToken = crypto.randomBytes(16).toString("hex");
+      write(
+        path.join(state, "recovery", "takeover.json"),
+        JSON.stringify({ request_id: requestId, hold_token: holdToken }) + "\n",
+        0o600
+      );
+      write(path.join(state, "recovery", "hold"), holdToken + "\n", 0o600);
       const env = {
         ...process.env,
         QINTOPIA_COS_ENV_FILE: path.join(fixture, "missing.env"),
@@ -1133,7 +1364,7 @@ if (process.argv[2] === "--fixed-takeover-lock") {
             .join("\n") + "\n",
           0o600
         );
-        const unitName = "qintopia-fixed-takeover-simulated.service";
+        const unitName = "qintopia-agent-os-fixed-takeover.service";
         run("systemctl", ["reset-failed", unitName]);
         const launched = run("systemd-run", [
           "--unit",
@@ -1166,20 +1397,23 @@ if (process.argv[2] === "--fixed-takeover-lock") {
         transientUnit = false;
         continue;
       }
+      const errorLog = path.join(fixture, phase, "poller.stderr");
+      const errorFd = fs.openSync(errorLog, "w");
       const child = spawn("bash", [pollerSource], {
         env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", errorFd],
       });
+      fs.closeSync(errorFd);
       let stdout = "",
         stderr = "";
       child.stdout.on("data", (chunk) => {
         stdout += chunk;
       });
-      child.stderr.on("data", (chunk) => {
-        stderr += chunk;
+      child.on("close", () => {
+        stderr = fs.readFileSync(errorLog, "utf8");
       });
       if (phase === "journal-start") {
-        waitFor(quiesceStarted);
+        waitFor(quiesceStarted, 5000, errorLog);
         assert.equal(
           fs.existsSync(path.join(state, "recovery", `${requestId}.json`)),
           true
@@ -1191,7 +1425,7 @@ if (process.argv[2] === "--fixed-takeover-lock") {
           "deploy lock was free after journal before promotion"
         );
       }
-      waitFor(started);
+      waitFor(started, 5000, errorLog);
       assert.equal(
         fs.readFileSync(unrelated, "utf8").trim(),
         "blocked",
@@ -1324,8 +1558,8 @@ if (process.argv[2] === "--fixed-takeover-lock") {
     console.log("Exact old-runner fixed takeover lock handoff passed.");
   } finally {
     if (transientUnit) {
-      run("systemctl", ["stop", "qintopia-fixed-takeover-simulated.service"]);
-      run("systemctl", ["reset-failed", "qintopia-fixed-takeover-simulated.service"]);
+      run("systemctl", ["stop", "qintopia-agent-os-fixed-takeover.service"]);
+      run("systemctl", ["reset-failed", "qintopia-agent-os-fixed-takeover.service"]);
     }
     unrelatedHolder?.kill("SIGKILL");
     fs.rmSync(releaseRoot, { recursive: true, force: true });
@@ -1353,6 +1587,7 @@ let timerCreated = false;
 let recoveryArtifactsCreated = false;
 let recoveryArtifactPaths = [];
 let cosEnvCreated = false;
+let cosServer;
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, { encoding: "utf8", ...options });
   if (result.error) throw result.error;
@@ -1626,15 +1861,18 @@ try {
   }
   write(
     path.join(releaseRoot, tSha, "manifest.json"),
-    JSON.stringify({ release_sha: tSha, previous_sha: oSha })
+    JSON.stringify({ release_sha: tSha, previous_sha: oSha }),
+    0o444
   );
   write(
     path.join(releaseRoot, oSha, "manifest.json"),
-    JSON.stringify({ release_sha: oSha, previous_sha: pSha })
+    JSON.stringify({ release_sha: oSha, previous_sha: pSha }),
+    0o444
   );
   write(
     path.join(releaseRoot, pSha, "manifest.json"),
-    JSON.stringify({ release_sha: pSha })
+    JSON.stringify({ release_sha: pSha }),
+    0o444
   );
   fs.symlinkSync(path.join(releaseRoot, tSha), path.join(releaseRoot, "current"));
   fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "previous"));
@@ -1730,7 +1968,8 @@ try {
   fs.mkdirSync(path.join(releaseRoot, rSha, "deploy", "runner"), { recursive: true });
   write(
     path.join(releaseRoot, rSha, "manifest.json"),
-    JSON.stringify({ release_sha: rSha, previous_sha: tSha })
+    JSON.stringify({ release_sha: rSha, previous_sha: tSha }),
+    0o444
   );
   write(
     path.join(releaseRoot, rSha, "deploy/runner/install-release-systemd-units.sh"),
@@ -1739,6 +1978,11 @@ try {
   );
   write(
     path.join(releaseRoot, tSha, "deploy/runner/smoke-release.sh"),
+    "#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n",
+    0o755
+  );
+  write(
+    path.join(releaseRoot, rSha, "deploy/runner/smoke-release.sh"),
     "#!/usr/bin/env bash\nset -euo pipefail\nexit 0\n",
     0o755
   );
@@ -1846,6 +2090,21 @@ try {
   }
   write(requestPath, JSON.stringify(request) + "\n", 0o600);
   recoveryArtifactsCreated = true;
+  write(
+    path.join(releaseRoot, rSha, "manifest.json"),
+    JSON.stringify({
+      release_sha: rSha,
+      previous_sha: tSha,
+      request_id: requestId,
+      commit_sha: request.commit_sha,
+      runtime_sha: request.runtime_sha,
+      deploy_bundle_sha: request.deploy_bundle_sha,
+      runtime_artifact_profile: request.runtime_artifact_profile,
+      release_scope: request.release_scope,
+      restart_targets: request.restart_targets,
+    }),
+    0o444
+  );
   const result = {
     schema_version: 1,
     request_id: requestId,
@@ -1880,6 +2139,24 @@ try {
       .digest("hex"),
   };
   write(resultPath, JSON.stringify(result) + "\n", 0o600);
+  const cosServerConfig = path.join(root, "cos-server.json");
+  const cosServerPort = path.join(root, "cos-port");
+  write(
+    cosServerConfig,
+    JSON.stringify({ mode: "failed", key: request.cos.result_key, result: resultPath })
+  );
+  cosServer = spawn(
+    "python3",
+    ["-c", cosMockServerCode, cosServerConfig, cosServerPort],
+    { detached: true, stdio: "ignore" }
+  );
+  for (let attempt = 0; attempt < 100 && !fs.existsSync(cosServerPort); attempt++)
+    sleep(20);
+  assert.equal(
+    fs.existsSync(cosServerPort),
+    true,
+    "simulated COS server did not start"
+  );
   const cosEnv = "/etc/qintopia/cos-artifacts.env";
   assert.equal(fs.existsSync(cosEnv), false, "VM contains an existing COS environment");
   const fakeCoscli = path.join(root, "simulated-coscli");
@@ -1899,7 +2176,7 @@ esac
   );
   write(
     cosEnv,
-    `export TENCENT_COS_BUCKET=simulated TENCENT_COS_REGION=simulated TENCENT_COS_SECRET_ID=simulated TENCENT_COS_SECRET_KEY=simulated DEPLOY_REQUEST_SIGNING_KEY=${signingKey} DEPLOY_REQUEST_SIGNING_KEY_ID=simulated COSCLI_PATH=${fakeCoscli}\n`,
+    `export TENCENT_COS_BUCKET=simulated TENCENT_COS_REGION=simulated TENCENT_COS_SECRET_ID=simulated TENCENT_COS_SECRET_KEY=simulated DEPLOY_REQUEST_SIGNING_KEY=${signingKey} DEPLOY_REQUEST_SIGNING_KEY_ID=simulated COSCLI_PATH=${fakeCoscli} TENCENT_COS_ENDPOINT=http://127.0.0.1:${fs.readFileSync(cosServerPort, "utf8")}\n`,
     0o600
   );
   cosEnvCreated = true;
@@ -1930,6 +2207,7 @@ esac
     { name: "R/T", current: rSha, previous: tSha },
   ];
   for (const scenario of stateCases) {
+    write(journalPath, JSON.stringify(journal) + "\n", 0o600);
     for (const pointer of ["current", "previous", "rollback-from"]) {
       fs.rmSync(path.join(releaseRoot, pointer), { force: true });
     }
@@ -1941,15 +2219,24 @@ esac
       path.join(releaseRoot, scenario.previous),
       path.join(releaseRoot, "previous")
     );
-    const recovered = run("bash", [helper, "--request-id", requestId], {
-      env: {
-        ...process.env,
-        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
-        DEPLOY_REQUEST_SIGNING_KEY_ID: "simulated",
-        O_UNIT_TEMPLATE: oldUnitTemplate,
-        QINTOPIA_SYSTEMD_UNIT_DIR: "/run/systemd/system",
-      },
-    });
+    const recovered = run(
+      "bash",
+      [
+        ...(process.env.QINTOPIA_RECOVERY_TRACE ? ["-x"] : []),
+        helper,
+        "--request-id",
+        requestId,
+      ],
+      {
+        env: {
+          ...process.env,
+          DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+          DEPLOY_REQUEST_SIGNING_KEY_ID: "simulated",
+          O_UNIT_TEMPLATE: oldUnitTemplate,
+          QINTOPIA_SYSTEMD_UNIT_DIR: "/run/systemd/system",
+        },
+      }
+    );
     if (recovered.status !== 0) {
       throw new Error(
         `${scenario.name} direction-bound recovery failed: ${recovered.stderr}`
@@ -1970,6 +2257,91 @@ esac
     );
   }
   const { signature: _requestSignature, ...unsignedRequest } = request;
+  const runnerForClaim = path.join(
+    releaseRoot,
+    tSha,
+    "deploy/runner/qintopia-agent-os-deploy-runner"
+  );
+  fs.copyFileSync(
+    path.join(process.cwd(), "deploy/runner/qintopia-agent-os-deploy-runner"),
+    runnerForClaim
+  );
+  fs.chmodSync(runnerForClaim, 0o755);
+  const claimPath = `/var/lib/qintopia-agent-os-deploy/requests/claimed/${requestId}.json`;
+  recoveryArtifactPaths.push(claimPath);
+  const execution = {
+    path: runnerForClaim,
+    sha256: sha256(fs.readFileSync(runnerForClaim)),
+    unit: deployUnit,
+    invocation_id: crypto.randomBytes(16).toString("hex"),
+    unit_invocation_verified: true,
+  };
+  const recoveryClaim = {
+    request_id: requestId,
+    request_sha256: sha256(requestBytes),
+    phase: "possibly_executing",
+    recovery_eligible: true,
+    result_upload: { phase: "not_started" },
+    hold_token: requestId,
+    execution,
+  };
+  fs.rmSync(resultPath);
+  write(hold, requestId + "\n", 0o600);
+  write(
+    cosServerConfig,
+    JSON.stringify({ mode: "absent", key: request.cos.result_key, result: resultPath })
+  );
+  for (const scenario of stateCases) {
+    write(claimPath, JSON.stringify(recoveryClaim) + "\n", 0o600);
+    write(
+      journalPath,
+      JSON.stringify({
+        ...journal,
+        execution,
+        hold_token: requestId,
+        result_upload: { phase: "not_started" },
+      }) + "\n",
+      0o600
+    );
+    for (const pointer of ["current", "previous", "rollback-from"])
+      fs.rmSync(path.join(releaseRoot, pointer), { force: true });
+    fs.symlinkSync(
+      path.join(releaseRoot, scenario.current),
+      path.join(releaseRoot, "current")
+    );
+    fs.symlinkSync(
+      path.join(releaseRoot, scenario.previous),
+      path.join(releaseRoot, "previous")
+    );
+    const recovered = run("bash", [helper, "--request-id", requestId], {
+      env: {
+        ...process.env,
+        O_UNIT_TEMPLATE: oldUnitTemplate,
+        QINTOPIA_SYSTEMD_UNIT_DIR: "/run/systemd/system",
+      },
+    });
+    assert.equal(
+      recovered.status,
+      0,
+      `${scenario.name} missing-result recovery: ${recovered.stderr}`
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "current")),
+      path.join(releaseRoot, tSha)
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releaseRoot, "previous")),
+      path.join(releaseRoot, oSha)
+    );
+    assert.equal(fs.readFileSync(hold, "utf8"), requestId + "\n");
+  }
+  fs.rmSync(claimPath);
+  write(hold, "hold\n", 0o600);
+  write(resultPath, JSON.stringify(result) + "\n", 0o600);
+  write(
+    cosServerConfig,
+    JSON.stringify({ mode: "failed", key: request.cos.result_key, result: resultPath })
+  );
   const extraUnsigned = {
     ...unsignedRequest,
     restart_targets: [...targets, "hermes-wenyuange"],
@@ -2027,6 +2399,7 @@ esac
       oldUnitHoldVerified: true,
       candidateOnlyCleanupVerified: true,
       mixedForwardStatesVerified: stateCases.map(({ name }) => name),
+      missingResultStatesVerified: stateCases.map(({ name }) => name),
       extraTargetRejected: true,
     })
   );
@@ -2055,6 +2428,7 @@ esac
     for (const file of recoveryArtifactPaths) fs.rmSync(file, { force: true });
   }
   if (cosEnvCreated) fs.rmSync("/etc/qintopia/cos-artifacts.env", { force: true });
+  if (cosServer) process.kill(-cosServer.pid, "SIGKILL");
   if (releaseFixtureCreated) {
     fs.rmSync("/run/systemd/system/qintopia-agent-os-deploy-runner.service", {
       force: true,

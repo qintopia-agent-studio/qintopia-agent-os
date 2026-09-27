@@ -272,25 +272,64 @@ if [[ -n "$expected_request_id" && "$request_id" != "$expected_request_id" ]]; t
 fi
 result_file="${STATE_DIR}/results/${request_id}.json"
 
-if [[ -n "$parsed_identity" ]]; then
-  python3 - "$request_file" "$pointer_file" "${STATE_DIR}/requests/claimed/${request_name}" <<'PY'
+python3 - "$request_file" "$pointer_file" "${STATE_DIR}/requests/claimed/${request_name}" \
+    "$RUNNER" "${QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID:-}" \
+    "${STATE_DIR}/recovery/takeover.json" "$request_id" "$parsed_identity" <<'PY'
 import hashlib
 import json
 import os
+import re
+import subprocess
 import sys
+from pathlib import Path
 
-request_path, pointer_path, claim_path = sys.argv[1:4]
+request_path, pointer_path, claim_path, runner_path, expected_id, takeover_path, request_id, parsed = sys.argv[1:9]
 with open(request_path, "rb") as fh:
     request_bytes = fh.read()
 with open(pointer_path, "rb") as fh:
     pointer_bytes = fh.read()
-request = json.loads(request_bytes)
 claim = {
-    "request_id": request["request_id"],
+    "request_id": request_id,
     "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
     "pointer_sha256": hashlib.sha256(pointer_bytes).hexdigest(),
     "phase": "possibly_executing",
+    "recovery_eligible": bool(parsed),
+    "result_upload": {"phase": "not_started"},
+    "hold_token": request_id,
 }
+if parsed:
+    request = json.loads(request_bytes)
+    if request.get("request_id") != request_id:
+        raise SystemExit("deploy claim request identity mismatch")
+    runner = Path(runner_path).resolve(strict=True)
+    if not runner.is_file():
+        raise SystemExit("deploy runner execution file is absent")
+    with runner.open("rb") as fh:
+        execution_sha256 = hashlib.sha256(fh.read()).hexdigest()
+    unit = ("qintopia-agent-os-fixed-takeover.service" if expected_id else
+            "qintopia-agent-os-deploy-runner.service")
+    invocation = os.environ.get("INVOCATION_ID", "")
+    if invocation and not re.fullmatch(r"[0-9a-f]{32}", invocation):
+        raise SystemExit("consumer invocation identity is invalid")
+    if invocation:
+        shown = subprocess.run(
+            ["systemctl", "show", unit, "--property=InvocationID", "--value"],
+            capture_output=True, text=True, timeout=5, check=False)
+        if shown.returncode != 0 or shown.stdout.strip() != invocation:
+            raise SystemExit("consumer systemd invocation identity is not verified")
+    claim["execution"] = {"path": str(runner), "sha256": execution_sha256,
+                          "unit": unit, "invocation_id": invocation,
+                          "unit_invocation_verified": bool(invocation)}
+if expected_id and parsed:
+    if expected_id != request_id:
+        raise SystemExit("fixed takeover claim request mismatch")
+    with open(takeover_path, encoding="utf-8") as fh:
+        takeover = json.load(fh)
+    token = takeover.get("hold_token", "")
+    if (takeover.get("request_id") != expected_id or not isinstance(token, str) or
+            not re.fullmatch(r"[0-9a-f]{32}", token)):
+        raise SystemExit("fixed takeover claim hold identity mismatch")
+    claim["hold_token"] = token
 descriptor = os.open(claim_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(descriptor, "w", encoding="utf-8") as fh:
     json.dump(claim, fh, sort_keys=True)
@@ -303,7 +342,6 @@ try:
 finally:
     os.close(directory)
 PY
-fi
 
 if [[ -n "$expected_request_id" && -n "$parsed_identity" ]]; then
   # The fixed takeover runs an old runner. Hold its deploy lock across the
@@ -325,7 +363,8 @@ if [[ -n "$expected_request_id" && -n "$parsed_identity" ]]; then
     exit 75
   }
   mkdir -p -m 0700 "${STATE_DIR}/recovery"
-  python3 - "$request_file" "${STATE_DIR}/recovery/${request_id}.json" <<'PY'
+  python3 - "$request_file" "${STATE_DIR}/recovery/${request_id}.json" \
+    "${STATE_DIR}/requests/claimed/${request_name}" <<'PY'
 import hashlib
 import hmac
 import json
@@ -335,11 +374,17 @@ import sys
 import tempfile
 from pathlib import Path
 
-request_path, journal_path = sys.argv[1:3]
+request_path, journal_path, claim_path = sys.argv[1:4]
 root = Path("/home/ubuntu/qintopia-agent-os-releases").resolve(strict=True)
 with open(request_path, "rb") as fh:
     request_bytes = fh.read()
 request = json.loads(request_bytes)
+with open(claim_path, encoding="utf-8") as fh:
+    claim = json.load(fh)
+if (claim.get("request_id") != request["request_id"] or
+        claim.get("request_sha256") != hashlib.sha256(request_bytes).hexdigest() or
+        claim.get("result_upload") != {"phase": "not_started"}):
+    raise SystemExit("fixed takeover claim identity or upload phase changed")
 signature = request.get("signature", {})
 metadata = {key: signature.get(key) for key in ("algorithm", "issuer", "key_id", "signed_at")}
 if (metadata["algorithm"] != "hmac-sha256" or metadata["issuer"] != "github-actions" or
@@ -375,7 +420,9 @@ for name, sha in (("current", old), ("previous", prior)):
 record = {"schema_version": 1, "request_id": request["request_id"],
           "request_sha256": hashlib.sha256(request_bytes).hexdigest(), "direction": "O→T",
           "original_current_sha": old, "original_previous_sha": prior,
-          "manifest_sha256": digests, "phase": "intent"}
+          "manifest_sha256": digests, "phase": "intent",
+          "execution": claim["execution"], "hold_token": claim["hold_token"],
+          "result_upload": {"phase": "not_started"}}
 if os.path.exists(journal_path):
     raise SystemExit("fixed takeover journal already exists")
 fd, temporary = tempfile.mkstemp(prefix=".journal-", dir=os.path.dirname(journal_path))
@@ -602,6 +649,48 @@ fi
 if [[ -f "$result_file" ]]; then
   "$(dirname "${BASH_SOURCE[0]}")/wait-deploy-result.sh" \
     --request-file "$request_file" --result-file "$result_file" >/dev/null
+  python3 - "${STATE_DIR}/requests/claimed/${request_name}" \
+    "${STATE_DIR}/recovery/${request_id}.json" "$result_file" "$request_id" <<'PY'
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+claim_path, journal_path, result_path, request_id = sys.argv[1:5]
+with open(result_path, "rb") as fh:
+    digest = hashlib.sha256(fh.read()).hexdigest()
+intent = {"phase": "upload_intent", "payload_sha256": digest,
+          "recorded_at": datetime.now(timezone.utc).isoformat()}
+def replace(path):
+    with open(path, encoding="utf-8") as fh:
+        record = json.load(fh)
+    if (record.get("request_id") != request_id or
+            record.get("result_upload") != {"phase": "not_started"}):
+        raise SystemExit("result upload evidence is missing or already started")
+    record["result_upload"] = intent
+    fd, temporary = tempfile.mkstemp(prefix=".upload-intent-", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(record, fh, sort_keys=True)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+        directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+if os.path.isfile(journal_path):
+    replace(journal_path)
+replace(claim_path)
+PY
   run_coscli cp "$result_file" "cos://${bucket_alias}/${result_key}" \
     -c "$config_path" \
     --disable-log
@@ -634,6 +723,20 @@ if [[ -n "$parsed_identity" && -f "$result_file" && "$fallback_written" != true 
 import os
 import sys
 
+path = sys.argv[1]
+os.unlink(path)
+directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+fi
+
+if [[ -z "$parsed_identity" ]]; then
+  python3 - "${STATE_DIR}/requests/claimed/${request_name}" <<'PY'
+import os
+import sys
 path = sys.argv[1]
 os.unlink(path)
 directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)

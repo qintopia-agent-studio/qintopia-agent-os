@@ -13,15 +13,45 @@ and checks the original request/result and release manifests before changing poi
 Normal rollback requires a fresh production-signed request. Neither local validation nor
 a merged implementation PR is production authorization. After a fixed takeover has
 produced a signed success result, `finalize <request-id>` may repeat only the evidence
-checks and timer restoration; it never replays the deploy request. The reviewed hold
-drop-in remains installed. The hold file is removed only after an originally enabled
-timer is again enabled and active, so an interrupted or failed finalization stays
-blocked and can be resumed from durable evidence. The fixed recovery helper still
-refuses a whole-process crash before any signed result has been written. That refusal is
-not a successful finite recovery: the first live takeover remains blocked until the
-approved missing-result matrix can distinguish a provably absent COS result and stopped
-execution from unreadable, conflicting or successful evidence without replaying the
-original request.
+checks and timer restoration; it never replays the deploy request. Before any timer
+change it takes `poller.lock` then `deploy.lock`, checks the current hold belongs to the
+original takeover, and refuses any other claim or later recovery journal. The reviewed
+hold drop-in remains installed. The hold file is removed only after an originally
+enabled timer is again enabled and active. A later T→R or R→T hold has its own request
+identity; an old `finalize` cannot remove it even if pointers returned to T/O. An
+interrupted original finalization remains blocked and can resume from durable evidence.
+The fixed recovery helper still requires a finite recovery matrix for a whole-process
+crash before any signed result. The new poller must record `not_started` for result
+upload in the claim and original direction-bound journal before execution, with the
+original request and immutable execution identity. Before any result PUT it must
+atomically fsync `upload_intent` and the exact payload digest in both records. A missing
+stage, old claim, partial update or any upload intent is unknown even if COS currently
+returns 404; waiting and probing again cannot prove an already-sent PUT will not land.
+
+The fixed recovery helper first retains the hold/drop-in, stops the ordinary timer,
+proves the ordinary and fixed transient consumer, uploader, child processes and Anan
+helper have ended through unit PID/cgroup state, and takes `poller.lock` before
+`deploy.lock`. A missing transient unit needs persisted proof that this request started
+in that unit; unreadable unit state remains unknown. It compares the fixed COS request
+object with the original signed request. Only a result-key object request returning the
+specific COS `NoSuchKey` service code establishes remote absence. Authentication,
+timeout, other 404/error codes or conflicting local/COS/journal evidence retain hold.
+
+With authoritative absence and matching new `not_started` records, the helper may use
+only the direction-bound finite CAS and real rollback primitive from the reviewed table.
+It records the missing original result in a separate fsynced maintenance field and never
+creates a signed failed result, retries the request, or rolls back business data. A
+retry can resume after a completed pointer CAS or installer phase using the persisted
+phase and verified original pointers. An interrupted rollback primitive, installer or
+smoke with an unknown outcome keeps the hold for manual review; restored pointers alone
+do not establish that service installation and smoke completed. A trusted remote
+`succeeded` result prevents reversal: only exact signed bytes and a missing local
+archive may be repaired after complete manifest, pointer and request checks. Existing
+different bytes stop reconciliation. COS absence beside a local signed success also
+prevents reversal. The helper leaves hold installed after recovery; release of isolation
+requires a separate review of the queue pointer and transaction. First live takeover
+remains blocked until this matrix and the finalization ownership matrix pass on the
+fixed head.
 
 ## Current Server Evidence
 
