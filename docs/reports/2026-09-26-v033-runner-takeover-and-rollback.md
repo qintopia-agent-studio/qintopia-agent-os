@@ -2,7 +2,7 @@
 
 日期：2026-09-26。状态：技术方案待负责人评审；本报告不批准生产请求。
 
-2026-09-27 最小性复核见文末「最小范围复核」。下文首次接管、恢复事务和 13 文件清单保留为先前**较大候选**及其证据，不能把其中的实现范围或两跳回 O/P 视为已证明必要或已获批准；有冲突时以复核结论为准。
+2026-09-27 独立评审后，文末「最终推荐与实施边界」为本报告当前结论。前面的首次接管证据仍有效；已替代的 13 文件方案不再作为实施清单。文中的生产只读核对均为 2026-09-26 历史证据；本轮报告修订没有访问生产。
 
 ## 依据与现状
 
@@ -10,7 +10,7 @@
 routing、programming guardrails、server change policy、`deploy/runner/README.md`、
 `docs/operations/production-deploy-runner.md`、相关 workflow、runner、schema、restart
 rules、检查器与历史 bootstrap 报告。只读参考并行工作树的岸岸生产核查报告及
-`anan-production-rollout.md`，不在本分支修改它们。生产仅用管理员给定 SSH 做脱敏只读核对。
+`anan-production-rollout.md`，不在本分支修改它们。2026-09-26 的生产取证仅用管理员给定 SSH 做脱敏只读核对；本轮未连接生产。
 
 `v0.3.3` 已发布，精确 SHA 为 `62f403e3c5e615c10b6a0577954626664fcb22db`。GitHub 部署 run
 `36206145717` 的构建与产物上传/核验成功，签名请求 `deploy-20260926T005852Z-62f403e3c5e6`
@@ -151,392 +151,340 @@ SH
 `ln --version`、`dpkg-query -W coreutils`、
 `findmnt -no FSTYPE --target /home/ubuntu/qintopia-agent-os-releases`。
 
-## 回退缺口与约束
-
-现有 `.github/workflows/rollback-production.yml` 的选项、单目标规范化和
-`all-hermes-and-system` 展开都缺
-`hermes-anan`。另外回退 workflow 假定前次 release 的四个制品身份都等于发布 tag
-SHA；上述过渡 release 的身份刻意混合，且 `70e7984`
-不是发布 tag。修复 Release 成功后，选择一个旧 tag 既不匹配服务器的
-`previous=70e7984`，也不能验证过渡产物。仅补岸岸选项不足以提供可执行回退。
-
-首次接管前必须形成并模拟**精确前次过渡 release**
-的正式签名回退入口：它从可信成功回执读取完整过渡元组，并与服务器
-`current=R`、`previous=70e7984` 及 manifest `previous_sha` 双向核对；下载并验证
-`83d694f2` 主/伴随 runtime 与 `R` bundle；使用原请求 schema 中的 `release_rollback`
-精确谱系约束。现有 runner 对 `release_rollback` 还要求四个身份 SHA 都等于 previous
-SHA；修复只能在此回退分支内改为核对 previous
-manifest 的完整身份，普通请求仍保持原约束。现有 `promote-release.sh`
-的同 SHA 复用会要求请求目标集合与过渡 manifest 的单目标集合相同；因此修复 runner 需在回退请求中校验已存在的不可变 previous 树及其精确元组后，调用既有
-`rollback-release.sh`，并用回退请求的完整目标集进行排空和 smoke。这一分支只接受服务器的精确 previous，不重建或改写该树，也不放松普通同 SHA 复用。先 dry
-run，后经独立批准 live。目标集包含岸岸，使用
-**当前新 runner**；不得调用旧 runner 处理岸岸。若此入口未实现并验证，停止在过渡 dry
-run，不进行 live 接管。回退过渡 release 到 `16e8d56b`
-也须基于其精确 manifest 和受审路径，不能把服务 active 当作回退成功。
-
-### 输入和可信身份
-
-现有两个 tag 输入均为必填，这对未发布 tag 的 T 和现有 O 都不可用。建议将
-`expected_current_release_tag` 与 `release_tag` 改为可选，增加
-`expected_current_deploy_request_id`、`previous_deploy_request_id`
-两个可选输入。每一侧必须恰好提供 tag 或请求 ID 一种；原有双 tag 路径继续要求两个已发布、非 prerelease、可从
-`origin/master`
-到达的不同 Release，原有产物校验保持适用。请求 ID 路径只接受 COS 中原签名请求及签名成功回执，校验 HMAC、key
-id、
-`request_id`、`environment=production`、`status=succeeded`、完整四 SHA、profile、scope、targets 和两者一致性。GitHub 日志、workflow
-success 和未签名摘录不充当身份来源。workflow 仍用生产环境审批生成新的签名回退请求；服务器再次检查
-`current`/`previous` 及 current manifest 的 `previous_sha`。
-
-R→T 的输入是 current 的已发布修复 Release
-tag 加 T 的成功请求 ID；T→O 的输入是 T 和 O 各自的成功请求 ID。O 当前 manifest 记录的请求 ID 为
-`deploy-20260916T073656Z-16e8d56b9800`，P 的为
-`deploy-20260916T062333Z-83d694f2c3bc`。只读 COS 内存核对已证明 O 的请求和回执签名有效，身份相符、状态
-`succeeded`，并与 O manifest 的四 SHA 和 `previous_sha=P`
-相符。P 的请求和回执同样验签有效、身份相符，但状态为
-`failed`；它不能充当成功部署凭证。T→O 的 previous 身份使用 O 的成功回执，P 只作为要恢复的旧树指针，须验证其目录、manifest 和 installer。T 的请求 ID 要在过渡成功后从回执固定。
-
-既有 `wait-deploy-result.sh`
-已验证结果签名、请求 ID、环境与完整元组，但面向新请求等待并将结果全文输出。建议扩展其现有验证逻辑为只读历史验证/固定字段输出，另验证归档请求签名；工作流从 COS 固定键读取请求和回执。这样复用 HMAC 合同，不新建第二份解析器或把旧日志当证据。
-
-恢复模式与正常回退模式互斥：提供 `recover_request_id` 时不得提供任一 current 或 previous
-tag 或请求 ID；普通回退则不得提供
-`recover_request_id`，并要求 current/previous 两侧各自恰选一种身份。普通回退恢复只引用未终结、已持久记录的原事务；首次 O→T 恢复可引用旧 O
-runner 的原签名过渡请求及 T
-manifest，并仅在实测允许的 O/O、T/O 状态成立。恢复目标由原请求、已验 manifest 和事务记录（若有）共同决定，不接受新请求另填目标 SHA。
-
-### 指针和 runner 来源
-
-`O=16e8d56b`，`P=83d694f2`，`T=70e7984`，`R=待固定的修复 SHA`。 `rollback-release.sh`
-默认把原 current 置为 previous，会导致新 current 的 manifest.previous_sha 与指针不一致。R→T 必须使用
-`--expected-current-sha R --expected-previous-sha T --restore-previous-sha O`；T→O 必须使用
-`--expected-current-sha T --expected-previous-sha O --restore-previous-sha P`。所有参数先由签名请求和不可变 manifest 交叉核对。
-
-| 阶段        | current / previous | current manifest 的 previous_sha | 本次处理 runner / 后续 poller runner                      |
-| ----------- | ------------------ | -------------------------------- | --------------------------------------------------------- |
-| 原基线      | O / P              | P                                | O / O，均不支持岸岸                                       |
-| 过渡 T 成功 | T / O              | O                                | O / T；T bundle 为 R，后续支持岸岸                        |
-| 修复 R 成功 | R / T              | T                                | T / R，均支持岸岸                                         |
-| R→T 成功    | T / O              | O                                | R / T，均支持岸岸                                         |
-| T→O 成功    | O / P              | P                                | T / O；本次仍由 T 完成岸岸排空和 smoke，后续 O 不支持岸岸 |
-
-`rollback-from` 由原 primitive 留作原 current 指针证据，不能单凭它声称服务恢复。
-
-每次切换后的 installer 和 smoke 都必须成功，且回执签名、精确指针与 manifest 一致。P 的目录、manifest 或 installer 缺失时不得启动 T→O。
-
-### 固定 T 恢复入口
-
-普通 timer 的静态 service `ExecStart` 指向
-`current/deploy/runner/poll-deploy-requests.sh`，poller 默认也从 `current`
-选 runner。T→O 一旦切换 current，下一轮普通启动便加载不认识恢复协议的 O。仅用
-`QINTOPIA_DEPLOY_RUNNER_BIN` 覆盖 runner 不能保证 poller 也来自 T；直接从 SSH 启动 T
-poller 会绕开 service 的 systemd 沙箱。因此进程中断后的恢复必须有固定于不可变 T
-bundle 的一次性入口，不能依赖 `current` 或普通 timer。
-
-比较过直接把已下载并验签的请求文件交给 T
-runner：这能固定请求身份，却绕过 poller 现有的 COS 结果上传、已消费记录和远端结果去重，至少还需增加一套结果归档路径。更小的增量是复用现有精确制品、poller、runner、COS 指针及
-`deploy.lock`：在 T 已完整安装并核验时，由受审的 release 内固定 wrapper 调用
-`systemd-run` 创建一次性 root system service， `ExecStart` 钉住 T 的 poller，环境中的
-`QINTOPIA_DEPLOY_RUNNER_BIN` 钉住 T 的 runner；`COSCLI_PATH`
-也应固定到已验的既有 coscli，避免 poller 的安装回退从旧 `current`
-取脚本。单元属性逐项继承并核对已安装常规 service 的 `User`、`Group`、`StateDirectory`、
-`WorkingDirectory`、`NoNewPrivileges`、`PrivateTmp`、`ProtectHome`、`ProtectSystem`、
-`ReadWritePaths`
-及固定 COS/state 环境；任何属性不等价、路径不属于已验摘要的 T 树，或有效属性不能核对，都停止。wrapper 不接收任意可执行路径、unit 参数或目标 SHA，只接受新签名恢复 request
-ID。 **身份绑定必须发生在 poller 实际消费处**：新增只用于固定恢复入口的
-`QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID`。T poller 下载并解析 COS
-pointer 后、探测结果或下载请求前，把 pointer 的 request
-ID 与该环境值比较；不一致即非零退出，绝不调用 runner、写回执或归档请求。下载请求后，既有
-`parsed_identity`
-再与该 ID 核对；错配同样在调用 runner 前拒绝。普通 timer 未设置该变量，维持原行为。wrapper 的预检可以发现早期错误，但不能代替此消费点检查：GitHub 可在预检与 poller 下载之间改写 COS
-pointer，runner 内的锁也要到稍后才取得。这样即使远端 pointer 随后更新，固定单元也只会执行已下载且与批准 ID 一致的签名请求。由原 poller 做请求/回执一次性处理，由 T
-runner 做 HMAC、锁、CAS 与状态恢复。不安装常驻新 service，不热改原 unit。
-
-一次性 systemd 单元仍是**新增生产执行入口**，需评审其生成命令、权限和运行记录。wrapper、poller 消费点校验、单元属性比对、实际 systemd 隔离及中断测试均尚未实现。
-
-恢复请求发布前，操作者在批准的维护窗口停止普通 deploy
-timer，并确认普通 service 已退出、无正在处理的请求、无其他持锁进程；停止状态和原 enabled/active 状态写入恢复记录。
-
-再发布新的签名恢复请求并启动固定 T 一次性单元。恢复期间持续核对 timer 未重新启动；installer 会复制 runner
-unit 并
-`daemon-reload`，所以每次 installer 后也必须复核。如 timer 重新活动或普通 service 启动，停止恢复并保留原始证据，不让两个 poller 竞争同一 COS
-pointer。恢复成功、签名回执持久化且指针/manifest/installer/smoke 均核对后，按预检记录恢复原 timer 状态，并确认下一次普通运行只处理它理解的新请求。T→O 后 O
-runner 不理解岸岸及恢复协议，必须在无新的部署请求期间完成审查，不能把普通 timer 已恢复解释为未来六目标请求可用。
-
-只有 T 树本身可信、原签名请求和当前指针匹配、目标树及 installer 均可核验时，才允许使用该入口。首次 O→T 的原请求由旧 O
-runner 执行，不会写入新事务记录。在模拟出的 O/O，旧 `rollback-release.sh`
-要求 current/previous 不同而拒绝；在 T/O，它能按 `--restore-previous-sha P`
-回 O/P，但原请求中断后不能重放，需要 T
-runner 受签名恢复请求驱动并重新确认 installer/smoke。因此恢复协议须限于本次已签名 O→T 原请求，核对 T
-manifest 的完整元组、O 成功回执、O manifest 的
-`previous_sha=P`、P 旧树和允许状态 O/O 或 T/O，然后以 CAS 恢复 O/P；不得把 P 的失败回执当成功身份。T 目录移动前中断时仍为 O/P，不启动恢复写入。
-
-R/T→T/O→O/P 的后续回退只接受各自成功回执与已持久事务，不扩成任意历史 release 恢复。
-
-### 失败与中断
-
-现有普通错误分支以新 current manifest 的 `previous_sha=original_current`
-为前提，回到旧树后该前提不成立。精确 previous 回退要有专属事务分支，不能落入普通 promotion 错误分支。最小受审实现可在同一 root
-runner lock 下持久记录
-`request_id`、原指针、目标、restore-previous、签名请求摘要、已验 manifest/产物身份和阶段；每次阶段以临时文件、原子替换及文件和目录 fsync 落盘。恢复只接受原指针或此事务产生的有限状态，以指针、manifest、`rollback-from`、事务记录共同判定，不能从请求参数单独推断服务器状态。写
-`rollback-from`、写 current、写 previous、installer、smoke、回执这六个阶段各自持久记录完成证据；每次指针替换前重新 CAS 核对预期指针及目录身份。
-
-恢复原状态时先阻断普通 poller，再按事务记录恢复原 current/previous，复核原 current
-manifest 的
-`previous_sha`、运行原 installer 和完整目标 smoke，最后签名回执。CAS 冲突或结果未知均停，不猜测下一步。
-
-| 中断/失败点                        | 可观察状态                                        | 恢复动作                                                                                                      |
-| ---------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 任何指针写前                       | R/T 或 T/O，目标不变；可能已排空系统服务          | 保留原指针，记录 failed；复核被停服务，不自动重发请求                                                         |
-| `rollback-from` 后、current 写前   | 原指针及原 current 标记                           | 固定事务恢复例程核对后清理标记；不运行反向 rollback                                                           |
-| current 写后、previous 写前        | R→T 时 T/T；T→O 时 O/O；有原 current 标记         | 停止新部署，固定恢复例程按 CAS 恢复原 current/previous，并 fsync；再装原 current 单元并 smoke                 |
-| 两指针写后、installer/smoke 未确认 | 目标指针 T/O 或 O/P，原 current 标记仍在          | 固定恢复例程回到原 R/T 或 T/O，验证 installer/smoke；失败记 `rollback.failed`，保留证据并停止                 |
-| installer/smoke 成功、回执缺失     | 目标指针、manifest、单元与 smoke 证据均须独立核对 | 查本地事务阶段和 COS 结果；若完成状态不明，停止、不重放，按新签名恢复请求选择恢复原状态或由负责人确认目标状态 |
-
-同步失败可在原请求内执行一次上述恢复；进程中断后不能重放原请求。建议为未决事务增加一个可选
-`recover_request_id`
-workflow 输入和同一部署 schema 的固定 recovery 字段。后续回退只引用当前未决事务；首次 O→T 只引用已验签的原过渡请求及不可变 T/O/P 身份。
-
-两者均走原生产审批、签名和 exact-CAS 校验，并由上述固定 T 入口消费。动作仅为恢复原指针和原单元，不允许任意 SHA、服务或命令。
-
-恢复中再次失败则停止并保留固定回执，不循环回退。任何结果未知先只读核对本地事务状态、指针和签名回执；不把服务 active 或缺少回执推断为成功或失败。岸岸排空若在指针切换后的 smoke 中超时，原 helper 会取消自己创建的排空标记，不强杀也不重启岸岸；事务只尝试一次固定原状态恢复。恢复未确认成功时保留失败状态并停止，不把指针或服务单项状态解释为完整回退。
-
-不得手移 `current`、覆盖单文件、热改服务器、跳过签名/制品/原门禁、改写岸岸 `v2026.9.21`
-核心入口或真实 PMS 数据。Profile、模型、凭据、会话、记忆、任务与通道状态保留。部署源码不安装 PMS 插件，也不启用 Foundation/PMS/events 凭据与生产 flags；业务验收另行进行。
-
-## CI 专项评审请求
-
-本节记录先前一体化候选，供逐项审查，并非最小范围结论。修改 workflow、checker、部署门禁前须负责人逐项批准，不把历史 bootstrap 扩大到岸岸。
-
-当前候选范围为 12 个现有实现/测试文件、1 个新 wrapper，合计 13 个实现/测试文件；不新增 workflow、job、step 或第三方依赖。相较上一版，新增 1 个 poller 实现文件，因为预检与真正消费 COS
-pointer 之间存在竞态。此数量是具体评审输入，尚未获批。
-
-1. `.github/workflows/rollback-production.yml`：改 2 个原必填 tag 输入，新增 3 个可选请求 ID/恢复输入；改现有 resolve、产物核验、请求生成 3 个步骤。
-2. `deploy/runner/qintopia-agent-os-deploy-runner`：回退身份校验、精确 previous 事务、首次 O→T 的 O/O 或 T/O 固定恢复；普通正向与同 SHA 路径不变。
-3. `deploy/runner/rollback-release.sh`：现有 primitive 增加 O/O 的固定原状态恢复模式，凭原签名过渡请求、T/O/P
-   manifest 与 exact-CAS，不接受任意指针。
-4. `deploy/runner/deploy-request.schema.json`：增加 1 个固定 recovery 对象约束。
-5. `tools/deploy/create-deploy-request.mjs`：按经审批的 recovery 输入构造并签名该对象。
-6. `deploy/runner/wait-deploy-result.sh`：复用现有 HMAC 校验，增加历史请求/回执验签和固定身份输出模式；原等待模式不变。
-7. `tools/deploy/check-deploy-runner.mjs`：普通目标集合与回退 workflow 一致；保护双身份、恢复和 poller 的 expected
-   ID 合同。
-8. `tools/deploy/test-deploy-runner-promotion.mjs`：混合元组、O/O→O/P、T/O→O/P、R→T→O、各中断点与失败恢复负例。
-9. `tools/deploy/test-wait-deploy-result.mjs`：历史签名请求与回执匹配、篡改和缺失负例。
-10. `deploy/runner/poll-deploy-requests.sh`：固定入口设置 expected request
-    ID 时，在实际 COS pointer 解析后、任何执行前比较；普通 timer 行为不变。
-11. `deploy/runner/run-fixed-release-recovery.sh`（新文件）：固定 T 一次性 systemd 入口，核对请求 ID、T 树摘要、普通 timer 和 service 状态及有效沙箱属性；无任意命令参数。
-12. `tools/deploy/build-deploy-bundle.mjs`：将上述 wrapper 纳入 R
-    bundle 的固定文件清单与摘要。
-13. `tools/deploy/test-deploy-runner-poller.mjs`：测试预检后 COS
-    pointer 被新请求覆盖时拒绝执行、固定 T
-    poller/runner 来源、timer 竞争拒绝和一次性消费。
-
-配套更新本报告及 `deploy/runner/README.md`、
-`docs/operations/production-deploy-runner.md`
-属文档，不计入上面的实现数量。恢复入口须先在隔离 systemd 环境中证实与原 service 的有效限制等价；若
-`systemd-run`
-无法满足，则本方案不具备生产可执行性，应重新评审入口，而非退化为 SSH 直调。
-
-| 原则         | 回退普通目标一致性                                     | 精确前次混合版本回退                                                                                                                                                                                                                                      |
-| ------------ | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 实际问题   | 岸岸已在 runner/rules 中，正式回退选择器遗漏           | 过渡 release 无 tag 且运行/包/目录 SHA 不同，现入口无法回退                                                                                                                                                                                               |
-| 2 数量       | 1 个目标选项、2 处原规则、1 条集合校验                 | 候选合计 12 个既有文件、1 个新 wrapper；新增 3 个输入、1 个 recovery 对象规则、1 个历史验签模式、1 个精确 previous 事务、1 条 poller expected ID 规则和 1 个固定一次性执行入口；修改 2 个输入必填属性及 3 个既有步骤；新增 0 workflow/job/step/第三方依赖 |
-| 3 依据       | 当前选项/展开缺 `hermes-anan`，而 schema/runner 已接受 | 当前 manifest 混合版本，原 rollback workflow 将所有 SHA 固定为 tag                                                                                                                                                                                        |
-| 4 复杂度     | 复用 `allowed_targets - independent_targets`           | 复用现有签名协议、COS 校验、谱系字段、poller 和 runner lock；仅中断恢复使用固定 T 的一次性 systemd 单元                                                                                                                                                   |
-| 5 现有 CI    | 不检查回退选项是否等于普通目标集合                     | 业务代码无法改变回退请求构造与正式入口                                                                                                                                                                                                                    |
-| 6 最小范围   | 只补普通集合一致性                                     | 仅接受已成功部署且恰为服务器前次的完整固定元组；普通同 SHA 校验与正向发布不变                                                                                                                                                                             |
-| 7 无单项特例 | 集合规则不写岸岸专用豁免                               | 按精确前次 release 元组通用处理，不加岸岸专属放行                                                                                                                                                                                                         |
-| 8 部署相关   | 仅部署回退目标                                         | 仅不可变 release 回退                                                                                                                                                                                                                                     |
-| 9 可复用     | 后续普通目标变更自动发现遗漏                           | 后续合法混合版本前次 release 也可精确回退                                                                                                                                                                                                                 |
-
-原两文件提案只覆盖岸岸选项，不能以其完成作为上线条件。固定受审 bundle 过渡本身可复用现有正常
-`workflow_dispatch`。既有 `rollback-release.sh --restore-previous-sha`
-能处理完整原状态下的精确 T→O 指针切换，却无法在已写 current、尚未写 previous 的状态启动，也不会确认 installer、smoke 和回执。这就是新增专属事务、持久阶段和固定入口的理由。
-
-若不随 bundle 部署经审定的**普通混合回退能力**，最终 R 的正式签名回退仍缺失；完整 recovery 协议是否也须随包部署，留待最小性复核。
-
-因此原候选的“需要 R”基于**可手动回到前次混合 T 且可继续回到 O**
-这一加严条件，不表示两跳回退是用户明示验收，也不表示 R 已构建或获批。是否以此为范围须另行审定；生产申请仍另行授权。
-
-## 最终建议
-
-以下是先前较大候选的执行建议，现由文末「最小范围复核」替代为待比较方案。其 O/P→T/O→R/T 及两跳返回路径仍可作为高保证方案评审，但 13 文件不是批准基线。正常首次接管可由旧 O
-runner 消费新的单 system 请求，正常修复部署由 T
-runner 消费新的六目标请求；两跳 R→T、T→O 是原候选额外要求。
-
-每次 live 只在精确签名回执、指针、manifest、installer 和 smoke 一致后进入下一阶段。
-
-首次接管硬中断时，T 未落盘且指针 O/P 则只读核对并停止；T 已落盘而指针 O/O 或 T/O，由固定 T 一次性入口消费**另一条**审批、签名且绑定 request
-ID 的恢复请求，CAS 回到 O/P，运行 O
-installer 与 smoke 并签名回执。后续回退硬中断也用同一固定 T 入口处理已记录事务。任何新 pointer 错配、目标树不可信、CAS 冲突或恢复失败都停止，不能重放原请求。
-
-此入口和恢复事务尚未实现，当前部署状态仍是 O/P；不应将本报告视为上线许可。O/P/T/R 只作为本次审定的运行参数，不在通用源码中硬编码为智能体或版本放行特例。
-
-## 验证和交接
-
-本报告变更仅文档。工作分支为 `codex/v033-runner-takeover-plan`，以
-`62f403e3c5e615c10b6a0577954626664fcb22db` 为基点；此前文档提交为
-`7b9578b`、`7c8d516`，HEAD 已在基点之后。此前远端 `master` 的只读查询返回该基点 SHA。PR
-721、722 和 release PR 718 均已合并，对应原 CI
-check 成功；PR-Agent 留有自动评论，`reviews=[]`，不能视为人工批准。v0.3.3 发布 run
-`36206145717` 的构建成功、request-deploy 失败。
-
-当前离线证据：`node tools/deploy/test-release-systemd-rollback.mjs`
-通过，实际在临时目录运行既有 primitive，证明 `--restore-previous-sha` 更新两指针、保留
-`rollback-from` 并调用旧树 installer。 `node tools/deploy/test-wait-deploy-result.mjs`
-通过，覆盖当前回执验签等待合同。 `node tools/deploy/test-deploy-runner-promotion.mjs`
-通过，覆盖当前普通推广失败的回退分支，未覆盖本提案的混合 previous 事务。另以精确 O 归档运行旧版三项隔离测试，加入签名请求及旧 promoter 硬中断模拟；结果见上文。
-
-旧 runner 的白名单静态核对缺岸岸，新 runner 白名单与 smoke 均有岸岸；旧 runner 没有本提案的事务恢复能力。这些证据不等于未来 R 混合过渡或新回退路径已通过模拟。
-
-最终文档的 Prettier、Markdown lint 与 `git diff --check` 均通过。 `pnpm check:pr:quick`
-已启动，经过格式、Markdown 和多个现有合同检查后，在无关的 Agent
-runtime 管理 fixture 中因耗时中止；不能记为通过。
-
-获批实施后须补齐并实际运行：
-
-1. 用未来 R bundle 在旧 runner
-   fixture 验证完整制品安装与单 system 过渡；用新 runner 验证六目标和 `hermes-anan`
-   的排空成功/600 秒超时暂缓。
-2. 对双 tag、tag/request ID 混合、双 request
-   ID 各路径验证；缺失/双填、无效签名、错误 key id、错误 request
-   ID、环境、状态、四 SHA、scope、targets、COS 摘要、服务器 exact
-   previous 均须在任何指针写前拒绝。
-3. 以可抛故障 fixture 覆盖首次 O/O、T/O 恢复，以及 R/T→T/O→O/P、
-   `rollback-from`、两次指针写、installer、smoke、回执丢失及恢复失败；在 poller 下载 pointer 之前将其改成另一有效请求，证明 expected
-   ID 错配在执行前拒绝。普通正向、同 SHA、双 tag 旧合同不能放宽，不能循环恢复或重放原请求。
-4. 跑
-   `pnpm deploy:runner:check`、`pnpm check:pr:auto`、格式/Markdown 检查，核对新 PR 的 head/base、所有 checks、CODEOWNERS 和 reviewer 建议。
-
-生产预检需固定 SHA、原 manifest 四元组、COS 签名/摘要、当前和 previous 指针、O 的历史成功回执与 P 的旧树事实；过渡 T 成功后再固定 T 的成功回执。
-
-还需核对岸岸核心入口及零工作排空条件。正式回退实现须先通过隔离模拟，再审过渡生产 dry
-run；T 尚不存在时不能伪造正式 R→T 或 T→O 生产 dry-run 回执。没有可执行且经隔离验证的恢复路径就不做 live 过渡。T
-live 成功后才有 T 的签名成功回执，可据此进行正式回退 dry run；通过后再考虑 R
-live。每次 live 后核对新签名回执、指针、manifest、runner 来源和六目标 smoke。CI 通过、runner
-active 或服务 active 均不表示岸岸业务上线。
-
-当前未决：CI 专项批准、修复 SHA
-`R`、O/O 与 T/O 固定恢复的隔离验证、固定 T 一次性 systemd 入口及 poller expected
-ID 校验、后续回退的阶段事务验证、修复产物可用性，以及总指挥统一安排的生产 dry
-run/live 与业务验收。
-
-## 最小范围复核（2026-09-27）
-
-### 验收来源与技术结论
-
-用户明示的结果是：失败请求不得重放，旧 runner 之后须能接受
-`hermes-anan`，出现问题时有**可执行、经验证的回退**，并保留 Profile、凭据、会话、记忆、任务和通道等数据与状态。
-
-签名请求、不可变制品、精确身份、原生产门禁、排空与 smoke 是现行契约，不能因缩小文件范围而跳过。
-
-先前报告追加的“任何时刻都能通过常驻通用协议 R→T→O/P 两跳”、“所有硬中断均生成新签名 recovery 请求”、历史请求 ID 作为普通回退 workflow 的唯一身份来源，是方案选择，**不是已确认的用户验收**。
-
-结论：13 文件是覆盖普通回退和通用中断恢复的一体化候选，不能称为最小必要范围。过渡 T 的正常签名
-`workflow_dispatch` 已有独立四 SHA、scope、targets 和 dry run，不需要改
-`deploy-production.yml`。只补 rollback 目标集合也不够：当前入口要求双方都是已发布 tag，四 SHA 同值；T 是混合未发布身份。最值得先设计、隔离验证的窄方案是
-**普通混合 exact-previous 签名回退**与**硬中断维护恢复**分层。前者仍从受审 `master`
-workflow 经 production 环境、现有 HMAC 签名和 COS 队列发新请求；后者的执行授权、入口和证据单独评审，不能以普通回退 dry
-run 覆盖硬中断。此判断是缩小方向，不是实现通过或生产就绪声明。
-
-### 四种路径比较
-
-| 路径                        | 当前可行边界                                                                                                           | 失去或待补的保证                                                                                                                                                                       |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 零实现改动                  | 旧 O 可处理单 system 的过渡 T；现有 `rollback-release.sh --restore-previous-sha` 能从完整 T/O 回到 O/P，并安装旧树单元 | 正式 workflow 无法签名请求回退混合 T；直接服务器调用 primitive 属经批准的应急运维路径而非普通签名回退，且 O/O 被 primitive 拒绝、没有完整 smoke/回执闭环。不能用此法宣称正式回退已满足 |
-| 仅补 `hermes-anan` 回退选项 | 消除目标选择器漏项；还须按实际批准范围避免 `all-hermes-and-system` 顺带重启其他目标                                    | tag-only、四 SHA 同值和 promoter 同 SHA 目标集限制仍在；T 不可选，故不能单独作为修复                                                                                                   |
-| 原 13 文件候选              | 可设计成完整普通回退加签名 recovery 协议，覆盖 O/O、T/O 及后续事务中断                                                 | 新 schema、历史验签模式、阶段日志、固定 systemd 入口和 poller 锁定均尚未实现/隔离验证；复杂度依赖“两跳及通用恢复”额外目标                                                              |
-| 分层窄候选                  | 普通回退让新签名请求显式携带 T 的四 SHA，服务器只接受 exact previous；硬中断用经审查的固定制品维护步骤处理实测状态     | 必须补服务器不可变树/产物校验、专属错误补偿及验收证据；维护入口的权限、竞态、CAS、systemd 沙箱和审计尚须设计与实测，不能以 runbook 文本代替                                            |
-
-普通混合回退的请求 schema 已有四 SHA 与
-`release_rollback.expected_{current,previous}_sha`； `create-deploy-request.mjs` 只要求
-`expected_previous_sha=release_sha`，所以 R→T 可用现有字段表达
-`commit=O,runtime=P,bundle=R,release=T`。当前 runner 在该分支强制四 SHA 都等于 T，仍须改；现有 promoter 复用 T 时还把
-`restart_targets` 和原单 system
-manifest 比较，不能直接走普通 promotion。另有不改源码的本地隔离模拟：以四个不同的虚构 40 位 SHA、
-`release_scope=[deploy-bundle]`、目标 `qintopia-system-services,hermes-anan`、
-`dry_run=true` 及模拟签名 key/bucket 调用现有创建器，构造和 AJV schema 验证均退出 0；把
-`ENV_FILE`、`STATE`、`RELEASE_ROOT` 限于新的 `/tmp` 目录后，现有runner `--dry-run`
-退出 1，明确报
-`invalid deploy request: release rollback commit_sha must equal expected_previous_sha`。隔离 release 根为空，未进入制品或指针回退；无网络、真实密钥、生产操作和源码改动，临时目录已清理。此证据只定位现有同值校验，不能证明混合回退可执行。专属回退分支应在同一锁内核对
-`current=R,previous=T`、R manifest 的 `previous_sha=T`、T
-manifest 的完整四元组、scope、profile、现存不可变树的内容与 COS 签名/摘要，以及请求中明确的回退目标集；只调用已验证树的 rollback
-primitive，不重组或改写 T，也不放宽普通同 SHA 路径。新请求的身份来自受审 workflow 和独立生产批准；旧成功回执可作上线前谱系佐证，但普通 workflow
-**不必先新增** 请求 ID 发现和 `wait-deploy-result.sh`
-历史模式。原双 tag 路径的发布状态、可达性和产物验证仍须保留。
-
-省去新路径的历史验签模式，失去的是原候选额外要求的“workflow 在发请求前自行证明 T 曾成功”。
-
-新混合路径仍须由受审输入来源、原生产审批和签名、签名前记录，以及服务器 exact-previous、manifest、COS 制品严格复验承接，不能只信操作者填入的四 SHA。
-
-直接 R→O/P 可少一次回退，但 O 已不是 R 的 exact
-previous，须改变现有精确谱系规则并解释如何在一次事务中可信地恢复 P、处理岸岸排空和旧 O
-runner 接管；目前没有隔离证据，不能把它称作较小的现成实现。另一思路是正常签名发布“旧业务制品 + 新兼容 runner”的新 Release，以继续前进的方式恢复业务。bundle 构建器实际包含
-`skills/`、`agents/xiaoman/profile-bundle/`、`workflows/`、配置及 runner；因此旧 runtime 加完整 R
-bundle
-**不是**旧业务版本。要得到该组合，需新增经过审查的选择性 bundle 制品、来源/摘要/manifest 契约，并证明插件、配置、迁移和系统单元兼容，通常扩大打包和部署影响。两条路径均可留作备选研究，不作为当前最小结论。
-
-硬中断需分开判断。旧 O
-promoter 的已模拟状态仅证明落 T 前 O/P、首次写后 O/O、第二次写后 T/O；T/O 可由现有 primitive 以精确参数恢复 O/P，但还须可信固定执行入口、O
-installer、批准目标 smoke 和结果记录。O/O 因 current 与 previous 同指 O 被现有 primitive 拒绝，需要窄的 CAS 恢复原语或经审查的固定制品维护动作；不能手移指针、重放未知请求或把 P 的失败回执称为成功。`server-change-policy.md`
-允许有负责人记录及后续 PR 的应急服务器回退，未规定每个维护恢复动作必须新建签名请求；`deploy/runner/README.md`
-的签名队列则仍是**普通部署/回退**路径。
-
-弦和实现评审须据现有政策、运行契约及隔离证据判断硬中断是否必须再由新签名队列驱动；这是技术机制判断，不转交业务负责人挑选。
-
-当前政策允许有负责人记录的应急回退，尚未查到“每个硬中断恢复都必须新建签名请求”的明文契约。优先审查受限维护恢复是否达到同等身份、权限和审计保证；若不能证明，再考虑原 recovery 协议方向。
-
-受限方案须绑定原签名请求、固定 T/O/P/R 身份、只接受实测状态，并明确维护 runbook 和最小恢复原语。该方案还须经 systemd 等效沙箱执行并留下审计回执；其可行性尚未模拟，尤其要证明旧 O
-poller 不会抢读新请求。不能把 SSH 直调或临时可执行路径当成已经满足上述条件。
-
-### 原候选文件逐项归类
-
-下表中的“必改”仅针对选择**普通混合 exact-previous 签名回退**后的能力边界，不是对具体实现或 CI 变更的批准；测试与 checker 随实际合同改变。硬中断维护方案确定前，不给恢复协议凑一个新的文件数。
-
-| 原候选文件                                      | 复核分类与理由                                                                                                              |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `.github/workflows/rollback-production.yml`     | 必改：混合 T 的受审四 SHA 输入/解析、exact-previous 请求与岸岸目标选择；保留生产环境和双 tag 旧路径。其修改属于 CI 专项审批 |
-| `deploy/runner/qintopia-agent-os-deploy-runner` | 必改：仅在混合 exact-previous 分支核对完整元组、不可变树并完成回退、补偿和结果；普通发布约束不放宽                          |
-| `deploy/runner/rollback-release.sh`             | 完整 R/T 或 T/O 的 primitive 可复用不改；仅 O/O 维护恢复方案若选择扩它才需改                                                |
-| `deploy/runner/deploy-request.schema.json`      | 普通混合回退可复用不改；新签名 recovery 对象方案才需改                                                                      |
-| `tools/deploy/create-deploy-request.mjs`        | 普通混合回退可复用不改；新 recovery 对象方案才需改                                                                          |
-| `deploy/runner/wait-deploy-result.sh`           | 普通混合回退可复用不改；若要求 workflow 自动重新验签旧请求/回执才需扩展                                                     |
-| `tools/deploy/check-deploy-runner.mjs`          | 必改：校验新 workflow 目标/四 SHA 合同与旧路径未放宽；具体规则随设计定                                                      |
-| `tools/deploy/test-deploy-runner-promotion.mjs` | 必改：覆盖混合回退、目标集不等、错误补偿和否定用例；恢复测试取决于维护方案                                                  |
-| `tools/deploy/test-wait-deploy-result.mjs`      | 历史验签模式不采用则可复用不改                                                                                              |
-| `deploy/runner/poll-deploy-requests.sh`         | 普通混合回退可复用不改；固定签名 recovery 入口才需 expected ID 消费点防竞态                                                 |
-| `deploy/runner/run-fixed-release-recovery.sh`   | 仅原签名 recovery 方案需要；维护方案也可能需要受审固定入口，但形态须实测决定                                                |
-| `tools/deploy/build-deploy-bundle.mjs`          | 普通混合回退可复用不改；新增固定恢复入口须纳入制品清单；选择性业务恢复则涉及更大打包改造                                    |
-| `tools/deploy/test-deploy-runner-poller.mjs`    | 普通混合回退可复用不改；固定 poller 入口或 expected ID 规则才需扩展                                                         |
-
-若决定修改 `rollback-release.sh` 的 O/O 恢复语义，验证必须扩至运行真实脚本的
-`tools/deploy/test-release-systemd-rollback.mjs`。现有 runner
-promotion 测试有用可执行替身代替 rollback
-primitive 的路径，单靠它不能证明真实指针与 systemd 单元行为；原 13 文件不是封顶数，不能为了维持数量而漏掉该覆盖。
-
-本次复核没有实施上述任何文件。下一步先形成两份可审阅的精确设计和隔离 fixture：普通 R→T 混合签名回退，以及 O/O、T/O 的有限维护恢复。必须证明最新可信回执、T/R 制品与完整树、排空及 smoke、同步失败和硬中断边界；再请负责人按
+## 最终推荐与实施边界
+
+### 决定与证据界限
+
+采用**普通混合 exact-previous 签名回退 + 有限维护恢复**。正常回退仍由受审 `master` 上的
+`rollback-production.yml`、`production`
+环境、HMAC 签名新请求、COS 队列、runner 锁和签名结果完成。原双 tag 回退路径的已发布状态、可达性、制品验证均保留。
+
+硬中断由受审的固定不可变入口处理有限状态，不日常编排 R→T→O/P 两跳。永久通用 recovery 请求协议、workflow 自动发现历史成功回执、选择性 bundle 格式不是默认必做项。此为技术建议，不等于具体 CI 范围已批准。
+
+`O=16e8d56b98001579c6288ba13199b80d6d3dfc74`，
+`P=83d694f2c3bc21fd78a73d25da3197379e2a14d5`，
+`T=70e7984fab92ddab956009585212d0e9729767b5`，`R`
+是未来受审修复提交。最近只读证据为 O/P，T 不存在、R 尚未生成。O 的原请求和回执签名有效且状态
+`succeeded`；P 的请求和回执签名有效但状态是
+`failed`。P 的旧树和 COS 摘要可作为精确恢复材料，不可写成成功部署证明。旧 O 中断模拟与“请求可表达、runner 拒绝”的本地模拟，只定位边界；未模拟未来 R 制品、混合回退、真实 systemd 沙箱或生产 dry
+run。
+
+### 普通混合回退的执行合同
+
+过渡 T 的原 manifest 固定
+`commit_sha=O,runtime_sha=P,deploy_bundle_sha=R,release_sha=T`、
+`release_scope=[deploy-bundle]`、`restart_targets=[qintopia-system-services]`、
+`previous_sha=O`。修复 R 成功后是 R/T。新的 R→T 回退请求由生产 workflow 签名，`release_rollback.expected_current_sha=R`、
+`expected_previous_sha=T`；四 SHA 和 artifact
+profile 必须与 T 原 manifest 完全一致。**请求的 `restart_targets`
+是此次经审批的动作范围**，可包含岸岸；T 原 manifest 的单 system 目标是建树历史，不得重写来匹配此次请求。
+
+workflow 应提供互斥的双 tag 与混合精确前次输入模式。混合模式只接受受审的 R current
+Release 身份和完整 T 四元组，核对提交在
+`origin/master`、固定 profile、固定 scope、目标 allowlist、COS 主/伴随 runtime 与 bundle 的 manifest 和
+`SHA256SUMS`，然后沿现有 production 保护及签名创建器发新请求；不接受任意历史目录或单独一个 target
+SHA。现有 schema 已有四 SHA 与
+`release_rollback`，创建器已接受不同四 SHA；`wait-deploy-result.sh`
+仍验证这次新回执，不需为了普通混合回退增加历史 ID 自动发现。旧双 tag 路径的全部验证不削弱。
+
+runner 在现有 `validate_request()` 验签和字段校验后，仅在 `release_rollback`
+的混合 exact-previous 分支放开“四 SHA 均等于 T”的限制。它须在 `deploy.lock` 下用
+`capture_original_release_lineage()`、`validate_requested_release_rollback_lineage()`
+核对 R/T 与 R manifest 的 `previous_sha=T`，再将 T
+manifest 四元组、scope、profile、`previous_sha=O`
+与签名请求和已验证 COS 制品逐项匹配，并复验 T 不可变树的路径、模式、内容，以及两个运行包与 bundle 的校验表。O 树及 installer 同样须先验证。
+
+只有**原制品身份**与**此次动作授权**各自成立，才允许进入专属回退分支；普通同 SHA 发布仍走
+`promote-release.sh` 的原检查。
+
+专属分支不能调用现有普通 `promote-release.sh` 同 SHA 复用：它在既有目录比较
+`restart_targets`，会因 T 原单 system 与此次动作目标不同而拒绝。在锁内、写持久意图后，专属分支调用已验证 release 内的
+`rollback-release.sh --expected-current-sha R --expected-previous-sha T --restore-previous-sha O`。该原语依次写
+`rollback-from=R`、`current=T`、`previous=O` 并安装 T 单元；省略
+`--restore-previous-sha O` 会得到 T/R，与 T
+manifest 谱系冲突。随后用**此次签名请求**的目标集运行 T 的 smoke，岸岸须先完成排空才重启。仅在指针、T
+manifest、installer、目标 smoke 和签名回执一致时记成功。同步失败由专属补偿按持久意图恢复 R/T、运行 R
+installer 和获批目标 smoke；不能套用 `run_promotion()` 后现有 `promoted_current`
+的正向失败分支。进程死亡或结果不明转入下文有限维护路径，不重放原回退请求。
+
+### 岸岸排空与最小写权限
+
+当前 `smoke-release.sh` 的 `hermes-anan` 分支以 `runuser -u ubuntu` 在**同一 runner
+service 沙箱**内调用 `runtime/hermes/restart_anan.py`。该脚本通过官方
+`gateway.drain_control.write_drain_request(home=PROFILE)` 写入
+`/home/ubuntu/.hermes/profiles/anan/.drain_request.json`。官方 `v2026.9.21` 的
+[`gateway/drain_control.py`](https://github.com/NousResearch/hermes-agent/blob/v2026.9.21/gateway/drain_control.py)
+调用
+[`utils.atomic_json_write`](https://github.com/NousResearch/hermes-agent/blob/v2026.9.21/utils.py)：它在**同一 Profile 目录**以
+`mkstemp` 建临时文件、fsync、rename 替换 marker； `clear_drain_request()`
+从同目录 unlink。只给 marker 文件 `ReadWritePaths`
+不足以支持创建、rename 和清除；直接给整个 runner `/home/ubuntu/.hermes/profiles/anan`
+写权限，则把凭据、会话等目录也暴露给通用部署进程。现 runner unit 的
+`ProtectHome=read-only` 且写路径不含岸岸， `runuser` 与 `daemon-reload`
+均不会解除**当前进程**的 mount namespace。
+
+推荐保持 runner unit 的 `ProtectHome=read-only`，只新增一个受审固定
+`qintopia-agent-os-anan-drain-restart.service`：installer 将其渲染、安装为已验 release 的绝对路径，`User=ubuntu`，固定
+`ExecStart` 为该 release 的 `restart_anan.py` 和官方 `v2026.9.21` Python，不从 `current`
+解析脚本；保留 `NoNewPrivileges`、`PrivateTmp`、`ProtectSystem=strict`、
+`ProtectHome=read-only`，仅对此**一次性服务**增加
+`ReadWritePaths=/home/ubuntu/.hermes/profiles/anan`，并固定 user
+systemd 运行环境。安装后核对有效 `ExecStart`
+与已验 release 身份，且有效启动超时须晚于 helper 完整 600 秒排空及清理时间；超时不得强杀 gateway。
+`smoke-release.sh`
+只启动并等待该固定 unit 的退出结果，不接受任意命令、Profile 路径或服务名。
+
+这个父目录写权限是现有官方同目录原子协议所需的最小挂载范围，仍能触达同目录其他文件。可信脚本和短生命周期是必要约束，不能宣称其余文件不可写。若该权限边界不获技术审查或真实 Linux 验证，岸岸 live 重启即被阻断；不能改官方核心来绕过。
+
+保持现有 `restart_anan.py` 合同：已有 drain 则暂缓；新鲜 gateway
+PID、两次不同更新时间的零工作快照且间隔至少两秒才重启；最长 600 秒，超时取消**本次**标记并暂缓，不强杀、不补跑、不删除他人的标记。服务失败、标记清理失败和 user
+systemd 失联均不得签发成功回执。后续实现须在真实 Linux
+systemd 下以有效属性和实际 marker 创建/rename/清除、沙箱外拒写验证，不能以 macOS、容器内 root 或测试替身代替。
+
+### 首次 live 前隔离与一次性消费
+
+旧 O poller 不持
+`deploy.lock`，且在 runner 执行后才上传结果、归档请求。若仍由普通 timer 自由轮询，O→T 首次 live 的
+`SIGKILL` 可能让旧 O poller 在回执缺失时再次读同一个 COS
+pointer。**有限恢复必须在首次 live 之前预置**，不能中断后才尝试安装 hold。
+
+生产预检阶段先从 COS 取得已审 R
+bundle，核对其 manifest、`SHA256SUMS`、来源 SHA 和内容清单，固定在 root-owned 不可变暂存目录；其中包含受审的
+`run-fixed-takeover-request.sh`、新版 poller、hold
+drop-in 和维护 helper。固定 launcher 的 `prepare` 阶段先停用普通 deploy timer，等待旧 O
+service/在途 poller 自然退出并确认没有锁持有者，再持久写 hold、安装固定 drop-in、`daemon-reload`
+并验证普通 service 被 condition 阻断。此时才允许从现有
+`deploy-production.yml workflow_dispatch`
+发布**新的**签名 O→T 单 system 请求；若预置未通过，不发 live 请求。这是未来经单独授权的生产预检，不是本 Draft 已执行的动作。
+
+固定 launcher 的 `consume` 阶段只接受批准的 request ID，并从上述已验暂存目录在等效 root
+systemd 沙箱运行**新版 R poller**； `QINTOPIA_DEPLOY_RUNNER_BIN`
+固定到 O 树的旧 runner，`COSCLI_PATH`
+固定到已验现有工具。新版 poller 在实际下载、解析 COS
+pointer 后、探测结果和下载请求之前比对
+`QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID`，下载请求后再核对解析出的 ID；错配即停止，绝不调用旧 runner。旧 O
+runner 仍执行原 HMAC、scope、单目标、制品和 promotion 检查。标准旧 timer/service 全程受 hold 阻断，不能与此一次性 poller 竞争。预检和实际消费间的 pointer 竞态由**消费点**
+比较解决，不能只用 launcher 预检代替。
+
+新版 poller 在调用 runner 前取得独立
+`poller.lock`，先检查是否存在任何未终结 claim，再以 request
+ID、原签名请求摘要和 pointer 身份原子建
+`/var/lib/qintopia-agent-os-deploy/requests/claimed/<id>.json`，fsync 文件和目录；跨进程死亡仍是“已可能执行”。
+
+只有本地签名结果、COS 上传确认、请求归档及指针/结果核对都完成，才可终结该 claim。任何阶段中断，后续 T/R 普通 poller 先看到未终结 claim 并拒绝**所有**新消费；维护流程核对，不重放。
+`poller.lock` 防并发，`deploy.lock`
+防部署指针并发，持久 claim 防进程死亡后的重复执行。若结果上传成功而归档失败，仍保留 claim，不能仅凭远端对象存在自动清除。后续普通 R→T 回退同样由 T/R 新 poller 保护。
+
+O→T 成功后的 T/O 指针、installer、单 system
+smoke、签名 COS 回执与本地归档全相符，才可由固定 launcher 清除 hold/drop-in，恢复原 timer 状态。若任何一项不明，保持 hold 和 claim，走下文表列有限维护恢复。该前置暂存、launcher、poller
+claim/expected ID 和 systemd 有效属性均尚未实现、模拟；在通过前首次 live 被阻断。
+
+### 有限维护恢复的执行入口
+
+在 R bundle 中提出固定
+`deploy/runner/recover-release-lineage.sh`，由受审维护 runbook 在一次性 root systemd
+service 中**固定到完整 T 目录**执行，不从 `current`
+选择 poller/runner，也不接受任意可执行路径、目标 SHA 或服务名。入口先校验 T
+bundle、当前/目标树校验表及已验签的原 O→T 或 R→T 请求；历史原请求可能过 TTL，仅在维护中验证归档 HMAC、key
+id、原签名时间、production、四 SHA、scope、targets 与本地 manifest/持久事务，不把过期原请求当作新的 live 授权。正常回退仍由新请求完成。一次性 unit 的有效
+`User`、 `Group`、`StateDirectory`、`WorkingDirectory`、`NoNewPrivileges`、
+`PrivateTmp`、`ProtectHome`、`ProtectSystem`、`ReadWritePaths`
+和固定 COS/state 环境须逐项等效于受审 root runner
+unit，且不得授予岸岸 Profile 写权限；任何不等效即停。此入口及历史验签复用方式尚未实现、验证，属于上线阻断。
+
+首次 O→T 的 hold 已在 live 前预置；后续回退进入不确定状态时，维护入口先 `disable --now`
+普通 deploy timer，等待正在运行的普通 service **自然退出**
+并确认无在途 poller；不得杀死未知事务。再由固定制品核对或持久写入
+`/var/lib/qintopia-agent-os-deploy/recovery/` 下的 `hold` 与只读绑定记录，并核对受审固定
+`qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf`：其
+`ConditionPathExists=!/var/lib/qintopia-agent-os-deploy/recovery/hold`
+使普通 service 即使被旧 timer 触发也不消费队列。`daemon-reload`
+后检查有效 condition，重新检查 timer/service 均不活动，再取得与 runner **同一个**
+`deploy.lock`。仅 `flock`
+不能跨进程死亡保持排他；持久 hold、固定 drop-in、停用 timer 和 poller 未终结 claim 共同承接。
+
+现有旧 poller 不持锁，且 runner 执行与 COS 回执上传、请求归档不原子。因此不能以 runner 锁替代上述隔离。
+
+每次指针改动前，先在 root-owned
+recovery 目录写原请求摘要、原指针、目标 manifest 摘要、允许状态、阶段与原 unit/timer 状态，使用临时文件、原子替换、文件及目录 fsync；同一
+`deploy.lock` 下每次按实际指针和 manifest 做 CAS，写入后再记阶段。`rollback-from`
+仅留证，不独自决定恢复方向。旧 O installer 恢复 service 文件后，drop-in 必须仍有效；再次
+`daemon-reload` 并验证 condition、timer disabled、service
+inactive。若 installer 覆盖或移除隔离，停止并保留 hold，不能启动旧 poller。若最终回到 O/P，因 O
+runner 不认识岸岸，hold 与 timer 停用继续保留，直到另一次受审接管请求、COS
+pointer/回执核对及独立授权解除。恢复到 T/O 或 R/T 后也只有在本地事务、COS 签名结果和归档状态一致、队列 pointer 安全时才可按原记录恢复 timer；不明则继续封闭。
+
+### 有限状态恢复表
+
+表中固定入口指上述**已验 T 树**内的 recovery
+helper，通过一次性受限 systemd 单元执行；它支持岸岸但不自行从普通 COS
+pointer 领新请求。若 T 目录尚不存在，仅允许只读核对，不伪造该入口。所有可写行均先完成持久 hold、普通 poller 退出、同一
+`deploy.lock`、原签名请求与事务记录绑定；CAS 只接受表列的实际状态，不按参数猜测服务器现状。
+
+| 实际状态与来源                                              | 固定入口、锁内动作                                                                                                                                                                                | 单元、结果与不确定性                                                                                                                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O/P；T 未落盘或首步尚未改指针                               | 只读核对 O/P、原请求、COS 结果和旧 runner；无 T 可执行入口，**不写指针**。停用旧 timer 并等普通 service 退出，结果不明则不继续发请求                                                              | 核对 O installer/服务状态；原请求不得重放。未有固定 T helper 时不能宣称已有中断恢复能力                                                                                   |
+| O/O；旧 O promoter 已落完整 T，第一次写 `previous=O` 后中断 | 固定 T helper 验原 O→T 请求、T/O/P 树和 O manifest `previous_sha=P`；CAS `previous:O→P`，`current` 始终 O                                                                                         | 运行 O installer 与原请求单 system smoke；保留 hold 阻断旧 O poller，审计为有限维护恢复，不把 P 失败回执改写成成功                                                        |
+| T/O；旧 O 首次过渡两指针已写，installer/smoke/回执未确认    | 固定 T helper 验原请求及 T manifest `previous_sha=O`；若没有已确认的成功签名回执，以既有 `rollback-release.sh --expected-current-sha T --expected-previous-sha O --restore-previous-sha P` 回 O/P | primitive 内可能经过 O/O；O installer 与**原单 system** smoke 必须完成。此请求未批准岸岸重启；不能要求 O smoke 执行 `hermes-anan`。若已有成功回执先核对、停止自动反向操作 |
+| R/T；R→T 签名回退的第一处指针写前                           | 固定 T helper 核对本次新签名请求和持久意图，CAS 只确认 R/T，**不重发**回退                                                                                                                        | 检查此前排空影响，运行/核对 R installer 与获批目标 smoke；结果缺失则保持 hold，不能凭指针宣称成功                                                                         |
+| T/T；R→T 的 `current=T` 已写、`previous` 尚为 T             | 固定 T helper 只凭 R/T 原事务记录和 T manifest `previous_sha=O`，CAS `current:T→R`，回到 R/T；不继续未知的正向动作                                                                                | R installer 与获批目标 smoke 成功才可记恢复；`rollback-from=R` 只留证。CAS 或单元失败保持 hold                                                                            |
+| T/O；R→T 已写两指针，installer/smoke/回执未确认             | 根据**R→T 的持久事务**与首次 O→T 区分；若无可信成功回执，CAS `previous:O→T` 后 `current:T→R`，回 R/T；每步 fsync                                                                                  | 恢复 R installer 和获批目标 smoke；中途 T/T 仍按上一行处理。若签名成功回执已持久存在，只核对并归档，不改指针                                                              |
+| 任一行的 installer、岸岸排空或 smoke 失败                   | 在原锁内且仅对仍匹配的有限状态尝试一次回原指针/旧单元；岸岸超时只取消本次 drain 并暂缓，不强杀、不补跑                                                                                            | 任一恢复步骤失败或状态漂移记 failed/unknown，hold 持续，不能循环补偿或把服务 active 当成功                                                                                |
+| 指针/服务似已完成，但 COS 回执上传或本地归档丢失            | 固定 T helper 只读比对本地阶段记录、签名结果文件、COS 结果、pointer 与请求归档；没有唯一可信结论时不运行原请求                                                                                    | poller 的执行、上传、归档非原子；持久 hold 阻断当前或恢复后的旧 unit。独立记录核对结论和负责人动作，未知状态不得重放                                                      |
+
+**T/O→O/P 只允许首次 O→T 的单 system 未完成事务**：原签名请求的 `restart_targets`
+必须恰为
+`[qintopia-system-services]`，其 journal/manifest 不得显示岸岸曾由此次事务重启。因此 O
+installer 与 O smoke 足以覆盖此次授权的服务恢复；`rollback-release.sh`
+即使删除 candidate-only 的新岸岸 unit，固定 T recovery helper 仍在不可变 T 树，hold
+drop-in 仍在旧 service 上生效。恢复后旧 O
+poller 保持隔离。不允许把同一入口用于 R 已成功后含岸岸目标的 T→O/P 第二跳；那是另一项未设计、未授权的变更。
+
+正常 R/T→T/O 与失败补偿回 R/T 均使用 T/R 新兼容 runner、installer、岸岸固定 unit 和相应 smoke。验证真实服务恢复后才可称回退成功。
+
+维护记录至少包含原请求 ID/签名摘要、固定 T/R/O/P
+manifest 摘要、两指针各阶段、`rollback-from`、installer/smoke、drain 清理状态、systemd
+unit 及 timer 有效属性、COS 回执/本地归档核对结果、执行人和审批来源。维护记录与普通部署签名回执分开：不能为未知原请求伪造
+`succeeded`。每次中断后先读状态再决定是否继续；如果表外指针、未验制品、CAS 冲突、hold 失效或 O/P 旧 poller 可能抢消费，保持封闭并阻断 live。
+
+### 业务恢复优先路径
+
+T 带 R **完整** deploy bundle；该 bundle 的清单包括 `agents/anan`、
+`skills/pms-operations`、`skills/person-foundation`、工作流、配置、runner 和 systemd 源。旧 Sidecar
+runtime P + R
+bundle 不是旧业务版本，R→T 首先恢复的是可执行的前次**部署树和 runner**，不能自动声称岸岸业务回退。
+
+若需要恢复某些旧业务行为，优先在**新的受审提交**中恢复选定业务源码，保留兼容新 runner、沙箱修复和签名回退能力。
+
+再用现有完整 bundle/Sidecar 构建与正常签名发布流程前进。不预设选择性 bundle 新格式，也不直接改 T 或 O 的不可变树。
+
+逐文件核对所恢复源码与迁移、插件、配置、systemd 和现有数据的兼容性。以新的提交、制品和回执标识结果，不能把业务恢复归因于旧 SHA 的重用。
+
+Green PMS `1.8.1` 的精确提交为
+`2f6dc4bbe47622f91f278eeff9ae1b3d705f35fc`。并行只读核对该提交的
+`packages/contracts/src/external-payments.ts`、`apps/api/src/external-payments.ts`、
+`packages/db/src/integration-worker.ts` 发现：事件仍为 `pms.payments.v1`，
+`sequence/headCursor` 为十进制字符串，head/feed 需要物业 READ 权限；固定推送
+`/api/v1/ingress/pms/events` 用 `HMAC(POST\npath\nsentAt\ndeliveryId\nsha256(body))` 和
+`X-QT-*` 头， `202 accepted`/`200 duplicate` 必须匹配 `event_id`、`receipt_id`；
+`401/403` 持久暂停、`400/409/413/422` 进 dead
+letter，其余、ACK 不符和未知传输用**同一事件**重试。这只是指定源码合同的观察，不是 Agent
+OS 与 PMS
+1.8.1 联合兼容通过；不能拿旧 PMS 版本测试充当 1.8.1 证据。后续需分别验证 R/T 和任何旧业务恢复候选对 1.8.1
+API、权限、事件 schema、数据库迁移、原请求键结果查询、重复事件与未知 ACK 的行为。
+
+不回滚实时 PMS 订单、资金、库存或 Agent
+OS 事项、事件、游标、回执等业务数据；保留 Profile、凭据、会话、记忆、任务及通道状态。恢复前暂停岸岸相关新入口并核对在途结果，旧新消费者不得同时办理同一请求。本次 runner 接管不夹带七 Profile
+Hermes 核心升级，也不并入 PR #723。
+
+### 归档验签与真实 systemd 验证归属
+
+维护 helper 需要核验**原已签名请求**，不需要 workflow 自动发现历史成功请求。复用 runner 现有
+`validate_request()` 的 HMAC 规范化、key
+id、environment、repository、四 SHA、scope/targets 检查，在**只读归档验签模式**
+输出固定身份；仅此模式跳过“相对当前时钟仍未过期”的 live TTL 条件，仍核对签名时间与原
+`created_at/expires_at`。该模式绝不进入
+`run_promotion()`，不创建新请求或写指针。普通 live 路径的 TTL 和 HMAC 校验完全保留。
+`recover-release-lineage.sh` 将归档模式输出与原请求文件摘要、T/R/O/P
+manifest 和有限状态交叉核对。
+
+结果一侧复用 `wait-deploy-result.sh` 当前对 HMAC、key id、时间、request
+ID、environment 和完整元组的验证块，增加**给定本地 result 文件的只读离线模式**，不轮询 COS，也不推断缺失结果为失败；正常等待模式不变。维护 helper 只对从固定 COS
+key 或 root-owned state 取到的结果调用此模式，检查二者一致。
+`test-deploy-runner-promotion.mjs`
+覆盖归档请求的篡改、错 key、错环境/身份、过期但原签名时有效及普通 live 仍拒过期；
+`test-wait-deploy-result.mjs`
+覆盖离线结果的签名、请求/元组错配、缺失及上传/归档间断。P 的 `failed`
+回执只能作为失败事实，不能通过身份检查后自动升格为成功谱系。
+
+真实 Linux 验证单独归属
+`tools/deploy/test-deploy-runner-systemd-linux.mjs`，在**可销毁 Ubuntu 24.04 systemd
+PID1 VM** 中执行
+`sudo node tools/deploy/test-deploy-runner-systemd-linux.mjs`；测试仅用 VM 内模拟密钥、Profile、COS 和 release 根，实际启动 root
+runner、固定岸岸 unit、一次性 takeover/recovery
+unit，验证有效 mount 属性、marker 同目录临时写/ rename/清除、hold condition、旧 O
+unit 复装、candidate-only 清理及进程死亡后 claim/指针状态。无真实服务、凭据或生产指针。该 fixture 在第二阶段实现，本阶段未运行；不新增 CI
+job/step，也不以 macOS 替身测试代替。
+
+### 文件范围与删减后果
+
+下表是第一阶段**待批准的技术候选**，不是修改许可。已定位 **12 个现有实现/测试路径 +
+5 个新固定制品/测试路径 = 17 个实现/测试文件**。实现时另须更新 `deploy/runner/README.md`
+和 `docs/operations/production-deploy-runner.md` 两份操作合同，故第二阶段候选总数为
+**19 个文件**；本 PR 只改本报告，不实施这 19 个文件。如隔离验证表明还要改真实 primitive 或其他合同，先修订数量并重走技术复审及具体 CI/部署审批，不以 19 为封顶。旧 13 不是上限或已批准范围。
+
+| 分类       | 路径或合同                                                                                 | 删除或不改的实际缺口                                                                                           |
+| ---------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| 必改 1     | `.github/workflows/rollback-production.yml`                                                | 无 T 混合四元组的 production 签名入口；仅补 `hermes-anan` 选项仍是双 tag/同 SHA 路径                           |
+| 必改 2     | `deploy/runner/qintopia-agent-os-deploy-runner`                                            | 四 SHA 同值校验和普通 promoter 仍拒绝 T；没有专属锁内谱系/制品复验、journal 及反向失败补偿                     |
+| 必改 3     | `deploy/runner/poll-deploy-requests.sh`                                                    | 首次 live 无消费点 expected ID 绑定；普通 R→T 在上传/归档中断后可能重领原请求；须加入 poller.lock 和持久 claim |
+| 必改 4     | `deploy/runner/smoke-release.sh`                                                           | 岸岸仍在通用 runner mount namespace 中写 marker，`runuser` 无法绕过只读沙箱                                    |
+| 必改 5     | `deploy/runner/install-release-systemd-units.sh`                                           | 固定岸岸一次性 unit 无受审安装/核验路径；不能手工写 `/etc/systemd/system`                                      |
+| 必改 6     | `tools/deploy/build-deploy-bundle.mjs`                                                     | 新 launcher、unit、recovery helper、hold drop-in 不进入 R bundle 不可变清单                                    |
+| 必改 7     | `tools/deploy/check-deploy-runner.mjs`                                                     | 缺混合/双 tag 互斥、目标集合、expected ID/claim、固定 unit 沙箱合同；属 CI 改动须单独批准                      |
+| 必改 8     | `tools/deploy/test-deploy-runner-promotion.mjs`                                            | 无混合精确回退、原 manifest 与动作目标分离、同步失败及反向补偿 fixture；替身不能证明 primitive                 |
+| 必改 9     | `tools/deploy/test-release-systemd-rollback.mjs`                                           | 无真实 `rollback-release.sh` 逐次指针写、fsync、installer 故障注入；primitive 即使源码不改也须验证新调用       |
+| 必改 10    | `tools/deploy/test-deploy-runner-poller.mjs`                                               | 无首次固定消费 expected ID 错配、持久 claim、上传/归档丢失与原旧 poller 隔离覆盖                               |
+| 必改 11    | `deploy/runner/wait-deploy-result.sh`                                                      | 维护无法复用现有结果 HMAC 合同离线核验已存在回执；正常等待模式保留，不增加历史自动发现                         |
+| 必改 12    | `tools/deploy/test-wait-deploy-result.mjs`                                                 | 无离线回执篡改、错 request ID/元组、缺失及未知结果负例                                                         |
+| 拟新增 1   | `deploy/runner/qintopia-agent-os-anan-drain-restart.service`                               | 无独立且短生命周期的最小 Profile 写权限执行入口                                                                |
+| 拟新增 2   | `deploy/runner/recover-release-lineage.sh`                                                 | 首次单 system O/O、T/O 与反向 T/T、未知结果无固定 T 入口、CAS 与持久审计；SSH 手移指针不可替代                 |
+| 拟新增 3   | `deploy/runner/run-fixed-takeover-request.sh`                                              | 首次 live 前无受审 R bundle 暂存、预置 hold、唯一 request ID 消费与退出后解除合同                              |
+| 拟新增 4   | `deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf`            | O installer 恢复旧 service 后可能重新消费 COS pointer；`flock`、timer 停用或临时 mask 单独不足                 |
+| 拟新增 5   | `tools/deploy/test-deploy-runner-systemd-linux.mjs`                                        | 无实际 systemd PID1 下的 mount/marker/hold/旧 unit 复装与中断验证；仅本地替身不足                              |
+| 复用并实测 | `deploy/runner/rollback-release.sh`、现有 runner service、`runtime/hermes/restart_anan.py` | 稳定 R/T→T/O 及 T/O→O/P 原语、通用 runner 只读 Home、官方 drain 均保留；若实测要求改脚本，重审数目和权限       |
+| 复用       | `deploy/runner/deploy-request.schema.json`、`tools/deploy/create-deploy-request.mjs`       | 现有四 SHA、rollback 字段和新请求签名可用；普通混合回退不需新增 recovery 对象                                  |
+| 推迟       | workflow 历史请求/回执自动发现、永久通用 recovery 协议和日常 T→O 第二跳                    | 缩小为固定归档只读核验与有限状态，不把 P 失败回执当成功                                                        |
+
+原 13 文件方案只作为**已替代历史**：它把普通混合回退、历史成功回执自动发现、新 recovery
+schema/创建器、固定 poller expected
+ID 和常驻通用恢复绑成一体，却漏了真实 primitive 故障测试及岸岸沙箱。此处保留双 tag 验证、生产签名、制品复验和排空，不把缩小范围等同降低门禁。
+
+### CI 九项原则的技术结论
+
+| 原则       | 本次判断                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 实际问题 | rollback workflow 仅收双 tag、四 SHA 固定同值，T 混合且未发布；现 runner/普通 promoter 也拒绝原目标集与本次动作目标不同                                                                                                                                                                                                                      |
+| 2 数量     | 候选 1 个既有 workflow、0 个新 job/step、3 个既有步骤（resolve、制品核验、请求生成）；新增 5 个可选输入（T 四 SHA + 本次 CSV 目标），将 `release_tag` 由必填改为条件必填，补 `hermes-anan` 选项与 all 展开 2 处；0 个新依赖。1 个 checker 改 4 组合同（模式互斥、身份/目标、消费/claim、沙箱）；Linux 测试为独立 VM 手工命令，不新增 CI 门禁 |
+| 3 依据     | v0.3.3 失败回执、O/P/T 缺失、现 workflow/runner/promoter/poller 代码、构造器+AJV 可表达而 runner 拒绝的隔离模拟                                                                                                                                                                                                                              |
+| 4 复杂度   | 混合分支、持久 claim、有限维护比永久通用 recovery 有界；journal、hold、CAS 和岸岸独立 unit 仍是安全成本，不能删成裸脚本调用                                                                                                                                                                                                                  |
+| 5 现有 CI  | 业务测试不能生成 production 签名混合请求；现 checker 不校验新模式互斥、消费点身份、持久 claim、权限及旧路径不放宽                                                                                                                                                                                                                            |
+| 6 最小可用 | schema/创建器/等待器、部署 workflow 和双 tag 路径优先复用；只处理 exact previous、一次签名请求和表列有限维护状态                                                                                                                                                                                                                             |
+| 7 无特例   | 不按岸岸或 T SHA 特赦；目标走允许集合，恢复靠 manifest、请求及有限状态，不在通用代码硬编码 O/P/T/R                                                                                                                                                                                                                                           |
+| 8 部署相关 | workflow/checker 只涉及 rollback、制品和运行安全；PMS 业务代码、七 Profile 核心升级和 PR #723 不进入                                                                                                                                                                                                                                         |
+| 9 后续复用 | exact-previous 混合身份、消费点固定 ID 和真实脚本故障测试可服务未来合法混合 release；恢复入口仍限于已审状态                                                                                                                                                                                                                                  |
+
+上述是可独立复审的技术范围，CI workflow 与 checker 仍须依
 `programming-agent-guardrails.md`
-的九项 CI 原则审批具体 workflow/checker 改动。在此前不做过渡 live，也不把已完成的旧 O 隔离模拟或本报告当作 R 制品验证。
+对具体改动获得明确批准，第二阶段才可编辑；当前评论和本 Draft 不构成 CI、部署或生产授权。
 
-### 给弦的技术审阅提示词
+### 最小验证矩阵
 
-> 请独立审阅本报告的「最小范围复核」及其上方原 13 文件候选，直接阅读
-> `rollback-production.yml`、`deploy-production.yml`、deploy runner、
-> `promote-release.sh`、`rollback-release.sh`、请求 schema/创建器、poller、bundle 构建器和相关测试。
->
-> 以 O=`16e8d56b98001579c6288ba13199b80d6d3dfc74`、P=`83d694f2c3bc21fd78a73d25da3197379e2a14d5`
-> 为原基线。
->
-> T=`70e7984fab92ddab956009585212d0e9729767b5`，R=尚未生成的修复 SHA。不把模拟身份当成生产事实。
->
-> 先核对旧 O
-> runner 的单 system 过渡、T 的混合 manifest 与新 runner 的岸岸支持。比较零改动、仅补目标、原 13 文件、普通混合签名回退加有限硬中断维护恢复，以及正常签名发布旧业务制品加兼容 runner 的前进恢复。
->
-> 逐项指出哪个约束由现有代码/政策强制，哪个是先前方案附加。
->
-> 特别检查 schema/创建器是否无需改、历史回执验签是否必须进入 workflow，以及同 SHA 目标集锁定。
->
-> 检查 O/O 与 T/O 的 CAS 和 installer/smoke、固定 systemd 沙箱、旧 poller 竞争，以及 bundle 内插件/配置对“业务回退”的影响。
->
-> 给出最低可行改动类别和删去每项后的保证缺口，附文件行号、最小隔离验证矩阵和剩余人工验收。若建议修改
-> `rollback-release.sh`，请覆盖真实 primitive 测试，不能只用替身。不要修改代码/CI、触及生产或合并；不要把 13 文件当作批准范围，也不要把尚未存在的 R 制品或未执行的 dry
-> run 写成通过。
+| 关口                   | 必须验证的事实                                                                                                                                                                     | 当前状态                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 原双 tag 与混合新输入  | 双 tag 的发布/非预发布/master 可达性、COS 制品及目标逻辑不变；混合四 SHA 与 T manifest 相符，模式互斥、签名篡改/非法 profile/scope/targets 在写指针前拒绝                          | 现构造器+AJV 能表达混合请求，runner 在四 SHA 同值处拒绝；新 workflow/runner 未实现                 |
+| O→T 首次 live 前置     | 旧 O 仍为 O/P，R bundle 暂存清单/摘要有效；hold/drop-in 已生效且旧 timer/service 不消费；只有 pinned 新 poller 的 expected ID 才调用 O runner                                      | 旧 O 接受单 system 的隔离 fixture 已通过；预置和真实 systemd 未验证                                |
+| poller 一次性          | pointer 被另一个合法请求覆盖、下载后换 ID、runner 前/后、COS 上传前/后、归档前/后中断；claim 未终结时无新执行，结果核对后才释放                                                    | 现 poller 无锁/claim，上传与归档非原子；新路径未实现                                               |
+| R/T→T/O 普通回退       | T 原 manifest 的 O/P/R/T 元组、`previous_sha=O`、原目标与此次签名动作目标分别验证；T/O 树和 COS 三类制品通过；`--restore-previous-sha O` 后获批目标 smoke 与签名回执一致           | 现 runner/promoter 阻断；T 未部署、R 未生成，无可执行模拟                                          |
+| 真实指针与单元故障     | 用真实 `rollback-release.sh` 注入 `rollback-from`、current、previous、fsync、installer、smoke 失败；验证 O/P、O/O、T/O、R/T、T/T 的 CAS 和一次补偿。O/P 恢复只认首次单 system 请求 | 当前真实 primitive 测试只覆盖旧合同；新故障矩阵未测。runner promotion 的 rollback 替身不算此项证据 |
+| 岸岸排空沙箱           | 真实 Linux systemd 比对 runner/独立 anan unit 的有效 mount、用户、写路径；官方同目录 temp/rename/unlink 成功；通用 runner 拒写，已有 drain/600 秒超时/清理失败均暂缓               | 官方源码写路径已只读核对；独立 unit 未建，真实 Linux 未测                                          |
+| 恢复后旧 poller 隔离   | O installer 和 candidate-only 清理后 T helper 仍可运行；hold condition 持续、timer/service 不消费；未知 COS 结果不重放                                                             | hold/launcher 尚未实现；不能把 `daemon-reload`、`runuser` 或 `--runtime mask` 当证明               |
+| 归档验签               | 原请求只读模式验 HMAC 与原签名时序，live 仍拒过期；离线结果模式验签名、request ID、完整元组和状态，P `failed` 不作成功证据                                                         | 现有 runner/等待器验签逻辑可复用；离线模式和负例未实现                                             |
+| Green PMS 1.8.1 与状态 | 对 R/T、业务前进恢复候选验证指定 1.8.1 API、READ 权限、schema/migration、原请求键、事件去重、202/200 ACK、持久暂停/dead letter/未知传输；不回滚业务数据及 Profile 状态             | 1.8.1 精确源码合同仅只读观察；两端兼容未验证，旧 PMS 版本测试不替代                                |
+
+独立评审在 `12c7ee31` 基础上复跑当前
+`test-release-systemd-rollback.mjs`、`test-deploy-runner-promotion.mjs`、
+`test-deploy-runner-poller.mjs`、`test-wait-deploy-result.mjs`
+均通过；它们只验证**现有**合同。新实现必须在真实 Linux
+systemd 和真实 rollback 脚本上注入故障。本次文档阶段无需数据库，绝不连接标为历史污染证据的旧库或默认
+`5432`。
+
+### 阻断、复审和阶段边界
+
+1. **第一阶段（本 Draft）**：仅收敛报告及具体技术候选，请独立复审。T 未部署、R 未生成；hold/claim/沙箱/真实回退均未模拟，不能称上线就绪。
+2. **第二阶段（另开实现 PR）**：先经独立复审并对具体 CI/部署修改范围取得明确批准，再实施 19 文件候选及必要调整，运行真实 primitive、poller、systemd 和包验证；若增减文件/门禁，更新范围和批准记录。
+3. **第三阶段（另行授权）**：核对生产最新 O/P、O 成功/P 失败签名回执、T/R 精确制品、预置 hold、COS
+   pointer、排空及 rollback 证据；先 dry
+   run 再分别批准 live，取得完整签名回执、指针、installer、获批目标 smoke 和业务验收。当前未授权部署、发布、合并或任何服务器写入。
+
+任何校验失败、岸岸排空超时、旧 poller 隔离不成立、持久 claim 不可恢复、COS 回执不明、T/R 制品缺失或表外状态，都停在原地保留证据；不重放失败的 v0.3.3 请求，不手移指针，不以服务 active 替代用户可见成功。
