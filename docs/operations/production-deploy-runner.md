@@ -3,6 +3,16 @@
 This document records the intended production deploy automation after the server moved
 to `qintopia-agent-os-releases/current`.
 
+The approved takeover/recovery implementation contract is the dated
+`docs/reports/2026-09-26-v033-runner-takeover-and-rollback.md`. Before any first live
+takeover, an immutable reviewed recovery bundle and persistent service hold must be
+prepared, and the fixed consumer must bind the expected signed request ID at the actual
+COS pointer read. An unfinished local claim or uncertain signed result blocks new
+consumption. Recovery distinguishes O→T, T→R and R→T by a durable request-bound journal
+and checks the original request/result and release manifests before changing pointers.
+Normal rollback requires a fresh production-signed request. Neither local validation nor
+a merged implementation PR is production authorization.
+
 ## Current Server Evidence
 
 Read-only verification on 2026-07-06 showed:

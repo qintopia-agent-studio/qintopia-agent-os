@@ -464,9 +464,13 @@ if release_rollback is not None:
         fail("release_rollback.expected_previous_sha must be a lowercase 40-character SHA")
     if expected_current_sha == expected_previous_sha:
         fail("release rollback expected current and previous SHAs must differ")
-    for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "release_sha"):
-        if data.get(key) != expected_previous_sha:
-            fail(f"release rollback {key} must equal expected_previous_sha")
+    if data.get("release_sha") != expected_previous_sha:
+        fail("release rollback release_sha must equal expected_previous_sha")
+    mixed_rollback = any(data.get(key) != expected_previous_sha for key in (
+        "commit_sha", "runtime_sha", "deploy_bundle_sha"))
+    if mixed_rollback and (release_scope != ["deploy-bundle"] or
+                           data.get("runtime_artifact_profile") != "huabaosi-production"):
+        fail("mixed exact-previous rollback requires deploy-bundle scope and primary profile")
 
 for key in ("rollback_on_smoke_failure", "dry_run"):
     if not isinstance(data.get(key), bool):
@@ -537,6 +541,8 @@ PY
 validate_request
 
 request_id="$(json_get request_id)"
+export QINTOPIA_DEPLOY_REQUEST_ID="$request_id"
+export QINTOPIA_DEPLOY_RUNNER_STATE_DIR="$STATE_DIR"
 release_sha="$(json_get release_sha)"
 commit_sha="$(json_get commit_sha)"
 runtime_sha="$(json_get runtime_sha)"
@@ -693,6 +699,303 @@ if current_manifest.get("previous_sha") != expected_previous:
 if previous_manifest.get("release_sha") != expected_previous:
     raise SystemExit("previous release manifest identity does not match rollback target")
 PY
+}
+
+mixed_exact_previous_rollback=false
+normal_mixed_forward=false
+if [[ -n "$rollback_expected_previous_sha" && ( "$commit_sha" != "$release_sha" ||
+  "$runtime_sha" != "$release_sha" || "$deploy_bundle_sha" != "$release_sha" ) ]]; then
+  mixed_exact_previous_rollback=true
+fi
+
+verify_mixed_previous_release() {
+  local target="${original_previous_target}"
+  local original_id=""
+  local original_request=""
+  local original_result=""
+  local artifact_tmp=""
+  original_id="$(python3 - "$target/manifest.json" "$request_file" "$original_current_sha" <<'PY'
+import json
+import re
+import sys
+
+manifest_path, request_path, current_sha = sys.argv[1:4]
+with open(manifest_path, encoding="utf-8") as fh:
+    manifest = json.load(fh)
+with open(request_path, encoding="utf-8") as fh:
+    request = json.load(fh)
+for key in ("release_sha", "commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile"):
+    if manifest.get(key) != request.get(key):
+        raise SystemExit(f"original mixed release manifest {key} mismatch")
+if (manifest.get("release_scope") != ["deploy-bundle"] or
+        manifest.get("restart_targets") != ["qintopia-system-services"] or
+        manifest.get("dry_run") is not False or
+        manifest.get("previous_sha") == current_sha or
+        not re.fullmatch(r"deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}", manifest.get("request_id", ""))):
+    raise SystemExit("original mixed release lineage or request identity is invalid")
+print(manifest["request_id"])
+PY
+  )" || return $?
+  original_request="${REQUEST_DIR}/processed/${original_id}.json"
+  original_result="${RESULT_DIR}/${original_id}.json"
+  if [[ ! -f "$original_request" || ! -f "$original_result" ]]; then
+    echo "original mixed release signed request or result is unavailable" >&2
+    return 1
+  fi
+  "${RUNNER_DIR}/wait-deploy-result.sh" --request-file "$original_request" \
+    --result-file "$original_result" --verify-archived-request >/dev/null || return $?
+  python3 - "$target/manifest.json" "$original_request" "$original_result" <<'PY' || return $?
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fh:
+    manifest = json.load(fh)
+with open(sys.argv[2], encoding="utf-8") as fh:
+    request = json.load(fh)
+with open(sys.argv[3], encoding="utf-8") as fh:
+    result = json.load(fh)
+for key in ("release_sha", "commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile", "release_scope", "restart_targets"):
+    if request.get(key) != manifest.get(key) or result.get(key) != manifest.get(key):
+        raise SystemExit(f"original mixed release {key} evidence mismatch")
+if (request.get("request_id") != manifest.get("request_id") or
+        result.get("request_id") != manifest.get("request_id") or
+        request.get("dry_run") is not False or result.get("status") != "succeeded"):
+    raise SystemExit("original mixed release is not bound to a successful live request")
+PY
+  artifact_tmp="$(mktemp -d "${STATE_DIR}/mixed-artifacts.XXXXXX")"
+  local verification_status=0
+  QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production \
+    "${RUNNER_DIR}/../sidecar/scripts/fetch-cos-artifact.sh" --artifact-type sidecar \
+    --sha "$runtime_sha" --output-dir "$artifact_tmp/sidecar" || verification_status=$?
+  if [[ "$verification_status" -eq 0 ]]; then
+    QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production \
+      "${RUNNER_DIR}/../sidecar/scripts/fetch-cos-artifact.sh" --artifact-type sidecar \
+      --sha "$runtime_sha" --output-dir "$artifact_tmp/qiwe" || verification_status=$?
+  fi
+  if [[ "$verification_status" -eq 0 ]]; then
+    "${RUNNER_DIR}/../sidecar/scripts/fetch-cos-artifact.sh" --artifact-type deploy-bundle \
+      --sha "$deploy_bundle_sha" --output-dir "$artifact_tmp/deploy-bundle" || verification_status=$?
+  fi
+  if [[ "$verification_status" -eq 0 ]]; then
+    python3 - "$target" "$artifact_tmp" <<'PY' || verification_status=$?
+import hashlib
+import json
+import os
+import stat
+import sys
+import tarfile
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve(strict=True)
+fetched = Path(sys.argv[2])
+for local_name, remote_name in (("sidecar", "sidecar"),
+                                ("sidecar-profiles/qiwe-production", "qiwe"),
+                                ("deploy-bundle", "deploy-bundle")):
+    local = root / local_name
+    remote = fetched / remote_name
+    for name in ("artifact-manifest.json", "SHA256SUMS"):
+        if (local / name).read_bytes() != (remote / name).read_bytes():
+            raise SystemExit(f"mixed previous {local_name}/{name} differs from COS")
+    archives = [p for p in local.iterdir() if p.name.endswith(".tar.gz")]
+    if len(archives) != 1 or archives[0].read_bytes() != (remote / archives[0].name).read_bytes():
+        raise SystemExit(f"mixed previous {local_name} archive differs from COS")
+    with tarfile.open(archives[0], "r:gz") as archive:
+        for member in archive:
+            if not member.isfile():
+                continue
+            relative = Path(member.name)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise SystemExit("mixed previous archive path is unsafe")
+            if local_name == "deploy-bundle":
+                if not relative.parts or relative.parts[0] != "payload":
+                    raise SystemExit("mixed previous bundle path is invalid")
+                installed = root.joinpath(*relative.parts[1:])
+            else:
+                installed = local / relative.name
+                if not installed.exists():
+                    continue
+            if installed.is_symlink() or not installed.is_file():
+                raise SystemExit(f"mixed previous installed file missing: {installed}")
+            content = archive.extractfile(member).read()
+            if hashlib.sha256(content).digest() != hashlib.sha256(installed.read_bytes()).digest():
+                raise SystemExit(f"mixed previous installed file differs: {installed}")
+for directory, subdirs, files in os.walk(root, followlinks=False):
+    for name in subdirs + files:
+        path = Path(directory) / name
+        mode = path.lstat().st_mode
+        if path.lstat().st_uid != os.getuid() or (not stat.S_ISLNK(mode) and mode & 0o022):
+            raise SystemExit(f"mixed previous tree owner/mode mismatch: {path}")
+        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode)):
+            raise SystemExit(f"mixed previous tree has unsupported path: {path}")
+PY
+  fi
+  rm -rf -- "$artifact_tmp"
+  return "$verification_status"
+}
+
+write_recovery_journal() {
+  local direction="$1"
+  local phase="$2"
+  local journal_dir="${STATE_DIR}/recovery"
+  mkdir -p -m 0700 "$journal_dir"
+  python3 - "$journal_dir/${request_id}.json" "$request_file" "$direction" "$phase" \
+    "$original_current_sha" "$original_previous_sha" \
+    "${original_current_target}/manifest.json" \
+    "${original_previous_target}/manifest.json" <<'PY'
+import hashlib
+import json
+import os
+import sys
+import tempfile
+from datetime import datetime, timezone
+
+path, request_path, direction, phase, current, previous, current_manifest, previous_manifest = sys.argv[1:9]
+with open(request_path, "rb") as fh:
+    request_bytes = fh.read()
+record = {
+    "schema_version": 1,
+    "request_id": json.loads(request_bytes)["request_id"],
+    "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+    "direction": direction,
+    "original_current_sha": current,
+    "original_previous_sha": previous,
+    "manifest_sha256": {},
+    "phase": phase,
+    "recorded_at": datetime.now(timezone.utc).isoformat(),
+}
+for key, manifest_path in (("current", current_manifest), ("previous", previous_manifest)):
+    if os.path.isfile(manifest_path):
+        with open(manifest_path, "rb") as fh:
+            record["manifest_sha256"][key] = hashlib.sha256(fh.read()).hexdigest()
+if os.path.exists(path):
+    with open(path, encoding="utf-8") as fh:
+        prior = json.load(fh)
+    for key in ("request_id", "request_sha256", "direction", "original_current_sha", "original_previous_sha"):
+        if prior.get(key) != record[key]:
+            raise SystemExit("recovery journal identity changed")
+    record["manifest_sha256"] = prior["manifest_sha256"]
+fd, temporary = tempfile.mkstemp(prefix=".journal-", dir=os.path.dirname(path))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+    directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PY
+}
+
+restore_mixed_original_lineage() {
+  python3 - "$RELEASE_ROOT" "$original_current_sha" "$original_previous_sha" <<'PY'
+import os
+import secrets
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1]).resolve(strict=True)
+current_sha, previous_sha = sys.argv[2:4]
+def pointer(name):
+    link = root / name
+    if not link.is_symlink():
+        raise SystemExit(f"{name} pointer is not a symlink")
+    target = link.resolve(strict=True)
+    if target.parent != root:
+        raise SystemExit(f"{name} pointer escaped release root")
+    return target.name
+def cas(name, expected, target):
+    if pointer(name) != expected:
+        raise SystemExit(f"{name} pointer CAS conflict")
+    temporary = root / f".{name}.recover.{os.getpid()}.{secrets.token_hex(8)}"
+    try:
+        os.symlink(str(root / target), temporary)
+        os.replace(temporary, root / name)
+        descriptor = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        if temporary.is_symlink():
+            temporary.unlink()
+if pointer("current") == previous_sha and pointer("previous") == previous_sha:
+    cas("current", previous_sha, current_sha)
+elif pointer("current") == previous_sha and pointer("previous") != previous_sha:
+    # The only accepted partial state is target/target or target/original target's parent.
+    manifest = root / previous_sha / "manifest.json"
+    import json
+    with open(manifest, encoding="utf-8") as fh:
+        ancestor = json.load(fh).get("previous_sha")
+    if pointer("previous") != ancestor:
+        raise SystemExit("mixed rollback previous pointer is not the target ancestor")
+    cas("previous", ancestor, previous_sha)
+    cas("current", previous_sha, current_sha)
+elif pointer("current") != current_sha or pointer("previous") != previous_sha:
+    raise SystemExit("mixed rollback pointer state is outside the recovery table")
+if pointer("current") != current_sha or pointer("previous") != previous_sha:
+    raise SystemExit("mixed rollback original pointers were not restored")
+PY
+}
+
+install_recovery_hold() {
+  local hold_dir="${STATE_DIR}/recovery"
+  local hold_release="$original_previous_target"
+  if [[ "$normal_mixed_forward" == true ]]; then
+    hold_release="$original_current_target"
+  fi
+  local dropin_source="${hold_release}/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+  local dropin_dir="/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d"
+  [[ -f "$dropin_source" ]] || return 1
+  mkdir -p -m 0700 "$hold_dir" || return $?
+  python3 - "$hold_dir" <<'PY' || return $?
+import os
+import stat
+import sys
+directory = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    hold = os.open("hold", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+    try:
+        metadata = os.fstat(hold)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise SystemExit("recovery hold is not a regular private file")
+        os.fchmod(hold, 0o600)
+        os.fsync(hold)
+    finally:
+        os.close(hold)
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+  systemctl disable --now qintopia-agent-os-deploy-runner.timer || return $?
+  mkdir -p "$dropin_dir" || return $?
+  install -m 0644 "$dropin_source" "${dropin_dir}/10-recovery-hold.conf" || return $?
+  systemctl daemon-reload || return $?
+  cmp -s "$dropin_source" "${dropin_dir}/10-recovery-hold.conf" || return 1
+  systemd_unit_stopped qintopia-agent-os-deploy-runner.timer
+}
+
+systemd_unit_stopped() {
+  local properties="" load_state="" active_state="" allow_not_found="${2:-false}"
+  properties="$(systemctl show "$1" --property=LoadState --property=ActiveState 2>/dev/null)" || return 1
+  load_state="$(printf '%s\n' "$properties" | sed -n 's/^LoadState=//p')"
+  active_state="$(printf '%s\n' "$properties" | sed -n 's/^ActiveState=//p')"
+  if [[ "$load_state" == not-found ]]; then
+    [[ "$allow_not_found" == true && "$active_state" == inactive ]]
+  else
+    [[ "$load_state" == loaded && ( "$active_state" == inactive || "$active_state" == failed ) ]]
+  fi
+}
+
+anan_drain_unit_finished() {
+  systemd_unit_stopped qintopia-agent-os-anan-drain-restart.service true
 }
 
 refresh_promoted_current() {
@@ -2246,11 +2549,76 @@ run_promotion() {
   capture_original_release_lineage || return $?
   deploy_stage="validate-release-rollback-lineage"
   validate_requested_release_rollback_lineage || return $?
+  if [[ "$mixed_exact_previous_rollback" == true ]]; then
+    deploy_stage="verify-mixed-previous-release"
+    verify_mixed_previous_release || return $?
+    if [[ "$dry_run" != true ]]; then
+      deploy_stage="record-mixed-rollback-intent"
+      write_recovery_journal "R→T" intent || return $?
+    fi
+  fi
+  if [[ "$mixed_exact_previous_rollback" != true && -z "$rollback_expected_current_sha" &&
+    "$dry_run" != true && "$release_scope" == "sidecar-runtime,deploy-bundle,hermes-plugins" ]]; then
+    if python3 - "${original_current_target}/manifest.json" "$original_current_sha" \
+      "$original_previous_sha" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    manifest = json.load(fh)
+if (manifest.get("release_sha") != sys.argv[2] or
+        manifest.get("previous_sha") != sys.argv[3] or
+        manifest.get("release_scope") != ["deploy-bundle"] or
+        manifest.get("restart_targets") != ["qintopia-system-services"] or
+        all(manifest.get(key) == sys.argv[2] for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha"))):
+    raise SystemExit(1)
+PY
+    then
+      normal_mixed_forward=true
+      deploy_stage="record-mixed-forward-intent"
+      write_recovery_journal "T→R" intent || return $?
+    fi
+  fi
 
   if [[ "$dry_run" != "true" ]]; then
     deploy_stage="quiesce-space-automation-runtime"
     env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
       "${RUNNER_DIR}/quiesce-space-automation-runtime.sh" || return $?
+  fi
+
+  if [[ "$mixed_exact_previous_rollback" == true ]]; then
+    if [[ "$dry_run" == true ]]; then
+      deploy_stage="write-dry-run-result"
+      write_result dry_run_succeeded
+      return
+    fi
+    deploy_stage="rollback-mixed-exact-previous"
+    mixed_rollback_started=true
+    "${RUNNER_DIR}/rollback-release.sh" \
+      --release-root "$RELEASE_ROOT" \
+      --expected-current-sha "$original_current_sha" \
+      --expected-previous-sha "$original_previous_sha" \
+      --restore-previous-sha "$(python3 - "${original_previous_target}/manifest.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh)["previous_sha"])
+PY
+)" || return $?
+    write_recovery_journal "R→T" pointers-switched || return $?
+    release_installer="${original_previous_target}/deploy/runner/install-release-systemd-units.sh"
+    release_smoke="${original_previous_target}/deploy/runner/smoke-release.sh"
+    [[ -x "$release_installer" && -x "$release_smoke" ]] || return 1
+    deploy_stage="install-mixed-previous-units"
+    "$release_installer" --release-root "$RELEASE_ROOT" \
+      --release-sha "$original_previous_sha" || return $?
+    deploy_stage="smoke-mixed-previous-targets"
+    run_with_safe_failure_capture "$release_smoke" \
+      --release-root "$RELEASE_ROOT" --restart-targets "$restart_targets" \
+      --log-since "$started_at" || return $?
+    write_recovery_journal "R→T" smoke-passed || return $?
+    deploy_stage="write-success-result"
+    write_result succeeded
+    return
   fi
 
   promote_args=(
@@ -2299,6 +2667,9 @@ run_promotion() {
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
+    if [[ "$normal_mixed_forward" == true ]]; then
+      write_recovery_journal "T→R" smoke-passed || return $?
+    fi
     deploy_stage="write-success-result"
     write_result succeeded
   fi
@@ -2312,6 +2683,8 @@ run_promotion() {
   promoted_current=false
   release_lineage_changed=false
   profile_activation_attempted=false
+  mixed_rollback_started=false
+  normal_mixed_forward=false
   set +e
   run_promotion
   status=$?
@@ -2320,7 +2693,61 @@ run_promotion() {
     deploy_failure_stage="$deploy_stage"
     deploy_failure_status="$status"
     refresh_promoted_current
-    if [[ "$release_scope" == "hermes-core-release" ]]; then
+    if [[ "$normal_mixed_forward" == true ]]; then
+      if ! install_recovery_hold || ! anan_drain_unit_finished; then
+        write_recovery_journal "T→R" unknown || true
+        write_result failed "mixed forward release failed; hold or drain state is unknown" \
+          true failed "$original_current_target"
+        exit "$status"
+      fi
+    fi
+    if [[ "$mixed_rollback_started" == true ]]; then
+      if [[ -f "$result_file" ]] && \
+        "${RUNNER_DIR}/wait-deploy-result.sh" --request-file "$request_file" \
+          --result-file "$result_file" >/dev/null 2>&1 && \
+        [[ "$(python3 - "$result_file" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    print(json.load(fh).get("status", ""))
+PY
+)" == succeeded ]]; then
+        install_recovery_hold || true
+        write_recovery_journal "R→T" result-unknown || true
+        echo "signed success result exists; preserving pointers for reconciliation" >&2
+        exit "$status"
+      fi
+      rollback_target="$original_current_target"
+      rollback_ok=true
+      install_recovery_hold || rollback_ok=false
+      anan_drain_unit_finished || rollback_ok=false
+      if [[ "$rollback_ok" == true ]]; then
+        restore_mixed_original_lineage || rollback_ok=false
+      fi
+      if [[ "$rollback_ok" == true ]]; then
+        "${original_current_target}/deploy/runner/install-release-systemd-units.sh" \
+          --release-root "$RELEASE_ROOT" --release-sha "$original_current_sha" || rollback_ok=false
+        systemctl daemon-reload || rollback_ok=false
+        cmp -s "${original_previous_target}/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" \
+          /etc/systemd/system/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf || rollback_ok=false
+      fi
+      if [[ "$rollback_ok" == true ]]; then
+        run_with_safe_failure_capture "${original_current_target}/deploy/runner/smoke-release.sh" \
+          --release-root "$RELEASE_ROOT" --restart-targets "$restart_targets" \
+          --log-since "$started_at" || rollback_ok=false
+      fi
+      if [[ "$rollback_ok" == true ]]; then
+        write_recovery_journal "R→T" compensated || rollback_ok=false
+      fi
+      if [[ "$rollback_ok" == true ]]; then
+        write_result rolled_back "mixed exact-previous rollback failed during ${deploy_failure_stage}; original lineage and targets restored under recovery hold" \
+          true succeeded "$rollback_target"
+      else
+        write_recovery_journal "R→T" unknown || true
+        write_result failed "mixed exact-previous rollback failed during ${deploy_failure_stage}; recovery hold retained for manual reconciliation" \
+          true failed "$rollback_target"
+      fi
+    elif [[ "$release_scope" == "hermes-core-release" ]]; then
       hermes_core_transaction_status=""
       if [[ -f "${RESULT_DIR}/${request_id}.hermes-core.json" ]]; then
         hermes_core_transaction_status="$(python3 - "${RESULT_DIR}/${request_id}.hermes-core.json" <<'PY'
@@ -2414,6 +2841,9 @@ PY
       fi
     else
       write_result failed "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status})"
+    fi
+    if [[ "$normal_mixed_forward" == true ]]; then
+      write_recovery_journal "T→R" result-written || true
     fi
     exit "$status"
   fi

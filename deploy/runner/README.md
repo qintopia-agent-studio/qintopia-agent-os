@@ -152,6 +152,28 @@ configuration and enabled states, and Erhua's separate `qiwe-platform` remain un
 `deploy/runner` defines the stable production deployment control plane for Qintopia
 Agent OS.
 
+The approved second-stage takeover and recovery contract is recorded in
+`docs/reports/2026-09-26-v033-runner-takeover-and-rollback.md`. A mixed exact-previous
+rollback uses a newly signed production request with the previous release's full
+artifact tuple. The previous release's original manifest, signed request and succeeded
+result establish artifact identity; the new request's restart targets authorize only the
+current action. A stale original request may be verified offline but never executed. The
+poller holds `poller.lock` before shared request state and keeps an unfinished claim on
+any uncertain upload or archive outcome. Maintenance recovery uses a persistent hold,
+direction-bound journal and `poller.lock` before `deploy.lock`; a pointer shape alone
+cannot identify the interrupted direction. This contract does not authorize a production
+takeover or recovery operation.
+
+The existing `tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture still
+asserts the former `runuser` Anan branch and therefore fails when the approved transient
+`systemd-run` branch is used. A separately approved one-file scope extension is needed
+before editing that fixture. The proposed change uses a temporary fixed-SHA release tree
+with the real smoke and `restart_anan.py` paths, checks fixed unit/Python/helper/sandbox
+arguments and one invocation, and tests missing or erroneous `--wait` outcomes. It must
+retain the Erhua, Profile activation sentinel, system-service failure and safe failure
+marker checks. This fixture checks simulated invocation behavior; the standalone Ubuntu
+24.04 PID1 test owns the real namespace, lock and helper-lifetime evidence.
+
 The runner exists so collaborators can deploy an approved `master` SHA without direct
 server access. GitHub Actions creates an HMAC-signed, schema-validated deploy request in
 COS. The server-side runner pulls that request, verifies the signature and artifacts,

@@ -1355,10 +1355,24 @@ if (exists(".github/workflows/rollback-production.yml")) {
   const runtimeArtifactProfileInput =
     workflow?.on?.workflow_dispatch?.inputs?.runtime_artifact_profile;
   const restartTargetsInput = workflow?.on?.workflow_dispatch?.inputs?.restart_targets;
-  if (releaseTagInput?.type !== "string" || releaseTagInput?.required !== true) {
+  if (releaseTagInput?.type !== "string" || releaseTagInput?.required !== false) {
     addError(
-      ".github/workflows/rollback-production.yml: release_tag must be a required string input"
+      ".github/workflows/rollback-production.yml: release_tag must be conditionally required"
     );
+  }
+  for (const inputName of [
+    "previous_commit_sha",
+    "previous_runtime_sha",
+    "previous_deploy_bundle_sha",
+    "previous_release_sha",
+    "action_restart_targets_csv",
+  ]) {
+    const input = workflow?.on?.workflow_dispatch?.inputs?.[inputName];
+    if (input?.type !== "string" || input?.required !== false) {
+      addError(
+        `.github/workflows/rollback-production.yml: ${inputName} must be optional string`
+      );
+    }
   }
   if (
     expectedCurrentReleaseTagInput?.type !== "string" ||
@@ -1409,6 +1423,11 @@ if (exists(".github/workflows/rollback-production.yml")) {
   if (!restartTargetsInput?.options?.includes("all-hermes-and-system")) {
     addError(
       ".github/workflows/rollback-production.yml: restart_targets must include all-hermes-and-system"
+    );
+  }
+  if (!restartTargetsInput?.options?.includes("hermes-anan")) {
+    addError(
+      ".github/workflows/rollback-production.yml: hermes-anan target is missing"
     );
   }
   if (job?.environment !== "production") {
@@ -1464,7 +1483,12 @@ if (exists(".github/workflows/rollback-production.yml")) {
     "expected-current-sha=${expected_current_sha}",
     "QINTOPIA_SIDECAR_ARTIFACT_PROFILE",
     "DEPLOY_RUNTIME_ARTIFACT_PROFILE",
-    "DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins",
+    "DEPLOY_RELEASE_SCOPE: ${{ steps.resolve.outputs.release-scope }}",
+    "release_tag and mixed exact-previous inputs are mutually exclusive.",
+    "mixed mode requires all four SHAs and the action target CSV.",
+    "normalize_action_targets",
+    "ROLLBACK_RUNTIME_SHA",
+    "ROLLBACK_BUNDLE_SHA",
     "DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: true",
     "DEPLOY_ROLLBACK_EXPECTED_CURRENT_SHA",
     "DEPLOY_ROLLBACK_EXPECTED_PREVIOUS_SHA",

@@ -254,6 +254,110 @@ printf 'systemctl %s\\n' "$*" >>"${logFile}"
   if (conflictingRestoreResult.status !== 2) {
     throw new Error("conflicting previous restore modes must fail before mutation");
   }
+
+  const realPython = spawnSync("which", ["python3"], {
+    encoding: "utf8",
+  }).stdout.trim();
+  const faultPython = path.join(tmpRoot, "bin", "python3");
+  writeExecutable(
+    faultPython,
+    `#!${realPython}
+import os
+import subprocess
+import sys
+
+args = sys.argv[1:]
+if not args or args[0] != "-":
+    os.execv(${JSON.stringify(realPython)}, [${JSON.stringify(realPython)}, *args])
+code = sys.stdin.read()
+phase = os.environ.get("ROLLBACK_FAULT_PHASE", "")
+if "temporary = os.path.join(root" in code and len(args) >= 3:
+    pointer = args[2]
+    if phase == f"before-{pointer}":
+        raise SystemExit(78)
+    if phase == f"fsync-{pointer}":
+        code = code.replace("os.fsync(descriptor)", "raise SystemExit(78)")
+result = subprocess.run([${JSON.stringify(realPython)}, "-", *args[1:]], input=code, text=True)
+raise SystemExit(result.returncode)
+`
+  );
+
+  const resetLineage = () => {
+    for (const pointer of ["current", "previous", "rollback-from"]) {
+      fs.rmSync(path.join(releaseRoot, pointer), { force: true });
+    }
+    fs.symlinkSync(candidateDir, path.join(releaseRoot, "current"));
+    fs.symlinkSync(previousDir, path.join(releaseRoot, "previous"));
+  };
+  const runFault = (phase) => {
+    resetLineage();
+    const outcome = spawnSync(
+      "bash",
+      [
+        path.join(repoRoot, "deploy/runner/rollback-release.sh"),
+        "--release-root",
+        releaseRoot,
+        "--expected-current-sha",
+        candidateSha,
+        "--expected-previous-sha",
+        previousSha,
+        "--restore-previous-sha",
+        restorePreviousSha,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${path.dirname(faultPython)}:${process.env.PATH}`,
+          ROLLBACK_FAULT_PHASE: phase,
+          SYSTEMCTL: fakeSystemctl,
+          QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+          ROLLBACK_TEST_LOG: logFile,
+        },
+      }
+    );
+    if (outcome.status === 0) {
+      throw new Error(`${phase}: real rollback primitive unexpectedly passed`);
+    }
+    return ["current", "previous", "rollback-from"].map((pointer) => {
+      const link = path.join(releaseRoot, pointer);
+      return fs.existsSync(link) ? path.basename(fs.realpathSync(link)) : "absent";
+    });
+  };
+  const expectedFaultStates = new Map([
+    ["before-rollback-from", [candidateSha, previousSha, "absent"]],
+    ["before-current", [candidateSha, previousSha, candidateSha]],
+    ["fsync-current", [previousSha, previousSha, candidateSha]],
+    ["before-previous", [previousSha, previousSha, candidateSha]],
+    ["fsync-previous", [previousSha, restorePreviousSha, candidateSha]],
+  ]);
+  for (const [phase, expectedState] of expectedFaultStates) {
+    const actualState = runFault(phase);
+    if (JSON.stringify(actualState) !== JSON.stringify(expectedState)) {
+      throw new Error(
+        `${phase}: pointer state ${actualState} differs from ${expectedState}`
+      );
+    }
+  }
+
+  writeExecutable(
+    path.join(previousDir, "deploy", "runner", "install-release-systemd-units.sh"),
+    installer({
+      units: [sharedUnit],
+      marker: "simulated installer failure",
+      installBody: "exit 79",
+    })
+  );
+  const failedInstallerState = runFault("");
+  if (
+    JSON.stringify(failedInstallerState) !==
+    JSON.stringify([previousSha, restorePreviousSha, candidateSha])
+  ) {
+    throw new Error(
+      "installer failure did not leave the complete target pointer state"
+    );
+  }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }

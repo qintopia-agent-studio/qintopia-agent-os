@@ -47,7 +47,22 @@ else
 fi
 
 mkdir -p "${STATE_DIR}/requests/pending" "${STATE_DIR}/requests/processed" \
-  "${STATE_DIR}/requests/failed" "${STATE_DIR}/results"
+  "${STATE_DIR}/requests/failed" "${STATE_DIR}/requests/claimed" "${STATE_DIR}/results"
+
+# The runner takes deploy.lock after this lock; recovery uses the same order.
+exec 9>"${STATE_DIR}/poller.lock"
+if command -v flock >/dev/null 2>&1; then
+  flock -n 9 || { echo "another deploy request consumer is running" >&2; exit 75; }
+elif command -v lockf >/dev/null 2>&1; then
+  lockf -t 0 9 || { echo "another deploy request consumer is running" >&2; exit 75; }
+else
+  echo "no supported file locking utility is available" >&2
+  exit 75
+fi
+if find "${STATE_DIR}/requests/claimed" -maxdepth 1 -name '*.json' -print -quit | grep -q .; then
+  echo "an unfinished deploy request claim requires recovery" >&2
+  exit 75
+fi
 
 tmp_dir="$(mktemp -d)"
 cleanup() {
@@ -180,6 +195,11 @@ if [[ -z "$pointer_identity" ]]; then
 fi
 
 request_id="${pointer_identity%%$'\t'*}"
+expected_request_id="${QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID:-}"
+if [[ -n "$expected_request_id" && "$request_id" != "$expected_request_id" ]]; then
+  echo "deploy request pointer does not match expected request ID" >&2
+  exit 75
+fi
 remaining_identity="${pointer_identity#*$'\t'}"
 request_key="${remaining_identity%%$'\t'*}"
 result_key="${remaining_identity#*$'\t'}"
@@ -246,21 +266,176 @@ if [[ -n "$parsed_identity" ]]; then
   request_id="${parsed_identity%%$'\t'*}"
   result_key="${parsed_identity#*$'\t'}"
 fi
+if [[ -n "$expected_request_id" && "$request_id" != "$expected_request_id" ]]; then
+  echo "downloaded deploy request does not match expected request ID" >&2
+  exit 75
+fi
 result_file="${STATE_DIR}/results/${request_id}.json"
 
+if [[ -n "$parsed_identity" ]]; then
+  python3 - "$request_file" "$pointer_file" "${STATE_DIR}/requests/claimed/${request_name}" <<'PY'
+import hashlib
+import json
+import os
+import sys
+
+request_path, pointer_path, claim_path = sys.argv[1:4]
+with open(request_path, "rb") as fh:
+    request_bytes = fh.read()
+with open(pointer_path, "rb") as fh:
+    pointer_bytes = fh.read()
+request = json.loads(request_bytes)
+claim = {
+    "request_id": request["request_id"],
+    "request_sha256": hashlib.sha256(request_bytes).hexdigest(),
+    "pointer_sha256": hashlib.sha256(pointer_bytes).hexdigest(),
+    "phase": "possibly_executing",
+}
+descriptor = os.open(claim_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+with os.fdopen(descriptor, "w", encoding="utf-8") as fh:
+    json.dump(claim, fh, sort_keys=True)
+    fh.write("\n")
+    fh.flush()
+    os.fsync(fh.fileno())
+directory = os.open(os.path.dirname(claim_path), os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+fi
+
+if [[ -n "$expected_request_id" && -n "$parsed_identity" ]]; then
+  # The fixed takeover runs an old runner. Hold its deploy lock across the
+  # journal snapshot, execution, result upload, and archive finalization.
+  fixed_runner="/home/ubuntu/qintopia-agent-os-releases/16e8d56b98001579c6288ba13199b80d6d3dfc74/deploy/runner/qintopia-agent-os-deploy-runner"
+  fixed_runner_sha256="04b27ea6900dec7078b3dfb56a28e0f5af3f9b58413b2df85ecaac54784b4dcf"
+  [[ "$RUNNER" == "$fixed_runner" && ! -L "$RUNNER" &&
+    "$(readlink -f "$RUNNER")" == "$fixed_runner" &&
+    "$(sha256sum "$RUNNER" | awk '{print $1}')" == "$fixed_runner_sha256" ]] || {
+    echo "fixed takeover old runner identity mismatch" >&2
+    exit 75
+  }
+  exec 7>"${STATE_DIR}/deploy.lock"
+  flock -n 7 || { echo "deploy lock is held before fixed takeover" >&2; exit 75; }
+  fixed_fd_inode="$(stat -Lc '%d:%i' /proc/self/fd/7)" || exit 75
+  fixed_lock_inode="$(stat -Lc '%d:%i' "${STATE_DIR}/deploy.lock")" || exit 75
+  [[ -n "$fixed_fd_inode" && "$fixed_fd_inode" == "$fixed_lock_inode" ]] || {
+    echo "fixed takeover inherited lock descriptor mismatch" >&2
+    exit 75
+  }
+  mkdir -p -m 0700 "${STATE_DIR}/recovery"
+  python3 - "$request_file" "${STATE_DIR}/recovery/${request_id}.json" <<'PY'
+import hashlib
+import hmac
+import json
+import os
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+request_path, journal_path = sys.argv[1:3]
+root = Path("/home/ubuntu/qintopia-agent-os-releases").resolve(strict=True)
+with open(request_path, "rb") as fh:
+    request_bytes = fh.read()
+request = json.loads(request_bytes)
+signature = request.get("signature", {})
+metadata = {key: signature.get(key) for key in ("algorithm", "issuer", "key_id", "signed_at")}
+if (metadata["algorithm"] != "hmac-sha256" or metadata["issuer"] != "github-actions" or
+        metadata["key_id"] != os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID")):
+    raise SystemExit("fixed takeover request signature metadata is invalid")
+def canonical(value):
+    if isinstance(value, list):
+        return "[" + ",".join(canonical(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(json.dumps(k, separators=(",", ":")) + ":" + canonical(value[k]) for k in sorted(value)) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+unsigned = dict(request)
+unsigned.pop("signature", None)
+expected = hmac.new(os.environ["DEPLOY_REQUEST_SIGNING_KEY"].encode(),
+                    canonical({"request": unsigned, "signature": metadata}).encode(), hashlib.sha256).hexdigest()
+if not hmac.compare_digest(signature.get("value", ""), expected):
+    raise SystemExit("fixed takeover request signature is invalid")
+old = "16e8d56b98001579c6288ba13199b80d6d3dfc74"
+prior = "83d694f2c3bc21fd78a73d25da3197379e2a14d5"
+target = "70e7984fab92ddab956009585212d0e9729767b5"
+if (request.get("release_sha") != target or request.get("commit_sha") != old or
+        request.get("runtime_sha") != prior or request.get("release_scope") != ["deploy-bundle"] or
+        request.get("restart_targets") != ["qintopia-system-services"] or request.get("dry_run") is not False or
+        not re.fullmatch(r"[0-9a-f]{40}", request.get("deploy_bundle_sha", ""))):
+    raise SystemExit("fixed takeover request tuple is invalid")
+digests = {}
+for name, sha in (("current", old), ("previous", prior)):
+    link = root / name
+    if not link.is_symlink() or link.resolve(strict=True) != root / sha:
+        raise SystemExit("fixed takeover lineage differs from O/P")
+    with open(root / sha / "manifest.json", "rb") as fh:
+        digests[name] = hashlib.sha256(fh.read()).hexdigest()
+record = {"schema_version": 1, "request_id": request["request_id"],
+          "request_sha256": hashlib.sha256(request_bytes).hexdigest(), "direction": "O→T",
+          "original_current_sha": old, "original_previous_sha": prior,
+          "manifest_sha256": digests, "phase": "intent"}
+if os.path.exists(journal_path):
+    raise SystemExit("fixed takeover journal already exists")
+fd, temporary = tempfile.mkstemp(prefix=".journal-", dir=os.path.dirname(journal_path))
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, journal_path)
+    directory = os.open(os.path.dirname(journal_path), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PY
+fi
+
 runner_status=0
+fallback_written=false
 fallback_error="deploy request failed before promotion result was written"
 if [[ -z "$parsed_identity" ]]; then
   runner_status=2
   fallback_error="deploy request key or identity is invalid"
 else
   set +e
+  if [[ -n "$expected_request_id" ]]; then
+    QINTOPIA_FIXED_TAKEOVER_LOCK=1
+    export QINTOPIA_FIXED_TAKEOVER_LOCK
+    flock() {
+      local fd_inode="" lock_inode=""
+      if [[ "${QINTOPIA_FIXED_TAKEOVER_LOCK:-}" == 1 && "$#" -eq 2 &&
+            "$1" == -n && "$2" == 9 && "$0" == "${QINTOPIA_DEPLOY_RUNNER_BIN:-}" ]]; then
+        [[ "$0" == "$fixed_runner" && "$(sha256sum "$0" | awk '{print $1}')" == "$fixed_runner_sha256" ]] || return 75
+        fd_inode="$(stat -Lc '%d:%i' /proc/self/fd/7)" || return 75
+        lock_inode="$(stat -Lc '%d:%i' "${QINTOPIA_DEPLOY_RUNNER_STATE_DIR}/deploy.lock")" || return 75
+        [[ -n "$fd_inode" && "$fd_inode" == "$lock_inode" ]] || return 75
+        command flock -n 7
+      else
+        command flock "$@"
+      fi
+    }
+    export fixed_runner fixed_runner_sha256
+    export -f flock
+  fi
   "$RUNNER" --request-file "$request_file"
   runner_status=$?
+  if [[ -n "$expected_request_id" ]]; then
+    unset -f flock
+    unset QINTOPIA_FIXED_TAKEOVER_LOCK
+  fi
   set -e
 fi
 
 if [[ "$runner_status" -ne 0 && ! -f "$result_file" ]]; then
+  fallback_written=true
   python3 - "$result_file" "$request_file" "$request_id" "$fallback_error" <<'PY'
 import hashlib
 import hmac
@@ -425,9 +600,18 @@ PY
 fi
 
 if [[ -f "$result_file" ]]; then
+  "$(dirname "${BASH_SOURCE[0]}")/wait-deploy-result.sh" \
+    --request-file "$request_file" --result-file "$result_file" >/dev/null
   run_coscli cp "$result_file" "cos://${bucket_alias}/${result_key}" \
     -c "$config_path" \
     --disable-log
+  verified_result="${tmp_dir}/${request_id}-uploaded-result.json"
+  run_coscli cp "cos://${bucket_alias}/${result_key}" "$verified_result" \
+    -c "$config_path" --disable-log
+  cmp -s "$result_file" "$verified_result" || {
+    echo "uploaded deploy result differs from local signed result" >&2
+    exit 75
+  }
 fi
 
 if [[ "$runner_status" -eq 0 ]]; then
@@ -437,5 +621,27 @@ else
 fi
 
 mv "$request_file" "${archive_dir}/${request_name}"
+
+if [[ -n "$parsed_identity" && -f "$result_file" && "$fallback_written" != true ]]; then
+  archived_pointer="${tmp_dir}/${request_id}-archived-pointer.json"
+  run_coscli cp "cos://${bucket_alias}/${pointer_key}" "$archived_pointer" \
+    -c "$config_path" --disable-log
+  cmp -s "$pointer_file" "$archived_pointer" || {
+    echo "deploy pointer changed before claim finalization" >&2
+    exit 75
+  }
+  python3 - "${STATE_DIR}/requests/claimed/${request_name}" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+os.unlink(path)
+directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+fi
 
 exit "$runner_status"

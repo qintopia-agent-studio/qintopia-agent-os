@@ -4,9 +4,10 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  deploy/runner/wait-deploy-result.sh --request-file <file>
+  deploy/runner/wait-deploy-result.sh --request-file <file> [--result-file <file> --verify-archived-request]
 
 Polls Tencent COS for the deploy result JSON referenced by a deploy request.
+--result-file verifies a local result offline, including failed results, without COS.
 
 Required environment:
   TENCENT_COS_BUCKET
@@ -27,11 +28,21 @@ USAGE
 }
 
 request_file=""
+offline_result_file=""
+verify_archived_request=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --request-file)
       request_file="${2:-}"
       shift 2
+      ;;
+    --result-file)
+      offline_result_file="${2:-}"
+      shift 2
+      ;;
+    --verify-archived-request)
+      verify_archived_request=true
+      shift
       ;;
     -h | --help)
       usage
@@ -48,6 +59,19 @@ done
 if [[ -z "$request_file" || ! -f "$request_file" ]]; then
   echo "--request-file must point to an existing JSON file" >&2
   exit 2
+fi
+if [[ -n "$offline_result_file" && ! -f "$offline_result_file" ]]; then
+  echo "--result-file must point to an existing JSON file" >&2
+  exit 2
+fi
+if [[ "$verify_archived_request" == true && -z "$offline_result_file" ]]; then
+  echo "--verify-archived-request requires --result-file" >&2
+  exit 2
+fi
+if [[ "$verify_archived_request" == true ]]; then
+  export QINTOPIA_VERIFY_ARCHIVED_REQUEST=1
+else
+  unset QINTOPIA_VERIFY_ARCHIVED_REQUEST
 fi
 
 require_env() {
@@ -94,15 +118,19 @@ if output.strip():
 PY
 }
 
-require_env TENCENT_COS_BUCKET
-require_env TENCENT_COS_REGION
-require_env TENCENT_COS_SECRET_ID
-require_env TENCENT_COS_SECRET_KEY
+if [[ -z "$offline_result_file" ]]; then
+  require_env TENCENT_COS_BUCKET
+  require_env TENCENT_COS_REGION
+  require_env TENCENT_COS_SECRET_ID
+  require_env TENCENT_COS_SECRET_KEY
+fi
 require_env DEPLOY_REQUEST_SIGNING_KEY
 require_env DEPLOY_REQUEST_SIGNING_KEY_ID
 
-timeout_seconds="$(positive_int_env DEPLOY_RESULT_TIMEOUT_SECONDS 900)"
-poll_seconds="$(positive_int_env DEPLOY_RESULT_POLL_SECONDS 15)"
+if [[ -z "$offline_result_file" ]]; then
+  timeout_seconds="$(positive_int_env DEPLOY_RESULT_TIMEOUT_SECONDS 900)"
+  poll_seconds="$(positive_int_env DEPLOY_RESULT_POLL_SECONDS 15)"
+fi
 bucket_alias="${TENCENT_COS_BUCKET_ALIAS:-qintopia-agent-os-artifacts}"
 
 result_identity="$(python3 - "$request_file" <<'PY'
@@ -135,6 +163,7 @@ trap cleanup EXIT
 chmod 700 "$tmp_dir"
 
 coscli_path="${COSCLI_PATH:-}"
+if [[ -z "$offline_result_file" ]]; then
 if [[ -z "$coscli_path" ]]; then
   if command -v coscli >/dev/null 2>&1; then
     coscli_path="$(command -v coscli)"
@@ -176,23 +205,29 @@ if [[ -n "${TENCENT_COS_ENDPOINT:-}" ]]; then
   bucket_config_args+=(-e "$TENCENT_COS_ENDPOINT")
 fi
 "$coscli_path" config add "${bucket_config_args[@]}" >/dev/null
+fi
 
-deadline=$((SECONDS + timeout_seconds))
-result_file="${tmp_dir}/deploy-result.json"
+deadline=$((SECONDS + ${timeout_seconds:-1}))
+result_file="${offline_result_file:-${tmp_dir}/deploy-result.json}"
 last_error="${tmp_dir}/last-coscli-error.log"
 
-echo "Waiting for deploy result ${request_id} at cos://${bucket_alias}/${result_key}"
+if [[ -z "$offline_result_file" ]]; then
+  echo "Waiting for deploy result ${request_id} at cos://${bucket_alias}/${result_key}"
+fi
 
-while (( SECONDS < deadline )); do
-  rm -f "$result_file" "$last_error"
-  set +e
-  "$coscli_path" cp "cos://${bucket_alias}/${result_key}" "$result_file" \
-    -c "$config_path" \
-    --disable-log \
-    2>"$last_error" \
-    1>>"$last_error"
-  status=$?
-  set -e
+while [[ -n "$offline_result_file" ]] || (( SECONDS < deadline )); do
+  status=0
+  if [[ -z "$offline_result_file" ]]; then
+    rm -f "$result_file" "$last_error"
+    set +e
+    "$coscli_path" cp "cos://${bucket_alias}/${result_key}" "$result_file" \
+      -c "$config_path" \
+      --disable-log \
+      2>"$last_error" \
+      1>>"$last_error"
+    status=$?
+    set -e
+  fi
 
   if [[ "$status" -eq 0 ]]; then
     result_status="$(python3 - "$result_file" "$request_file" "$request_id" <<'PY'
@@ -270,6 +305,43 @@ with open(sys.argv[1], encoding="utf-8") as fh:
     result = json.load(fh)
 with open(sys.argv[2], encoding="utf-8") as fh:
     request = json.load(fh)
+
+if os.environ.get("QINTOPIA_VERIFY_ARCHIVED_REQUEST") == "1":
+    from datetime import datetime, timedelta, timezone
+
+    request_signature = request.get("signature")
+    if not isinstance(request_signature, dict):
+        raise SystemExit("archived deploy request signature is missing")
+    if (request_signature.get("algorithm"), request_signature.get("issuer"), request_signature.get("key_id")) != (
+        "hmac-sha256", "github-actions", os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID")
+    ):
+        raise SystemExit("archived deploy request signature identity mismatch")
+    created = datetime.fromisoformat(request["created_at"].replace("Z", "+00:00"))
+    expires = datetime.fromisoformat(request["expires_at"].replace("Z", "+00:00"))
+    signed = datetime.fromisoformat(request_signature["signed_at"].replace("Z", "+00:00"))
+    if (created.tzinfo is None or expires.tzinfo is None or signed.tzinfo is None
+            or expires <= created or expires - created > timedelta(minutes=60)
+            or abs(signed - created) > timedelta(minutes=5)
+            or signed > datetime.now(timezone.utc) + timedelta(minutes=5)):
+        raise SystemExit("archived deploy request original signing time is invalid")
+    unsigned_request = dict(request)
+    request_metadata = dict(unsigned_request.pop("signature"))
+    request_value = request_metadata.pop("value", None)
+    if not isinstance(request_value, str) or not re.fullmatch(r"[0-9a-f]{64}", request_value):
+        raise SystemExit("archived deploy request signature value is invalid")
+    def archived_canonical_json(value):
+        if isinstance(value, list):
+            return "[" + ",".join(archived_canonical_json(item) for item in value) + "]"
+        if isinstance(value, dict):
+            return "{" + ",".join(json.dumps(key, separators=(",", ":")) + ":" + archived_canonical_json(value[key]) for key in sorted(value)) + "}"
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    expected_request_value = hmac.new(
+        os.environ["DEPLOY_REQUEST_SIGNING_KEY"].encode("utf-8"),
+        archived_canonical_json({"request": unsigned_request, "signature": request_metadata}).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(request_value, expected_request_value):
+        raise SystemExit("archived deploy request signature verification failed")
 
 signature = result.get("signature")
 if not isinstance(signature, dict):
@@ -367,6 +439,9 @@ PY
         ;;
       failed|rolled_back)
         echo "Deploy result failed: ${result_status}" >&2
+        if [[ -n "$offline_result_file" ]]; then
+          exit 0
+        fi
         python3 -m json.tool "$result_file" >&2
         exit 1
         ;;

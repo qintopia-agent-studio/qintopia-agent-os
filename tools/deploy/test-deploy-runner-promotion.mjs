@@ -1003,6 +1003,219 @@ exit 64
       "runner success path did not preserve qiwe runtime_artifact_profile"
     );
   }
+
+  const mixedState = path.join(tmpRoot, "mixed-state");
+  const mixedRoot = path.join(tmpRoot, "mixed-releases");
+  const rSha = "1".repeat(40);
+  const tSha = "2".repeat(40);
+  const oSha = "3".repeat(40);
+  const pSha = "4".repeat(40);
+  const originalId = "deploy-20260706T000000Z-abcdef0";
+  const actionId = "deploy-20260706T000001Z-abcdef1";
+  const mixedFetchLog = path.join(tmpRoot, "mixed-fetch.log");
+  fs.mkdirSync(path.join(mixedState, "requests", "processed"), { recursive: true });
+  fs.mkdirSync(path.join(mixedState, "results"), { recursive: true });
+  for (const release of [rSha, tSha]) {
+    fs.mkdirSync(path.join(mixedRoot, release), { recursive: true });
+  }
+  const tManifest = {
+    schema_version: 2,
+    release_sha: tSha,
+    commit_sha: oSha,
+    runtime_sha: pSha,
+    runtime_artifact_profile: "huabaosi-production",
+    deploy_bundle_sha: rSha,
+    previous_sha: oSha,
+    request_id: originalId,
+    release_scope: ["deploy-bundle"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+  };
+  const tManifestPath = path.join(mixedRoot, tSha, "manifest.json");
+  fs.writeFileSync(tManifestPath, `${JSON.stringify(tManifest)}\n`);
+  fs.writeFileSync(
+    path.join(mixedRoot, rSha, "manifest.json"),
+    `${JSON.stringify({ release_sha: rSha, previous_sha: tSha })}\n`
+  );
+  fs.symlinkSync(path.join(mixedRoot, rSha), path.join(mixedRoot, "current"));
+  fs.symlinkSync(path.join(mixedRoot, tSha), path.join(mixedRoot, "previous"));
+  const signWithMetadata = (unsigned, issuer, signedAt, key) => {
+    const metadata = {
+      algorithm: "hmac-sha256",
+      issuer,
+      key_id: keyId,
+      signed_at: signedAt,
+    };
+    const envelope = { [key]: unsigned, signature: metadata };
+    return {
+      ...unsigned,
+      signature: {
+        ...metadata,
+        value: crypto
+          .createHmac("sha256", signingKey)
+          .update(canonicalJson(envelope))
+          .digest("hex"),
+      },
+    };
+  };
+  const mixedCos = (id) => ({
+    bucket: "qintopia-agent-os-artifacts-1305166808",
+    region: "ap-shanghai",
+    prefix: "qintopia-agent-os",
+    request_key: `qintopia-agent-os/deploy-requests/production/requests/${id}.json`,
+    result_key: `qintopia-agent-os/deploy-results/production/${id}.json`,
+  });
+  const originalRequest = signWithMetadata(
+    {
+      ...buildRequest(),
+      request_id: originalId,
+      cos: mixedCos(originalId),
+      release_sha: tSha,
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      deploy_bundle_sha: rSha,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services"],
+      dry_run: false,
+    },
+    "github-actions",
+    createdAt,
+    "request"
+  );
+  const actionRequest = signWithMetadata(
+    {
+      ...buildRequest(),
+      request_id: actionId,
+      cos: mixedCos(actionId),
+      release_sha: tSha,
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      deploy_bundle_sha: rSha,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services", "hermes-anan"],
+      dry_run: false,
+      release_rollback: { expected_current_sha: rSha, expected_previous_sha: tSha },
+    },
+    "github-actions",
+    createdAt,
+    "request"
+  );
+  const originalResult = signWithMetadata(
+    {
+      schema_version: 1,
+      request_id: originalId,
+      environment: "production",
+      status: "succeeded",
+      started_at: createdAt,
+      finished_at: createdAt,
+      release_sha: tSha,
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      runtime_artifact_profile: "huabaosi-production",
+      deploy_bundle_sha: rSha,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services"],
+      previous_sha: oSha,
+      current_target: path.join(mixedRoot, tSha),
+      checks: [{ name: "deploy-runner", status: "passed" }],
+      rollback: { attempted: false, status: "not_needed" },
+    },
+    "qintopia-deploy-runner",
+    createdAt,
+    "result"
+  );
+  const originalRequestPath = path.join(
+    mixedState,
+    "requests",
+    "processed",
+    `${originalId}.json`
+  );
+  const originalResultPath = path.join(mixedState, "results", `${originalId}.json`);
+  const actionRequestPath = path.join(tmpRoot, "mixed-action.json");
+  const writeMixedEvidence = (original, resultValue, action = actionRequest) => {
+    fs.writeFileSync(originalRequestPath, `${JSON.stringify(original)}\n`);
+    fs.writeFileSync(originalResultPath, `${JSON.stringify(resultValue)}\n`);
+    fs.writeFileSync(actionRequestPath, `${JSON.stringify(action)}\n`);
+    fs.rmSync(path.join(mixedState, "results", `${actionId}.json`), { force: true });
+  };
+  writeExecutable(
+    "deploy/runner/wait-deploy-result.sh",
+    fs.readFileSync(path.join(repoRoot, "deploy/runner/wait-deploy-result.sh"), "utf8")
+  );
+  writeExecutable(
+    "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    `#!/usr/bin/env bash\nprintf 'fetch\\n' >>"${mixedFetchLog}"\nexit 47\n`
+  );
+  const runMixed = () =>
+    spawnSync("bash", [runnerPath, "--request-file", actionRequestPath], {
+      cwd: mixedState,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: mixedState,
+        QINTOPIA_RELEASE_ROOT: mixedRoot,
+        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+        TENCENT_COS_REGION: "ap-shanghai",
+      },
+    });
+  writeMixedEvidence(originalRequest, originalResult);
+  const bound = runMixed();
+  if (
+    bound.status !== 47 ||
+    fs.realpathSync(path.join(mixedRoot, "current")) !==
+      fs.realpathSync(path.join(mixedRoot, rSha))
+  ) {
+    throw new Error(
+      `signed mixed action did not reach artifact verification (status ${bound.status}):\nstdout: ${bound.stdout}\nstderr: ${bound.stderr}`
+    );
+  }
+  if (fs.readFileSync(mixedFetchLog, "utf8") !== "fetch\n") {
+    throw new Error("signed mixed action did not fetch exactly one artifact");
+  }
+  const assertRejectedBeforeFetch = (attempt, message) => {
+    if (
+      attempt.status === 0 ||
+      attempt.status === 47 ||
+      !attempt.stderr.includes(message) ||
+      fs.readFileSync(mixedFetchLog, "utf8") !== "fetch\n" ||
+      fs.realpathSync(path.join(mixedRoot, "current")) !==
+        fs.realpathSync(path.join(mixedRoot, rSha))
+    ) {
+      throw new Error(
+        `mixed action did not reject before artifact fetch: ${attempt.stderr}`
+      );
+    }
+  };
+  const { signature: _originalSignature, ...unsignedOriginalResult } = originalResult;
+  const failedOriginalResult = signWithMetadata(
+    {
+      ...unsignedOriginalResult,
+      status: "failed",
+      error: "simulated original failure",
+    },
+    "qintopia-deploy-runner",
+    createdAt,
+    "result"
+  );
+  writeMixedEvidence(originalRequest, failedOriginalResult);
+  const failedOriginal = runMixed();
+  assertRejectedBeforeFetch(failedOriginal, "not bound to a successful live request");
+  writeMixedEvidence({ ...originalRequest, commit_sha: rSha }, originalResult);
+  const tamperedOriginal = runMixed();
+  assertRejectedBeforeFetch(
+    tamperedOriginal,
+    "archived deploy request signature verification failed"
+  );
+  writeMixedEvidence(originalRequest, originalResult, {
+    ...actionRequest,
+    restart_targets: ["hermes-anan"],
+  });
+  const tamperedAction = runMixed();
+  assertRejectedBeforeFetch(tamperedAction, "signature verification failed");
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
