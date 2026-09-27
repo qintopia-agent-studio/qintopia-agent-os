@@ -12,6 +12,7 @@ function businessOperationLabel(key, spec) {
     "pms.read.payments": "收款流水",
     "pms.read.reference_catalog": "业务目录",
     "pms.quote": "报价",
+    "pms.reminder.snooze": "暂缓工作提醒",
     "pms.command.CREATE_ORDER": "订房",
     "pms.command.RECORD_COLLECTION": "登记收款",
     "pms.command.CHECK_IN": "入住",

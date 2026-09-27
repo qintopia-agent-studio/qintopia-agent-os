@@ -237,6 +237,144 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
     f.store.business_capture_turn(&gateway, &turn).await?;
     let input = json!({"orderId":"order_1","method":"WECOM","amountMinor":1200,"transactionReference":"pay_1"});
     let action=f.store.business_invoke(&actor,&turn.message_id,&turn.chat_id,"pms_start",&json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","input":input,"reason":{"code":"OPERATOR_REQUEST","note":"模拟交办"}})).await?;
+    let snooze_turn = HostTurn {
+        platform: turn.platform.clone(),
+        chat_type: turn.chat_type.clone(),
+        chat_id: turn.chat_id.clone(),
+        sender_id: turn.sender_id.clone(),
+        message_id: "shared-snooze".into(),
+        text: "请暂停本事项提醒两小时。".into(),
+    };
+    f.store
+        .business_capture_turn(&gateway, &snooze_turn)
+        .await?;
+    let snooze = json!({"binding":f.binding,"work_item":action["work_item"],"until":(Utc::now()+Duration::hours(2)).to_rfc3339()});
+    assert_eq!(
+        f.store
+            .business_invoke(
+                &actor,
+                &snooze_turn.message_id,
+                &snooze_turn.chat_id,
+                "pms_reminder_snooze",
+                &snooze
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "business_authority_denied"
+    );
+    let snooze_grant = f
+        .store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.reminder.snooze".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
+    let snooze_grant: Uuid = serde_json::from_value(snooze_grant["change"]["grant"].clone())?;
+    assert_eq!(
+        f.store.business_invoke(&actor, &snooze_turn.message_id, &snooze_turn.chat_id, "pms_start", &json!({"binding":f.binding,"operation":"pms.reminder.snooze","input":{},"reason":{"code":"OPERATOR_REQUEST","note":"模拟暂缓"}})).await.unwrap_err().to_string(),
+        "unsupported_business_operation"
+    );
+    assert_eq!(
+        f.store
+            .business_invoke(
+                &actor,
+                &snooze_turn.message_id,
+                &snooze_turn.chat_id,
+                "pms_reminder_snooze",
+                &snooze
+            )
+            .await?["work_item"],
+        action["work_item"]
+    );
+    assert_eq!(
+        f.store.business_invoke(&actor, &snooze_turn.message_id, &snooze_turn.chat_id, "pms_reminder_snooze", &json!({"binding":other_binding,"work_item":action["work_item"],"until":snooze["until"]})).await.unwrap_err().to_string(),
+        "reminder_work_outside_binding"
+    );
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::RevokeOperation {
+                    grant: snooze_grant,
+                },
+            ),
+            true,
+        )
+        .await?;
+    assert_eq!(
+        f.store
+            .business_invoke(
+                &actor,
+                &snooze_turn.message_id,
+                &snooze_turn.chat_id,
+                "pms_reminder_snooze",
+                &snooze
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "business_authority_denied"
+    );
+    let expiring_snooze = f
+        .store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.reminder.snooze".into(),
+                    valid_until: Some(Utc::now() + Duration::minutes(1)),
+                },
+            ),
+            true,
+        )
+        .await?;
+    let expiring_snooze: Uuid = serde_json::from_value(expiring_snooze["change"]["grant"].clone())?;
+    sqlx::query("UPDATE qintopia_agent_os.business_operation_grants SET valid_until=clock_timestamp()-interval '1 second' WHERE id=$1")
+        .bind(expiring_snooze).execute(&f.store.pool).await?;
+    assert_eq!(
+        f.store
+            .business_invoke(
+                &actor,
+                &snooze_turn.message_id,
+                &snooze_turn.chat_id,
+                "pms_reminder_snooze",
+                &snooze
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "business_authority_denied"
+    );
+    assert_eq!(sqlx::query_scalar::<_,i64>("SELECT count(*) FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND operation_key='pms.reminder.snooze'")
+        .bind(&f.store.tenant).fetch_one(&f.store.pool).await?, 0);
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::RevokeOperation {
+                    grant: expiring_snooze,
+                },
+            ),
+            true,
+        )
+        .await?;
     let booking_turn = HostTurn {
         platform: turn.platform.clone(),
         chat_type: turn.chat_type.clone(),
@@ -370,6 +508,22 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
         .await
         .is_err());
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.reminder.snooze".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
     let account_version: i64 =
         sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
             .bind(account)
@@ -398,6 +552,17 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
         .await
         .is_err());
+    assert!(f
+        .store
+        .business_invoke(
+            &actor,
+            &snooze_turn.message_id,
+            &snooze_turn.chat_id,
+            "pms_reminder_snooze",
+            &snooze
+        )
+        .await
+        .is_err());
     f.store
         .business_configure(
             &f.actor,
@@ -413,6 +578,22 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         )
         .await?;
     let fresh = f.store.business_gateway_actor(&gateway, sender).await?;
+    assert!(f
+        .store
+        .business_authorize(&fresh, f.binding, "pms.reminder.snooze")
+        .await
+        .is_err());
+    assert!(f
+        .store
+        .business_invoke(
+            &fresh,
+            &snooze_turn.message_id,
+            &snooze_turn.chat_id,
+            "pms_reminder_snooze",
+            &snooze
+        )
+        .await
+        .is_err());
     assert!(f
         .store
         .business_authorize(&fresh, f.binding, "pms.command.RECORD_COLLECTION")

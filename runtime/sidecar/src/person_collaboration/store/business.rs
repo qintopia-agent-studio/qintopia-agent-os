@@ -627,37 +627,18 @@ impl Store {
                     && policy.effective(g)
                     && policy.in_scope(scope, g.scope, g.descendants)
             });
-            let account_allowed = if actor.work_account.is_some() {
-                let catalog: Value = serde_json::from_str(include_str!(
-                    "../../../../../skills/pms-operations/operations.json"
-                ))?;
-                let mut found = false;
-                for (key, spec) in catalog["operations"]
-                    .as_object()
-                    .into_iter()
-                    .flat_map(|o| o.iter())
-                {
-                    if spec["action"] == "execute_business"
-                        && operation_for_actor_in(
-                            &mut tx,
-                            &self.tenant,
-                            &policy,
-                            actor,
-                            binding,
-                            key,
-                            now,
-                        )
-                        .await
-                        .is_ok()
-                    {
-                        found = true;
-                        break;
-                    }
-                }
-                found
-            } else {
-                false
-            };
+            let account_allowed = actor.work_account.is_some()
+                && operation_for_actor_in(
+                    &mut tx,
+                    &self.tenant,
+                    &policy,
+                    actor,
+                    binding,
+                    "pms.reminder.snooze",
+                    now,
+                )
+                .await
+                .is_ok();
             ensure!(allowed || account_allowed, "business_authority_denied");
             ensure!(
                 context["merged_into"].is_null(),
