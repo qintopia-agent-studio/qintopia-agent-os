@@ -453,8 +453,8 @@ impl Store {
             .filter(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit()))
             .map(str::to_owned);
         if let Some(command) = natural_command {
-            let candidates:Vec<String>=sqlx::query_scalar("SELECT a.confirmation_code FROM qintopia_agent_os.business_actions a JOIN qintopia_agent_os.business_turn_evidence e ON e.id=a.source_evidence_id AND e.tenant_key=a.tenant_key WHERE a.tenant_key=$1 AND ((a.actor_person_id=$2 AND $6::uuid IS NULL) OR a.actor_work_account_id=$6) AND e.gateway_key=$3 AND e.chat_hash=$4 AND a.phase='awaiting_confirmation' AND ($5='' OR a.operation_key=$5)")
-                .bind(&self.tenant).bind(actor.business_person()).bind(gateway).bind(&chat_hash).bind(command).bind(actor.work_account.map(|v|v.0)).fetch_all(&mut *tx).await?;
+            let candidates:Vec<String>=sqlx::query_scalar("SELECT a.confirmation_code FROM qintopia_agent_os.business_actions a JOIN qintopia_agent_os.business_turn_evidence e ON e.id=a.source_evidence_id AND e.tenant_key=a.tenant_key WHERE a.tenant_key=$1 AND ((a.actor_person_id=$2 AND $6::uuid IS NULL) OR (a.actor_work_account_id=$6 AND a.actor_work_account_version=$7)) AND e.gateway_key=$3 AND e.chat_hash=$4 AND a.phase='awaiting_confirmation' AND ($5='' OR a.operation_key=$5)")
+                .bind(&self.tenant).bind(actor.business_person()).bind(gateway).bind(&chat_hash).bind(command).bind(actor.work_account.map(|v|v.0)).bind(actor.work_account.map(|v|v.1)).fetch_all(&mut *tx).await?;
             if candidates.len() == 1 {
                 confirmation = Some(candidates[0].clone());
             }
@@ -770,8 +770,8 @@ impl Store {
             }
             let work = if a.get("work_item").is_some() {
                 let work = parse("work_item")?;
-                let owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND work_item_id=$2 AND binding_id=$3 AND actor_person_id IS NOT DISTINCT FROM $4::uuid AND actor_work_account_id IS NOT DISTINCT FROM $5::uuid)")
-                    .bind(&self.tenant).bind(work).bind(auth.binding).bind(actor.business_person()).bind(actor.work_account.map(|v|v.0)).fetch_one(&mut *tx).await?;
+                let owned:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND work_item_id=$2 AND binding_id=$3 AND actor_person_id IS NOT DISTINCT FROM $4::uuid AND actor_work_account_id IS NOT DISTINCT FROM $5::uuid AND actor_work_account_version IS NOT DISTINCT FROM $6::bigint)")
+                    .bind(&self.tenant).bind(work).bind(auth.binding).bind(actor.business_person()).bind(actor.work_account.map(|v|v.0)).bind(actor.work_account.map(|v|v.1)).fetch_one(&mut *tx).await?;
                 let source_payment = &a["source_payment"];
                 let event_owned = if !owned && key == "pms.command.RECORD_COLLECTION" {
                     sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_event_inbox WHERE tenant_key=$1 AND binding_id=$2 AND binding_version=$3 AND work_item_id=$4 AND feed='pms.payments.v1' AND subject_ref=$5 AND source_instance=$6 AND property_id=$7 AND NOT baseline AND payload->>'kind'='COLLECTION' AND payload->>'eventType'='DISCOVERED')")

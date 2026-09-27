@@ -488,6 +488,32 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
     assert_eq!(count, 1);
     assert_eq!(phase, "unknown");
     assert_eq!(execution_key, executing["execution_key"].as_str().unwrap());
+    let stale_work_turn = HostTurn {
+        platform: turn.platform.clone(),
+        chat_type: turn.chat_type.clone(),
+        chat_id: turn.chat_id.clone(),
+        sender_id: turn.sender_id.clone(),
+        message_id: "shared-old-work-new-version".into(),
+        text: "请为订单「order_1」登记企微收款13.00元，流水号「pay_2」。".into(),
+    };
+    f.store
+        .business_capture_turn(&gateway, &stale_work_turn)
+        .await?;
+    let denied = f
+        .store
+        .business_invoke(
+            &fresh,
+            &stale_work_turn.message_id,
+            &stale_work_turn.chat_id,
+            "pms_start",
+            &json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","work_item":action["work_item"],"input":{"orderId":"order_1","method":"WECOM","amountMinor":1300,"transactionReference":"pay_2"},"reason":{"code":"OPERATOR_REQUEST","note":"模拟新交办"}}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(denied.to_string(), "business_work_denied");
+    let new_payment_count: i64 = sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key='pms.command.RECORD_COLLECTION' AND input->>'transactionReference'='pay_2'")
+        .bind(&f.store.tenant).bind(f.binding).fetch_one(&f.store.pool).await?;
+    assert_eq!(new_payment_count, 0);
     let renewed_booking = HostTurn {
         platform: booking_turn.platform.clone(),
         chat_type: booking_turn.chat_type.clone(),
