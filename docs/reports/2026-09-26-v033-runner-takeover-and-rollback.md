@@ -2,6 +2,8 @@
 
 日期：2026-09-26。状态：技术方案待负责人评审；本报告不批准生产请求。
 
+2026-09-27 最小性复核见文末「最小范围复核」。下文首次接管、恢复事务和 13 文件清单保留为先前**较大候选**及其证据，不能把其中的实现范围或两跳回 O/P 视为已证明必要或已获批准；有冲突时以复核结论为准。
+
 ## 依据与现状
 
 已读 `README.md`、`AGENTS.md`、`docs/README.md`、当前 roadmap、change
@@ -303,7 +305,7 @@ workflow 输入和同一部署 schema 的固定 recovery 字段。后续回退�
 
 ## CI 专项评审请求
 
-本报告只提出一个相互依赖的专项方案，不要求分次批准。修改 workflow、checker、部署门禁前须负责人逐项批准，不把历史 bootstrap 扩大到岸岸。
+本节记录先前一体化候选，供逐项审查，并非最小范围结论。修改 workflow、checker、部署门禁前须负责人逐项批准，不把历史 bootstrap 扩大到岸岸。
 
 当前候选范围为 12 个现有实现/测试文件、1 个新 wrapper，合计 13 个实现/测试文件；不新增 workflow、job、step 或第三方依赖。相较上一版，新增 1 个 poller 实现文件，因为预检与真正消费 COS
 pointer 之间存在竞态。此数量是具体评审输入，尚未获批。
@@ -350,16 +352,16 @@ pointer 之间存在竞态。此数量是具体评审输入，尚未获批。
 `workflow_dispatch`。既有 `rollback-release.sh --restore-previous-sha`
 能处理完整原状态下的精确 T→O 指针切换，却无法在已写 current、尚未写 previous 的状态启动，也不会确认 installer、smoke 和回执。这就是新增专属事务、持久阶段和固定入口的理由。
 
-若不随 bundle 部署这些回退能力，最终 R 的可执行回退仍缺失。
+若不随 bundle 部署经审定的**普通混合回退能力**，最终 R 的正式签名回退仍缺失；完整 recovery 协议是否也须随包部署，留待最小性复核。
 
-因此“需要 R”基于**可手动回到前次混合 T 且可继续回到 O**
-的验收条件，不表示 R 已构建或获批。负责人确认上述具体范围后才实施；生产申请仍另行授权。
+因此原候选的“需要 R”基于**可手动回到前次混合 T 且可继续回到 O**
+这一加严条件，不表示两跳回退是用户明示验收，也不表示 R 已构建或获批。是否以此为范围须另行审定；生产申请仍另行授权。
 
 ## 最终建议
 
-以本次 O/P→T/O→R/T 及其返回路径为边界，先审 13 文件候选并完成 R 的隔离测试和不可变制品，再申请生产 dry
-run。正常首次接管由旧 O runner 消费新的单 system 请求，正常修复部署由 T
-runner 消费新的六目标请求；R→T 用 R/T 的 exact-previous 回退，T→O 用 T/O 的 exact-previous 回退。
+以下是先前较大候选的执行建议，现由文末「最小范围复核」替代为待比较方案。其 O/P→T/O→R/T 及两跳返回路径仍可作为高保证方案评审，但 13 文件不是批准基线。正常首次接管可由旧 O
+runner 消费新的单 system 请求，正常修复部署由 T
+runner 消费新的六目标请求；两跳 R→T、T→O 是原候选额外要求。
 
 每次 live 只在精确签名回执、指针、manifest、installer 和 smoke 一致后进入下一阶段。
 
@@ -417,3 +419,124 @@ active 或服务 active 均不表示岸岸业务上线。
 `R`、O/O 与 T/O 固定恢复的隔离验证、固定 T 一次性 systemd 入口及 poller expected
 ID 校验、后续回退的阶段事务验证、修复产物可用性，以及总指挥统一安排的生产 dry
 run/live 与业务验收。
+
+## 最小范围复核（2026-09-27）
+
+### 验收来源与技术结论
+
+用户明示的结果是：失败请求不得重放，旧 runner 之后须能接受
+`hermes-anan`，出现问题时有**可执行、经验证的回退**，并保留 Profile、凭据、会话、记忆、任务和通道等数据与状态。
+
+签名请求、不可变制品、精确身份、原生产门禁、排空与 smoke 是现行契约，不能因缩小文件范围而跳过。
+
+先前报告追加的“任何时刻都能通过常驻通用协议 R→T→O/P 两跳”、“所有硬中断均生成新签名 recovery 请求”、历史请求 ID 作为普通回退 workflow 的唯一身份来源，是方案选择，**不是已确认的用户验收**。
+
+结论：13 文件是覆盖普通回退和通用中断恢复的一体化候选，不能称为最小必要范围。过渡 T 的正常签名
+`workflow_dispatch` 已有独立四 SHA、scope、targets 和 dry run，不需要改
+`deploy-production.yml`。只补 rollback 目标集合也不够：当前入口要求双方都是已发布 tag，四 SHA 同值；T 是混合未发布身份。最值得先设计、隔离验证的窄方案是
+**普通混合 exact-previous 签名回退**与**硬中断维护恢复**分层。前者仍从受审 `master`
+workflow 经 production 环境、现有 HMAC 签名和 COS 队列发新请求；后者的执行授权、入口和证据单独评审，不能以普通回退 dry
+run 覆盖硬中断。此判断是缩小方向，不是实现通过或生产就绪声明。
+
+### 四种路径比较
+
+| 路径                        | 当前可行边界                                                                                                           | 失去或待补的保证                                                                                                                                                                       |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 零实现改动                  | 旧 O 可处理单 system 的过渡 T；现有 `rollback-release.sh --restore-previous-sha` 能从完整 T/O 回到 O/P，并安装旧树单元 | 正式 workflow 无法签名请求回退混合 T；直接服务器调用 primitive 属经批准的应急运维路径而非普通签名回退，且 O/O 被 primitive 拒绝、没有完整 smoke/回执闭环。不能用此法宣称正式回退已满足 |
+| 仅补 `hermes-anan` 回退选项 | 消除目标选择器漏项；还须按实际批准范围避免 `all-hermes-and-system` 顺带重启其他目标                                    | tag-only、四 SHA 同值和 promoter 同 SHA 目标集限制仍在；T 不可选，故不能单独作为修复                                                                                                   |
+| 原 13 文件候选              | 可设计成完整普通回退加签名 recovery 协议，覆盖 O/O、T/O 及后续事务中断                                                 | 新 schema、历史验签模式、阶段日志、固定 systemd 入口和 poller 锁定均尚未实现/隔离验证；复杂度依赖“两跳及通用恢复”额外目标                                                              |
+| 分层窄候选                  | 普通回退让新签名请求显式携带 T 的四 SHA，服务器只接受 exact previous；硬中断用经审查的固定制品维护步骤处理实测状态     | 必须补服务器不可变树/产物校验、专属错误补偿及验收证据；维护入口的权限、竞态、CAS、systemd 沙箱和审计尚须设计与实测，不能以 runbook 文本代替                                            |
+
+普通混合回退的请求 schema 已有四 SHA 与
+`release_rollback.expected_{current,previous}_sha`； `create-deploy-request.mjs` 只要求
+`expected_previous_sha=release_sha`，所以 R→T 可用现有字段表达
+`commit=O,runtime=P,bundle=R,release=T`。当前 runner 在该分支强制四 SHA 都等于 T，仍须改；现有 promoter 复用 T 时还把
+`restart_targets` 和原单 system
+manifest 比较，不能直接走普通 promotion。另有不改源码的本地隔离模拟：以四个不同的虚构 40 位 SHA、
+`release_scope=[deploy-bundle]`、目标 `qintopia-system-services,hermes-anan`、
+`dry_run=true` 及模拟签名 key/bucket 调用现有创建器，构造和 AJV schema 验证均退出 0；把
+`ENV_FILE`、`STATE`、`RELEASE_ROOT` 限于新的 `/tmp` 目录后，现有runner `--dry-run`
+退出 1，明确报
+`invalid deploy request: release rollback commit_sha must equal expected_previous_sha`。隔离 release 根为空，未进入制品或指针回退；无网络、真实密钥、生产操作和源码改动，临时目录已清理。此证据只定位现有同值校验，不能证明混合回退可执行。专属回退分支应在同一锁内核对
+`current=R,previous=T`、R manifest 的 `previous_sha=T`、T
+manifest 的完整四元组、scope、profile、现存不可变树的内容与 COS 签名/摘要，以及请求中明确的回退目标集；只调用已验证树的 rollback
+primitive，不重组或改写 T，也不放宽普通同 SHA 路径。新请求的身份来自受审 workflow 和独立生产批准；旧成功回执可作上线前谱系佐证，但普通 workflow
+**不必先新增** 请求 ID 发现和 `wait-deploy-result.sh`
+历史模式。原双 tag 路径的发布状态、可达性和产物验证仍须保留。
+
+省去新路径的历史验签模式，失去的是原候选额外要求的“workflow 在发请求前自行证明 T 曾成功”。
+
+新混合路径仍须由受审输入来源、原生产审批和签名、签名前记录，以及服务器 exact-previous、manifest、COS 制品严格复验承接，不能只信操作者填入的四 SHA。
+
+直接 R→O/P 可少一次回退，但 O 已不是 R 的 exact
+previous，须改变现有精确谱系规则并解释如何在一次事务中可信地恢复 P、处理岸岸排空和旧 O
+runner 接管；目前没有隔离证据，不能把它称作较小的现成实现。另一思路是正常签名发布“旧业务制品 + 新兼容 runner”的新 Release，以继续前进的方式恢复业务。bundle 构建器实际包含
+`skills/`、`agents/xiaoman/profile-bundle/`、`workflows/`、配置及 runner；因此旧 runtime 加完整 R
+bundle
+**不是**旧业务版本。要得到该组合，需新增经过审查的选择性 bundle 制品、来源/摘要/manifest 契约，并证明插件、配置、迁移和系统单元兼容，通常扩大打包和部署影响。两条路径均可留作备选研究，不作为当前最小结论。
+
+硬中断需分开判断。旧 O
+promoter 的已模拟状态仅证明落 T 前 O/P、首次写后 O/O、第二次写后 T/O；T/O 可由现有 primitive 以精确参数恢复 O/P，但还须可信固定执行入口、O
+installer、批准目标 smoke 和结果记录。O/O 因 current 与 previous 同指 O 被现有 primitive 拒绝，需要窄的 CAS 恢复原语或经审查的固定制品维护动作；不能手移指针、重放未知请求或把 P 的失败回执称为成功。`server-change-policy.md`
+允许有负责人记录及后续 PR 的应急服务器回退，未规定每个维护恢复动作必须新建签名请求；`deploy/runner/README.md`
+的签名队列则仍是**普通部署/回退**路径。
+
+弦和实现评审须据现有政策、运行契约及隔离证据判断硬中断是否必须再由新签名队列驱动；这是技术机制判断，不转交业务负责人挑选。
+
+当前政策允许有负责人记录的应急回退，尚未查到“每个硬中断恢复都必须新建签名请求”的明文契约。优先审查受限维护恢复是否达到同等身份、权限和审计保证；若不能证明，再考虑原 recovery 协议方向。
+
+受限方案须绑定原签名请求、固定 T/O/P/R 身份、只接受实测状态，并明确维护 runbook 和最小恢复原语。该方案还须经 systemd 等效沙箱执行并留下审计回执；其可行性尚未模拟，尤其要证明旧 O
+poller 不会抢读新请求。不能把 SSH 直调或临时可执行路径当成已经满足上述条件。
+
+### 原候选文件逐项归类
+
+下表中的“必改”仅针对选择**普通混合 exact-previous 签名回退**后的能力边界，不是对具体实现或 CI 变更的批准；测试与 checker 随实际合同改变。硬中断维护方案确定前，不给恢复协议凑一个新的文件数。
+
+| 原候选文件                                      | 复核分类与理由                                                                                                              |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/rollback-production.yml`     | 必改：混合 T 的受审四 SHA 输入/解析、exact-previous 请求与岸岸目标选择；保留生产环境和双 tag 旧路径。其修改属于 CI 专项审批 |
+| `deploy/runner/qintopia-agent-os-deploy-runner` | 必改：仅在混合 exact-previous 分支核对完整元组、不可变树并完成回退、补偿和结果；普通发布约束不放宽                          |
+| `deploy/runner/rollback-release.sh`             | 完整 R/T 或 T/O 的 primitive 可复用不改；仅 O/O 维护恢复方案若选择扩它才需改                                                |
+| `deploy/runner/deploy-request.schema.json`      | 普通混合回退可复用不改；新签名 recovery 对象方案才需改                                                                      |
+| `tools/deploy/create-deploy-request.mjs`        | 普通混合回退可复用不改；新 recovery 对象方案才需改                                                                          |
+| `deploy/runner/wait-deploy-result.sh`           | 普通混合回退可复用不改；若要求 workflow 自动重新验签旧请求/回执才需扩展                                                     |
+| `tools/deploy/check-deploy-runner.mjs`          | 必改：校验新 workflow 目标/四 SHA 合同与旧路径未放宽；具体规则随设计定                                                      |
+| `tools/deploy/test-deploy-runner-promotion.mjs` | 必改：覆盖混合回退、目标集不等、错误补偿和否定用例；恢复测试取决于维护方案                                                  |
+| `tools/deploy/test-wait-deploy-result.mjs`      | 历史验签模式不采用则可复用不改                                                                                              |
+| `deploy/runner/poll-deploy-requests.sh`         | 普通混合回退可复用不改；固定签名 recovery 入口才需 expected ID 消费点防竞态                                                 |
+| `deploy/runner/run-fixed-release-recovery.sh`   | 仅原签名 recovery 方案需要；维护方案也可能需要受审固定入口，但形态须实测决定                                                |
+| `tools/deploy/build-deploy-bundle.mjs`          | 普通混合回退可复用不改；新增固定恢复入口须纳入制品清单；选择性业务恢复则涉及更大打包改造                                    |
+| `tools/deploy/test-deploy-runner-poller.mjs`    | 普通混合回退可复用不改；固定 poller 入口或 expected ID 规则才需扩展                                                         |
+
+若决定修改 `rollback-release.sh` 的 O/O 恢复语义，验证必须扩至运行真实脚本的
+`tools/deploy/test-release-systemd-rollback.mjs`。现有 runner
+promotion 测试有用可执行替身代替 rollback
+primitive 的路径，单靠它不能证明真实指针与 systemd 单元行为；原 13 文件不是封顶数，不能为了维持数量而漏掉该覆盖。
+
+本次复核没有实施上述任何文件。下一步先形成两份可审阅的精确设计和隔离 fixture：普通 R→T 混合签名回退，以及 O/O、T/O 的有限维护恢复。必须证明最新可信回执、T/R 制品与完整树、排空及 smoke、同步失败和硬中断边界；再请负责人按
+`programming-agent-guardrails.md`
+的九项 CI 原则审批具体 workflow/checker 改动。在此前不做过渡 live，也不把已完成的旧 O 隔离模拟或本报告当作 R 制品验证。
+
+### 给弦的技术审阅提示词
+
+> 请独立审阅本报告的「最小范围复核」及其上方原 13 文件候选，直接阅读
+> `rollback-production.yml`、`deploy-production.yml`、deploy runner、
+> `promote-release.sh`、`rollback-release.sh`、请求 schema/创建器、poller、bundle 构建器和相关测试。
+>
+> 以 O=`16e8d56b98001579c6288ba13199b80d6d3dfc74`、P=`83d694f2c3bc21fd78a73d25da3197379e2a14d5`
+> 为原基线。
+>
+> T=`70e7984fab92ddab956009585212d0e9729767b5`，R=尚未生成的修复 SHA。不把模拟身份当成生产事实。
+>
+> 先核对旧 O
+> runner 的单 system 过渡、T 的混合 manifest 与新 runner 的岸岸支持。比较零改动、仅补目标、原 13 文件、普通混合签名回退加有限硬中断维护恢复，以及正常签名发布旧业务制品加兼容 runner 的前进恢复。
+>
+> 逐项指出哪个约束由现有代码/政策强制，哪个是先前方案附加。
+>
+> 特别检查 schema/创建器是否无需改、历史回执验签是否必须进入 workflow，以及同 SHA 目标集锁定。
+>
+> 检查 O/O 与 T/O 的 CAS 和 installer/smoke、固定 systemd 沙箱、旧 poller 竞争，以及 bundle 内插件/配置对“业务回退”的影响。
+>
+> 给出最低可行改动类别和删去每项后的保证缺口，附文件行号、最小隔离验证矩阵和剩余人工验收。若建议修改
+> `rollback-release.sh`，请覆盖真实 primitive 测试，不能只用替身。不要修改代码/CI、触及生产或合并；不要把 13 文件当作批准范围，也不要把尚未存在的 R 制品或未执行的 dry
+> run 写成通过。
