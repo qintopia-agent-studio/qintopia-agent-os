@@ -187,6 +187,16 @@ reconciles local signed bytes and request archive; it does not reverse release p
 Maintenance evidence stays separate from ordinary signed deployment results. This
 contract does not authorize a production request or hold release.
 
+For a trusted COS `succeeded` result, recovery compares the target's historical manifest
+with its original archived signed request and result. In R→T, the new signed
+request/result must match each other, while their approved restart targets may differ
+from T's original single-system targets. Reconciliation writes the exact signed COS
+bytes to a synced temporary file, then publishes the local result without replacing an
+existing file; an interruption before publication remains retryable. With no claim, the
+verified journal and (for O→T) takeover record must still bind the current hold token.
+Another claim, a later recovery journal, or a hold whose owner cannot be proved stops
+recovery before pointer or service changes.
+
 The existing `tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture still
 asserts the former `runuser` Anan branch and therefore fails when the approved transient
 `systemd-run` branch is used. A separately approved one-file scope extension is needed

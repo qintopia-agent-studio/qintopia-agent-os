@@ -201,10 +201,30 @@ with open(journal_path, encoding="utf-8") as fh:
 with open(request_path, "rb") as fh:
     request_digest = hashlib.sha256(fh.read()).hexdigest()
 hold = Path(hold_path)
+for other in Path(claim_path).parent.glob("*.json"):
+    if other.name != Path(claim_path).name:
+        raise SystemExit("another deploy request claim is present")
+for other in Path(journal_path).parent.glob("deploy-*.json"):
+    if other.name > Path(journal_path).name:
+        raise SystemExit("a later recovery journal owns the isolation state")
 if not os.path.isfile(claim_path):
+    token = journal.get("hold_token", "")
+    if direction == "O→T":
+        with open(takeover_path, encoding="utf-8") as fh:
+            takeover = json.load(fh)
+        if (not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token) or
+                takeover.get("request_id") != request_id or takeover.get("hold_token") != token):
+            raise SystemExit("legacy takeover hold identity conflicts")
+    elif token != request_id:
+        raise SystemExit("legacy recovery hold request identity conflicts")
     if not hold.is_file() or hold.is_symlink():
         raise SystemExit("legacy recovery has no authenticated hold")
-    print("legacy\t\t")
+    metadata = hold.lstat()
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or
+            stat.S_IMODE(metadata.st_mode) != 0o600 or
+            hold.read_text(encoding="ascii") != token + "\n"):
+        raise SystemExit("legacy recovery hold belongs to another transaction")
+    print("legacy\t" + token + "\t")
     raise SystemExit(0)
 with open(claim_path, encoding="utf-8") as fh:
     claim = json.load(fh)
@@ -598,15 +618,19 @@ PY
 
 if [[ "$remote_status" == succeeded ]]; then
   python3 - "$release_root" "$request_release" "$original_current" "$original_previous" \
-    "$direction" "$request_file" "$remote_result" "$result_file" "$journal" "$claim_file" <<'PY' || exit 75
+    "$direction" "$request_file" "$remote_result" "$result_file" "$journal" "$claim_file" \
+    "$verified_release" <<'PY' || exit 75
 import hashlib
 import json
 import os
+import re
 import stat
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-release_root, target_sha, old_current, old_previous, direction, request_path, remote_path, local_path, journal_path, claim_path = sys.argv[1:11]
+release_root, target_sha, old_current, old_previous, direction, request_path, remote_path, local_path, journal_path, claim_path, verified_release = sys.argv[1:12]
 root = Path(release_root).resolve(strict=True)
 with open(request_path, encoding="utf-8") as fh:
     request = json.load(fh)
@@ -627,9 +651,40 @@ if (manifest.get("release_sha") != target_sha or manifest.get("previous_sha") !=
         request.get("release_sha") != target_sha or result.get("request_id") != request.get("request_id") or
         journal.get("request_id") != request.get("request_id")):
     raise SystemExit("signed success release identity conflicts")
-for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile", "release_scope", "restart_targets"):
+for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile"):
     if manifest.get(key) != request.get(key) or result.get(key) != request.get(key):
         raise SystemExit(f"signed success {key} identity conflicts")
+for key in ("release_scope", "restart_targets"):
+    if result.get(key) != request.get(key) or (direction != "R→T" and manifest.get(key) != request.get(key)):
+        raise SystemExit(f"signed success {key} action conflicts")
+if direction == "R→T":
+    original_id = manifest.get("request_id", "")
+    if (not isinstance(original_id, str) or
+            not re.fullmatch(r"deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}", original_id) or
+            original_id == request.get("request_id")):
+        raise SystemExit("reverse target original request identity is invalid")
+    original_request_path = Path(request_path).parent.parent / "processed" / (original_id + ".json")
+    original_result_path = Path(local_path).parent / (original_id + ".json")
+    for original_path in (original_request_path, original_result_path):
+        if not original_path.is_file() or original_path.is_symlink():
+            raise SystemExit("reverse target original signed evidence is unavailable")
+    subprocess.run([str(Path(verified_release) / "deploy/runner/wait-deploy-result.sh"),
+                    "--request-file", str(original_request_path), "--result-file",
+                    str(original_result_path), "--verify-archived-request"],
+                   check=True, stdout=subprocess.DEVNULL)
+    original_request = json.loads(original_request_path.read_bytes())
+    original_result = json.loads(original_result_path.read_bytes())
+    for key in ("release_sha", "commit_sha", "runtime_sha", "deploy_bundle_sha",
+                "runtime_artifact_profile", "release_scope", "restart_targets"):
+        if original_request.get(key) != manifest.get(key) or original_result.get(key) != manifest.get(key):
+            raise SystemExit(f"reverse target original {key} evidence conflicts")
+    if (manifest.get("dry_run") is not False or original_request.get("dry_run") is not False or
+            original_request.get("request_id") != original_id or
+            original_result.get("request_id") != original_id or
+            original_result.get("status") != "succeeded" or
+            original_result.get("previous_sha") != expected_previous or
+            original_result.get("current_target") != str(target)):
+        raise SystemExit("reverse target original success evidence conflicts")
 for relative, mode in (("manifest.json", 0o444),
                        ("deploy/runner/install-release-systemd-units.sh", 0o755),
                        ("deploy/runner/smoke-release.sh", 0o755)):
@@ -656,16 +711,24 @@ if os.path.isfile(claim_path):
             claim.get("request_sha256") != hashlib.sha256(source.read_bytes()).hexdigest()):
         raise SystemExit("signed success claim conflicts")
 if not local.exists():
-    descriptor = os.open(local, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(descriptor, "wb") as fh:
-        fh.write(remote_bytes)
-        fh.flush()
-        os.fsync(fh.fileno())
-    directory = os.open(local.parent, os.O_RDONLY | os.O_DIRECTORY)
+    descriptor, temporary = tempfile.mkstemp(prefix=".signed-result-", dir=local.parent)
     try:
-        os.fsync(directory)
+        with os.fdopen(descriptor, "wb") as fh:
+            fh.write(remote_bytes)
+            fh.flush()
+            os.fsync(fh.fileno())
+        try:
+            os.link(temporary, local, follow_symlinks=False)
+        except FileExistsError:
+            if local.is_symlink() or not local.is_file() or local.read_bytes() != remote_bytes:
+                raise SystemExit("signed success local result conflicts")
+        directory = os.open(local.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
-        os.close(directory)
+        os.unlink(temporary)
 if source != processed:
     os.replace(source, processed)
     for directory_path in (source.parent, processed.parent):

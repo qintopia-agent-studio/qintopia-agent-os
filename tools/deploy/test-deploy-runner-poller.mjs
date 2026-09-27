@@ -288,6 +288,7 @@ const baseEnv = {
   DEPLOY_REQUEST_SIGNING_KEY: "test-signing-key",
   DEPLOY_REQUEST_SIGNING_KEY_ID: "production",
 };
+delete baseEnv.INVOCATION_ID;
 
 const poller = path.join(repoRoot, "deploy/runner/poll-deploy-requests.sh");
 const requestName = "deploy-20260706T000000Z-0123456789ab.json";

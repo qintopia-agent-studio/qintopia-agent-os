@@ -713,6 +713,21 @@ if (process.argv[2] === "--recovery-negative") {
   const requestPath = path.join(state, "requests/pending", `${requestId}.json`);
   const processedPath = path.join(state, "requests/processed", `${requestId}.json`);
   const resultPath = path.join(state, "results", `${requestId}.json`);
+  const reverseId = "deploy-20260927T020304Z-abcdef0";
+  const reverseRequestPath = path.join(state, "requests/pending", `${reverseId}.json`);
+  const reverseProcessedPath = path.join(
+    state,
+    "requests/processed",
+    `${reverseId}.json`
+  );
+  const reverseResultPath = path.join(state, "results", `${reverseId}.json`);
+  const reverseJournalPath = path.join(recovery, `${reverseId}.json`);
+  const resultsDir = path.join(state, "results");
+  const originalResultTemps = new Set(
+    fs.existsSync(resultsDir)
+      ? fs.readdirSync(resultsDir).filter((name) => name.startsWith(".signed-result-"))
+      : []
+  );
   const claimPath = path.join(state, "requests/claimed", `${requestId}.json`);
   const journalPath = path.join(recovery, `${requestId}.json`);
   const holdPath = path.join(recovery, "hold");
@@ -776,6 +791,7 @@ if (process.argv[2] === "--recovery-negative") {
       },
     };
   };
+  const unsigned = ({ signature: _signature, ...body }) => body;
   const request = sign(
     {
       schema_version: 1,
@@ -851,6 +867,7 @@ if (process.argv[2] === "--recovery-negative") {
           runtime_artifact_profile: "huabaosi-production",
           release_scope: ["deploy-bundle"],
           restart_targets: ["qintopia-system-services"],
+          dry_run: false,
         });
       write(path.join(tree, "manifest.json"), `${JSON.stringify(manifest)}\n`, 0o444);
       write(
@@ -975,16 +992,16 @@ if (process.argv[2] === "--recovery-negative") {
         JSON.stringify({ mode, key: request.cos.result_key, result: remoteResult })
       );
     };
-    const launch = () =>
+    const launch = (extraEnv = {}, id = requestId) =>
       spawnSync(
         "bash",
         [
           ...(process.env.QINTOPIA_RECOVERY_TRACE ? ["-x"] : []),
           path.join(helper, "recover-release-lineage.sh"),
           "--request-id",
-          requestId,
+          id,
         ],
-        { encoding: "utf8" }
+        { encoding: "utf8", env: { ...process.env, ...extraEnv } }
       );
     for (const [label, mode, phase, withClaim] of [
       ["unknown upload", "absent", "unknown", true],
@@ -1020,6 +1037,43 @@ if (process.argv[2] === "--recovery-negative") {
       );
       assert.equal(fs.readFileSync(holdPath, "utf8"), `${token}\n`);
     }
+    setEvidence("not_started", false);
+    setRemote("absent");
+    fs.rmSync(resultPath, { force: true });
+    fs.copyFileSync(requestPath, remoteRequest);
+    const assertNoRecoveryEffects = (label, expectedHold = `${token}\n`) => {
+      const attempt = launch();
+      assert.equal(attempt.status, 75, `${label}: ${attempt.stderr}`);
+      assert.equal(
+        fs.realpathSync(path.join(releaseRoot, "current")),
+        path.join(releaseRoot, tSha)
+      );
+      assert.equal(
+        fs.realpathSync(path.join(releaseRoot, "previous")),
+        path.join(releaseRoot, oSha)
+      );
+      assert.equal(fs.existsSync(installMarker), false, `${label}: installer ran`);
+      assert.equal(fs.existsSync(smokeMarker), false, `${label}: smoke ran`);
+      assert.equal(fs.readFileSync(holdPath, "utf8"), expectedHold);
+    };
+    write(holdPath, `${"f".repeat(32)}\n`, 0o600);
+    assertNoRecoveryEffects("no-claim foreign hold", `${"f".repeat(32)}\n`);
+    write(holdPath, `${token}\n`, 0o600);
+    const { hold_token: _oldToken, ...unboundJournal } = baseJournal;
+    write(journalPath, `${JSON.stringify(unboundJournal)}\n`, 0o600);
+    assertNoRecoveryEffects("no-claim unbound legacy journal");
+    setEvidence("not_started", false);
+    const laterJournal = path.join(recovery, "deploy-20260927T020304Z-abcdef0.json");
+    write(laterJournal, `${JSON.stringify({ request_id: "later" })}\n`, 0o600);
+    assertNoRecoveryEffects("no-claim later journal");
+    fs.rmSync(laterJournal);
+    const otherClaim = path.join(
+      state,
+      "requests/claimed/deploy-20260927T020304Z-abcdef0.json"
+    );
+    write(otherClaim, "{}\n", 0o600);
+    assertNoRecoveryEffects("no-claim other claim");
+    fs.rmSync(otherClaim);
     fs.copyFileSync(requestPath, remoteRequest);
     fs.rmSync(resultPath, { force: true });
     setEvidence();
@@ -1100,8 +1154,198 @@ if (process.argv[2] === "--recovery-negative") {
       0,
       "signed success reconciliation should be idempotent"
     );
+    fs.rmSync(claimPath, { force: true });
+    const reverseTargets = [
+      "qintopia-system-services",
+      "hermes-erhua",
+      "hermes-xiaoman",
+      "hermes-silaoshi",
+      "hermes-huabaosi",
+      "hermes-anan",
+    ];
+    const reverseRequest = sign(
+      {
+        ...unsigned(request),
+        request_id: reverseId,
+        release_scope: ["deploy-bundle"],
+        restart_targets: reverseTargets,
+        release_rollback: { expected_current_sha: rSha, expected_previous_sha: tSha },
+        cos: {
+          ...request.cos,
+          request_key: `qintopia-agent-os/deploy-requests/production/requests/${reverseId}.json`,
+          result_key: `qintopia-agent-os/deploy-results/production/${reverseId}.json`,
+        },
+      },
+      "github-actions",
+      "request"
+    );
+    const reverseResult = sign(
+      {
+        ...unsigned(result("succeeded")),
+        request_id: reverseId,
+        restart_targets: reverseTargets,
+      },
+      "qintopia-deploy-runner",
+      "result"
+    );
+    const reverseBytes = `${JSON.stringify(reverseResult)}\n`;
+    write(
+      path.join(releaseRoot, rSha, "manifest.json"),
+      `${JSON.stringify({ release_sha: rSha, previous_sha: tSha })}\n`,
+      0o444
+    );
+    write(reverseRequestPath, `${JSON.stringify(reverseRequest)}\n`, 0o600);
+    fs.copyFileSync(reverseRequestPath, remoteRequest);
+    write(
+      reverseJournalPath,
+      `${JSON.stringify({
+        schema_version: 1,
+        request_id: reverseId,
+        request_sha256: digest(fs.readFileSync(reverseRequestPath)),
+        direction: "R→T",
+        original_current_sha: rSha,
+        original_previous_sha: tSha,
+        manifest_sha256: {
+          current: digest(
+            fs.readFileSync(path.join(releaseRoot, rSha, "manifest.json"))
+          ),
+          previous: digest(
+            fs.readFileSync(path.join(releaseRoot, tSha, "manifest.json"))
+          ),
+        },
+        hold_token: reverseId,
+        phase: "intent",
+      })}\n`,
+      0o600
+    );
+    write(holdPath, `${reverseId}\n`, 0o600);
+    write(remoteResult, reverseBytes, 0o600);
+    write(
+      serverConfig,
+      JSON.stringify({
+        mode: "success",
+        key: reverseRequest.cos.result_key,
+        result: remoteResult,
+      })
+    );
+    fs.rmSync(installMarker, { force: true });
+    fs.rmSync(smokeMarker, { force: true });
+    const reverseLaunch = (extraEnv = {}) => launch(extraEnv, reverseId);
+    const reverseNoEffects = (label, expectedStatus = 75, expectedError = "") => {
+      const attempt = reverseLaunch();
+      assert.equal(attempt.status, expectedStatus, `${label}: ${attempt.stderr}`);
+      if (expectedError) assert.match(attempt.stderr, new RegExp(expectedError), label);
+      assert.equal(
+        fs.realpathSync(path.join(releaseRoot, "current")),
+        path.join(releaseRoot, tSha)
+      );
+      assert.equal(
+        fs.realpathSync(path.join(releaseRoot, "previous")),
+        path.join(releaseRoot, oSha)
+      );
+      assert.equal(fs.existsSync(installMarker), false, `${label}: installer ran`);
+      assert.equal(fs.existsSync(smokeMarker), false, `${label}: smoke ran`);
+    };
+    const reverseSuccess = reverseLaunch();
+    assert.equal(reverseSuccess.status, 0, `R→T success: ${reverseSuccess.stderr}`);
+    assert.deepEqual(fs.readFileSync(reverseResultPath), Buffer.from(reverseBytes));
+    assert.equal(fs.existsSync(reverseProcessedPath), true);
+    reverseNoEffects("R→T idempotent", 0);
+    const resetReverse = () => {
+      fs.rmSync(reverseResultPath, { force: true });
+      if (fs.existsSync(reverseProcessedPath))
+        fs.renameSync(reverseProcessedPath, reverseRequestPath);
+      const journal = JSON.parse(fs.readFileSync(reverseJournalPath, "utf8"));
+      delete journal.maintenance_evidence;
+      write(reverseJournalPath, `${JSON.stringify(journal)}\n`, 0o600);
+      fs.copyFileSync(reverseRequestPath, remoteRequest);
+      write(remoteResult, reverseBytes, 0o600);
+      write(
+        serverConfig,
+        JSON.stringify({
+          mode: "success",
+          key: reverseRequest.cos.result_key,
+          result: remoteResult,
+        })
+      );
+    };
+    resetReverse();
+    const wrongAction = sign(
+      { ...unsigned(reverseResult), restart_targets: ["qintopia-system-services"] },
+      "qintopia-deploy-runner",
+      "result"
+    );
+    write(remoteResult, `${JSON.stringify(wrongAction)}\n`, 0o600);
+    reverseNoEffects("R→T action targets conflict", 75, "restart_targets mismatch");
+    resetReverse();
+    const originalBytes = fs.readFileSync(resultPath);
+    write(resultPath, failedBytes, 0o600);
+    reverseNoEffects(
+      "R→T original signed result conflicts",
+      75,
+      "Deploy result failed"
+    );
+    write(resultPath, originalBytes, 0o600);
+    const faultDir = path.join(fixture, "fault-python");
+    write(
+      path.join(faultDir, "sitecustomize.py"),
+      `import os, signal, tempfile
+mode = os.environ.get("QINTOPIA_SIMULATED_RESULT_FAULT")
+original_mkstemp = tempfile.mkstemp
+def mkstemp(*args, **kwargs):
+    descriptor, path = original_mkstemp(*args, **kwargs)
+    if mode == "create" and os.path.basename(path).startswith(".signed-result-"):
+        os.kill(os.getpid(), signal.SIGKILL)
+    return descriptor, path
+tempfile.mkstemp = mkstemp
+original_fsync = os.fsync
+def fsync(descriptor):
+    try:
+        path = os.readlink("/proc/self/fd/" + str(descriptor))
+    except OSError:
+        path = ""
+    if mode == "write" and os.path.basename(path).startswith(".signed-result-"):
+        os.ftruncate(descriptor, max(1, os.fstat(descriptor).st_size // 2))
+        os.kill(os.getpid(), signal.SIGKILL)
+    return original_fsync(descriptor)
+os.fsync = fsync
+`
+    );
+    for (const fault of ["create", "write"]) {
+      resetReverse();
+      const interrupted = reverseLaunch({
+        PYTHONPATH: faultDir,
+        QINTOPIA_SIMULATED_RESULT_FAULT: fault,
+      });
+      assert.equal(
+        interrupted.status,
+        75,
+        `${fault} interruption: ${interrupted.stderr}`
+      );
+      assert.equal(
+        fs.existsSync(reverseResultPath),
+        false,
+        `${fault}: formal result was published`
+      );
+      assert.equal(fs.existsSync(installMarker), false, `${fault}: installer ran`);
+      assert.equal(fs.existsSync(smokeMarker), false, `${fault}: smoke ran`);
+      const retried = reverseLaunch();
+      assert.equal(retried.status, 0, `${fault} retry: ${retried.stderr}`);
+      assert.deepEqual(fs.readFileSync(reverseResultPath), Buffer.from(reverseBytes));
+    }
+    resetReverse();
+    const conflictingLocal = `${JSON.stringify(
+      sign(
+        { ...unsigned(reverseResult), status: "failed" },
+        "qintopia-deploy-runner",
+        "result"
+      )
+    )}\n`;
+    write(reverseResultPath, conflictingLocal, 0o600);
+    reverseNoEffects("R→T existing different signed result");
+    assert.equal(fs.readFileSync(reverseResultPath, "utf8"), conflictingLocal);
     console.log(
-      "Recovery missing-result, COS, active-child and success matrix passed."
+      "Recovery missing-result, hold ownership, R→T success and result interruption matrix passed."
     );
   } finally {
     spawnSync("systemctl", ["stop", fixed]);
@@ -1119,6 +1363,10 @@ if (process.argv[2] === "--recovery-negative") {
       requestPath,
       processedPath,
       resultPath,
+      reverseRequestPath,
+      reverseProcessedPath,
+      reverseResultPath,
+      reverseJournalPath,
       claimPath,
       journalPath,
       holdPath,
@@ -1126,6 +1374,10 @@ if (process.argv[2] === "--recovery-negative") {
       path.join(recovery, "takeover-consumed"),
     ])
       fs.rmSync(target, { force: true });
+    if (fs.existsSync(resultsDir))
+      for (const name of fs.readdirSync(resultsDir))
+        if (name.startsWith(".signed-result-") && !originalResultTemps.has(name))
+          fs.rmSync(path.join(resultsDir, name), { force: true });
     spawnSync("systemctl", ["daemon-reload"]);
     if (server) process.kill(-server.pid, "SIGKILL");
     fs.rmSync(fixture, { recursive: true, force: true });
@@ -2022,7 +2274,8 @@ try {
   );
   timerCreated = true;
   requireSuccess("systemctl", ["daemon-reload"]);
-  const requestId = `deploy-20260927T000000Z-${crypto.randomBytes(7).toString("hex")}`;
+  const requestTime = new Date().toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z";
+  const requestId = `deploy-${requestTime}-${crypto.randomBytes(7).toString("hex")}`;
   const signedAt = new Date().toISOString();
   const targets = [
     "qintopia-system-services",
@@ -2193,9 +2446,11 @@ esac
       current: sha256(fs.readFileSync(path.join(releaseRoot, tSha, "manifest.json"))),
       previous: sha256(fs.readFileSync(path.join(releaseRoot, oSha, "manifest.json"))),
     },
+    hold_token: requestId,
     phase: "intent",
   };
   write(journalPath, JSON.stringify(journal) + "\n", 0o600);
+  write(hold, requestId + "\n", 0o600);
   const helper = path.join(
     releaseRoot,
     tSha,
@@ -2336,7 +2591,7 @@ esac
     assert.equal(fs.readFileSync(hold, "utf8"), requestId + "\n");
   }
   fs.rmSync(claimPath);
-  write(hold, "hold\n", 0o600);
+  write(hold, requestId + "\n", 0o600);
   write(resultPath, JSON.stringify(result) + "\n", 0o600);
   write(
     cosServerConfig,
