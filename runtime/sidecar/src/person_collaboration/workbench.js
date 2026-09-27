@@ -4,6 +4,7 @@ let state,
   pending = null,
   page = "overview",
   selectedPosition = null,
+  businessScope = null,
   editing = null;
 let ledgerKind = "agent",
   ledgerSelection = null,
@@ -223,6 +224,8 @@ async function readState() {
     throw new Error("配置响应不完整，请检查本地服务版本。");
   state = next;
   state.business = await api("/api/business");
+  if (!state.business.manageable_scopes?.some((scope) => scope.id === businessScope))
+    businessScope = null;
   ontologyRequests.clear();
   updateWorkspaceNavigation();
   $("workspace-mode").textContent =
@@ -236,8 +239,7 @@ function availablePage(next) {
   return (
     next === "overview" ||
     (next === "settings" && state.management_available === true) ||
-    (next === "ledger" && state.catalog_admin === true && state.mode !== "live") ||
-    (next === "business" && state.business?.can_manage === true)
+    (next === "ledger" && state.catalog_admin === true && state.mode !== "live")
   );
 }
 function updateWorkspaceNavigation() {
@@ -252,7 +254,7 @@ function updateWorkspaceNavigation() {
       : "我的管理范围"
     : "我的工作";
   const navigation = document.querySelector(".qo-tabs");
-  navigation.hidden = !manager && !state.business?.can_manage;
+  navigation.hidden = !manager;
   navigation.setAttribute("aria-label", manager ? "工作管理" : "我的工作");
   $("overview").setAttribute("role", manager ? "tabpanel" : "region");
   if (manager) {
@@ -273,31 +275,29 @@ function updateWorkspaceNavigation() {
     discardPreview();
   }
   // Revocation must remove stale management forms, not merely hide the tab.
-  for (const id of ["settings", "ledger", "business"])
+  for (const id of ["settings", "ledger"])
     if (!availablePage(id)) $(id).replaceChildren();
   for (const item of document.querySelectorAll("[data-page]")) {
     const selected = item.dataset.page === page;
     item.setAttribute("aria-selected", String(selected));
     item.tabIndex = selected ? 0 : -1;
   }
-  for (const id of ["overview", "settings", "ledger", "business"])
-    $(id).hidden = id !== page;
+  for (const id of ["overview", "settings", "ledger"]) $(id).hidden = id !== page;
 }
-function navigate(next) {
+function navigate(next, { keepBusiness = false } = {}) {
   if (busy || !state) return;
   discardPreview();
+  if (!keepBusiness) businessScope = null;
   page = availablePage(next) ? next : "overview";
   document.querySelectorAll("[data-page]").forEach((b) => {
     const yes = b.dataset.page === page;
     b.setAttribute("aria-selected", String(yes));
     b.tabIndex = yes ? 0 : -1;
   });
-  for (const id of ["overview", "settings", "ledger", "business"])
-    $(id).hidden = id !== page;
+  for (const id of ["overview", "settings", "ledger"]) $(id).hidden = id !== page;
   if (page === "overview") renderOrganization();
   if (page === "ledger") renderLedger();
   if (page === "settings") renderSettings();
-  if (page === "business") renderBusiness();
   notice("");
 }
 async function preview(change, summary, host, onSaved) {
@@ -362,6 +362,7 @@ async function preview(change, summary, host, onSaved) {
 async function savePending() {
   if (!pending || busy) return;
   const operation = pending;
+  const previousBusinessScope = businessScope;
   setBusy(true);
   let saved = false;
   try {
@@ -381,7 +382,11 @@ async function savePending() {
       editing = null;
     }
     setBusy(false);
-    navigate(page);
+    navigate(page, { keepBusiness: operation.savePath === "/api/business/save" });
+    if (previousBusinessScope) {
+      if (businessScope) $("business-heading")?.focus();
+      else focusBusinessReturn(previousBusinessScope);
+    }
     notice(operation.successMessage || "本次变更已保存，页面已读取最新状态。");
   } catch (e) {
     if (saved) notice("变更已保存，但读取失败。请重新读取核对，避免重复新建。", true);
@@ -433,7 +438,6 @@ $("reload-state").addEventListener("click", async () => {
         }
       }
     }
-    if (page === "business") renderBusiness();
     notice("已读取最新配置。未保存的输入仍保留，请核对最新安排后再次预览。");
   } catch (e) {
     onError(e);

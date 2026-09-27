@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-27 PR #723 物业业务授权入口与本地验证](2026-09-27-pr723-business-ui-validation.md)
+
 - [2026-09-25 岸岸生产接线核查与实施](2026-09-25-anan-production-integration.md)
 
 - [2026-09-25 PR #721 集成检查与审查](2026-09-25-pr721-integration-review.md)

@@ -67,6 +67,38 @@ impl Store {
         let (mut tx, version, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
         let policy = self.policy(&mut tx, now).await?;
+        let manageable: Vec<(Uuid, bool, bool)> = policy
+            .scopes
+            .iter()
+            .filter(|s| s.active)
+            .filter_map(|s| {
+                let read = policy
+                    .manager(actor.person, s.id, "anan", "hospitality", "read_business")
+                    .is_some();
+                let execute = policy
+                    .manager(
+                        actor.person,
+                        s.id,
+                        "anan",
+                        "hospitality",
+                        "execute_business",
+                    )
+                    .is_some();
+                (read || execute).then_some((s.id, read, execute))
+            })
+            .collect();
+        ensure!(manageable.len() <= 256, "business_configuration_too_large");
+        let manageable_ids: Vec<Uuid> = manageable.iter().map(|(id, _, _)| *id).collect();
+        let scope_rows = sqlx::query("SELECT id,label FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2) AND status='active' ORDER BY label,id")
+            .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
+        let manageable_scopes: Vec<Value> = scope_rows
+            .iter()
+            .filter_map(|row| {
+                let id: Uuid = row.get("id");
+                manageable.iter().find(|(scope, _, _)| *scope == id).map(|(_, read, execute)|
+                json!({"id":id,"label":row.get::<String,_>("label"),"read":read,"execute":execute}))
+            })
+            .collect();
         let rows = sqlx::query("SELECT id,scope_id,source_instance,property_id,active,version FROM qintopia_agent_os.business_property_bindings WHERE tenant_key=$1 ORDER BY scope_id,property_id LIMIT 257")
             .bind(&self.tenant).fetch_all(&mut *tx).await?;
         ensure!(rows.len() <= 256, "business_configuration_too_large");
@@ -122,26 +154,12 @@ impl Store {
         ensure!(observed.len() <= 256, "business_configuration_too_large");
         let observed:Vec<_>=observed.iter().filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
             .map(|r|json!({"source_link":r.get::<Uuid,_>("id"),"gateway":r.get::<String,_>("gateway_key"),"scope":r.get::<Uuid,_>("scope_id"),"label":r.get::<String,_>("label")})).collect();
-        let can_manage = policy.scopes.iter().any(|s| {
-            s.active
-                && (policy
-                    .manager(actor.person, s.id, "anan", "hospitality", "read_business")
-                    .is_some()
-                    || policy
-                        .manager(
-                            actor.person,
-                            s.id,
-                            "anan",
-                            "hospitality",
-                            "execute_business",
-                        )
-                        .is_some())
-        });
+        let can_manage = !manageable_scopes.is_empty();
         let catalog: Value = serde_json::from_str(include_str!(
             "../../../../../skills/pms-operations/operations.json"
         ))?;
         Ok(
-            json!({"version":version,"can_manage":can_manage,"bindings":bindings,"accounts":accounts,"observed":observed,"operations":catalog["operations"]}),
+            json!({"version":version,"can_manage":can_manage,"manageable_scopes":manageable_scopes,"bindings":bindings,"accounts":accounts,"observed":observed,"operations":catalog["operations"]}),
         )
     }
 

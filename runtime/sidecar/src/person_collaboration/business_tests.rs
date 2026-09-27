@@ -115,6 +115,80 @@ impl Fixture {
 
 #[tokio::test]
 #[ignore = "explicit task-isolated local database required"]
+async fn business_management_scope_is_visible_before_first_binding() -> Result<()> {
+    let f = Fixture::new().await?;
+    let scope: Uuid = sqlx::query_scalar(
+        "SELECT scope_id FROM qintopia_agent_os.business_property_bindings WHERE id=$1",
+    )
+    .bind(f.binding)
+    .fetch_one(&f.store.pool)
+    .await?;
+    sqlx::query("DELETE FROM qintopia_agent_os.business_property_bindings WHERE id=$1")
+        .bind(f.binding)
+        .execute(&f.store.pool)
+        .await?;
+    let state = f.store.business_configuration_state(&f.actor).await?;
+    assert_eq!(state["can_manage"], true);
+    assert!(state["bindings"].as_array().unwrap().is_empty());
+    assert!(state["manageable_scopes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item["id"] == json!(scope)
+            && item["execute"] == true
+            && item["label"].as_str().is_some()));
+
+    let link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND source_ref='fixture-person-1'")
+        .bind(&f.store.tenant).fetch_one(&f.store.pool).await?;
+    let colleague = f.store.actor(link).await?;
+    let person = f.store.verified_person(&colleague).await?;
+    let appointment: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_appointments(tenant_key,person_id,role_id,scope_id) SELECT a.tenant_key,$2,a.role_id,a.scope_id FROM qintopia_agent_os.collaboration_appointments a JOIN qintopia_agent_os.agent_collaborations c ON c.appointment_id=a.id JOIN qintopia_agent_os.collaboration_grants g ON g.collaboration_id=c.id WHERE g.id=$1 RETURNING id")
+        .bind(f.grant).bind(person).fetch_one(&f.store.pool).await?;
+    let collaboration: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.agent_collaborations(tenant_key,appointment_id,agent_key,domain_key,responsibility_text) VALUES($1,$2,'anan','hospitality','模拟仅有执行职责') RETURNING id")
+        .bind(&f.store.tenant).bind(appointment).fetch_one(&f.store.pool).await?;
+    let root_grant: Uuid = sqlx::query_scalar(
+        "SELECT parent_grant_id FROM qintopia_agent_os.collaboration_grants WHERE id=$1",
+    )
+    .bind(f.grant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,parent_grant_id,decision_mode) VALUES($1,$2,'execute_business',$3,'autonomous')")
+        .bind(&f.store.tenant).bind(collaboration).bind(root_grant).execute(&f.store.pool).await?;
+    let limited = f.store.business_configuration_state(&colleague).await?;
+    assert_eq!(limited["can_manage"], false);
+    assert!(limited["manageable_scopes"].as_array().unwrap().is_empty());
+    let version: i64 = sqlx::query_scalar(
+        "SELECT version FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1",
+    )
+    .bind(&f.store.tenant)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let change = BusinessConfigCommand {
+        operation_id: Uuid::new_v4(),
+        expected_version: version,
+        change: BusinessConfigChange::CreateBinding {
+            scope,
+            source: "synthetic-new".into(),
+            property: "property_new".into(),
+        },
+    };
+    assert_eq!(
+        f.store
+            .business_configure(&colleague, &change, true)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "management_denied"
+    );
+    assert_eq!(
+        f.store.business_configure(&f.actor, &change, true).await?["persisted"],
+        true
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
 async fn shared_work_account_confirms_collection_and_revocation_stops_recovery() -> Result<()> {
     let f = Fixture::new().await?;
     let scope: Uuid = sqlx::query_scalar(
@@ -725,6 +799,89 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         .bind(&f.store.tenant).bind(f.binding).fetch_one(&f.store.pool).await?;
     assert_eq!(booking_count, 1);
     assert_ne!(booking_id, action_id);
+
+    let account_version: i64 =
+        sqlx::query_scalar("SELECT version FROM qintopia_identity.work_accounts WHERE id=$1")
+            .bind(account)
+            .fetch_one(&f.store.pool)
+            .await?;
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::DisableAccount {
+                    account,
+                    expected_account_version: account_version,
+                },
+            ),
+            true,
+        )
+        .await?;
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::RegisterAccount {
+                    gateway: gateway.clone(),
+                    source_link: link,
+                    label: "模拟共用账号".into(),
+                },
+            ),
+            true,
+        )
+        .await?;
+    let admin_grant = f
+        .store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "admin".into(),
+                    operation: "pms.read.order".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
+    let admin_grant: Uuid = serde_json::from_value(admin_grant["change"]["grant"].clone())?;
+    let admin = f.store.business_gateway_actor(&gateway, sender).await?;
+    let state = f.store.business_configuration_state(&admin).await?;
+    assert_eq!(state["can_manage"], false);
+    assert!(state["manageable_scopes"].as_array().unwrap().is_empty());
+    for change in [
+        BusinessConfigChange::RegisterAccount {
+            gateway: gateway.clone(),
+            source_link: link,
+            label: "模拟共用账号".into(),
+        },
+        BusinessConfigChange::DisableAccount {
+            account,
+            expected_account_version: 1,
+        },
+        BusinessConfigChange::GrantAccountOperation {
+            binding: f.binding,
+            account,
+            role: "admin".into(),
+            operation: "pms.read.order".into(),
+            valid_until: None,
+        },
+        BusinessConfigChange::RevokeOperation { grant: admin_grant },
+    ] {
+        assert_eq!(
+            f.store
+                .business_configure(&admin, &command(version().await?, change), true)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "management_denied"
+        );
+    }
     Ok(())
 }
 

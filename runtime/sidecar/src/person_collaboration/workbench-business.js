@@ -62,48 +62,102 @@ async function previewBusiness(change, details, host) {
   }
 }
 
-function renderBusiness() {
-  const target = $("business");
+let businessReturnIndex = 0;
+function businessEntry(scope, label) {
+  const entry = button(label, () => openBusiness(scope));
+  entry.dataset.businessScope = scope;
+  return entry;
+}
+
+function focusBusinessReturn(scope) {
+  const entries = [...document.querySelectorAll("[data-business-scope]")].filter(
+    (entry) => entry.dataset.businessScope === scope
+  );
+  const target =
+    entries[businessReturnIndex] || entries[0] || $("overview").querySelector("h2");
+  if (target?.tagName === "H2") target.tabIndex = -1;
+  target?.focus();
+}
+
+function closeBusiness() {
+  const scope = businessScope;
+  navigate("overview");
+  focusBusinessReturn(scope);
+}
+
+function openBusiness(scope) {
+  if (!state.business?.manageable_scopes?.some((item) => item.id === scope)) return;
+  const entries = [...document.querySelectorAll("[data-business-scope]")].filter(
+    (entry) => entry.dataset.businessScope === scope
+  );
+  businessReturnIndex = Math.max(0, entries.indexOf(document.activeElement));
+  businessScope = scope;
+  navigate("overview", { keepBusiness: true });
+  $("business-heading")?.focus();
+}
+
+function renderBusiness(target, scope) {
   target.replaceChildren();
   const data = state.business;
-  if (!data?.can_manage) return;
-  target.append(titleRow("岸岸账号授权", "QinTopia · 物业业务范围"));
+  const current = data?.manageable_scopes?.find((item) => item.id === scope);
+  if (!current) return;
+  const heading = titleRow(
+    "物业业务授权",
+    current.label,
+    button("返回组织关系", closeBusiness)
+  );
+  heading.querySelector("h2").id = "business-heading";
+  heading.querySelector("h2").tabIndex = -1;
+  target.setAttribute("aria-describedby", "business-heading");
+  target.append(heading);
+  if (data.manageable_scopes.length > 1) {
+    const scopePicker = selectField(
+      target,
+      "business-managed-scope",
+      "管理范围",
+      data.manageable_scopes,
+      scope
+    );
+    scopePicker.addEventListener("change", () => openBusiness(scopePicker.value));
+  }
+  const scopedBindings = data.bindings.filter((item) => item.scope === scope);
+  const scopedAccounts = data.accounts.filter((item) => item.scope === scope);
+  const scopedObserved = data.observed.filter((item) => item.scope === scope);
+  const canManageOperation = (operation) => {
+    const action = data.operations[operation]?.action;
+    return action === "read_business"
+      ? current.read
+      : action === "execute_business" && current.execute;
+  };
 
   const bindings = box("物业范围");
-  for (const binding of data.bindings.filter((item) => item.active)) {
+  for (const binding of scopedBindings.filter((item) => item.active)) {
     const row = el("div", undefined, "qo-scope-row");
     row.append(
       el("strong", `${binding.property} · ${labelOf("scopes", binding.scope)}`),
       sub(binding.source)
     );
-    row.append(
-      button("停用物业接线", () =>
-        previewBusiness(
-          {
-            kind: "disable_binding",
-            binding: binding.id,
-            expected_binding_version: binding.version,
-          },
-          [
-            ["物业", binding.property],
-            ["影响", "此物业的岸岸操作授权全部撤回"],
-          ],
-          row
+    if (current.read && current.execute)
+      row.append(
+        button("停用物业接线", () =>
+          previewBusiness(
+            {
+              kind: "disable_binding",
+              binding: binding.id,
+              expected_binding_version: binding.version,
+            },
+            [
+              ["物业", binding.property],
+              ["影响", "此物业的岸岸操作授权全部撤回"],
+            ],
+            row
+          )
         )
-      )
-    );
+      );
     bindings.append(row);
   }
   const bindingForm = el("form");
   bindingForm.id = "business-binding-form";
-  const scope = selectField(
-    bindingForm,
-    "business-scope",
-    "范围",
-    state.scopes.filter(active).map((item) => ({ id: item.id, label: item.label })),
-    "",
-    "选择范围"
-  );
   const source = inputField(
     bindingForm,
     "business-source",
@@ -122,17 +176,17 @@ function renderBusiness() {
   );
   bindingForm.append(
     button("新增物业绑定", () => {
-      if (!scope.value || !source.value.trim() || !property.value.trim())
-        return notice("请填写范围、来源实例和物业 ID。", true);
+      if (!source.value.trim() || !property.value.trim())
+        return notice("请填写来源实例和物业 ID。", true);
       previewBusiness(
         {
           kind: "create_binding",
-          scope: scope.value,
+          scope,
           source: source.value.trim(),
           property: property.value.trim(),
         },
         [
-          ["范围", scope.selectedOptions[0].textContent],
+          ["范围", current.label],
           ["物业", property.value.trim()],
         ],
         bindingForm
@@ -143,8 +197,8 @@ function renderBusiness() {
   target.append(bindings);
 
   const observed = box("可信来源候选");
-  if (!data.observed.length) observed.append(sub("当前没有待登记的企微工作账号。"));
-  for (const candidate of data.observed) {
+  if (!scopedObserved.length) observed.append(sub("当前没有待登记的企微工作账号。"));
+  for (const candidate of scopedObserved) {
     const row = el("div", undefined, "qo-scope-row");
     row.append(el("strong", candidate.label), sub(labelOf("scopes", candidate.scope)));
     const label = inputField(
@@ -177,14 +231,14 @@ function renderBusiness() {
   target.append(observed);
 
   const accounts = box("账号与操作");
-  if (!data.accounts.length) accounts.append(sub("尚未登记工作账号。"));
-  for (const account of data.accounts) {
+  if (!scopedAccounts.length) accounts.append(sub("尚未登记工作账号。"));
+  for (const account of scopedAccounts) {
     const row = el("div", undefined, "qo-scope-row");
     row.append(
       el("h4", account.label),
       sub(`${labelOf("scopes", account.scope)} · ${account.active ? "在用" : "已停用"}`)
     );
-    const granted = data.bindings
+    const granted = scopedBindings
       .flatMap((b) => b.grants.map((g) => ({ ...g, binding: b })))
       .filter((g) => g.work_account === account.id && !g.revoked);
     for (const grant of granted) {
@@ -195,32 +249,31 @@ function renderBusiness() {
           `${grant.binding.property} · ${businessRoles[grant.role] || grant.role} · ${businessOperationLabel(grant.operation, data.operations[grant.operation] || {})}${grant.valid_until ? ` · 至 ${new Date(grant.valid_until).toLocaleString("zh-CN")}` : ""}`
         )
       );
-      line.append(
-        button("撤权", () =>
-          previewBusiness(
-            { kind: "revoke_operation", grant: grant.id },
-            [
-              ["账号", account.label],
-              ["物业", grant.binding.property],
+      if (canManageOperation(grant.operation))
+        line.append(
+          button("撤权", () =>
+            previewBusiness(
+              { kind: "revoke_operation", grant: grant.id },
               [
-                "操作",
-                businessOperationLabel(
-                  grant.operation,
-                  data.operations[grant.operation] || {}
-                ),
+                ["账号", account.label],
+                ["物业", grant.binding.property],
+                [
+                  "操作",
+                  businessOperationLabel(
+                    grant.operation,
+                    data.operations[grant.operation] || {}
+                  ),
+                ],
               ],
-            ],
-            row
+              row
+            )
           )
-        )
-      );
+        );
       row.append(line);
     }
     if (account.active) {
       const form = el("form");
-      const permittedBindings = data.bindings.filter(
-        (b) => b.active && b.scope === account.scope
-      );
+      const permittedBindings = scopedBindings.filter((b) => b.active);
       const binding = selectField(
         form,
         `grant-binding-${account.id}`,
@@ -240,10 +293,14 @@ function renderBusiness() {
         form,
         `grant-op-${account.id}`,
         "具体操作",
-        Object.entries(data.operations).map(([id, spec]) => ({
-          id,
-          label: businessOperationLabel(id, spec),
-        })),
+        Object.entries(data.operations)
+          .filter(
+            ([, spec]) => current[spec.action === "read_business" ? "read" : "execute"]
+          )
+          .map(([id, spec]) => ({
+            id,
+            label: businessOperationLabel(id, spec),
+          })),
         "",
         "选择操作"
       );
@@ -279,22 +336,23 @@ function renderBusiness() {
         })
       );
       row.append(form);
-      row.append(
-        button("停用账号", () =>
-          previewBusiness(
-            {
-              kind: "disable_account",
-              account: account.id,
-              expected_account_version: account.version,
-            },
-            [
-              ["账号", account.label],
-              ["影响", "撤回该账号的岸岸操作授权"],
-            ],
-            row
+      if (granted.every((grant) => canManageOperation(grant.operation)))
+        row.append(
+          button("停用账号", () =>
+            previewBusiness(
+              {
+                kind: "disable_account",
+                account: account.id,
+                expected_account_version: account.version,
+              },
+              [
+                ["账号", account.label],
+                ["影响", "撤回该账号的岸岸操作授权"],
+              ],
+              row
+            )
           )
-        )
-      );
+        );
     }
     accounts.append(row);
   }
