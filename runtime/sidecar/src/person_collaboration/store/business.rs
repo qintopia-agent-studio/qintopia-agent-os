@@ -752,11 +752,11 @@ impl Store {
                     .as_str()
                     .filter(|s| !s.is_empty())
                 {
-                    if let Some(prior)=sqlx::query("SELECT id,input,actor_person_id,actor_work_account_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND input->>'transactionReference'=$4 AND input->>'method'=$5 AND phase NOT IN ('cancelled','preview_rejected','not_executed') LIMIT 1")
+                    if let Some(prior)=sqlx::query("SELECT id,input,actor_person_id,actor_work_account_id,actor_work_account_version FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND input->>'transactionReference'=$4 AND input->>'method'=$5 AND phase NOT IN ('cancelled','preview_rejected','not_executed') LIMIT 1")
                         .bind(&self.tenant).bind(auth.binding).bind(key).bind(reference).bind(input["method"].as_str()).fetch_optional(&mut *tx).await? {
                         let old:Value=prior.get("input");
                         ensure!(old["orderId"]==input["orderId"] && old["amountMinor"]==input["amountMinor"],"business_payment_conflict");
-                        ensure!(prior.get::<Option<Uuid>,_>("actor_person_id")==actor.business_person() && prior.get::<Option<Uuid>,_>("actor_work_account_id")==actor.work_account.map(|v|v.0),"business_subject_changed");
+                        ensure!(prior.get::<Option<Uuid>,_>("actor_person_id")==actor.business_person() && prior.get::<Option<Uuid>,_>("actor_work_account_id")==actor.work_account.map(|v|v.0) && prior.get::<Option<i64>,_>("actor_work_account_version")==actor.work_account.map(|v|v.1),"business_subject_changed");
                         let id:Uuid=prior.get("id");tx.commit().await?;return Ok(json!({"action":id,"replayed":true}));
                     }
                 }
@@ -806,7 +806,7 @@ impl Store {
             // Quote identity and an explicitly selected source matter survive new
             // messages and process restarts. Do not replace an unknown booking.
             if key == "pms.command.CREATE_ORDER" {
-                let prior=sqlx::query("SELECT id,request_hash,actor_person_id,actor_work_account_id,source_evidence_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND phase NOT IN ('cancelled','preview_rejected','not_executed') AND (work_item_id=$4 OR input->>'quoteId'=$5) ORDER BY created_at LIMIT 1")
+                let prior=sqlx::query("SELECT id,request_hash,actor_person_id,actor_work_account_id,actor_work_account_version,source_evidence_id FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key=$3 AND phase NOT IN ('cancelled','preview_rejected','not_executed') AND (work_item_id=$4 OR input->>'quoteId'=$5) ORDER BY created_at LIMIT 1")
                     .bind(&self.tenant).bind(auth.binding).bind(key).bind(work).bind(input["quoteId"].as_str()).fetch_optional(&mut *tx).await?;
                 if let Some(prior) = prior {
                     let same_origin:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.business_turn_evidence WHERE tenant_key=$1 AND id=$2 AND gateway_key=$3 AND chat_hash=$4)")
@@ -816,7 +816,9 @@ impl Store {
                             && prior.get::<Option<Uuid>, _>("actor_person_id")
                                 == actor.business_person()
                             && prior.get::<Option<Uuid>, _>("actor_work_account_id")
-                                == actor.work_account.map(|v| v.0),
+                                == actor.work_account.map(|v| v.0)
+                            && prior.get::<Option<i64>, _>("actor_work_account_version")
+                                == actor.work_account.map(|v| v.1),
                         "business_conversation_mismatch"
                     );
                     ensure!(

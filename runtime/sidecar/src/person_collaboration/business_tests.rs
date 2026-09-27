@@ -201,6 +201,22 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
             .operation_grant,
         grant
     );
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.command.CREATE_ORDER".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
     let other_scope:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_scopes(tenant_key,parent_scope_id,label,kind) VALUES($1,$2,'模拟其他物业','business') RETURNING id")
         .bind(&f.store.tenant).bind(scope).fetch_one(&f.store.pool).await?;
     let other_binding:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_property_bindings(tenant_key,scope_id,source_instance,property_id) VALUES($1,$2,'simulated-other','other_property') RETURNING id")
@@ -221,6 +237,28 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
     f.store.business_capture_turn(&gateway, &turn).await?;
     let input = json!({"orderId":"order_1","method":"WECOM","amountMinor":1200,"transactionReference":"pay_1"});
     let action=f.store.business_invoke(&actor,&turn.message_id,&turn.chat_id,"pms_start",&json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","input":input,"reason":{"code":"OPERATOR_REQUEST","note":"模拟交办"}})).await?;
+    let booking_turn = HostTurn {
+        platform: turn.platform.clone(),
+        chat_type: turn.chat_type.clone(),
+        chat_id: turn.chat_id.clone(),
+        sender_id: turn.sender_id.clone(),
+        message_id: "shared-booking".into(),
+        text: "请预订报价 quote_shared_version。".into(),
+    };
+    f.store
+        .business_capture_turn(&gateway, &booking_turn)
+        .await?;
+    let booking_args = json!({"binding":f.binding,"operation":"pms.command.CREATE_ORDER","input":{"quoteId":"quote_shared_version"},"reason":{"code":"CREATE_STANDARD_ORDER","note":""}});
+    let booking = f
+        .store
+        .business_invoke(
+            &actor,
+            &booking_turn.message_id,
+            &booking_turn.chat_id,
+            "pms_start",
+            &booking_args,
+        )
+        .await?;
     let claim = f
         .store
         .business_invoke(
@@ -385,6 +423,101 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
         .business_authorize(&actor, f.binding, "pms.command.RECORD_COLLECTION")
         .await
         .is_err());
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.command.CREATE_ORDER".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
+    f.store
+        .business_configure(
+            &f.actor,
+            &command(
+                version().await?,
+                BusinessConfigChange::GrantAccountOperation {
+                    binding: f.binding,
+                    account,
+                    role: "operator".into(),
+                    operation: "pms.command.RECORD_COLLECTION".into(),
+                    valid_until: None,
+                },
+            ),
+            true,
+        )
+        .await?;
+    let new_turn = HostTurn {
+        platform: turn.platform.clone(),
+        chat_type: turn.chat_type.clone(),
+        chat_id: turn.chat_id.clone(),
+        sender_id: turn.sender_id.clone(),
+        message_id: "shared-instruction-new-version".into(),
+        text: turn.text.clone(),
+    };
+    f.store.business_capture_turn(&gateway, &new_turn).await?;
+    let conflict = f
+        .store
+        .business_invoke(
+            &fresh,
+            &new_turn.message_id,
+            &new_turn.chat_id,
+            "pms_start",
+            &json!({"binding":f.binding,"operation":"pms.command.RECORD_COLLECTION","input":input,"reason":{"code":"OPERATOR_REQUEST","note":"模拟交办"}}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(conflict.to_string(), "business_subject_changed");
+    let action_id: Uuid = serde_json::from_value(action["action"].clone())?;
+    let (count, phase, execution_key): (i64, String, String) = sqlx::query_as(
+        "SELECT (SELECT count(*) FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key='pms.command.RECORD_COLLECTION' AND input->>'transactionReference'='pay_1'),phase,execution_key FROM qintopia_agent_os.business_actions WHERE id=$3",
+    )
+    .bind(&f.store.tenant)
+    .bind(f.binding)
+    .bind(action_id)
+    .fetch_one(&f.store.pool)
+    .await?;
+    assert_eq!(count, 1);
+    assert_eq!(phase, "unknown");
+    assert_eq!(execution_key, executing["execution_key"].as_str().unwrap());
+    let renewed_booking = HostTurn {
+        platform: booking_turn.platform.clone(),
+        chat_type: booking_turn.chat_type.clone(),
+        chat_id: booking_turn.chat_id.clone(),
+        sender_id: booking_turn.sender_id.clone(),
+        message_id: "shared-booking-new-version".into(),
+        text: booking_turn.text.clone(),
+    };
+    f.store
+        .business_capture_turn(&gateway, &renewed_booking)
+        .await?;
+    assert_eq!(
+        f.store
+            .business_invoke(
+                &fresh,
+                &renewed_booking.message_id,
+                &renewed_booking.chat_id,
+                "pms_start",
+                &booking_args,
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+        "business_conversation_mismatch"
+    );
+    let booking_id: Uuid = serde_json::from_value(booking["action"].clone())?;
+    let booking_count: i64 = sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.business_actions WHERE tenant_key=$1 AND binding_id=$2 AND operation_key='pms.command.CREATE_ORDER' AND input->>'quoteId'='quote_shared_version'")
+        .bind(&f.store.tenant).bind(f.binding).fetch_one(&f.store.pool).await?;
+    assert_eq!(booking_count, 1);
+    assert_ne!(booking_id, action_id);
     Ok(())
 }
 
