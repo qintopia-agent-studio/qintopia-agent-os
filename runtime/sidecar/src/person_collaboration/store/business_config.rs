@@ -158,11 +158,19 @@ impl Store {
                 })).collect::<Vec<_>>()
             }));
         }
-        let accounts=sqlx::query("SELECT w.id,w.label,w.active,w.version,w.gateway_key,g.scope_id FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key WHERE w.tenant_key=$1 AND g.scope_id=ANY($2) ORDER BY w.label,w.id LIMIT 257")
+        let accounts=sqlx::query("SELECT w.id,w.label,w.active,w.version,w.gateway_key,g.scope_id,coalesce((SELECT array_agg(DISTINCT o.operation_key) FROM qintopia_agent_os.business_operation_grants o WHERE o.tenant_key=w.tenant_key AND o.work_account_id=w.id AND o.revoked_at IS NULL),ARRAY[]::text[]) AS granted_operations FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key WHERE w.tenant_key=$1 AND g.scope_id=ANY($2) ORDER BY w.label,w.id LIMIT 257")
             .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
         ensure!(accounts.len() <= 256, "business_configuration_too_large");
         let accounts:Vec<_>=accounts.iter().filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
-            .map(|r|json!({"id":r.get::<Uuid,_>("id"),"label":r.get::<String,_>("label"),"active":r.get::<bool,_>("active"),"version":r.get::<i64,_>("version"),"gateway":r.get::<String,_>("gateway_key"),"scope":r.get::<Uuid,_>("scope_id")})).collect();
+            .map(|r| {
+                let scope: Uuid = r.get("scope_id");
+                let can_disable = r.get::<Vec<String>,_>("granted_operations").iter().all(|operation| {
+                    business::operation(operation).ok()
+                        .and_then(|spec| spec["action"].as_str().map(str::to_owned))
+                        .is_some_and(|action| policy.manager(actor.person,scope,"anan","hospitality",&action).is_some())
+                });
+                json!({"id":r.get::<Uuid,_>("id"),"label":r.get::<String,_>("label"),"active":r.get::<bool,_>("active"),"version":r.get::<i64,_>("version"),"gateway":r.get::<String,_>("gateway_key"),"scope":scope,"can_disable":can_disable})
+            }).collect();
         let observed=sqlx::query("SELECT l.id,g.gateway_key,g.scope_id,coalesce(nullif(l.adapter_metadata->>'display_name',''),'待核对工作账号') AS label FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE g.tenant_key=$1 AND g.scope_id=ANY($2) AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status='pending' AND l.adapter_metadata ? 'first_observation_ref' AND NOT EXISTS(SELECT 1 FROM qintopia_identity.work_accounts w WHERE w.tenant_key=$1 AND w.source_link_id=l.id AND w.active) ORDER BY g.gateway_key,l.id LIMIT 257")
             .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
         ensure!(observed.len() <= 256, "business_configuration_too_large");

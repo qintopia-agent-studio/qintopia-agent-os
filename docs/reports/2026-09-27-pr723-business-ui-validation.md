@@ -40,3 +40,20 @@ PR-Agent 对 `9bafc8b9` 又指出旧 Person 动作接续和先按全租户截断
 模拟旧 Person 动作与 257 条不可见跨范围数据的 PostgreSQL 负例均通过；修订后整个
 `person_collaboration`
 集成组串行 135/135 通过。最终 PR 自动检查和远端 CI 仍以新 head 结果为准。
+
+## 停用入口复核
+
+对只具 `read_business`
+管理能力的管理者，账号可能同时存在当前列表不可见的办理授权。配置状态新增只读
+`can_disable`，按账号全部未撤销操作授权计算。只要其中一个操作超出该管理者能力，停用入口就隐藏。
+
+撤销该授权后重新读取可恢复入口。后端停用命令继续在事务内重验全部授权，不以界面提示代替授权。
+
+本次新增负例与完整 `person_collaboration` 集成组串行 150/150 通过；全目标全 feature
+Clippy、Prettier、Markdown lint 与 `git diff --check` 通过。
+
+本轮 `pnpm check:pr:auto` 的 Light、默认及全 feature Rust 测试、两套 Clippy、QiWe
+326 项、Person/Agent 150 项和欢迎 24 项集成通过。末段
+`operations-control-plane-apply-smoke.sh`
+再次因本任务 32777 数据库 URL 哈希不在固定图像 staging 白名单内退出 1；后续
+`JSONDecodeError` 是缺少 JSON 输出的连带错误。总门禁未通过；未修改 CI 或白名单。

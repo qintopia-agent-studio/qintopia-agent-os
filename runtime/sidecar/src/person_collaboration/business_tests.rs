@@ -242,6 +242,16 @@ async fn business_configuration_capacity_only_counts_visible_scope_and_operation
         .bind(&f.store.tenant).bind(&namespace).bind(&gateway).bind(owner).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
     sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) SELECT $1,'wecom_internal','capacity-observed-'||n::text,jsonb_build_object('first_observation_ref',$2::text) FROM generate_series(1,257) n")
         .bind(&namespace).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+    let visible_namespace = format!("synthetic-visible-account-{}", Uuid::new_v4());
+    let visible_gateway = format!("synthetic-visible-gateway-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'shared',true)")
+        .bind(&f.store.tenant).bind(&visible_gateway).bind(&visible_namespace).bind(scope).execute(&f.store.pool).await?;
+    let visible_link: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal','simulated-visible-account',jsonb_build_object('first_observation_ref',$2::text)) RETURNING id")
+        .bind(&visible_namespace).bind(Uuid::new_v4()).fetch_one(&f.store.pool).await?;
+    let visible_account: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) SELECT $1,l.id,l.version,g.gateway_key,g.version,'模拟可见账号',$4,$5 FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE l.id=$2 AND g.gateway_key=$3 RETURNING id")
+        .bind(&f.store.tenant).bind(visible_link).bind(&visible_gateway).bind(owner).bind(Uuid::new_v4()).fetch_one(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.business_operation_grants(tenant_key,authority_grant_id,binding_id,operation_key,issued_by,work_account_id,work_account_version,account_role) SELECT $1,$2,$3,'pms.command.CREATE_ORDER',$4,w.id,w.version,'admin' FROM qintopia_identity.work_accounts w WHERE w.id=$5")
+        .bind(&f.store.tenant).bind(f.grant).bind(f.binding).bind(owner).bind(visible_account).execute(&f.store.pool).await?;
     let visible = f.store.business_configuration_state(&colleague).await?;
     assert_eq!(visible["can_manage"], true);
     assert!(visible["bindings"]
@@ -251,8 +261,14 @@ async fn business_configuration_capacity_only_counts_visible_scope_and_operation
         .any(
             |item| item["id"] == json!(f.binding) && item["grants"].as_array().unwrap().is_empty()
         ));
-    assert!(visible["accounts"].as_array().unwrap().is_empty());
+    assert_eq!(visible["accounts"].as_array().unwrap().len(), 1);
+    assert_eq!(visible["accounts"][0]["id"], json!(visible_account));
+    assert_eq!(visible["accounts"][0]["can_disable"], false);
     assert!(visible["observed"].as_array().unwrap().is_empty());
+    sqlx::query("UPDATE qintopia_agent_os.business_operation_grants SET revoked_at=clock_timestamp() WHERE tenant_key=$1 AND work_account_id=$2")
+        .bind(&f.store.tenant).bind(visible_account).execute(&f.store.pool).await?;
+    let after = f.store.business_configuration_state(&colleague).await?;
+    assert_eq!(after["accounts"][0]["can_disable"], true);
     Ok(())
 }
 

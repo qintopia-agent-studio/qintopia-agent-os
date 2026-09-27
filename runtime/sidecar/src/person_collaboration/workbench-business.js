@@ -336,7 +336,7 @@ function renderBusiness(target, scope) {
         })
       );
       row.append(form);
-      if (granted.every((grant) => canManageOperation(grant.operation)))
+      if (account.can_disable)
         row.append(
           button("停用账号", () =>
             previewBusiness(
