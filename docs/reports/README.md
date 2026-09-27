@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-26 v0.3.3 runner 首次接管与回退](2026-09-26-v033-runner-takeover-and-rollback.md)
+
 - [2026-09-25 岸岸生产接线核查与实施](2026-09-25-anan-production-integration.md)
 
 - [2026-09-25 PR #721 集成检查与审查](2026-09-25-pr721-integration-review.md)
