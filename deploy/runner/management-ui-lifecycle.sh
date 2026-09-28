@@ -64,12 +64,27 @@ import os
 import stat
 import sys
 
-path = os.lstat(sys.argv[1])
+lock_path = sys.argv[1]
+path = os.lstat(lock_path)
 held = os.fstat(9)
 if (not stat.S_ISREG(path.st_mode) or not stat.S_ISREG(held.st_mode) or
         path.st_uid != 0 or path.st_nlink != 1 or
         (path.st_dev, path.st_ino) != (held.st_dev, held.st_ino)):
     raise SystemExit("inherited deploy lock identity changed")
+probe = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+try:
+    independent = os.fstat(probe)
+    if (independent.st_dev, independent.st_ino) != (held.st_dev, held.st_ino):
+        raise SystemExit("deploy lock path changed during verification")
+    try:
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        fcntl.flock(probe, fcntl.LOCK_UN)
+        raise SystemExit("deploy lock was not held before the helper")
+finally:
+    os.close(probe)
 try:
     fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
 except BlockingIOError:

@@ -82,9 +82,24 @@ recreating only this disposable database and using the runner's native
 `operations-control-plane-apply-smoke.sh` then rejected the random-port URL because its
 hash is outside the reviewed allowlist. The existing testing guide documents this local
 limitation; the allowlist and CI gate were not changed. The aggregate local PR tier
-therefore has no passing final exit code. CI must verify the fixed reviewed URL, and
-release preparation must still perform the real system and browser acceptance listed
-above.
+therefore had no passing final exit code at that stage. CI must verify the fixed
+reviewed URL, and release preparation must still perform the real system and browser
+acceptance listed above.
+
+PR review identified a lock-proof gap: calling `flock -n` on FD 9 alone can acquire a
+previously unlocked descriptor. The helper now opens the same lock file through a
+distinct file description and proves an exclusive lock is already held, then verifies FD
+9 can reacquire that lock on its inherited description. The Linux mock rejects an FD 9
+that is merely open; the updated lock, drain and UNKNOWN simulation passed. The
+historical installer fixture uses a fixed `git show`; this repository's CI checks out
+complete history (`fetch-depth: 0`), and that fixture is not part of a deployed
+artifact. A shallow source export cannot run this repository test without its historical
+commit; no CI gate or extra fixture is added in this PR.
+
+After the lock fix, `pnpm check:pr:auto` completed successfully with quick and heavy
+Rust tiers: the all-feature suite passed 873 tests (208 ignored). Its PostgreSQL tier
+was explicitly skipped because the owned disposable database had been stopped; the
+separate PostgreSQL results and fixed-hash smoke limitation above still apply.
 
 ## Rollback
 

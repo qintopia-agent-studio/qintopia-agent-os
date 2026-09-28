@@ -111,6 +111,13 @@ if "$helper" verify-closed >/dev/null 2>&1; then
   echo 'missing inherited FD9 was accepted' >&2
   exit 1
 fi
+(
+  exec 9>/var/lib/qintopia-agent-os-deploy/deploy.lock
+  if "$helper" verify-closed >/dev/null 2>&1; then
+    echo 'unlocked inherited FD9 was accepted' >&2
+    exit 1
+  fi
+)
 flock /var/lib/qintopia-agent-os-deploy/poller.lock sleep 1 &
 holder=$!
 sleep 0.1
