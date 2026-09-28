@@ -1003,6 +1003,417 @@ exit 64
       "runner success path did not preserve qiwe runtime_artifact_profile"
     );
   }
+
+  const mixedState = path.join(tmpRoot, "mixed-state");
+  const mixedRoot = path.join(tmpRoot, "mixed-releases");
+  const rSha = "1".repeat(40);
+  const tSha = "2".repeat(40);
+  const oSha = "16e8d56b98001579c6288ba13199b80d6d3dfc74";
+  const pSha = "83d694f2c3bc21fd78a73d25da3197379e2a14d5";
+  const xSha = "5".repeat(40);
+  const originalId = "deploy-20260706T000000Z-abcdef0";
+  const actionId = "deploy-20260706T000001Z-abcdef1";
+  const mixedFetchLog = path.join(tmpRoot, "mixed-fetch.log");
+  fs.mkdirSync(path.join(mixedState, "requests", "processed"), { recursive: true });
+  fs.mkdirSync(path.join(mixedState, "results"), { recursive: true });
+  for (const release of [rSha, tSha, oSha, xSha]) {
+    fs.mkdirSync(path.join(mixedRoot, release), { recursive: true });
+  }
+  const ancestorManifestPath = path.join(mixedRoot, oSha, "manifest.json");
+  fs.writeFileSync(
+    ancestorManifestPath,
+    `${JSON.stringify({ release_sha: oSha, previous_sha: pSha })}\n`
+  );
+  fs.chmodSync(ancestorManifestPath, 0o444);
+  const ancestorInstallerPath = path.join(
+    mixedRoot,
+    oSha,
+    "deploy/runner/install-release-systemd-units.sh"
+  );
+  fs.mkdirSync(path.dirname(ancestorInstallerPath), { recursive: true });
+  fs.copyFileSync(
+    path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
+    ancestorInstallerPath
+  );
+  fs.chmodSync(ancestorInstallerPath, 0o755);
+  const tManifest = {
+    schema_version: 2,
+    release_sha: tSha,
+    commit_sha: oSha,
+    runtime_sha: pSha,
+    runtime_artifact_profile: "huabaosi-production",
+    deploy_bundle_sha: rSha,
+    previous_sha: oSha,
+    request_id: originalId,
+    release_scope: ["deploy-bundle"],
+    restart_targets: ["qintopia-system-services"],
+    dry_run: false,
+  };
+  const tManifestPath = path.join(mixedRoot, tSha, "manifest.json");
+  fs.writeFileSync(tManifestPath, `${JSON.stringify(tManifest)}\n`);
+  fs.chmodSync(tManifestPath, 0o444);
+  fs.writeFileSync(
+    path.join(mixedRoot, rSha, "manifest.json"),
+    `${JSON.stringify({ release_sha: rSha, previous_sha: tSha })}\n`
+  );
+  fs.symlinkSync(path.join(mixedRoot, rSha), path.join(mixedRoot, "current"));
+  fs.symlinkSync(path.join(mixedRoot, tSha), path.join(mixedRoot, "previous"));
+  const signWithMetadata = (unsigned, issuer, signedAt, key) => {
+    const metadata = {
+      algorithm: "hmac-sha256",
+      issuer,
+      key_id: keyId,
+      signed_at: signedAt,
+    };
+    const envelope = { [key]: unsigned, signature: metadata };
+    return {
+      ...unsigned,
+      signature: {
+        ...metadata,
+        value: crypto
+          .createHmac("sha256", signingKey)
+          .update(canonicalJson(envelope))
+          .digest("hex"),
+      },
+    };
+  };
+  const mixedCos = (id) => ({
+    bucket: "qintopia-agent-os-artifacts-1305166808",
+    region: "ap-shanghai",
+    prefix: "qintopia-agent-os",
+    request_key: `qintopia-agent-os/deploy-requests/production/requests/${id}.json`,
+    result_key: `qintopia-agent-os/deploy-results/production/${id}.json`,
+  });
+  const originalRequest = signWithMetadata(
+    {
+      ...buildRequest(),
+      request_id: originalId,
+      cos: mixedCos(originalId),
+      release_sha: tSha,
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      deploy_bundle_sha: rSha,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services"],
+      dry_run: false,
+    },
+    "github-actions",
+    createdAt,
+    "request"
+  );
+  const actionRequest = signWithMetadata(
+    {
+      ...buildRequest(),
+      request_id: actionId,
+      cos: mixedCos(actionId),
+      release_sha: tSha,
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      deploy_bundle_sha: rSha,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services", "hermes-anan"],
+      dry_run: false,
+      release_rollback: { expected_current_sha: rSha, expected_previous_sha: tSha },
+    },
+    "github-actions",
+    createdAt,
+    "request"
+  );
+  const originalResult = signWithMetadata(
+    {
+      schema_version: 1,
+      request_id: originalId,
+      environment: "production",
+      status: "succeeded",
+      started_at: createdAt,
+      finished_at: createdAt,
+      release_sha: tSha,
+      commit_sha: oSha,
+      runtime_sha: pSha,
+      runtime_artifact_profile: "huabaosi-production",
+      deploy_bundle_sha: rSha,
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services"],
+      previous_sha: oSha,
+      current_target: fs.realpathSync(path.join(mixedRoot, tSha)),
+      checks: [{ name: "deploy-runner", status: "passed" }],
+      rollback: { attempted: false, status: "not_needed" },
+    },
+    "qintopia-deploy-runner",
+    createdAt,
+    "result"
+  );
+  const originalRequestPath = path.join(
+    mixedState,
+    "requests",
+    "processed",
+    `${originalId}.json`
+  );
+  const originalResultPath = path.join(mixedState, "results", `${originalId}.json`);
+  const actionRequestPath = path.join(tmpRoot, "mixed-action.json");
+  const writeMixedEvidence = (original, resultValue, action = actionRequest) => {
+    fs.writeFileSync(originalRequestPath, `${JSON.stringify(original)}\n`);
+    fs.writeFileSync(originalResultPath, `${JSON.stringify(resultValue)}\n`);
+    fs.writeFileSync(actionRequestPath, `${JSON.stringify(action)}\n`);
+    fs.rmSync(path.join(mixedState, "results", `${actionId}.json`), { force: true });
+  };
+  writeExecutable(
+    "deploy/runner/wait-deploy-result.sh",
+    fs.readFileSync(path.join(repoRoot, "deploy/runner/wait-deploy-result.sh"), "utf8")
+  );
+  writeExecutable(
+    "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    `#!/usr/bin/env bash\nprintf 'fetch\\n' >>"${mixedFetchLog}"\nexit 47\n`
+  );
+  const runMixed = () =>
+    spawnSync("bash", [runnerPath, "--request-file", actionRequestPath], {
+      cwd: mixedState,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: mixedState,
+        QINTOPIA_RELEASE_ROOT: mixedRoot,
+        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+        TENCENT_COS_REGION: "ap-shanghai",
+      },
+    });
+  writeMixedEvidence(originalRequest, originalResult);
+  const bound = runMixed();
+  if (
+    bound.status !== 47 ||
+    fs.realpathSync(path.join(mixedRoot, "current")) !==
+      fs.realpathSync(path.join(mixedRoot, rSha))
+  ) {
+    throw new Error(
+      `signed mixed action did not reach artifact verification (status ${bound.status}):\nstdout: ${bound.stdout}\nstderr: ${bound.stderr}`
+    );
+  }
+  if (fs.readFileSync(mixedFetchLog, "utf8") !== "fetch\n") {
+    throw new Error("signed mixed action did not fetch exactly one artifact");
+  }
+  const assertRejectedBeforeFetch = (attempt, message) => {
+    if (
+      attempt.status === 0 ||
+      attempt.status === 47 ||
+      !attempt.stderr.includes(message) ||
+      fs.readFileSync(mixedFetchLog, "utf8") !== "fetch\n" ||
+      fs.realpathSync(path.join(mixedRoot, "current")) !==
+        fs.realpathSync(path.join(mixedRoot, rSha))
+    ) {
+      throw new Error(
+        `mixed action did not reject before artifact fetch: ${attempt.stderr}`
+      );
+    }
+  };
+  const { signature: _originalSignature, ...unsignedOriginalResult } = originalResult;
+  const failedOriginalResult = signWithMetadata(
+    {
+      ...unsignedOriginalResult,
+      status: "failed",
+      error: "simulated original failure",
+    },
+    "qintopia-deploy-runner",
+    createdAt,
+    "result"
+  );
+  writeMixedEvidence(originalRequest, failedOriginalResult);
+  const failedOriginal = runMixed();
+  assertRejectedBeforeFetch(failedOriginal, "not bound to a successful live request");
+  fs.chmodSync(tManifestPath, 0o644);
+  fs.writeFileSync(
+    tManifestPath,
+    `${JSON.stringify({ ...tManifest, previous_sha: xSha })}\n`
+  );
+  fs.chmodSync(tManifestPath, 0o444);
+  writeMixedEvidence(originalRequest, originalResult);
+  assertRejectedBeforeFetch(runMixed(), "original mixed release lineage");
+  fs.chmodSync(tManifestPath, 0o644);
+  fs.writeFileSync(tManifestPath, `${JSON.stringify(tManifest)}\n`);
+  fs.chmodSync(tManifestPath, 0o444);
+  const { signature: _lineageSignature, ...unsignedLineageResult } = originalResult;
+  writeMixedEvidence(
+    originalRequest,
+    signWithMetadata(
+      { ...unsignedLineageResult, previous_sha: xSha },
+      "qintopia-deploy-runner",
+      createdAt,
+      "result"
+    )
+  );
+  assertRejectedBeforeFetch(runMixed(), "not bound to a successful live request");
+  writeMixedEvidence(
+    originalRequest,
+    signWithMetadata(
+      { ...unsignedLineageResult, current_target: path.join(mixedRoot, xSha) },
+      "qintopia-deploy-runner",
+      createdAt,
+      "result"
+    )
+  );
+  assertRejectedBeforeFetch(runMixed(), "not bound to a successful live request");
+  fs.writeFileSync(ancestorInstallerPath, "corrupted installer\n");
+  writeMixedEvidence(originalRequest, originalResult);
+  assertRejectedBeforeFetch(runMixed(), "ancestor installer drifted");
+  fs.copyFileSync(
+    path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
+    ancestorInstallerPath
+  );
+  fs.chmodSync(ancestorInstallerPath, 0o755);
+  fs.rmSync(ancestorManifestPath);
+  assertRejectedBeforeFetch(runMixed(), "ancestor file is missing");
+  fs.writeFileSync(
+    ancestorManifestPath,
+    `${JSON.stringify({ release_sha: oSha, previous_sha: pSha })}\n`
+  );
+  fs.chmodSync(ancestorManifestPath, 0o444);
+  writeMixedEvidence({ ...originalRequest, commit_sha: rSha }, originalResult);
+  const tamperedOriginal = runMixed();
+  assertRejectedBeforeFetch(
+    tamperedOriginal,
+    "archived deploy request signature verification failed"
+  );
+  writeMixedEvidence(originalRequest, originalResult, {
+    ...actionRequest,
+    restart_targets: ["hermes-anan"],
+  });
+  const tamperedAction = runMixed();
+  assertRejectedBeforeFetch(tamperedAction, "signature verification failed");
+
+  writeMixedEvidence(originalRequest, originalResult);
+  const artifactSource = path.join(tmpRoot, "mixed-artifact-source");
+  const addSidecar = (name, content) => {
+    const directory = path.join(artifactSource, name);
+    fs.mkdirSync(directory, { recursive: true });
+    const binary = path.join(directory, "qintopia-message-sidecar");
+    fs.writeFileSync(binary, content);
+    fs.chmodSync(binary, 0o755);
+    const archive = path.join(directory, "qintopia-message-sidecar.tar.gz");
+    const packed = spawnSync(
+      "tar",
+      ["-czf", archive, "-C", directory, "qintopia-message-sidecar"],
+      { encoding: "utf8", env: { ...process.env, COPYFILE_DISABLE: "1" } }
+    );
+    if (packed.status !== 0)
+      throw new Error(`sidecar fixture archive: ${packed.stderr}`);
+    fs.writeFileSync(path.join(directory, "artifact-manifest.json"), "{}\n");
+    fs.writeFileSync(path.join(directory, "SHA256SUMS"), "simulated fixture\n");
+    for (const metadata of [
+      archive,
+      path.join(directory, "artifact-manifest.json"),
+      path.join(directory, "SHA256SUMS"),
+    ])
+      fs.chmodSync(metadata, 0o444);
+    return directory;
+  };
+  const primarySource = addSidecar("sidecar", "simulated-primary\n");
+  const qiweSource = addSidecar("qiwe", "simulated-qiwe\n");
+  const bundleSource = path.join(artifactSource, "deploy-bundle");
+  const bundlePayload = path.join(artifactSource, "bundle-payload");
+  fs.mkdirSync(path.join(bundlePayload, "payload/deploy/runner"), { recursive: true });
+  fs.copyFileSync(
+    path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
+    path.join(bundlePayload, "payload/deploy/runner/install-release-systemd-units.sh")
+  );
+  fs.mkdirSync(bundleSource, { recursive: true });
+  const bundleArchive = path.join(
+    bundleSource,
+    "qintopia-agent-os-deploy-bundle.tar.gz"
+  );
+  const packedBundle = spawnSync(
+    "tar",
+    ["-czf", bundleArchive, "-C", bundlePayload, "payload"],
+    { encoding: "utf8", env: { ...process.env, COPYFILE_DISABLE: "1" } }
+  );
+  if (packedBundle.status !== 0)
+    throw new Error(`bundle fixture archive: ${packedBundle.stderr}`);
+  fs.writeFileSync(path.join(bundleSource, "artifact-manifest.json"), "{}\n");
+  fs.writeFileSync(path.join(bundleSource, "SHA256SUMS"), "simulated fixture\n");
+  for (const metadata of [
+    bundleArchive,
+    path.join(bundleSource, "artifact-manifest.json"),
+    path.join(bundleSource, "SHA256SUMS"),
+  ])
+    fs.chmodSync(metadata, 0o444);
+  const tRoot = path.join(mixedRoot, tSha);
+  for (const [name, source] of [
+    ["sidecar", primarySource],
+    ["sidecar-profiles/qiwe-production", qiweSource],
+    ["deploy-bundle", bundleSource],
+  ]) {
+    fs.cpSync(source, path.join(tRoot, name), { recursive: true });
+  }
+  const tInstaller = path.join(tRoot, "deploy/runner/install-release-systemd-units.sh");
+  fs.mkdirSync(path.dirname(tInstaller), { recursive: true });
+  fs.copyFileSync(
+    path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
+    tInstaller
+  );
+  fs.chmodSync(tInstaller, 0o755);
+  writeExecutable(
+    "deploy/sidecar/scripts/fetch-cos-artifact.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+kind="" output=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --artifact-type) kind="$2"; shift 2 ;;
+    --output-dir) output="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+source="${artifactSource}/$kind"
+if [[ "$kind" == sidecar && "\${QINTOPIA_SIDECAR_ARTIFACT_PROFILE:-}" == qiwe-production ]]; then
+  source="${qiweSource}"
+fi
+mkdir -p "$output"
+cp -a "$source/." "$output/"
+`
+  );
+  const rollbackMarker = path.join(tmpRoot, "mixed-rollback-reached");
+  writeExecutable(
+    "deploy/runner/rollback-release.sh",
+    `#!/usr/bin/env bash\ntouch "${rollbackMarker}"\nexit 77\n`
+  );
+  const intact = runMixed();
+  if (intact.status !== 77 || !fs.existsSync(rollbackMarker)) {
+    throw new Error(
+      `intact mixed fixture did not reach pointer primitive: ${intact.stderr}`
+    );
+  }
+  fs.rmSync(rollbackMarker);
+  const assertTreeRejected = (label) => {
+    const attempt = runMixed();
+    if (
+      attempt.status === 77 ||
+      attempt.status === 0 ||
+      fs.existsSync(rollbackMarker) ||
+      fs.realpathSync(path.join(mixedRoot, "current")) !==
+        fs.realpathSync(path.join(mixedRoot, rSha))
+    ) {
+      throw new Error(`${label} crossed the pointer boundary: ${attempt.stderr}`);
+    }
+  };
+  for (const [name, source] of [
+    ["sidecar", primarySource],
+    ["sidecar-profiles/qiwe-production", qiweSource],
+  ]) {
+    const binary = path.join(tRoot, name, "qintopia-message-sidecar");
+    fs.rmSync(binary);
+    assertTreeRejected(`${name} missing binary`);
+    fs.copyFileSync(path.join(source, "qintopia-message-sidecar"), binary);
+    fs.chmodSync(binary, 0o755);
+    fs.chmodSync(binary, 0o644);
+    assertTreeRejected(`${name} binary mode`);
+    fs.chmodSync(binary, 0o755);
+  }
+  const primaryBinary = path.join(tRoot, "sidecar/qintopia-message-sidecar");
+  fs.writeFileSync(primaryBinary, "corrupted primary\n");
+  fs.chmodSync(primaryBinary, 0o755);
+  assertTreeRejected("primary binary content");
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
 }
