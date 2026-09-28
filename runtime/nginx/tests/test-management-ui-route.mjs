@@ -19,6 +19,7 @@ const count = (source, pattern) => [...source.matchAll(pattern)].length;
 assert.equal(count(http, /\bserver_name agentos\.qintopia\.cn;/g), 1);
 assert.equal(count(https, /\bserver_name agentos\.qintopia\.cn;/g), 2);
 assert.match(http, /listen 80;/);
+assert.match(http, /if \(\$host != "agentos\.qintopia\.cn"\) \{ return 421; \}/);
 assert.doesNotMatch(
   http,
   /listen 443|proxy_pass|ssl_certificate|qintopia\.cn\/\$request_uri/
@@ -45,6 +46,10 @@ for (const required of [
   assert.ok(https.includes(required), `management HTTPS route is missing ${required}`);
 }
 assert.equal(count(https, /proxy_pass /g), 1);
+assert.equal(
+  count(https, /if \(\$host != "agentos\.qintopia\.cn"\) \{ return 421; \}/g),
+  2
+);
 assert.equal(count(https, /return 503;/g), 1);
 assert.doesNotMatch(https, /cos|www\.qintopia\.cn|proxy_set_header Origin|18877/i);
 

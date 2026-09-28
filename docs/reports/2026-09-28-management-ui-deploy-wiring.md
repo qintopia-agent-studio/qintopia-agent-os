@@ -101,6 +101,12 @@ Rust tiers: the all-feature suite passed 873 tests (208 ignored). Its PostgreSQL
 was explicitly skipped because the owned disposable database had been stopped; the
 separate PostgreSQL results and fixed-hash smoke limitation above still apply.
 
+The next PR review found that an unknown Host could reach the HTTP redirect if this
+vhost became port 80's default server. Both the bootstrap and HTTPS redirect templates
+now return 421 for a nonmatching Host before route selection. The Nginx template test
+covers both HTTP server blocks, and the runtime contract and deploy bundle checks pass.
+Actual Nginx behavior remains in the production acceptance boundary above.
+
 ## Rollback
 
 Stop and prove UI closure before an R to T pointer change. Keep the management HTTPS
