@@ -154,6 +154,14 @@ smoke，不能记为总门禁通过；未更改 CI、部署检查或白名单。
 `d354592e732a`
 评论不构成旧动作接续成功证据。该审阅跳过了大量文件，仍为 partial，不能替代完整人工验收。
 
+远端 head `a306020` 的 CI run `36382816359`：Light、runtime 与 PostgreSQL
+integration 通过，Rust quality 因新增 `auth_tests.rs`
+的 HTTPS 请求辅助函数有 9 个参数而触发 Clippy
+`too_many_arguments`，总检查失败。测试辅助函数现把四项请求头参数归到
+`HttpsRequestHeaders`，未改变请求内容或应用逻辑。本地全目标全 feature
+Clippy 通过；显式使用隔离库和受限 UI 角色 URL 的 `person_collaboration::auth_tests`
+串行 10/10 通过。新 head 的远端 CI 结果另行核对。
+
 ## 实现与验证
 
 - 工作台在「组织关系」按当前有效管理 grant 显示「物业业务授权」入口。关联岸岸客房职责的岗位可快捷进入；无岗位时仍可从管理范围进入。选中范围限定物业绑定、工作账号、候选和可授权操作。返回及保存后的焦点回到可见目标；读取到撤权后清除旧授权表单。

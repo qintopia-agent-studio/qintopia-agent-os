@@ -120,16 +120,20 @@ pub(super) async fn request(
     client
 }
 
+struct HttpsRequestHeaders<'a> {
+    host: &'a str,
+    origin: Option<&'a str>,
+    content_type: &'a str,
+    extra: &'a str,
+}
+
 async fn https_request(
     store: &Store,
     method: &str,
     path: &str,
     token: Option<&str>,
     body: Value,
-    host: &str,
-    origin: Option<&str>,
-    content_type: &str,
-    extra_headers: &str,
+    request_headers: HttpsRequestHeaders<'_>,
 ) -> Result<(u16, Value, String)> {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
     let port = listener.local_addr()?.port();
@@ -139,10 +143,16 @@ async fn https_request(
         String::new()
     };
     let headers = format!(
-        "{method} {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n{}{}{extra_headers}\r\n{payload}",
+        "{method} {path} HTTP/1.1\r\nHost: {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{}{}{}\r\n{payload}",
+        request_headers.host,
+        request_headers.content_type,
         payload.len(),
-        origin.map(|o| format!("Origin: {o}\r\n")).unwrap_or_default(),
+        request_headers
+            .origin
+            .map(|o| format!("Origin: {o}\r\n"))
+            .unwrap_or_default(),
         token.map(|t| format!("Cookie: collaboration-session={t}\r\n")).unwrap_or_default(),
+        request_headers.extra,
     );
     let configured = super::auth_server::UiOrigin::production("https://admin.example.test")?;
     let server = async {
@@ -158,7 +168,10 @@ async fn https_request(
             .read_to_string(&mut response)
             .await
             .map_err(|error| {
-                anyhow::anyhow!("https_request_failed: {method} {path} {host}: {error}")
+                anyhow::anyhow!(
+                    "https_request_failed: {method} {path} {}: {error}",
+                    request_headers.host
+                )
             })?;
         let (head, data) = response.split_once("\r\n\r\n").unwrap();
         let status = head.split_whitespace().nth(1).unwrap().parse::<u16>()?;
@@ -187,10 +200,12 @@ async fn production_https_origin_and_cookie_contract_preserves_live_authorizatio
             path,
             token,
             body,
-            host,
-            origin,
-            content_type,
-            extra_headers,
+            HttpsRequestHeaders {
+                host,
+                origin,
+                content_type,
+                extra: extra_headers,
+            },
         )
     };
     let before = business_snapshot(&store).await?;
@@ -372,10 +387,12 @@ async fn live_https_routes_keep_drafts_unverified_and_require_current_management
             path,
             token,
             body,
-            host,
-            origin,
-            "application/json",
-            "",
+            HttpsRequestHeaders {
+                host,
+                origin,
+                content_type: "application/json",
+                extra: "",
+            },
         )
     };
     let root: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND parent_scope_id IS NULL")
@@ -397,10 +414,12 @@ async fn live_https_routes_keep_drafts_unverified_and_require_current_management
                 &path,
                 Some(&token),
                 json!({}),
-                host,
-                origin,
-                "application/json",
-                ""
+                HttpsRequestHeaders {
+                    host,
+                    origin,
+                    content_type: "application/json",
+                    extra: "",
+                },
             )
             .await?
             .0,
@@ -558,10 +577,12 @@ async fn live_https_restricted_role_runs_nonempty_account_and_read_paths() -> Re
             path,
             Some(&token),
             body,
-            "admin.example.test",
-            Some("https://admin.example.test"),
-            "application/json",
-            "",
+            HttpsRequestHeaders {
+                host: "admin.example.test",
+                origin: Some("https://admin.example.test"),
+                content_type: "application/json",
+                extra: "",
+            },
         )
     };
     for path in [
