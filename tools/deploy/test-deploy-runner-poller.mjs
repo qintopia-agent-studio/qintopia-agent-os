@@ -166,6 +166,11 @@ JSON
 JSON
         exit 0
       fi
+      uploaded="\${QINTOPIA_FAKE_COS_UPLOAD_DIR:-/tmp}/deploy-results/deploy-20260706T000000Z-0123456789ab.json"
+      if [[ -f "$uploaded" ]]; then
+        cp "$uploaded" "$dest_path"
+        exit 0
+      fi
       if [[ " $* " == *" --disable-log "* ]]; then
         exit 1
       fi
@@ -217,6 +222,8 @@ if [[ -z "$request_file" ]]; then
   exit 2
 fi
 python3 - "$request_file" <<'PY'
+import hashlib
+import hmac
 import json
 import os
 import sys
@@ -226,27 +233,44 @@ state_dir = os.environ["QINTOPIA_DEPLOY_RUNNER_STATE_DIR"]
 with open(request_file, encoding="utf-8") as fh:
     request = json.load(fh)
 result_path = os.path.join(state_dir, "results", f"{request['request_id']}.json")
+finished_at = "2026-07-06T00:01:00Z"
+result = {
+    "schema_version": 1,
+    "request_id": request["request_id"],
+    "environment": "production",
+    "status": "dry_run_succeeded",
+    "started_at": "2026-07-06T00:00:00Z",
+    "finished_at": finished_at,
+    "release_sha": request["release_sha"],
+    "commit_sha": request["commit_sha"],
+    "runtime_sha": request["runtime_sha"],
+    "runtime_artifact_profile": request["runtime_artifact_profile"],
+    "deploy_bundle_sha": request["deploy_bundle_sha"],
+    "release_scope": request["release_scope"],
+    "previous_sha": "",
+    "current_target": "",
+    "restart_targets": request["restart_targets"],
+    "checks": [{"name": "deploy-runner", "status": "passed"}],
+    "rollback": {"attempted": False, "status": "not_needed"},
+}
+metadata = {
+    "algorithm": "hmac-sha256",
+    "issuer": "qintopia-deploy-runner",
+    "key_id": os.environ["DEPLOY_REQUEST_SIGNING_KEY_ID"],
+    "signed_at": finished_at,
+}
+def canonical(value):
+    if isinstance(value, list):
+        return "[" + ",".join(canonical(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(json.dumps(key, separators=(",", ":")) + ":" + canonical(value[key]) for key in sorted(value)) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+result["signature"] = {
+    **metadata,
+    "value": hmac.new(os.environ["DEPLOY_REQUEST_SIGNING_KEY"].encode(), canonical({"result": result, "signature": metadata}).encode(), hashlib.sha256).hexdigest(),
+}
 with open(result_path, "w", encoding="utf-8") as fh:
-    json.dump(
-        {
-            "schema_version": 1,
-            "request_id": request["request_id"],
-            "environment": "production",
-            "status": "dry_run_succeeded",
-            "release_sha": request["release_sha"],
-            "commit_sha": request["commit_sha"],
-            "runtime_sha": request["runtime_sha"],
-            "runtime_artifact_profile": request["runtime_artifact_profile"],
-            "deploy_bundle_sha": request["deploy_bundle_sha"],
-            "release_scope": request["release_scope"],
-            "previous_sha": "",
-            "current_target": "",
-            "restart_targets": request["restart_targets"],
-            "checks": [{"name": "deploy-runner", "status": "passed"}],
-            "rollback": {"attempted": False, "status": "not_needed"},
-        },
-        fh,
-    )
+    json.dump(result, fh)
     fh.write("\\n")
 PY
 `
@@ -264,16 +288,26 @@ const baseEnv = {
   DEPLOY_REQUEST_SIGNING_KEY: "test-signing-key",
   DEPLOY_REQUEST_SIGNING_KEY_ID: "production",
 };
+delete baseEnv.INVOCATION_ID;
 
 const poller = path.join(repoRoot, "deploy/runner/poll-deploy-requests.sh");
 const requestName = "deploy-20260706T000000Z-0123456789ab.json";
 
-const runCase = ({ name, mode, archive, runnerExpected = "idle" }) => {
+const runCase = ({
+  name,
+  mode,
+  archive,
+  runnerExpected = "idle",
+  expectedId = "",
+  preexistingClaim = false,
+  expectedStatus = 0,
+}) => {
   const stateDir = path.join(tmpRoot, name);
   const uploadDir = path.join(tmpRoot, `${name}-uploads`);
   fs.mkdirSync(path.join(stateDir, "requests", "pending"), { recursive: true });
   fs.mkdirSync(path.join(stateDir, "requests", "processed"), { recursive: true });
   fs.mkdirSync(path.join(stateDir, "requests", "failed"), { recursive: true });
+  fs.mkdirSync(path.join(stateDir, "requests", "claimed"), { recursive: true });
   fs.mkdirSync(path.join(stateDir, "results"), { recursive: true });
   fs.mkdirSync(uploadDir, { recursive: true });
   if (archive) {
@@ -281,6 +315,12 @@ const runCase = ({ name, mode, archive, runnerExpected = "idle" }) => {
       path.join(stateDir, "requests", archive, requestName),
       "{}\n",
       "utf8"
+    );
+  }
+  if (preexistingClaim) {
+    fs.writeFileSync(
+      path.join(stateDir, "requests", "claimed", requestName),
+      '{"phase":"possibly_executing"}\n'
     );
   }
 
@@ -292,19 +332,38 @@ const runCase = ({ name, mode, archive, runnerExpected = "idle" }) => {
       QINTOPIA_FAKE_COS_MODE: mode,
       QINTOPIA_FAKE_COS_UPLOAD_DIR: uploadDir,
       QINTOPIA_FAKE_RUNNER_EXPECTED: runnerExpected,
+      QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID: expectedId,
     },
     encoding: "utf8",
   });
 
-  if (result.status !== 0) {
+  if (result.status !== expectedStatus) {
     throw new Error(
-      `${name}: expected idle success, got ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
+      `${name}: expected ${expectedStatus}, got ${result.status}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`
     );
   }
   return { output: `${result.stdout}${result.stderr}`, stateDir, uploadDir };
 };
 
 try {
+  const claimedOutput = runCase({
+    name: "unfinished-claim",
+    mode: "active",
+    preexistingClaim: true,
+    expectedStatus: 75,
+  });
+  if (!claimedOutput.output.includes("unfinished deploy request claim")) {
+    throw new Error("unfinished-claim: consumer did not stop before pointer read");
+  }
+  const wrongIdOutput = runCase({
+    name: "wrong-expected-id",
+    mode: "active",
+    expectedId: "deploy-20260706T000000Z-ffffffffffff",
+    expectedStatus: 75,
+  });
+  if (!wrongIdOutput.output.includes("does not match expected request ID")) {
+    throw new Error("wrong-expected-id: pointer mismatch was not rejected");
+  }
   const missingPointerOutput = runCase({
     name: "missing-pointer",
     mode: "missing-pointer",
@@ -356,6 +415,11 @@ try {
   );
   if (!fs.existsSync(processedRequest)) {
     throw new Error("active-pointer: processed request archive was not written");
+  }
+  if (
+    fs.readdirSync(path.join(activeOutput.stateDir, "requests", "claimed")).length !== 0
+  ) {
+    throw new Error("active-pointer: finalized claim was not removed");
   }
   const uploadedResult = path.join(
     activeOutput.uploadDir,
@@ -466,6 +530,15 @@ try {
   if (!fs.existsSync(hermesFallbackPath)) {
     throw new Error(
       `hermes-early-failure: fallback deploy result was not uploaded\nstdout:\n${hermesEarlyFailure.stdout}\nstderr:\n${hermesEarlyFailure.stderr}`
+    );
+  }
+  if (
+    !fs.existsSync(
+      path.join(hermesEarlyFailureStateDir, "requests", "claimed", requestName)
+    )
+  ) {
+    throw new Error(
+      "hermes-early-failure: uncertain fallback lost its persistent claim"
     );
   }
   const hermesFallback = JSON.parse(fs.readFileSync(hermesFallbackPath, "utf8"));

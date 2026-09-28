@@ -9,7 +9,27 @@ on:
         type: string
       release_tag:
         description: Published Release tag expected to be production's exact previous.
-        required: true
+        required: false
+        type: string
+      previous_commit_sha:
+        description: Exact previous release's reviewed commit SHA (mixed mode).
+        required: false
+        type: string
+      previous_runtime_sha:
+        description: Exact previous release's primary and companion runtime SHA.
+        required: false
+        type: string
+      previous_deploy_bundle_sha:
+        description: Exact previous release's deploy bundle SHA.
+        required: false
+        type: string
+      previous_release_sha:
+        description: Exact previous immutable release directory SHA.
+        required: false
+        type: string
+      action_restart_targets_csv:
+        description: Approved comma-separated restart targets for this rollback action.
+        required: false
         type: string
       restart_targets:
         description: Restart target set after rollback promotion.
@@ -25,6 +45,7 @@ on:
           - hermes-silaoshi
           - hermes-huabaosi
           - hermes-guanerye
+          - hermes-anan
       dry_run:
         description:
           Validate and assemble only; do not switch current or restart services.
@@ -84,6 +105,11 @@ jobs:
         env:
           INPUT_EXPECTED_CURRENT_RELEASE_TAG: ${{ inputs.expected_current_release_tag }}
           INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+          INPUT_PREVIOUS_COMMIT_SHA: ${{ inputs.previous_commit_sha }}
+          INPUT_PREVIOUS_RUNTIME_SHA: ${{ inputs.previous_runtime_sha }}
+          INPUT_PREVIOUS_DEPLOY_BUNDLE_SHA: ${{ inputs.previous_deploy_bundle_sha }}
+          INPUT_PREVIOUS_RELEASE_SHA: ${{ inputs.previous_release_sha }}
+          INPUT_ACTION_RESTART_TARGETS_CSV: ${{ inputs.action_restart_targets_csv }}
           INPUT_RESTART_TARGETS: ${{ inputs.restart_targets }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_NOTES: ${{ inputs.notes || '' }}
@@ -120,9 +146,9 @@ jobs:
             require_single_line "restart_targets" "$value"
             case "$value" in
               all-hermes-and-system)
-                printf '%s' "qintopia-system-services,hermes-erhua,hermes-wenyuange,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-guanerye"
+                printf '%s' "qintopia-system-services,hermes-erhua,hermes-wenyuange,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-guanerye,hermes-anan"
                 ;;
-              qintopia-system-services|hermes-erhua|hermes-wenyuange|hermes-xiaoman|hermes-silaoshi|hermes-huabaosi|hermes-guanerye)
+              qintopia-system-services|hermes-erhua|hermes-wenyuange|hermes-xiaoman|hermes-silaoshi|hermes-huabaosi|hermes-guanerye|hermes-anan)
                 printf '%s' "$value"
                 ;;
               *)
@@ -132,21 +158,54 @@ jobs:
             esac
           }
 
-          require_single_line "release_tag" "$INPUT_RELEASE_TAG"
-          if [[ ! "$INPUT_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "release_tag must be a semver-style vX.Y.Z tag." >&2
+          normalize_action_targets() {
+            local value="$1" target="" seen="," result=""
+            require_single_line "action_restart_targets_csv" "$value"
+            [[ -n "$value" ]] || { echo "action_restart_targets_csv is required in mixed mode" >&2; exit 2; }
+            IFS=',' read -r -a entries <<<"$value"
+            for target in "${entries[@]}"; do
+              case "$target" in
+                qintopia-system-services|hermes-erhua|hermes-wenyuange|hermes-xiaoman|hermes-silaoshi|hermes-huabaosi|hermes-guanerye|hermes-anan) ;;
+                *) echo "unsupported action restart target" >&2; exit 2 ;;
+              esac
+              [[ "$seen" != *",${target},"* ]] || { echo "duplicate action restart target" >&2; exit 2; }
+              seen="${seen}${target},"
+              result="${result:+${result},}${target}"
+            done
+            [[ "$result" == "$value" ]] || { echo "invalid action target CSV" >&2; exit 2; }
+            printf '%s' "$result"
+          }
+
+          mixed_count=0
+          for value in "$INPUT_PREVIOUS_COMMIT_SHA" "$INPUT_PREVIOUS_RUNTIME_SHA" "$INPUT_PREVIOUS_DEPLOY_BUNDLE_SHA" "$INPUT_PREVIOUS_RELEASE_SHA" "$INPUT_ACTION_RESTART_TARGETS_CSV"; do
+            [[ -z "$value" ]] || mixed_count=$((mixed_count + 1))
+          done
+          if [[ "$mixed_count" -ne 0 && "$mixed_count" -ne 5 ]]; then
+            echo "mixed mode requires all four SHAs and the action target CSV." >&2
             exit 2
+          fi
+          if [[ "$mixed_count" -eq 5 && -n "$INPUT_RELEASE_TAG" ]]; then
+            echo "release_tag and mixed exact-previous inputs are mutually exclusive." >&2
+            exit 2
+          fi
+          if [[ "$mixed_count" -eq 0 ]]; then
+            require_single_line "release_tag" "$INPUT_RELEASE_TAG"
+            if [[ ! "$INPUT_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "release_tag must be a semver-style vX.Y.Z tag." >&2
+              exit 2
+            fi
           fi
           require_single_line "expected_current_release_tag" "$INPUT_EXPECTED_CURRENT_RELEASE_TAG"
           if [[ ! "$INPUT_EXPECTED_CURRENT_RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "expected_current_release_tag must be a semver-style vX.Y.Z tag." >&2
             exit 2
           fi
-          if [[ "$INPUT_EXPECTED_CURRENT_RELEASE_TAG" == "$INPUT_RELEASE_TAG" ]]; then
+          if [[ "$mixed_count" -eq 0 && "$INPUT_EXPECTED_CURRENT_RELEASE_TAG" == "$INPUT_RELEASE_TAG" ]]; then
             echo "Expected current and previous Release tags must differ." >&2
             exit 2
           fi
 
+          if [[ "$mixed_count" -eq 0 ]]; then
           release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_RELEASE_TAG}")"
           release_tag_name="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(release.tag_name || "");')"
           release_draft="$(printf '%s' "$release_json" | node -e 'const fs = require("node:fs"); const release = JSON.parse(fs.readFileSync(0, "utf8")); console.log(String(release.draft));')"
@@ -155,6 +214,7 @@ jobs:
           if [[ "$release_tag_name" != "$INPUT_RELEASE_TAG" || "$release_draft" != "false" || "$release_prerelease" != "false" ]]; then
             echo "Rollback target must be a published non-prerelease GitHub Release." >&2
             exit 2
+          fi
           fi
 
           current_release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${INPUT_EXPECTED_CURRENT_RELEASE_TAG}")"
@@ -167,14 +227,40 @@ jobs:
           fi
 
           git fetch --no-tags origin master
-          git fetch --tags --force origin "refs/tags/${INPUT_RELEASE_TAG}:refs/tags/${INPUT_RELEASE_TAG}"
+          if [[ "$mixed_count" -eq 0 ]]; then
+            git fetch --tags --force origin "refs/tags/${INPUT_RELEASE_TAG}:refs/tags/${INPUT_RELEASE_TAG}"
+            target_sha="$(git rev-list -n 1 "${INPUT_RELEASE_TAG}^{commit}")"
+            commit_sha="$target_sha"
+            runtime_sha="$target_sha"
+            bundle_sha="$target_sha"
+            release_scope="sidecar-runtime,deploy-bundle,hermes-plugins"
+            restart_targets="$(normalize_restart_targets "$INPUT_RESTART_TARGETS")"
+            target_label="$INPUT_RELEASE_TAG"
+          else
+            for value in "$INPUT_PREVIOUS_COMMIT_SHA" "$INPUT_PREVIOUS_RUNTIME_SHA" "$INPUT_PREVIOUS_DEPLOY_BUNDLE_SHA" "$INPUT_PREVIOUS_RELEASE_SHA"; do
+              require_single_line "mixed SHA" "$value"
+              [[ "$value" =~ ^[0-9a-f]{40}$ ]] || { echo "mixed SHA must be lowercase 40-character hex" >&2; exit 2; }
+            done
+            target_sha="$INPUT_PREVIOUS_RELEASE_SHA"
+            commit_sha="$INPUT_PREVIOUS_COMMIT_SHA"
+            runtime_sha="$INPUT_PREVIOUS_RUNTIME_SHA"
+            bundle_sha="$INPUT_PREVIOUS_DEPLOY_BUNDLE_SHA"
+            release_scope="deploy-bundle"
+            restart_targets="$(normalize_action_targets "$INPUT_ACTION_RESTART_TARGETS_CSV")"
+            target_label="mixed exact previous ${target_sha}"
+          fi
           git fetch --tags --force origin "refs/tags/${INPUT_EXPECTED_CURRENT_RELEASE_TAG}:refs/tags/${INPUT_EXPECTED_CURRENT_RELEASE_TAG}"
-          target_sha="$(git rev-list -n 1 "${INPUT_RELEASE_TAG}^{commit}")"
           expected_current_sha="$(git rev-list -n 1 "${INPUT_EXPECTED_CURRENT_RELEASE_TAG}^{commit}")"
           git cat-file -e "${target_sha}^{commit}"
           git cat-file -e "${expected_current_sha}^{commit}"
           if ! git merge-base --is-ancestor "$target_sha" origin/master; then
             echo "Rollback target must be reachable from origin/master." >&2
+            exit 2
+          fi
+          if ! git merge-base --is-ancestor "$commit_sha" origin/master ||
+            ! git merge-base --is-ancestor "$runtime_sha" origin/master ||
+            ! git merge-base --is-ancestor "$bundle_sha" origin/master; then
+            echo "mixed artifact SHAs must be reachable from origin/master." >&2
             exit 2
           fi
           if ! git merge-base --is-ancestor "$expected_current_sha" origin/master; then
@@ -186,15 +272,18 @@ jobs:
             exit 2
           fi
 
-          restart_targets="$(normalize_restart_targets "$INPUT_RESTART_TARGETS")"
           runtime_artifact_profile="huabaosi-production"
           dry_run="$(normalize_boolean "dry_run" "$INPUT_DRY_RUN")"
-          notes="Rollback Production from ${INPUT_EXPECTED_CURRENT_RELEASE_TAG} to its exact previous ${INPUT_RELEASE_TAG} (${release_url}). ${INPUT_NOTES}"
+          notes="Rollback Production from ${INPUT_EXPECTED_CURRENT_RELEASE_TAG} to its exact previous ${target_label}. ${INPUT_NOTES}"
 
           notes_delimiter="rollback_notes_$(uuidgen | tr '[:upper:]' '[:lower:]')"
           {
             echo "release-tag=${INPUT_RELEASE_TAG}"
             echo "target-sha=${target_sha}"
+            echo "commit-sha=${commit_sha}"
+            echo "runtime-sha=${runtime_sha}"
+            echo "bundle-sha=${bundle_sha}"
+            echo "release-scope=${release_scope}"
             echo "expected-current-sha=${expected_current_sha}"
             echo "restart-targets=${restart_targets}"
             echo "dry-run=${dry_run}"
@@ -207,7 +296,7 @@ jobs:
           {
             echo "## Rollback Target"
             echo
-            echo "- Release tag: ${INPUT_RELEASE_TAG}"
+            echo "- Target: ${target_label}"
             echo "- Target SHA: ${target_sha}"
             echo "- Expected current tag: ${INPUT_EXPECTED_CURRENT_RELEASE_TAG}"
             echo "- Expected current SHA: ${expected_current_sha}"
@@ -240,20 +329,22 @@ jobs:
           trap 'rm -rf "$temp_dir"' EXIT
           QINTOPIA_SIDECAR_ARTIFACT_PROFILE=huabaosi-production \
             deploy/sidecar/scripts/fetch-cos-artifact.sh \
-            --artifact-type sidecar \
-            --sha "${ROLLBACK_TARGET_SHA}" \
+              --artifact-type sidecar \
+              --sha "${ROLLBACK_RUNTIME_SHA}" \
             --output-dir "${temp_dir}/sidecar"
           QINTOPIA_SIDECAR_ARTIFACT_PROFILE=qiwe-production \
             deploy/sidecar/scripts/fetch-cos-artifact.sh \
-            --artifact-type sidecar \
-            --sha "${ROLLBACK_TARGET_SHA}" \
+              --artifact-type sidecar \
+              --sha "${ROLLBACK_RUNTIME_SHA}" \
             --output-dir "${temp_dir}/sidecar-profiles/qiwe-production"
           deploy/sidecar/scripts/fetch-cos-artifact.sh \
             --artifact-type deploy-bundle \
-            --sha "${ROLLBACK_TARGET_SHA}" \
+            --sha "${ROLLBACK_BUNDLE_SHA}" \
             --output-dir "${temp_dir}/deploy-bundle"
         env:
           ROLLBACK_TARGET_SHA: ${{ steps.resolve.outputs.target-sha }}
+          ROLLBACK_RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
+          ROLLBACK_BUNDLE_SHA: ${{ steps.resolve.outputs.bundle-sha }}
           TENCENT_COS_BUCKET: ${{ env.TENCENT_COS_BUCKET }}
           TENCENT_COS_REGION: ${{ env.TENCENT_COS_REGION }}
           TENCENT_COS_SECRET_ID: ${{ secrets.TENCENT_COS_SECRET_ID }}
@@ -265,13 +356,13 @@ jobs:
           node tools/deploy/create-deploy-request.mjs --output
           dist/deploy-requests/request.json
         env:
-          DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.target-sha }}
-          DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_COMMIT_SHA: ${{ steps.resolve.outputs.commit-sha }}
+          DEPLOY_RUNTIME_SHA: ${{ steps.resolve.outputs.runtime-sha }}
           DEPLOY_RUNTIME_ARTIFACT_PROFILE:
             ${{ steps.resolve.outputs.runtime-artifact-profile }}
-          DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.target-sha }}
+          DEPLOY_BUNDLE_SHA: ${{ steps.resolve.outputs.bundle-sha }}
           DEPLOY_RELEASE_SHA: ${{ steps.resolve.outputs.target-sha }}
-          DEPLOY_RELEASE_SCOPE: sidecar-runtime,deploy-bundle,hermes-plugins
+          DEPLOY_RELEASE_SCOPE: ${{ steps.resolve.outputs.release-scope }}
           DEPLOY_RESTART_TARGETS: ${{ steps.resolve.outputs.restart-targets }}
           DEPLOY_DRY_RUN: ${{ steps.resolve.outputs.dry-run }}
           DEPLOY_ROLLBACK_ON_SMOKE_FAILURE: true

@@ -206,14 +206,94 @@ for target in "${targets[@]}"; do
       restart_hermes_service hermes-huabaosi hermes-gateway-huabaosi.service
       ;;
     hermes-anan)
-      # The helper drains only hermes-gateway-anan.service; no forced timeout restart.
-      anan_helper="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)/runtime/hermes/restart_anan.py"
-      if ! runuser -u "$hermes_systemd_user" -- env \
-        "XDG_RUNTIME_DIR=/run/user/$(id -u "$hermes_systemd_user")" \
-        /home/ubuntu/.local/share/hermes-releases/v2026.9.21/venv/bin/python "$anan_helper"; then
+      anan_unit=qintopia-agent-os-anan-drain-restart.service
+      anan_release="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+      if [[ "$anan_release" != "${release_root}/"* || "$anan_release" == "${release_root}/current" ]]; then
+        emit_safe_failure hermes-anan release-identity "$anan_unit"
+        exit 1
+      fi
+      anan_helper="${anan_release}/runtime/hermes/restart_anan.py"
+      if [[ ! -f "$anan_helper" || "$hermes_systemd_user" != ubuntu ]]; then
+        emit_safe_failure hermes-anan helper-identity "$anan_unit"
+        exit 1
+      fi
+      anan_load_state="$(systemctl show "$anan_unit" --property=LoadState --value 2>/dev/null)" || {
+        emit_safe_failure hermes-anan unit-state "$anan_unit"
+        exit 1
+      }
+      if [[ "$anan_load_state" != not-found ]]; then
+        emit_safe_failure hermes-anan unit-busy "$anan_unit"
+        exit 1
+      fi
+      anan_uid="$(id -u ubuntu)"
+      anan_python=/home/ubuntu/.local/share/hermes-releases/v2026.9.21/venv/bin/python
+      anan_output="$(mktemp)"
+      if ! systemd-run --unit="$anan_unit" --service-type=oneshot --wait \
+        --uid=ubuntu --gid=ubuntu \
+        --property=TimeoutStartSec=infinity \
+        --property=NoNewPrivileges=yes \
+        --property=PrivateTmp=yes \
+        --property=ProtectSystem=strict \
+        --property=ProtectHome=read-only \
+        --property=ReadWritePaths=/home/ubuntu/.hermes/profiles/anan \
+        --property="Environment=XDG_RUNTIME_DIR=/run/user/${anan_uid}" \
+        --property="Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${anan_uid}/bus" \
+        --property=Environment=XDG_CONFIG_HOME=/home/ubuntu/.config \
+        --property=Environment=XDG_DATA_HOME=/home/ubuntu/.local/share \
+        --property=Environment=XDG_STATE_HOME=/home/ubuntu/.local/state \
+        --property=Environment=PYTHONDONTWRITEBYTECODE=1 \
+        "$anan_python" "$anan_helper" >"$anan_output" 2>&1; then
+        rm -f "$anan_output"
         emit_safe_failure hermes-anan drain-or-restart hermes-gateway-anan.service
         exit 1
       fi
+      anan_invocation="$(sed -n "s/^Running as unit: ${anan_unit}; invocation ID: \([0-9a-f]\{32\}\)$/\1/p" "$anan_output")"
+      anan_result="$(sed -n 's/^Finished with result: \([a-z-]*\)$/\1/p' "$anan_output")"
+      anan_exit="$(sed -n 's/^Main processes terminated with: code=exited\/status=\([0-9]*\)$/\1/p' "$anan_output")"
+      rm -f "$anan_output"
+      if [[ ! "$anan_invocation" =~ ^[0-9a-f]{32}$ || "$anan_result" != success || "$anan_exit" != 0 ]]; then
+        emit_safe_failure hermes-anan unit-result "$anan_unit"
+        exit 1
+      fi
+      if [[ -n "${QINTOPIA_DEPLOY_REQUEST_ID:-}" ]]; then
+        python3 - "${QINTOPIA_DEPLOY_RUNNER_STATE_DIR:-/var/lib/qintopia-agent-os-deploy}/results" \
+          "$QINTOPIA_DEPLOY_REQUEST_ID" "$anan_invocation" "$anan_unit" \
+          "$anan_python" "$anan_helper" "$anan_result" "$anan_exit" <<'PY'
+import json
+import os
+import re
+import sys
+import tempfile
+
+directory, request_id, invocation, unit, python, helper, result, status = sys.argv[1:9]
+if not re.fullmatch(r"deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}", request_id):
+    raise SystemExit("Anan drain request ID is invalid")
+record = {
+    "unit": unit, "invocation_id": invocation,
+    "exec_start": [python, helper], "result": result,
+    "exec_main_status": int(status),
+}
+fd, temporary = tempfile.mkstemp(prefix=".anan-drain-", dir=directory)
+path = os.path.join(directory, request_id + ".anan-drain.json")
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PY
+      fi
+      echo "Anan drain unit: ${anan_unit} invocation=${anan_invocation} result=${anan_result} exit=${anan_exit}"
       ;;
     hermes-guanerye)
       restart_hermes_service hermes-guanerye hermes-gateway-guanerye.service

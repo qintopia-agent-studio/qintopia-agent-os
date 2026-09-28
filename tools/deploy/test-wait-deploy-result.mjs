@@ -64,6 +64,27 @@ const canonicalJson = (value) => {
   return JSON.stringify(value);
 };
 
+const signRequest = (value) => {
+  const unsigned = { ...value };
+  delete unsigned.signature;
+  const metadata = {
+    algorithm: "hmac-sha256",
+    issuer: "github-actions",
+    key_id: signingKeyId,
+    signed_at: value.created_at,
+  };
+  return {
+    ...unsigned,
+    signature: {
+      ...metadata,
+      value: crypto
+        .createHmac("sha256", signingKey)
+        .update(canonicalJson({ request: unsigned, signature: metadata }))
+        .digest("hex"),
+    },
+  };
+};
+
 const signResult = (value) => {
   const result = { ...value };
   delete result.signature;
@@ -166,6 +187,15 @@ const writeJson = (name, value) => {
 };
 
 const goodResultFile = writeJson("good-result.json", goodResult);
+const archivedRequestFile = writeJson("archived-request.json", signRequest(request));
+const failedSignedResultFile = writeJson(
+  "failed-signed-result.json",
+  signResult({
+    ...goodResult,
+    status: "failed",
+    error: "simulated failure",
+  })
+);
 const badResultFile = writeJson("bad-result.json", badResult);
 const tamperedResultFile = writeJson("tampered-result.json", tamperedResult);
 const normalizedValidationFailureResultFile = writeJson(
@@ -219,7 +249,56 @@ const run = (resultPath, runRequestFile = requestFile) =>
     },
   });
 
+const runOffline = (resultPath, runRequestFile = archivedRequestFile) =>
+  spawnSync(
+    "bash",
+    [
+      script,
+      "--request-file",
+      runRequestFile,
+      "--result-file",
+      resultPath,
+      "--verify-archived-request",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: signingKeyId,
+      },
+    }
+  );
+
 try {
+  const offlineSuccess = runOffline(goodResultFile);
+  if (offlineSuccess.status !== 0) {
+    throw new Error(`offline signed result rejected: ${offlineSuccess.stderr}`);
+  }
+  const offlineFailed = runOffline(failedSignedResultFile);
+  if (
+    offlineFailed.status !== 0 ||
+    !offlineFailed.stderr.includes("Deploy result failed: failed")
+  ) {
+    throw new Error("offline failed result must verify without becoming succeeded");
+  }
+  const archivedTamper = runOffline(goodResultFile, requestFile);
+  if (
+    archivedTamper.status === 0 ||
+    !archivedTamper.stderr.includes(
+      "archived deploy request signature verification failed"
+    )
+  ) {
+    throw new Error("unsigned archived request was accepted");
+  }
+  const offlineTamper = runOffline(tamperedResultFile);
+  if (
+    offlineTamper.status === 0 ||
+    !offlineTamper.stderr.includes("deploy result signature verification failed")
+  ) {
+    throw new Error("tampered offline result was accepted");
+  }
   const success = run(goodResultFile);
   if (success.status !== 0) {
     throw new Error(

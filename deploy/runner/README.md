@@ -152,6 +152,62 @@ configuration and enabled states, and Erhua's separate `qiwe-platform` remain un
 `deploy/runner` defines the stable production deployment control plane for Qintopia
 Agent OS.
 
+The approved second-stage takeover and recovery contract is recorded in
+`docs/reports/2026-09-26-v033-runner-takeover-and-rollback.md`. A mixed exact-previous
+rollback uses a newly signed production request with the previous release's full
+artifact tuple. The previous release's original manifest, signed request and succeeded
+result establish artifact identity; the new request's restart targets authorize only the
+current action. A stale original request may be verified offline but never executed. The
+poller holds `poller.lock` before shared request state and keeps an unfinished claim on
+any uncertain upload or archive outcome. Maintenance recovery uses a persistent hold,
+direction-bound journal and `poller.lock` before `deploy.lock`; a pointer shape alone
+cannot identify the interrupted direction. This contract does not authorize a production
+takeover or recovery operation. The fixed takeover consumer leaves the hold drop-in
+installed. Its `finalize` mode takes `poller.lock` before `deploy.lock`, binds the
+current hold to the original takeover record, rejects another claim or later recovery
+journal, and rechecks the consumed request, signed result, manifests and pointers
+without replaying the request. It restores and verifies the timer before removing only
+that takeover's hold as its final action. Failure or caller death before that unlink
+leaves consumption blocked; a later `finalize` can resume from the same durable
+evidence. A later T→R or R→T hold is bound to its own request and cannot be cleared by
+an old `finalize`. Mixed exact-previous rollback also binds T's original signed success
+result to `previous_sha=O` and the canonical T target, checks the fixed O ancestor
+manifest and installer, and verifies required installed sidecar binaries and modes
+against the immutable fetched archives before any pointer write.
+
+For an interrupted request with no signed result, the new poller records a durable
+`not_started` result-upload stage in the request claim and direction-bound journal
+before execution. Before each result PUT it fsyncs an `upload_intent` stage with the
+exact result digest in both records. Limited recovery from a missing result requires the
+new `not_started` evidence, the fixed COS result key's authoritative `NoSuchKey`
+response, and proof that the ordinary/fixed consumer, uploader and Anan helper have
+ended. A missing or older stage, any upload intent, unreadable COS, or conflicting
+evidence keeps the hold and forbids pointer changes. A trusted remote success only
+reconciles local signed bytes and request archive; it does not reverse release pointers.
+Maintenance evidence stays separate from ordinary signed deployment results. This
+contract does not authorize a production request or hold release.
+
+For a trusted COS `succeeded` result, recovery compares the target's historical manifest
+with its original archived signed request and result. In R→T, the new signed
+request/result must match each other, while their approved restart targets may differ
+from T's original single-system targets. Reconciliation writes the exact signed COS
+bytes to a synced temporary file, then publishes the local result without replacing an
+existing file; an interruption before publication remains retryable. With no claim, the
+verified journal and (for O→T) takeover record must still bind the current hold token.
+Another claim, a later recovery journal, or a hold whose owner cannot be proved stops
+recovery before pointer or service changes.
+
+The owner approved adding the existing
+`tools/deploy/test-smoke-release-erhua-profile-gate.mjs` fixture to Draft PR #726's
+scope on 2026-09-27, bringing its limit to 18 paths. The required adaptation uses a
+temporary fixed-SHA release tree with the real smoke and `restart_anan.py` paths. It
+checks the fixed unit, official Python, release-local helper, sandbox arguments and one
+`systemd-run` invocation; missing or erroneous `--wait` outcomes must fail. The Erhua,
+Profile activation sentinel, system-service failure and safe failure marker checks must
+remain. This fixture verifies simulated invocation behavior; the separate Ubuntu 24.04
+PID1 test owns the real namespace, lock and helper-lifetime evidence. This test-scope
+approval does not authorize a production takeover, release or deployment.
+
 The runner exists so collaborators can deploy an approved `master` SHA without direct
 server access. GitHub Actions creates an HMAC-signed, schema-validated deploy request in
 COS. The server-side runner pulls that request, verifies the signature and artifacts,
