@@ -154,6 +154,31 @@ smoke，不能记为总门禁通过；未更改 CI、部署检查或白名单。
 `d354592e732a`
 评论不构成旧动作接续成功证据。该审阅跳过了大量文件，仍为 partial，不能替代完整人工验收。
 
+### 已提交但确认丢失的定向复现
+
+2026-09-28 在本任务新建的一次性 PostgreSQL 18.6 容器
+`agentos-pr723-ack-20260928`（随机 loopback 端口 32779）中，测试专用 TCP 代理只接收一条应用数据库连接。它在前端发出
+`COMMIT` 后扣住服务器的 `CommandComplete(COMMIT)` 与
+`ReadyForQuery`，不把确认转给 SQLx；独立直连库先按原 `operation_id`
+回读确认事务已提交，再关闭代理连接。该用例须显式设置
+`QINTOPIA_COLLABORATION_ACK_LOSS_TEST_ENABLE=1`；远端普通集成组未配置时会输出
+`postcommit_ack_loss_test_not_configured`，不能据此宣称丢 ack 验收通过。
+
+最终定向运行 1/1 通过。原键 `75c381b0-2887-4df1-bfc0-3fb720e96a4f`
+在测试日志中同时出现在已提交回读、SQLx `configuration_commit_outcome_unknown`
+与 listener
+`production_ui_request_outcome_unknown`；HTTP 客户端没有收到成功回执，listener 以结果不明退出并关闭端口。独立
+`psql` 回读该键：`expected_version=1`、回执版本 `2`、tenant 版本 `2`、匹配审计
+`1`、该 tenant 命令总数
+`1`。断线后测试再次核对命令数、审计数及版本均不增长；没有换键或自动重放。
+
+此前延迟约束触发器覆盖的是未提交分支，本次补的是已提交但确认丢失分支。仅模拟隔离数据库与 loopback 网络故障，不推断正式代理或受限角色启用已完成；未更改迁移、生产代码或 CI。
+
+新 Reviewer Guide 的 `f473af8172ff` 与此前 `b57d26fe2fe1`
+均质疑停用账号旧 Actor 的授权路径。`business_authorize` 和执行入口在同一事务先调用
+`verify`，旧 Actor 携残留授权的 PostgreSQL 定向回归已返回
+`work_account_changed_or_revoked`；本轮不因持久 `ACTIVE` 状态重复修改业务授权逻辑。
+
 远端 head `a306020` 的 CI run `36382816359`：Light、runtime 与 PostgreSQL
 integration 通过，Rust quality 因新增 `auth_tests.rs`
 的 HTTPS 请求辅助函数有 9 个参数而触发 Clippy

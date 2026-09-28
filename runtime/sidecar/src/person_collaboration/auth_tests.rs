@@ -968,6 +968,176 @@ async fn live_configuration_commit_failure_keeps_original_receipt_key() -> Resul
 }
 
 #[tokio::test]
+#[ignore = "explicit task-isolated PostgreSQL and loopback ack-loss proxy required"]
+async fn live_configuration_postcommit_ack_loss_reads_original_receipt_once() -> Result<()> {
+    if std::env::var("QINTOPIA_COLLABORATION_ACK_LOSS_TEST_ENABLE").as_deref() != Ok("1") {
+        eprintln!("postcommit_ack_loss_test_not_configured");
+        return Ok(());
+    }
+    let (mut store, _, _, pass) = fixture().await?;
+    sqlx::query(
+        "UPDATE qintopia_agent_os.collaboration_tenants SET mode='live' WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .execute(&store.pool)
+    .await?;
+    store.mode = super::store::StoreMode::Live;
+    let token = login(&store, "owner", &pass).await?;
+    let actor = store.session_actor(&token).await?;
+    let original_version = store.state(&actor).await?["version"].as_i64().unwrap();
+    let original_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM qintopia_agent_os.collaboration_commands WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .fetch_one(&store.pool)
+    .await?;
+    let operation_id = Uuid::new_v4();
+    let command = Command {
+        operation_id,
+        expected_version: original_version,
+        change: Change::SaveLedger {
+            id: None,
+            object: "person".into(),
+            reference: None,
+            label: "模拟已提交但确认丢失人员".into(),
+            nickname: String::new(),
+            description: "模拟提交确认丢失".into(),
+            scope: None,
+            owner: None,
+            draft: false,
+        },
+    };
+
+    let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
+    let mut proxy_url = url::Url::parse(&database)?;
+    let database_port = proxy_url
+        .port()
+        .filter(|port| *port != 5432)
+        .ok_or_else(|| anyhow::anyhow!("dedicated_postgres_port_required"))?;
+    let proxy_listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
+    proxy_url
+        .set_port(Some(proxy_listener.local_addr()?.port()))
+        .map_err(|_| anyhow::anyhow!("invalid_ack_loss_proxy_port"))?;
+    proxy_url.set_query(Some("sslmode=disable"));
+    let (ack_tx, ack_rx) = tokio::sync::oneshot::channel::<()>();
+    let (close_tx, close_rx) = tokio::sync::oneshot::channel::<()>();
+    let proxy = tokio::spawn(async move {
+        let (client, _) = proxy_listener.accept().await?;
+        let server = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, database_port)).await?;
+        let (mut client_read, mut client_write) = client.into_split();
+        let (mut server_read, mut server_write) = server.into_split();
+        let (mut client_bytes, mut server_bytes) = ([0_u8; 8192], [0_u8; 8192]);
+        let (mut request_tail, mut withheld) = (Vec::new(), Vec::new());
+        let mut commit_seen = false;
+        loop {
+            tokio::select! {
+                biased;
+                read = client_read.read(&mut client_bytes) => {
+                    let count = read?;
+                    anyhow::ensure!(count > 0, "client_closed_before_commit_ack");
+                    if !commit_seen {
+                        request_tail.extend_from_slice(&client_bytes[..count]);
+                        commit_seen = request_tail.windows(7).any(|bytes| bytes == b"COMMIT\0");
+                        if request_tail.len() > 32 {
+                            request_tail.drain(..request_tail.len() - 32);
+                        }
+                    }
+                    server_write.write_all(&client_bytes[..count]).await?;
+                }
+                read = server_read.read(&mut server_bytes) => {
+                    let count = read?;
+                    anyhow::ensure!(count > 0, "server_closed_before_commit_ack");
+                    if !commit_seen {
+                        client_write.write_all(&server_bytes[..count]).await?;
+                        continue;
+                    }
+                    withheld.extend_from_slice(&server_bytes[..count]);
+                    anyhow::ensure!(withheld.len() <= 1024, "unexpected_commit_response");
+                    let committed = withheld.windows(12).any(|bytes| bytes == b"C\0\0\0\x0bCOMMIT\0");
+                    let ready = withheld.windows(6).any(|bytes| bytes == b"Z\0\0\0\x05I");
+                    if committed && ready {
+                        ack_tx.send(()).map_err(|_| anyhow::anyhow!("ack_observer_gone"))?;
+                        let _ = close_rx.await;
+                        return Ok::<_, anyhow::Error>(());
+                    }
+                }
+            }
+        }
+    });
+    let proxied = Store {
+        pool: crate::db::connect(proxy_url.as_str(), 1).await?,
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: super::store::StoreMode::Live,
+    };
+    let origin = super::auth_server::UiOrigin::production("https://admin.example.test")?;
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).await?;
+    let port = listener.local_addr()?.port();
+    let application = tokio::spawn(async move {
+        super::serve_production_ui_until(listener, &proxied, &origin, std::future::pending()).await
+    });
+    let body = json!(command).to_string();
+    let request = format!("POST /api/save HTTP/1.1\r\nHost: admin.example.test\r\nOrigin: https://admin.example.test\r\nContent-Type: application/json\r\nCookie: collaboration-session={token}\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+    let browser = tokio::spawn(async move {
+        let mut stream = TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+        stream.write_all(request.as_bytes()).await?;
+        stream.shutdown().await?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await?;
+        Ok::<_, anyhow::Error>(response)
+    });
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), ack_rx).await??;
+    let receipt: Value = sqlx::query_scalar(
+        "SELECT result FROM qintopia_agent_os.collaboration_commands WHERE tenant_key=$1 AND id=$2",
+    )
+    .bind(&store.tenant)
+    .bind(operation_id)
+    .fetch_one(&store.pool)
+    .await?;
+    assert_eq!(receipt["version"], original_version + 1);
+    assert_eq!(receipt["replayed"], false);
+    let audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.tool_invocation_audit WHERE tool_name='collaboration.configure' AND input_summary->>'command_ref'=$1")
+        .bind(operation_id.to_string()).fetch_one(&store.pool).await?;
+    assert_eq!(audit_count, 1);
+    let version: i64 = sqlx::query_scalar(
+        "SELECT version FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .fetch_one(&store.pool)
+    .await?;
+    assert_eq!(version, original_version + 1);
+    eprintln!("postcommit_ack_loss_readback operation_id={operation_id} receipt=1 audit=1 version={version}");
+
+    close_tx
+        .send(())
+        .map_err(|_| anyhow::anyhow!("proxy_closed_before_readback"))?;
+    tokio::time::timeout(std::time::Duration::from_secs(5), proxy).await???;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), browser).await???;
+    assert!(response.is_empty(), "{response}");
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), application).await??;
+    assert_eq!(
+        outcome.unwrap_err().to_string(),
+        "production_ui_request_outcome_unknown"
+    );
+    assert!(TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port))
+        .await
+        .is_err());
+    let final_count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM qintopia_agent_os.collaboration_commands WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .fetch_one(&store.pool)
+    .await?;
+    assert_eq!(final_count, original_count + 1);
+    let final_audit_count: i64 = sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.tool_invocation_audit WHERE tool_name='collaboration.configure' AND input_summary->>'command_ref'=$1")
+        .bind(operation_id.to_string()).fetch_one(&store.pool).await?;
+    assert_eq!(final_audit_count, 1);
+    assert_eq!(store.state(&actor).await?["version"], original_version + 1);
+    Ok(())
+}
+
+#[tokio::test]
 #[ignore = "explicit task-isolated local database required"]
 async fn production_listener_recovers_from_slow_reads_and_closes_on_shutdown() -> Result<()> {
     let (mut store, _, _, pass) = fixture().await?;
