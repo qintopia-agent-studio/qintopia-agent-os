@@ -136,6 +136,14 @@ printf 'quiesce\n' >>"${promotionEventLog}"
 `
   );
   writeExecutable(
+    "deploy/runner/management-ui-lifecycle.sh",
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf 'ui-%s\n' "$1" >>"${promotionEventLog}"
+if [[ "$1" == quiesce && "\${FAKE_UI_QUIESCE_FAIL:-0}" == 1 ]]; then exit 62; fi
+`
+  );
+  writeExecutable(
     "deploy/runner/promote-release.sh",
     `#!/usr/bin/env bash
 printf 'promote\n' >>"${promotionEventLog}"
@@ -182,7 +190,13 @@ exit 44
   if (result.stderr.includes("smoke must not run")) {
     throw new Error("runner executed smoke after promote failure");
   }
-  const failedPromotionEvents = fs.readFileSync(promotionEventLog, "utf8").trim();
+  const fullPromotionEvents = fs.readFileSync(promotionEventLog, "utf8").trim();
+  if (fullPromotionEvents !== "quiesce\nui-quiesce\npromote") {
+    throw new Error(
+      `runner must quiesce the UI before promotion, got ${fullPromotionEvents}`
+    );
+  }
+  const failedPromotionEvents = fullPromotionEvents.replace("ui-quiesce\n", "");
   if (failedPromotionEvents !== "quiesce\npromote") {
     throw new Error(
       `runner must quiesce Space runtime immediately before promotion, got ${failedPromotionEvents}`
@@ -283,6 +297,60 @@ exit 42
       `expected pre-promotion quiesce failure detail, got ${quiesceFailedDeployResult.checks[0].detail}`
     );
   }
+
+  fs.rmSync(resultPath, { force: true });
+  fs.rmSync(promotionEventLog, { force: true });
+  writeExecutable(
+    "deploy/runner/quiesce-space-automation-runtime.sh",
+    `#!/usr/bin/env bash
+printf 'quiesce\n' >>"${promotionEventLog}"
+`
+  );
+  writeExecutable(
+    "deploy/runner/management-ui-lifecycle.sh",
+    `#!/usr/bin/env bash
+printf 'ui-%s\n' "$1" >>"${promotionEventLog}"
+exit 62
+`
+  );
+  const uiQuiesceFailure = spawnSync(
+    "bash",
+    [runnerPath, "--request-file", requestFile],
+    {
+      cwd: stateDir,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}${path.delimiter}${process.env.PATH ?? ""}`,
+        QINTOPIA_DEPLOY_RUNNER_STATE_DIR: stateDir,
+        QINTOPIA_RELEASE_ROOT: releaseRoot,
+        QINTOPIA_COS_ENV_FILE: path.join(tmpRoot, "missing.env"),
+        DEPLOY_REQUEST_SIGNING_KEY: signingKey,
+        DEPLOY_REQUEST_SIGNING_KEY_ID: keyId,
+        TENCENT_COS_BUCKET: "qintopia-agent-os-artifacts-1305166808",
+        TENCENT_COS_REGION: "ap-shanghai",
+      },
+      encoding: "utf8",
+    }
+  );
+  const uiFailedDeployResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  const uiFailureDetail = JSON.parse(uiFailedDeployResult.checks[0].detail);
+  if (
+    uiQuiesceFailure.status !== 62 ||
+    fs.readFileSync(promotionEventLog, "utf8").trim() !== "quiesce\nui-quiesce" ||
+    uiFailedDeployResult.status !== "failed" ||
+    uiFailureDetail.failure_stage !== "quiesce-management-ui" ||
+    uiFailureDetail.promoted_current !== false
+  ) {
+    throw new Error(
+      `management UI quiesce failure did not block promotion: ${uiQuiesceFailure.stderr}`
+    );
+  }
+  writeExecutable(
+    "deploy/runner/management-ui-lifecycle.sh",
+    `#!/usr/bin/env bash
+printf 'ui-%s\n' "$1" >>"${promotionEventLog}"
+`
+  );
 
   fs.rmSync(stateDir, { recursive: true, force: true });
   fs.rmSync(releaseRoot, { recursive: true, force: true });
@@ -560,7 +628,10 @@ exit 0
     throw new Error("install failure did not restore the original release lineage");
   }
   const promotedEvents = fs.readFileSync(promotionEventLog, "utf8").trim();
-  if (promotedEvents !== "quiesce\npromote") {
+  if (
+    promotedEvents !==
+    "quiesce\nui-quiesce\npromote\nui-verify-closed\nui-verify-closed"
+  ) {
     throw new Error(
       `runner must quiesce before a successful promotion, got ${promotedEvents}`
     );
@@ -1031,10 +1102,20 @@ exit 64
     "deploy/runner/install-release-systemd-units.sh"
   );
   fs.mkdirSync(path.dirname(ancestorInstallerPath), { recursive: true });
-  fs.copyFileSync(
-    path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
-    ancestorInstallerPath
+  const historicInstaller = spawnSync(
+    "git",
+    [
+      "show",
+      "16e8d56b98001579c6288ba13199b80d6d3dfc74:deploy/runner/install-release-systemd-units.sh",
+    ],
+    { cwd: repoRoot, encoding: "utf8" }
   );
+  if (historicInstaller.status !== 0) {
+    throw new Error(
+      `historical installer fixture is unavailable: ${historicInstaller.stderr}`
+    );
+  }
+  fs.writeFileSync(ancestorInstallerPath, historicInstaller.stdout);
   fs.chmodSync(ancestorInstallerPath, 0o755);
   const tManifest = {
     schema_version: 2,
@@ -1258,10 +1339,7 @@ exit 64
   fs.writeFileSync(ancestorInstallerPath, "corrupted installer\n");
   writeMixedEvidence(originalRequest, originalResult);
   assertRejectedBeforeFetch(runMixed(), "ancestor installer drifted");
-  fs.copyFileSync(
-    path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
-    ancestorInstallerPath
-  );
+  fs.writeFileSync(ancestorInstallerPath, historicInstaller.stdout);
   fs.chmodSync(ancestorInstallerPath, 0o755);
   fs.rmSync(ancestorManifestPath);
   assertRejectedBeforeFetch(runMixed(), "ancestor file is missing");

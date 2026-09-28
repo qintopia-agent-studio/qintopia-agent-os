@@ -1,5 +1,24 @@
 # Production Deploy Runner
 
+## Management UI Preparation And Stop
+
+`agentos.qintopia.cn` resolves to the origin, but DNS is only the first external
+prerequisite. The reviewed root operator prepares the dedicated account and five-key
+private environment, installs the HTTP challenge site, requests the separate exact-host
+certificate, verifies renewal, and installs the HTTPS proxy before approving activation.
+Verify the real live tenant, UI database role's effective privileges, manager identity
+and grant, binary traversal, route 503 while stopped, and the 30-second drain on the
+exact R binary. Do not install a certificate or activate the service as a side effect of
+release installation.
+
+The installer always leaves `qintopia-agentos-management-ui.service` disabled and
+stopped. Runner/recovery call the fixed lifecycle helper while retaining their deploy
+lock; unknown stop outcomes retain the request hold and require readback of the original
+operation and audit/version evidence. After R to T, leave the HTTPS route in place
+returning 503. A restored R is not automatically reactivated. Removing the route and
+archiving only its renewal declaration is a separate reviewed decommission step. Chrome
+login, permission, save and rollback checks remain manual production acceptance.
+
 This document records the intended production deploy automation after the server moved
 to `qintopia-agent-os-releases/current`.
 

@@ -40,6 +40,155 @@ server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
 port_path.write_text(str(server.server_port))
 server.serve_forever()
 `;
+const managementUiLockProbe = `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" == 1 && ( "$1" == quiesce || "$1" == verify-closed ) ]]
+python3 - <<'PY'
+import fcntl, os, stat
+path = os.lstat('/var/lib/qintopia-agent-os-deploy/deploy.lock')
+held = os.fstat(9)
+assert stat.S_ISREG(path.st_mode) and (path.st_dev, path.st_ino) == (held.st_dev, held.st_ino)
+fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+PY
+`;
+
+if (process.argv[2] === "--management-ui-mock") {
+  const repoRoot = process.cwd();
+  const fixtureBase = path.join(repoRoot, ".local-workspace");
+  fs.mkdirSync(fixtureBase, { recursive: true });
+  const fixture = fs.mkdtempSync(path.join(fixtureBase, "management-ui-mock-"));
+  try {
+    fs.writeFileSync(
+      path.join(fixture, "systemctl"),
+      '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "$1" == show ]]; then cat /tmp/management-ui-state; exit 0; fi\nif [[ "$1" == disable && "$2" == --now ]]; then\n  kill -TERM "$(cat /tmp/management-ui-pid)"\n  cp /tmp/management-ui-stopped /tmp/management-ui-state\n  if [[ -f /tmp/management-ui-emit-unknown ]]; then printf "%s\\n" production_ui_stop_outcome_unknown >>/tmp/management-ui-journal; fi\n  exit 0\nfi\nexit 75\n',
+      { mode: 0o755 }
+    );
+    fs.writeFileSync(
+      path.join(fixture, "journalctl"),
+      "#!/usr/bin/env bash\ncat /tmp/management-ui-journal\n",
+      { mode: 0o755 }
+    );
+    fs.writeFileSync(
+      path.join(fixture, "run.sh"),
+      `#!/usr/bin/env bash
+set -euo pipefail
+sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bundle=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+release=/home/ubuntu/qintopia-agent-os-releases/$sha
+mkdir -p "$release/deploy/runner" "$release/runtime/nginx/templates" \
+  "$release/deploy-bundle" "$release/sidecar" /var/lib/qintopia-agent-os-deploy
+cp /repo/deploy/runner/management-ui-lifecycle.sh "$release/deploy/runner/"
+cp /repo/runtime/nginx/templates/management-ui-*.conf.template "$release/runtime/nginx/templates/"
+chmod 0755 "$release/deploy/runner/management-ui-lifecycle.sh"
+chmod 0644 "$release/runtime/nginx/templates/"*.conf.template
+python3 - "$release" "$sha" "$bundle" <<'PY'
+import hashlib, json, pathlib, sys
+root, sha, bundle = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+files = []
+for relative in ('deploy/runner/management-ui-lifecycle.sh',
+                 'runtime/nginx/templates/management-ui-http.conf.template',
+                 'runtime/nginx/templates/management-ui-https.conf.template'):
+    source = root / relative
+    files.append({'path': 'payload/' + relative,
+                  'sha256': hashlib.sha256(source.read_bytes()).hexdigest()})
+(root / 'manifest.json').write_text(json.dumps({'release_sha': sha,
+                                                 'deploy_bundle_sha': bundle}))
+(root / 'deploy-bundle/artifact-manifest.json').write_text(
+    json.dumps({'commit_sha': bundle, 'files': files}))
+PY
+chmod 0444 "$release/manifest.json" "$release/deploy-bundle/artifact-manifest.json"
+ln -s "$release" /home/ubuntu/qintopia-agent-os-releases/current
+install -m 0755 /fixture/systemctl /usr/bin/systemctl
+install -m 0755 /fixture/journalctl /usr/bin/journalctl
+printf '%s\\n' 'LoadState=loaded' 'ActiveState=inactive' 'SubState=dead' \
+  'UnitFileState=disabled' 'InvocationID=11111111111111111111111111111111' \
+  'Result=success' 'ExecMainCode=1' 'ExecMainStatus=0' 'MainPID=0' \
+  'ControlPID=0' 'ControlGroup=' 'NRestarts=0' >/tmp/management-ui-stopped
+cp /tmp/management-ui-stopped /tmp/management-ui-state
+: >/tmp/management-ui-journal
+helper="$release/deploy/runner/management-ui-lifecycle.sh"
+if "$helper" verify-closed >/dev/null 2>&1; then
+  echo 'missing inherited FD9 was accepted' >&2
+  exit 1
+fi
+flock /var/lib/qintopia-agent-os-deploy/poller.lock sleep 1 &
+holder=$!
+sleep 0.1
+if "$helper" activate >/dev/null 2>/tmp/management-ui-lock-error ||
+   ! grep -Fq 'poller lock is held' /tmp/management-ui-lock-error; then
+  echo 'external poller lock order was bypassed' >&2
+  exit 1
+fi
+wait "$holder"
+flock /var/lib/qintopia-agent-os-deploy/deploy.lock sleep 1 &
+holder=$!
+sleep 0.1
+if "$helper" activate >/dev/null 2>/tmp/management-ui-lock-error ||
+   ! grep -Fq 'deploy lock is held' /tmp/management-ui-lock-error; then
+  echo 'external deploy lock order was bypassed' >&2
+  exit 1
+fi
+wait "$holder"
+(
+  exec 9>/var/lib/qintopia-agent-os-deploy/deploy.lock
+  flock -n 9
+  "$helper" verify-closed
+  cp /usr/bin/sleep "$release/sidecar/qintopia-message-sidecar"
+  "$release/sidecar/qintopia-message-sidecar" 100 &
+  ui_pid=$!
+  printf '%s\\n' "$ui_pid" >/tmp/management-ui-pid
+  printf '%s\\n' 'LoadState=loaded' 'ActiveState=active' 'SubState=running' \
+    'UnitFileState=enabled' 'InvocationID=11111111111111111111111111111111' \
+    'Result=success' 'ExecMainCode=0' 'ExecMainStatus=0' "MainPID=$ui_pid" \
+    'ControlPID=0' 'ControlGroup=' 'NRestarts=0' >/tmp/management-ui-state
+  "$helper" quiesce
+  wait "$ui_pid" || true
+  sed -i 's/11111111111111111111111111111111/22222222222222222222222222222222/' \
+    /tmp/management-ui-stopped
+  "$release/sidecar/qintopia-message-sidecar" 100 &
+  ui_pid=$!
+  printf '%s\\n' "$ui_pid" >/tmp/management-ui-pid
+  printf '%s\\n' 'LoadState=loaded' 'ActiveState=active' 'SubState=running' \
+    'UnitFileState=enabled' 'InvocationID=22222222222222222222222222222222' \
+    'Result=success' 'ExecMainCode=0' 'ExecMainStatus=0' "MainPID=$ui_pid" \
+    'ControlPID=0' 'ControlGroup=' 'NRestarts=0' >/tmp/management-ui-state
+  touch /tmp/management-ui-emit-unknown
+  if "$helper" quiesce >/dev/null 2>&1; then
+    echo 'UNKNOWN raised during drain was accepted' >&2
+    exit 1
+  fi
+  wait "$ui_pid" || true
+  if "$helper" verify-closed >/dev/null 2>&1; then
+    echo 'UNKNOWN journal code was accepted' >&2
+    exit 1
+  fi
+)
+echo 'Management UI locks, drain snapshot and UNKNOWN checks passed.'
+`,
+      { mode: 0o755 }
+    );
+    const result = spawnSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "-v",
+        `${repoRoot}:/repo:ro`,
+        "-v",
+        `${fixture}:/fixture:ro`,
+        "qintopia-anan-linux-isolation-simulation:20260925",
+        "bash",
+        "/fixture/run.sh",
+      ],
+      { encoding: "utf8", timeout: 120000 }
+    );
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    console.log(result.stdout.trim());
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+  process.exit(0);
+}
 
 if (process.argv[2] === "--anan-helper-only") {
   const helper = process.argv[3];
@@ -884,6 +1033,12 @@ if (process.argv[2] === "--recovery-negative") {
     write(runnerPath, "#!/bin/sh\nexit 0\n", 0o755);
     const helper = path.join(releaseRoot, tSha, "deploy/runner");
     fs.copyFileSync(recoverySource, path.join(helper, "recover-release-lineage.sh"));
+    fs.writeFileSync(
+      path.join(helper, "management-ui-lifecycle.sh"),
+      managementUiLockProbe,
+      { mode: 0o755 }
+    );
+    fs.chmodSync(path.join(helper, "management-ui-lifecycle.sh"), 0o755);
     fs.copyFileSync(waiterSource, path.join(helper, "wait-deploy-result.sh"));
     fs.chmodSync(path.join(helper, "wait-deploy-result.sh"), 0o755);
     const holdSourcePath = path.join(
@@ -1880,6 +2035,7 @@ const profile = "/home/ubuntu/.hermes/profiles/anan";
 const otherProfile = "/home/ubuntu/.hermes/profiles/erhua";
 const unit = "qintopia-agent-os-anan-drain-restart.service";
 const deployUnit = "qintopia-agent-os-deploy-runner.service";
+const managementUiProbeUnit = "qintopia-agentos-management-ui-drain-probe.service";
 const state = path.join(root, "state");
 const marker = path.join(profile, ".drain_request.json");
 const completion = path.join(profile, `.qintopia-${path.basename(root)}-finished`);
@@ -1891,6 +2047,7 @@ let timerCreated = false;
 let recoveryArtifactsCreated = false;
 let recoveryArtifactPaths = [];
 let cosEnvCreated = false;
+let managementUiProbeStarted = false;
 let cosServer;
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, { encoding: "utf8", ...options });
@@ -1939,6 +2096,53 @@ try {
     0,
     "VM needs a simulated ubuntu user"
   );
+  const managementUiProbe = path.join(root, "management-ui-drain-probe.py");
+  write(
+    managementUiProbe,
+    `import signal, sys, time
+def drain(_signal, _frame):
+    print("management_ui_drain_complete", flush=True)
+    sys.exit(0)
+signal.signal(signal.SIGTERM, drain)
+while True: time.sleep(0.1)
+`,
+    0o644
+  );
+  const managementUiProbeUnitPath = `/run/systemd/system/${managementUiProbeUnit}`;
+  assert.equal(fs.existsSync(managementUiProbeUnitPath), false);
+  write(
+    managementUiProbeUnitPath,
+    `[Unit]
+Description=Simulated management UI drain probe
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 ${managementUiProbe}
+Restart=no
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=35s
+SendSIGKILL=no
+`,
+    0o644
+  );
+  managementUiProbeStarted = true;
+  requireSuccess("systemctl", ["daemon-reload"]);
+  requireSuccess("systemctl", ["start", managementUiProbeUnit]);
+  for (
+    let attempt = 0;
+    attempt < 40 && show(managementUiProbeUnit, "ActiveState") !== "active";
+    attempt++
+  )
+    sleep(100);
+  assert.equal(show(managementUiProbeUnit, "ActiveState"), "active");
+  const managementUiInvocation = show(managementUiProbeUnit, "InvocationID");
+  assert.match(managementUiInvocation, /^[0-9a-f]{32}$/);
+  requireSuccess("systemctl", ["stop", managementUiProbeUnit]);
+  assert.equal(show(managementUiProbeUnit, "ActiveState"), "inactive");
+  assert.equal(show(managementUiProbeUnit, "InvocationID"), managementUiInvocation);
+  assert.equal(show(managementUiProbeUnit, "Result"), "success");
+  assert.equal(show(managementUiProbeUnit, "ExecMainStatus"), "0");
+  assert.equal(show(managementUiProbeUnit, "NRestarts"), "0");
   if (fs.existsSync(marker))
     throw new Error("preexisting Anan marker must not be removed");
   requireSuccess("install", [
@@ -2299,6 +2503,11 @@ try {
     fs.copyFileSync(path.join(process.cwd(), "deploy/runner", script), destination);
     fs.chmodSync(destination, 0o755);
   }
+  write(
+    path.join(releaseRoot, tSha, "deploy/runner/management-ui-lifecycle.sh"),
+    managementUiLockProbe,
+    0o755
+  );
   fs.mkdirSync(
     path.join(
       releaseRoot,
@@ -2708,9 +2917,15 @@ esac
       mixedForwardStatesVerified: stateCases.map(({ name }) => name),
       missingResultStatesVerified: stateCases.map(({ name }) => name),
       extraTargetRejected: true,
+      managementUiDrainInvocationVerified: true,
     })
   );
 } finally {
+  if (managementUiProbeStarted) {
+    run("systemctl", ["stop", managementUiProbeUnit]);
+    run("systemctl", ["reset-failed", managementUiProbeUnit]);
+    fs.rmSync(`/run/systemd/system/${managementUiProbeUnit}`, { force: true });
+  }
   if (serviceCreated) {
     run("systemctl", ["stop", deployUnit]);
     fs.rmSync(`/run/systemd/system/${deployUnit}`, { force: true });

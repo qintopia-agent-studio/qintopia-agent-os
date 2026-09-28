@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-28 Management UI deployment wiring](2026-09-28-management-ui-deploy-wiring.md)
+
 - [2026-09-27 PR #723 物业业务授权入口与本地验证](2026-09-27-pr723-business-ui-validation.md)
 
 - [2026-09-26 v0.3.3 runner 首次接管与回退](2026-09-26-v033-runner-takeover-and-rollback.md)

@@ -2660,6 +2660,9 @@ PY
     deploy_stage="quiesce-space-automation-runtime"
     env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
       "${RUNNER_DIR}/quiesce-space-automation-runtime.sh" || return $?
+    deploy_stage="quiesce-management-ui"
+    env -i PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
+      "${RUNNER_DIR}/management-ui-lifecycle.sh" quiesce || return $?
   fi
 
   if [[ "$mixed_exact_previous_rollback" == true ]]; then
@@ -2692,6 +2695,8 @@ PY
     run_with_safe_failure_capture "$release_smoke" \
       --release-root "$RELEASE_ROOT" --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
+    deploy_stage="verify-management-ui-closed"
+    "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || return $?
     write_recovery_journal "R→T" smoke-passed || return $?
     deploy_stage="write-success-result"
     write_result succeeded
@@ -2744,6 +2749,8 @@ PY
       --release-root "$RELEASE_ROOT" \
       --restart-targets "$restart_targets" \
       --log-since "$started_at" || return $?
+    deploy_stage="verify-management-ui-closed"
+    "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || return $?
     if [[ "$normal_mixed_forward" == true ]]; then
       write_recovery_journal "T→R" smoke-passed || return $?
     fi
@@ -2770,6 +2777,10 @@ PY
     deploy_failure_stage="$deploy_stage"
     deploy_failure_status="$status"
     refresh_promoted_current
+    if [[ "$deploy_failure_stage" == quiesce-management-ui ||
+          "$deploy_failure_stage" == verify-management-ui-closed ]]; then
+      install_recovery_hold || echo "management UI closure is unknown; recovery hold installation failed" >&2
+    fi
     if [[ "$normal_mixed_forward" == true ]]; then
       if ! install_recovery_hold || ! anan_drain_unit_finished; then
         write_recovery_journal "T→R" unknown || true
@@ -2798,6 +2809,7 @@ PY
       rollback_ok=true
       install_recovery_hold || rollback_ok=false
       anan_drain_unit_finished || rollback_ok=false
+      "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || rollback_ok=false
       if [[ "$rollback_ok" == true ]]; then
         restore_mixed_original_lineage || rollback_ok=false
       fi
@@ -2812,6 +2824,7 @@ PY
         run_with_safe_failure_capture "${original_current_target}/deploy/runner/smoke-release.sh" \
           --release-root "$RELEASE_ROOT" --restart-targets "$restart_targets" \
           --log-since "$started_at" || rollback_ok=false
+        "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || rollback_ok=false
       fi
       if [[ "$rollback_ok" == true ]]; then
         write_recovery_journal "R→T" compensated || rollback_ok=false
@@ -2887,7 +2900,10 @@ PY
       else
         rollback_args+=(--restore-previous-absent)
       fi
-      "${RUNNER_DIR}/rollback-release.sh" "${rollback_args[@]}" || rollback_ok=false
+      "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || rollback_ok=false
+      if [[ "$rollback_ok" == true ]]; then
+        "${RUNNER_DIR}/rollback-release.sh" "${rollback_args[@]}" || rollback_ok=false
+      fi
       if [[ "$rollback_ok" == "true" ]]; then
         "${RUNNER_DIR}/smoke-release.sh" \
           --release-root "$RELEASE_ROOT" \
@@ -2898,17 +2914,22 @@ PY
       if [[ "$(readlink -f "${RELEASE_ROOT}/current" 2>/dev/null || true)" != "$rollback_target" ]]; then
         rollback_ok=false
       fi
+      "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || rollback_ok=false
       if [[ "$rollback_ok" == "true" ]]; then
         write_result rolled_back "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback succeeded" \
           true succeeded "$rollback_target"
       else
+        install_recovery_hold || true
         write_result failed "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) and rollback failed" \
           true failed "$rollback_target"
       fi
     elif [[ "$release_lineage_changed" == "true" ]]; then
       rollback_target="$original_current_target"
       rollback_ok=true
-      restore_original_previous_pointer || rollback_ok=false
+      "${RUNNER_DIR}/management-ui-lifecycle.sh" verify-closed || rollback_ok=false
+      if [[ "$rollback_ok" == true ]]; then
+        restore_original_previous_pointer || rollback_ok=false
+      fi
       if [[ "$rollback_ok" == "true" ]]; then
         write_result rolled_back "deployment failed during ${deploy_failure_stage} (exit ${deploy_failure_status}) after a partial release lineage change and exact pointer restoration succeeded" \
           true succeeded "$rollback_target"
