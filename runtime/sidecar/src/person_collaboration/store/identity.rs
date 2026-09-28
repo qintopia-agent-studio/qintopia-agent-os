@@ -274,7 +274,7 @@ impl Store {
             }
             let evidence = observed_evidence(&row);
             let host_observed =
-                !production_cli || self.host_observation_valid(&mut tx, &row).await?;
+                !self.is_live() || self.host_observation_valid(&mut tx, &row).await?;
             let reason = if row.get::<String, _>("account_kind") == "shared" {
                 Some("共享账号不能直接确认成自然人，请使用可核验的个人账号。")
             } else if row.get::<i64, _>("namespace_owners") != 1
@@ -347,12 +347,25 @@ impl Store {
         // Older source consumers do not all take the collaboration tenant lock.
         // Freeze registry membership (including ambiguous namespace insertions),
         // then lock this exact link and Gateway until validation and write finish.
-        sqlx::query("LOCK TABLE qintopia_identity.person_identity_gateways IN SHARE MODE")
-            .execute(&mut *tx)
-            .await?;
-        let locked=sqlx::query("SELECT l.id FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND l.id=$2 FOR UPDATE OF l FOR SHARE OF g,s")
-            .bind(&self.tenant).bind(command.link_ref).fetch_all(&mut *tx).await?;
-        ensure!(!locked.is_empty(), "identity_scope_unbound");
+        let locked = if self.is_live() && !production_cli {
+            sqlx::query("SELECT qintopia_identity.management_ui_lock_gateway_registry()")
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query_scalar::<_, bool>(
+                "SELECT qintopia_identity.management_ui_lock_identity_candidate($1,$2)",
+            )
+            .bind(&self.tenant)
+            .bind(command.link_ref)
+            .fetch_one(&mut *tx)
+            .await?
+        } else {
+            sqlx::query("LOCK TABLE qintopia_identity.person_identity_gateways IN SHARE MODE")
+                .execute(&mut *tx)
+                .await?;
+            !sqlx::query("SELECT l.id FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND l.id=$2 FOR UPDATE OF l FOR SHARE OF g,s")
+                .bind(&self.tenant).bind(command.link_ref).fetch_all(&mut *tx).await?.is_empty()
+        };
+        ensure!(locked, "identity_scope_unbound");
         let rows = self.identity_ui_rows(&mut tx).await?;
         let row = rows
             .iter()
@@ -395,7 +408,7 @@ impl Store {
         );
         let evidence = observed_evidence(row)
             .ok_or_else(|| anyhow::anyhow!("identity_observation_required"))?;
-        if production_cli && !command.revoke {
+        if self.is_live() && !command.revoke {
             ensure!(
                 row.get::<String, _>("subject_type") == "wecom_internal"
                     && row.get::<String, _>("account_kind") == "employee"
@@ -485,7 +498,17 @@ impl Store {
         sqlx::query("INSERT INTO qintopia_agent_os.collaboration_commands(id,tenant_key,actor_identity_id,actor_person_id,request_hash,expected_version,result) VALUES($1,$2,$3,$4,$5,$6,$7)")
             .bind(command.operation_id).bind(&self.tenant).bind(actor.link).bind(actor.person).bind(hash).bind(version).bind(&result).execute(&mut *tx).await?;
         sqlx::query("UPDATE qintopia_agent_os.collaboration_tenants SET version=version+1 WHERE tenant_key=$1").bind(&self.tenant).execute(&mut *tx).await?;
-        tx.commit().await?;
+        tx.commit().await.map_err(|error| {
+            if self.is_live() && !production_cli {
+                eprintln!(
+                    "configuration_commit_outcome_unknown operation_id={}",
+                    command.operation_id
+                );
+                anyhow::Error::new(error).context("configuration_commit_outcome_unknown")
+            } else {
+                error.into()
+            }
+        })?;
         Ok(result)
     }
 

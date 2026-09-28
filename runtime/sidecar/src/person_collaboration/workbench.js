@@ -132,6 +132,8 @@ const errors = {
   shared_account_person_unknown:
     "共享账号不能直接确认为某个人，请选择已有可信观测的个人账号。",
   identity_source_evidence_required: "来源缺少可信观测，请先由来源接入方补齐记录。",
+  trusted_source_observation_required:
+    "来源缺少可信企微宿主观测，暂不能核验。请由来源维护者先补齐记录。",
   identity_observation_required: "来源缺少可信观测，请先由来源接入方补齐记录。",
   identity_namespace_conflict:
     "来源登记存在冲突，请先由技术负责人核对，再重新选择账号。",
@@ -239,7 +241,7 @@ function availablePage(next) {
   return (
     next === "overview" ||
     (next === "settings" && state.management_available === true) ||
-    (next === "ledger" && state.catalog_admin === true && state.mode !== "live")
+    (next === "ledger" && state.catalog_admin === true)
   );
 }
 function updateWorkspaceNavigation() {

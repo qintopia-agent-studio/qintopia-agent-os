@@ -200,7 +200,17 @@ impl Store {
         self.verify(&mut tx, actor).await?;
         sqlx::query("UPDATE qintopia_agent_os.collaboration_sessions SET revoked_at=clock_timestamp() WHERE tenant_key=$1 AND token_hash=$2")
             .bind(&self.tenant).bind(&actor.session_hash).execute(&mut *tx).await?;
-        tx.commit().await?;
+        tx.commit().await.map_err(|error| {
+            if self.is_live() {
+                eprintln!(
+                    "configuration_commit_outcome_unknown action=logout actor_ref={}",
+                    actor.person
+                );
+                anyhow::Error::new(error).context("configuration_commit_outcome_unknown")
+            } else {
+                error.into()
+            }
+        })?;
         Ok(())
     }
 
@@ -226,7 +236,17 @@ impl Store {
         self.replace_password(&mut tx, id, &hash).await?;
         self.auth_audit(&mut tx, actor.person, id, "change_password")
             .await?;
-        tx.commit().await?;
+        tx.commit().await.map_err(|error| {
+            if self.is_live() {
+                eprintln!(
+                    "configuration_commit_outcome_unknown action=change_password actor_ref={}",
+                    actor.person
+                );
+                anyhow::Error::new(error).context("configuration_commit_outcome_unknown")
+            } else {
+                error.into()
+            }
+        })?;
         Ok(())
     }
 
@@ -314,7 +334,14 @@ impl Store {
             }
         };
         self.auth_audit(&mut tx, actor.person, id, action).await?;
-        tx.commit().await?;
+        tx.commit().await.map_err(|error| {
+            if self.is_live() {
+                eprintln!("configuration_commit_outcome_unknown action={action} account_ref={id}");
+                anyhow::Error::new(error).context("configuration_commit_outcome_unknown")
+            } else {
+                error.into()
+            }
+        })?;
         Ok(json!({"id":id,"action":action,"business_permissions_added":false}))
     }
 

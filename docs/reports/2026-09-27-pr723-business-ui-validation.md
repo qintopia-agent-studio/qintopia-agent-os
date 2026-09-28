@@ -2,6 +2,149 @@
 
 日期：2026-09-27。范围：岸岸工作账号授权工作台的组织关系二级入口与管理范围元数据。仅本地模拟数据；未接入真实企微或 PMS，未发布或部署。
 
+## 2026-09-28 正式网页应用接线修订
+
+总指挥确认应用实现可先于生产 host 的实际分配，并将候选方案收敛为独立管理 HTTPS
+origin、独占根路径。沿用现有统一组织工作台、密码会话与实时管理 grant；live
+UI 在启动时读取并校验唯一 HTTPS public
+origin，继续只监听 loopback。HTTP 入口按该配置核对精确 Host、写请求 Origin 与 JSON 类型；现有根路径页面、资产、导航和 API 保留。正式会话 cookie 在登录和清除时均带
+`Secure; HttpOnly; SameSite=Strict; Path=/`。转发头不参与可信站点或授权判断，模拟 HTTP 根路径入口保留。
+
+本地模拟配置仅使用 `https://admin.example.test` 和空闲 loopback 端口；部署候选端口
+`127.0.0.1:18780` 不是硬编码值。公共 COS 页面与其子路径共享浏览器 origin，cookie
+Path/SameSite 不能隔离同源页面脚本的 API 访问，因此本轮不实施公共站点 `/agent-os/`
+子路径。最终独立 host、代理、受管 unit、生命周期及回退由部署 owner 单独核实和验证；若独立 origin 不可用，再另行讨论子路径。本 PR 不修改部署文件、CI、真实数据或生产状态。本节为实施前设计记录，后续验证结果须单独补记，不将本地模拟等同于正式站点可用。
+
+受管 UI 的停止合同：SIGTERM 后关闭 listener，不再接收新配置；在途请求等待最多 30 秒，正常单请求处理上限 5 秒。
+
+未进入配置写入的慢连接、解析或只读错误只关闭连接并继续服务；已进入配置写入的处理错误或超时以结果不明的非零状态退出，不重放原操作。停止等待超时且已有配置写入也不能视为排空。部署 owner 已确认
+`Restart=on-failure` 会冲突，采用管理 UI `Restart=no`
+最小提案；quiesce 在 stop 前保存精确
+`InvocationID`、`Result`、`ExecMainCode`、`ExecMainStatus`、`MainPID`、`NRestarts`
+和受限固定错误码，排空后复查同一 invocation。失败或不明保持 hold。
+
+带 `operation_id`
+的配置保存按原键与审计版本回读；账号、改密和退出原协议没有命令键，须按日志中的
+`account_ref`、`person_ref` 或 `actor_ref`
+核对账号、会话和审计状态。无法唯一判定时继续 hold。UNKNOWN 日志只含固定错误码和这些 UUID，不含凭据或私人表单。部署代码仍待单独批准；本轮不编辑 unit 或 runner。
+
+### 首批配置路由矩阵（实施前核对）
+
+| 已有工作台动作                                       | 前端 API                                                                      | 修订前 live 状态                            | 服务端实时授权与本轮处理                                                                                                                                    |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 登录、退出、改密；开通、重置、停用个人账号           | `/api/login`、`/api/logout`、`/api/password`、`/api/accounts`                 | 可达                                        | 会话绑定当前 Person；账号管理要求根范围 `default/organization/identity` 管理 grant。补固定 HTTPS origin 与安全 cookie。                                     |
+| 物业绑定、工作账号登记或停用、具体操作授予或撤回     | `/api/business`、`/api/business/preview`、`/api/business/save`                | 可达                                        | `business_config` 事务内按当前 `anan/hospitality/read_business` 或 `execute_business` 管理 grant 及来源、账号、物业版本重验；业务 admin 不授配置权。        |
+| 组织关系和管理范围读取，现有部分任职、撤权与结束动作 | `/api/state`、`/api/preview`、`/api/save`                                     | 部分可达                                    | Store 已重验 Person、当前管理 grant、版本与审计。只将现有 UI 的台账、岗位、职责、范围、生命周期与受众配置动作加入显式 live 白名单；不放行旧兼容或未知动作。 |
+| 人员可信来源候选、确认与撤销                         | `/api/identities[?person]`、`/api/identities/preview`、`/api/identities/save` | 被 live 白名单阻断                          | Store 已要求密码会话与根 `identity` 管理 grant；live 网页确认另须与生产 CLI 一样核验企微宿主观测，撤销沿用原核验与审计。                                    |
+| 组织详情与只读权限解释                               | `/api/ontology?scope=`、`/api/audience-preview`、`/api/decision`              | 被 live 白名单阻断                          | 只开放现有 UI 确实调用的路径，仍由 Store 对当前 scope、Person 与授权判断。                                                                                  |
+| 基础台账导航                                         | 现有工作台 `ledger` 标签                                                      | live 被前端隐藏                             | 有全部活跃范围 `default/organization/manage` grant 者可见；页面本身不授予权限。                                                                             |
+| 本地对话、规则、欢迎审核与业务执行                   | `/foundation`、`/api/foundation/*`                                            | 规则与执行受 LOCAL 门禁；页面部分为模拟展示 | 本轮不打开 LOCAL 门禁、固定话术、fixture、talk、欢迎审核或业务执行。规则编辑仍属后续独立接线，不作为本次首批配置成功证据。                                  |
+
+人工新增人员台账会先创建待核验 Person 草稿，不产生可信来源身份、登录或业务授权；它与要求来源证明的生产 CLI 草稿入口不同。该影响已向总指挥单独报告。应用新增修改位置为
+`local_server.rs`、`workbench.js`、`store/identity.rs`
+及既有局部测试；无需新增 grant 类别或修改数据库迁移。
+
+### 受限数据库角色复核（2026-09-28）
+
+部署 owner 的独立 PostgreSQL 复现实验发现，仅有 `SELECT`
+的管理 UI 角色不能执行现有身份确认事务的
+`LOCK TABLE person_identity_gateways IN SHARE MODE`，也不能对实际行执行
+`FOR SHARE`。前者冻结旧 writer 可能插入的 namespace 冲突行，后者保护当前来源、Gateway、范围及 Person；二者须分别解决。不得以移除表锁、仅加未被旧 writer 共同采用的 advisory
+lock、或授予身份表整表 `UPDATE` 绕过。候选最小差分是经独立审查的静态 `SECURITY DEFINER`
+锁入口，专属非登录 owner、固定 `search_path`、全限定表名、无动态 SQL，撤销
+`PUBLIC EXECUTE` 并只授受限调用角色；表锁 owner 是否可仅持 `MAINTAIN`
+取决于实际 PostgreSQL 主版本，须由部署 owner 只读核实。现有事务顺序和并发负例不变；行锁权限单独核对，不借 CLI 不可达路径扩大 UI 权限。
+
+任何新函数与 grant 需要新增版本化迁移、角色接线与定向权限验证，方案审查前不实施 DDL。
+
+同轮发现 `/api/ontology?scope=` 在查询命中当前 `rule` 行时会调用仅接受模拟 tenant 的
+`foundation::authorize_current`，导致 live 只读页面失败；空规则数据不暴露问题。修订应复用本事务已加载的 Policy，执行与原函数等价的当前 grant/职责判定，保持
+`/api/foundation/*` 的 LOCAL 门禁，补有真实规则行的 live 回归。密码 HTTP 入口的
+`/api/foundation/card` 旧 GET 分支没有经过普通 foundation
+dispatch 的 LOCAL 开关；live 路由须在认证后统一拒绝本地页面与全部
+`/api/foundation/*`，不能只依赖 POST dispatch 的环境门禁。
+
+#### 待复核的最小锁能力差分
+
+固定函数仅接受可信 Store 传入的 tenant、来源 link UUID、Gateway
+key 或工作账号 UUID，不接受表名、SQL、权限模式或任意条件；统一
+`SECURITY DEFINER SET search_path = pg_catalog`、全限定表名、无动态 SQL。四个行锁函数完整执行原查询并按
+`ROW_COUNT > 0` 返回
+`boolean`；false 时应用立即拒绝，不继续读取可能新出现的未锁关联行。表锁函数返回
+`void`。候选函数及原 SQL 对位如下：
+
+| 固定函数签名                                                                             | 同事务固定锁操作                                                                                                                        | 应用调用点                                                                                                                       |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `qintopia_identity.management_ui_lock_actor(text, uuid) RETURNS boolean`                 | 由 tenant 的 live `identity_namespace` 和 link id 精确定位 `source_identity_links l`、`persons p`，`FOR SHARE OF l,p`                   | `Store::verify` 中 live、非 Gateway Person 路径，包括密码会话与受控首次账号 bootstrap；false 按原来源核验拒绝。                  |
+| `qintopia_identity.management_ui_lock_gateway_registry() RETURNS void`                   | `LOCK TABLE qintopia_identity.person_identity_gateways IN SHARE MODE`                                                                   | `identity_ui_command` 原表锁位置、原 tenant 事务内；不替换旧 writer 并发保证。                                                   |
+| `qintopia_identity.management_ui_lock_identity_candidate(text, uuid) RETURNS boolean`    | 与现有确认查询同一 tenant/link join，`FOR UPDATE OF l FOR SHARE OF g,s`；表 SHARE 后完整锁住所有匹配 Gateway，不能用 `EXISTS`/`LIMIT 1` | `identity_ui_command` 原行锁位置；false 按原 `identity_scope_unbound` 拒绝，随后仍按当前版本、namespace、宿主观测与 grant 校验。 |
+| `qintopia_identity.management_ui_lock_business_source(text, text, uuid) RETURNS boolean` | 与 RegisterAccount 原查询同一 tenant/Gateway/link join，`FOR SHARE OF g,l,s`                                                            | `business_configure` 登记预览与保存的来源读取前；false 按原 `observed_work_account_required` 拒绝。                              |
+| `qintopia_identity.management_ui_lock_business_account(text, uuid) RETURNS boolean`      | 与 GrantOperation 原查询同一 tenant/account join，`FOR SHARE OF w,g,l`                                                                  | `business_configure` 操作授权预览与保存的账号读取前；false 按原 `work_account_unavailable` 拒绝。                                |
+
+这些函数只把既有锁语句移到受限 definer 下，不合并不同表锁/行锁，不代替后续普通 `SELECT`
+对已锁实体当前数据的完整校验；保留现有 `begin()`
+tenant 锁、锁顺序、操作标识与失败语义。对于 `business_property_bindings`
+等网页角色本来获准更新的业务表，仍使用原行锁；`raw_events FOR SHARE`
+属可信 CLI 来源草稿，不为网页新增第六个入口。
+
+需新增 `runtime/postgres/migrations/` 的单一版本化追加迁移、配套
+`runtime/postgres/docs/data-design/` 说明及 `schema_change_log`
+记录。优先沿用现有 SQLx 迁移身份：在同一事务创建固定函数并立即撤销各函数的
+`PUBLIC EXECUTE`，不在迁移中创建角色、引用尚未准备的角色、要求 `CREATEROLE`
+或硬编码 PostgreSQL 版本专属的
+`MAINTAIN`。迁移后、UI 启用前，由部署 owner 的受审管理员准备专用非登录、非 superuser 函数 owner，赋予其固定锁实际所需的权限，再转移函数 owner、保留原 runtime 身份的
+`EXECUTE`、仅额外授 `qintopia_management_ui EXECUTE`。表锁 owner 是否可仅持 `MAINTAIN`
+已由部署 owner 只读核实生产 PostgreSQL 18.4，后置非登录 owner 的 Gateway 表锁权限使用
+`MAINTAIN`；版本不兼容时不得自动扩大 UI 权限。启用前预检必须验证精确函数 owner、`SECURITY DEFINER`、固定搜索路径、函数 ACL、`PUBLIC`
+不可执行、UI 无 owner membership/`SET ROLE`、schema `CREATE`
+或函数替换能力，并以真实角色运行非空行 HTTP 链。未完成后置准备和预检时 UI 保持关闭；不另起迁移器或改变现有发布流程。后续修改已转移 owner 的函数须另行审查迁移兼容性，不能默认
+`CREATE OR REPLACE`。回退保留追加函数和审计数据，先关闭 UI 路由与进程；不从数据库删除既有授权。
+
+验收须用专用隔离库的真实受限角色及非空行覆盖 bootstrap、登录/state、身份预览/保存、账号登记/停用、物业绑定、操作 grant/revoke、并发插入 namespace 与版本漂移；直接
+`SELECT`/空表成功不算通过。冻结迁移后提供精确 SHA 与校验和给部署 owner 做基线差分，不重复无变化的 NATS/P29 验证。本段记录实施前方案；实际本地结果如下。
+
+### 固定锁迁移与受限角色实测
+
+- 新增 SQLx 迁移 `202609280001_management_ui_lock_capabilities.sql`，SHA-256 为
+  `7ad5e650b1e1beb21b5ed791e631dc461da271c9371e94bedc911242a24a8b2a`。本任务隔离 PostgreSQL
+  18.6 容器 `agentos-pr723-ui-20260928` 的 `qintopia_messages._sqlx_migrations`
+  已登记第 46 条及 `schema_change_log` 的 `2026-09-28.001`；五函数均为
+  `SECURITY DEFINER` 且固定 `search_path=pg_catalog,pg_temp`。
+- 仅在该隔离库按部署候选矩阵创建 `qintopia_management_ui` 登录角色与独立
+  `qintopia_management_ui_lock_owner`
+  非登录角色。后者持必要 SELECT、列级 UPDATE 和 Gateway
+  `MAINTAIN`；五函数转给该 owner，临时 schema
+  CREATE 随即撤销。ACL 查询确认 UI 可执行五函数，`PUBLIC` 不可执行，UI 无
+  `persons`/Gateway UPDATE、Gateway MAINTAIN 或身份 schema CREATE。
+- 真实 UI 角色经现有 HTTPS
+  handler 和非空行完成首次账号 bootstrap、登录、state/ontology/身份/业务读取、账号开通停用、物业绑定预览保存、共享账号登记停用、操作授予撤回、身份预览确认撤销。另一个连接在 UI 持有 Gateway
+  registry 表锁期间插入同 namespace Gateway 得到 `55P03`；来源版本漂移的旧保存得到
+  `identity_version_conflict`。UI 直接更新 Person/Gateway 行被数据库拒绝。
+- 撤销前预置关联 welcome case、artifact binding、action 与 work
+  item。撤销后 case 进入 hold，来源 link 与核验投影 link 各触发一次失效，case 版本由 1 到 3；artifact
+  binding 失效，action 由 prepared 到 cancelled、版本由 1 到 2，work
+  item 取消。无关 case 保持版本 1、未 hold；原身份命令回执可按 `operation_id`
+  回读，已登录的被撤销 Person 会话失效。
+- 在同一隔离库使用延迟约束触发器使实际 SQLx `COMMIT` 报错；应用输出固定
+  `configuration_commit_outcome_unknown`
+  与原操作 UUID。回读显示该次命令、审计未提交，tenant 版本未变化。触发器及函数已清除；此模拟只证明提交错误传播与按原键核查，不证明真实断连时事务必然回滚。普通确定性拒绝继续返回 HTTP 错误，断连/排空结果不明仍须停用并回读。
+
+上述角色、数据、触发器均只在
+`127.0.0.1:32778/qintopia_test`；未配置生产角色、origin、代理、unit 或页面。正式 host、浏览器交互、真实企微/PMS 与部署接线仍待对应 owner 另行验收。
+
+该真实角色用例只有显式设置 `QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL`
+时运行；未配置角色的远端 CI 会输出
+`restricted_management_ui_role_test_not_configured`，不构成角色链通过证据。
+
+本修订的 `person_collaboration`
+集成组在显式使用上述受限角色 URL 后串行 141/141 通过；`cargo fmt --check`、Markdown
+lint、三处工作台脚本的 `node --check` 与 `git diff --check` 通过。新一轮
+`pnpm check:pr:auto`
+在 Light 阶段已通过格式、Markdown、registry、MCP、skills、inventory、CI 契约与已执行的 runtime/deploy 检查，但既有
+`test-agent-runtime-management.mjs` 的 `check-deploy-runner.mjs`
+子进程达到 600 秒超时，命令退出 1。该轮未进入后续 Rust tier 或 apply
+smoke，不能记为总门禁通过；未更改 CI、部署检查或白名单。
+
 ## 实现与验证
 
 - 工作台在「组织关系」按当前有效管理 grant 显示「物业业务授权」入口。关联岸岸客房职责的岗位可快捷进入；无岗位时仍可从管理范围进入。选中范围限定物业绑定、工作账号、候选和可授权操作。返回及保存后的焦点回到可见目标；读取到撤权后清除旧授权表单。

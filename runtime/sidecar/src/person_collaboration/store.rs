@@ -70,6 +70,10 @@ pub struct Actor {
 }
 
 impl Actor {
+    pub(super) fn person_ref(&self) -> Uuid {
+        self.person
+    }
+
     fn business_id(&self) -> Uuid {
         self.work_account.map_or(self.person, |(id, _)| id)
     }
@@ -229,9 +233,28 @@ impl Store {
         if let Some(hash) = &actor.session_hash {
             self.verify_session(tx, hash, actor.person).await?;
         }
-        let row=sqlx::query("SELECT l.person_id,l.version,l.status,l.confirmed_by,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL FOR SHARE OF l,p")
-            .bind(actor.link).bind(&actor.identity_namespace).fetch_optional(&mut **tx).await?
-            .ok_or_else(||anyhow::anyhow!("verified_identity_required"))?;
+        let management_ui_actor = self.is_live() && actor.gateway.is_none();
+        if management_ui_actor {
+            let locked: bool =
+                sqlx::query_scalar("SELECT qintopia_identity.management_ui_lock_actor($1,$2)")
+                    .bind(&self.tenant)
+                    .bind(actor.link)
+                    .fetch_one(&mut **tx)
+                    .await?;
+            ensure!(locked, "verified_identity_required");
+        }
+        let identity_query = "SELECT l.person_id,l.version,l.status,l.confirmed_by,p.status AS person_status FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE l.id=$1 AND l.namespace=$2 AND l.evidence_ref IS NOT NULL";
+        let identity_query = if management_ui_actor {
+            identity_query.to_string()
+        } else {
+            format!("{identity_query} FOR SHARE OF l,p")
+        };
+        let row = sqlx::query(&identity_query)
+            .bind(actor.link)
+            .bind(&actor.identity_namespace)
+            .fetch_optional(&mut **tx)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("verified_identity_required"))?;
         let personally_confirmed = row.get::<Option<Uuid>, _>("confirmed_by").is_some();
         let work_confirmed = if !personally_confirmed && actor.gateway.is_some() {
             self.work_account_person_proof(tx, actor.link, actor.person)
@@ -502,7 +525,17 @@ impl Store {
             .bind(if self.is_live() { "live_configuration" } else { "synthetic_configuration" })
             .bind(json!({"command_ref":command.operation_id,"actor_ref":actor.person,"identity_version":actor.identity_version,"request_hash":hash}))
             .bind(json!({"version":version+1,"persisted":true,"external_effects":false})).execute(&mut *tx).await?;
-        tx.commit().await?;
+        tx.commit().await.map_err(|error| {
+            if self.is_live() && actor.session_hash.is_some() {
+                eprintln!(
+                    "configuration_commit_outcome_unknown operation_id={}",
+                    command.operation_id
+                );
+                anyhow::Error::new(error).context("configuration_commit_outcome_unknown")
+            } else {
+                error.into()
+            }
+        })?;
         Ok(result)
     }
 

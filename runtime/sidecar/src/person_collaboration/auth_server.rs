@@ -1,14 +1,71 @@
-//! Password entrypoint, intentionally restricted to the synthetic loopback Store.
+//! Password entrypoint for the synthetic loopback and explicitly configured live UI.
 use super::{
     store::{AccountCommand, Credentials},
     Store,
 };
-use crate::local_http::{request, respond};
+use crate::local_http::{request_for_host, respond, respond_with_cookie_options};
 use anyhow::{ensure, Result};
 use serde_json::json;
 use tokio::net::TcpStream;
+use url::Url;
 use uuid::Uuid;
 use zeroize::Zeroizing;
+
+pub(super) struct UiOrigin {
+    origin: String,
+    host: String,
+    secure_cookie: bool,
+}
+
+impl UiOrigin {
+    fn local(port: u16) -> Self {
+        Self {
+            origin: format!("http://127.0.0.1:{port}"),
+            host: format!("127.0.0.1:{port}"),
+            secure_cookie: false,
+        }
+    }
+
+    pub(super) fn from_env() -> Result<Self> {
+        let value = std::env::var("QINTOPIA_COLLABORATION_PUBLIC_ORIGIN")
+            .map_err(|_| anyhow::anyhow!("production_ui_public_origin_required"))?;
+        Self::production(&value)
+    }
+
+    pub(super) fn production(value: &str) -> Result<Self> {
+        let url = Url::parse(value).map_err(|_| anyhow::anyhow!("invalid_public_origin"))?;
+        let origin = url.origin().ascii_serialization();
+        ensure!(
+            url.scheme() == "https" && value == origin,
+            "invalid_public_origin"
+        );
+        let domain = match url.host() {
+            Some(url::Host::Domain(domain)) => domain,
+            _ => anyhow::bail!("invalid_public_origin"),
+        };
+        ensure!(
+            domain.contains('.')
+                && domain.split('.').all(|label| {
+                    !label.is_empty()
+                        && !label.starts_with('-')
+                        && !label.ends_with('-')
+                        && label
+                            .bytes()
+                            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+                }),
+            "invalid_public_origin"
+        );
+        let host = origin
+            .strip_prefix("https://")
+            .ok_or_else(|| anyhow::anyhow!("invalid_public_origin"))?
+            .to_string();
+        Ok(Self {
+            origin,
+            host,
+            secure_cookie: true,
+        })
+    }
+}
 
 pub async fn bootstrap(person: Uuid, username: &str) -> Result<()> {
     use std::io::Read;
@@ -30,7 +87,25 @@ pub async fn bootstrap(person: Uuid, username: &str) -> Result<()> {
 }
 
 pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> Result<()> {
-    let mut r = match request(stream, port).await {
+    handle_with_origin(stream, store, &UiOrigin::local(port)).await
+}
+
+pub(super) async fn handle_with_origin(
+    stream: &mut TcpStream,
+    store: &Store,
+    public_origin: &UiOrigin,
+) -> Result<()> {
+    let configuration_write_started = super::ConfigurationWrite::default();
+    handle_with_origin_tracked(stream, store, public_origin, &configuration_write_started).await
+}
+
+pub(super) async fn handle_with_origin_tracked(
+    stream: &mut TcpStream,
+    store: &Store,
+    public_origin: &UiOrigin,
+    configuration_write_started: &super::ConfigurationWrite,
+) -> Result<()> {
+    let mut r = match request_for_host(stream, &public_origin.host).await {
         Ok(r) => r,
         Err(error) => {
             return respond(
@@ -70,7 +145,7 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
     }
     // Exact Origin + strict cookies + JSON-only writes; includes login CSRF protection.
     if r.method == "POST"
-        && (r.headers.get("origin") != Some(&format!("http://127.0.0.1:{port}"))
+        && (r.headers.get("origin") != Some(&public_origin.origin)
             || r.headers.get("content-type").map(String::as_str) != Some("application/json"))
     {
         return respond(
@@ -133,12 +208,14 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
         };
         return match result {
             Ok(token) => {
-                respond(
+                respond_with_cookie_options(
                     stream,
                     200,
                     "application/json",
                     br#"{"ok":true}"#,
                     Some(("collaboration-session", &token)),
+                    public_origin.secure_cookie,
+                    false,
                 )
                 .await
             }
@@ -180,6 +257,21 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
             .await;
         }
     };
+    if store.is_live()
+        && (matches!(
+            r.path.as_str(),
+            "/foundation" | "/foundation.js" | "/foundation.css"
+        ) || r.path.starts_with("/api/foundation/"))
+    {
+        return respond(
+            stream,
+            403,
+            "application/json",
+            br#"{"code":"production_configuration_change_denied"}"#,
+            None,
+        )
+        .await;
+    }
     if r.method == "GET" && r.path == "/" {
         return respond(
             stream,
@@ -249,7 +341,10 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
     let result: Result<serde_json::Value> = match (r.method.as_str(), r.path.as_str()) {
         ("GET", "/api/me") => store.me(&actor).await,
         ("GET", "/api/accounts") => store.accounts(&actor).await,
-        ("POST", "/api/logout") => store.logout(&actor).await.map(|_| json!({"ok":true})),
+        ("POST", "/api/logout") => {
+            configuration_write_started.start(Some(("actor_ref", actor.person_ref())));
+            store.logout(&actor).await.map(|_| json!({"ok":true}))
+        }
         ("POST", "/api/password") => {
             #[derive(serde::Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -264,6 +359,7 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
                 Ok(p) => {
                     let current = Zeroizing::new(p.current_password);
                     let new = Zeroizing::new(p.new_password);
+                    configuration_write_started.start(Some(("actor_ref", actor.person_ref())));
                     store
                         .change_password(&actor, &current, &new)
                         .await
@@ -277,15 +373,38 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
             use zeroize::Zeroize;
             r.body.zeroize();
             match parsed {
-                Ok(c) => store.account_command(&actor, &c).await,
+                Ok(c) => {
+                    let correlation = match &c {
+                        AccountCommand::Create { person, .. } => ("person_ref", *person),
+                        AccountCommand::Reset { account, .. }
+                        | AccountCommand::Disable { account } => ("account_ref", *account),
+                    };
+                    configuration_write_started.start(Some(correlation));
+                    store.account_command(&actor, &c).await
+                }
                 Err(_) => Err(anyhow::anyhow!("invalid_request")),
             }
         }
-        _ => return super::local_server::dispatch(stream, store, &actor, r).await,
+        _ => {
+            return super::local_server::dispatch_tracked(
+                stream,
+                store,
+                &actor,
+                r,
+                configuration_write_started,
+            )
+            .await;
+        }
     };
+    if let Err(e) = &result {
+        if store.is_live() && e.to_string() == "configuration_commit_outcome_unknown" {
+            return Err(anyhow::anyhow!("configuration_commit_outcome_unknown"));
+        }
+    }
+    configuration_write_started.finish();
     match result {
         Ok(value) => {
-            respond(
+            respond_with_cookie_options(
                 stream,
                 200,
                 "application/json",
@@ -295,6 +414,8 @@ pub(super) async fn handle(stream: &mut TcpStream, store: &Store, port: u16) -> 
                 } else {
                     None
                 },
+                public_origin.secure_cookie,
+                r.path == "/api/logout" || r.path == "/api/password",
             )
             .await
         }
@@ -323,4 +444,35 @@ async fn failure(stream: &mut TcpStream, error: &anyhow::Error) -> Result<()> {
         None,
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::UiOrigin;
+
+    #[test]
+    fn production_origin_requires_one_canonical_https_origin() {
+        let configured = UiOrigin::production("https://admin.example.test:8443").unwrap();
+        assert_eq!(configured.origin, "https://admin.example.test:8443");
+        assert_eq!(configured.host, "admin.example.test:8443");
+        assert!(configured.secure_cookie);
+        for value in [
+            "http://admin.example.test",
+            "https://admin.example.test/agent-os/",
+            "https://admin.example.test/",
+            "https://admin.example.test?mode=1",
+            "https://admin.example.test#section",
+            "https://user:pass@admin.example.test",
+            "https://admin.example.test:443",
+            "https://*.example.test",
+            "admin.example.test",
+            "",
+        ] {
+            assert!(UiOrigin::production(value).is_err(), "accepted {value}");
+        }
+        let local = UiOrigin::local(18875);
+        assert_eq!(local.origin, "http://127.0.0.1:18875");
+        assert_eq!(local.host, "127.0.0.1:18875");
+        assert!(!local.secure_cookie);
+    }
 }

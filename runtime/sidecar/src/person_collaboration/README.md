@@ -12,6 +12,43 @@ sidecar。风险级别：high（身份和授权）。本目录是现有 sidecar 
 生产管理 UI 使用已有密码会话和受管 live tenant，仅监听
 `127.0.0.1`。首次登录只能由进程所有者为已核验且本来具有组织身份管理权的 Person 从标准输入创建，不产生业务授权；无公开注册或 LOCAL 模式旁路。生产安装、管理员身份核实及真实企微验收仍需单独执行。
 
+### 正式 HTTPS 工作台应用契约（待部署接线）
+
+`run-collaboration-production-ui --port <loopback-port>` 启动前须由受限配置提供
+`QINTOPIA_COLLABORATION_PUBLIC_ORIGIN`（唯一 HTTPS
+origin，不含路径、用户信息、查询或片段）。当前接线方案要求独立管理 HTTPS
+origin 独占根路径；例如仅供本地模拟验证的 `https://admin.example.test`
+与空闲 loopback 端口，不在源码中预置生产域名或端口。配置无效时在监听前拒绝启动。服务仍只绑定
+`127.0.0.1`，按固定配置核对浏览器 `Host` 与写请求的精确 `Origin`、JSON 类型；不从
+`Forwarded` 或 `X-Forwarded-*`
+推导可信站点。现有根路径页面、资源、导航与 API 保留；登录及清除会话 cookie 统一使用
+`Secure; HttpOnly; SameSite=Strict; Path=/`。模拟工作台继续使用 HTTP
+loopback 根路径与原有会话行为。
+
+部署负责人须另行核实可独占根路径的管理 HTTPS
+host 和端口，安装仅匹配该 host 的受管代理与 unit，完成启停、前一不可变 release 指针和回退 smoke；本应用契约不表示网页路由已安装或生产可访问。公共站点同 origin 的子路径不在本次应用实现范围内。
+
+受管 UI 收到 SIGTERM 即停止接收新连接并关闭 listener；若已有请求，则最多等待 30 秒取得明确处理结果后退出。正常请求仍有 5 秒处理上限。
+
+尚未进入配置写入的慢连接、非法请求或只读请求错误只关闭该连接，不停止 UI；已进入配置写入但超时或失败的结果不明，进程非零退出，须按原操作标识回读，不能自动重放。
+
+停止等待超时且已有配置写入也按结果不明处理；不能把进程强杀或失联解释为已安全排空。部署 unit 须由 owner 另行设置不强杀，并在停用时核查 cgroup、PID 与 listener；失败或超时不得切换 release 指针。
+
+部署 owner 已确认受管 UI 的 `Restart=on-failure`
+会与结果不明后的人工回读冲突；候选 unit 使用
+`Restart=no`，部署代码仍待单独批准。停止前保存精确 invocation 的
+`InvocationID`、`Result`、`ExecMainCode`、`ExecMainStatus`、`MainPID`、`NRestarts`
+和受限固定错误码；排空后复查同一 invocation。失败或不明时保持 hold。
+
+带 `operation_id`
+的配置保存按原键与审计版本回读；账号、改密和退出原协议没有命令键，须按日志中的
+`account_ref`、`person_ref` 或 `actor_ref`
+核对账号、会话和审计状态，无法唯一判定时继续 hold。UNKNOWN 日志只含固定错误码和这些 UUID，不含凭据或私人表单。
+
+停用或回退先关闭管理站点路由和 UI
+listener，保留已有会话、账号、授权、审计与数据库记录，不通过删表或回退二进制宣称数据已回退。首次账号仍只能由已有已核验且持根范围
+`default/organization/identity` 管理 grant 的 Person bootstrap；账号本身不授予业务权限。
+
 ## 舍长工作空间补齐（2026-09-23）
 
 普通舍长的主要内容改为“与二花对话、本栋知识、合作约定、事项与进展”四个顶部标签。切换标签保留编辑草稿，无草稿时回读当前知识；历史提供内容／修改人搜索、状态与生效日期筛选、每页十条及前后版本查看。管理员原组织管理入口保留，业务欢迎不成为单独导航。

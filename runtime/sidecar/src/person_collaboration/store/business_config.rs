@@ -219,8 +219,31 @@ impl Store {
                     !label.trim().is_empty() && label.chars().count() <= 100,
                     "invalid_label"
                 );
-                let row=sqlx::query("SELECT g.scope_id,g.version AS gateway_version,l.version,l.adapter_metadata FROM qintopia_identity.person_identity_gateways g JOIN qintopia_identity.source_identity_links l ON l.namespace=g.namespace AND l.subject_type=g.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND l.id=$3 AND g.active AND g.account_kind='shared' AND s.status='active' AND l.person_id IS NULL AND l.status='pending' AND l.adapter_metadata ? 'first_observation_ref' AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1 FOR SHARE OF g,l,s")
-                    .bind(&self.tenant).bind(gateway).bind(source_link).fetch_optional(&mut *tx).await?.ok_or_else(||anyhow::anyhow!("observed_work_account_required"))?;
+                let management_ui = self.is_live() && actor.session_hash.is_some();
+                if management_ui {
+                    let locked: bool = sqlx::query_scalar(
+                        "SELECT qintopia_identity.management_ui_lock_business_source($1,$2,$3)",
+                    )
+                    .bind(&self.tenant)
+                    .bind(gateway)
+                    .bind(source_link)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    ensure!(locked, "observed_work_account_required");
+                }
+                let source_query = "SELECT g.scope_id,g.version AS gateway_version,l.version,l.adapter_metadata FROM qintopia_identity.person_identity_gateways g JOIN qintopia_identity.source_identity_links l ON l.namespace=g.namespace AND l.subject_type=g.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.id=g.scope_id AND s.tenant_key=g.tenant_key WHERE g.tenant_key=$1 AND g.gateway_key=$2 AND l.id=$3 AND g.active AND g.account_kind='shared' AND s.status='active' AND l.person_id IS NULL AND l.status='pending' AND l.adapter_metadata ? 'first_observation_ref' AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1";
+                let source_query = if management_ui {
+                    source_query.to_string()
+                } else {
+                    format!("{source_query} FOR SHARE OF g,l,s")
+                };
+                let row = sqlx::query(&source_query)
+                    .bind(&self.tenant)
+                    .bind(gateway)
+                    .bind(source_link)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("observed_work_account_required"))?;
                 let scope: Uuid = row.get("scope_id");
                 ensure!(
                     policy
@@ -441,8 +464,29 @@ impl Store {
                 let manager = policy
                     .manager(actor.person, scope, "anan", "hospitality", action)
                     .ok_or_else(|| anyhow::anyhow!("management_denied"))?;
-                let account_row=sqlx::query("SELECT w.version,w.gateway_version,w.source_version,g.scope_id,g.version AS current_gateway_version,l.version AS current_source_version FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key JOIN qintopia_identity.source_identity_links l ON l.id=w.source_link_id WHERE w.tenant_key=$1 AND w.id=$2 AND w.active AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status<>'revoked' AND l.adapter_metadata ? 'first_observation_ref' FOR SHARE OF w,g,l")
-                    .bind(&self.tenant).bind(account).fetch_optional(&mut *tx).await?.ok_or_else(||anyhow::anyhow!("work_account_unavailable"))?;
+                let management_ui = self.is_live() && actor.session_hash.is_some();
+                if management_ui {
+                    let locked: bool = sqlx::query_scalar(
+                        "SELECT qintopia_identity.management_ui_lock_business_account($1,$2)",
+                    )
+                    .bind(&self.tenant)
+                    .bind(account)
+                    .fetch_one(&mut *tx)
+                    .await?;
+                    ensure!(locked, "work_account_unavailable");
+                }
+                let account_query = "SELECT w.version,w.gateway_version,w.source_version,g.scope_id,g.version AS current_gateway_version,l.version AS current_source_version FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key JOIN qintopia_identity.source_identity_links l ON l.id=w.source_link_id WHERE w.tenant_key=$1 AND w.id=$2 AND w.active AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status<>'revoked' AND l.adapter_metadata ? 'first_observation_ref'";
+                let account_query = if management_ui {
+                    account_query.to_string()
+                } else {
+                    format!("{account_query} FOR SHARE OF w,g,l")
+                };
+                let account_row = sqlx::query(&account_query)
+                    .bind(&self.tenant)
+                    .bind(account)
+                    .fetch_optional(&mut *tx)
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("work_account_unavailable"))?;
                 ensure!(
                     account_row.get::<Uuid, _>("scope_id") == scope
                         && account_row.get::<i64, _>("gateway_version")
@@ -499,7 +543,17 @@ impl Store {
             .bind(if self.is_live() {"live_configuration"} else {"synthetic_configuration"})
             .bind(json!({"command_ref":command.operation_id,"actor_ref":actor.person,"identity_version":actor.identity_version,"request_hash":hash}))
             .bind(json!({"version":version+1,"persisted":true,"external_effects":false})).execute(&mut *tx).await?;
-        tx.commit().await?;
+        tx.commit().await.map_err(|error| {
+            if self.is_live() && actor.session_hash.is_some() {
+                eprintln!(
+                    "configuration_commit_outcome_unknown operation_id={}",
+                    command.operation_id
+                );
+                anyhow::Error::new(error).context("configuration_commit_outcome_unknown")
+            } else {
+                error.into()
+            }
+        })?;
         Ok(result)
     }
 }

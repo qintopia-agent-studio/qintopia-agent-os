@@ -387,6 +387,151 @@ async fn identity_ui_requires_password_session_and_root_identity_management() ->
 
 #[tokio::test]
 #[ignore = "explicit task-isolated local database required"]
+async fn live_identity_review_requires_exact_host_observation_and_employee_gateway() -> Result<()> {
+    let (mut store, actor, _) = fixture().await?;
+    sqlx::query(
+        "UPDATE qintopia_agent_os.collaboration_tenants SET mode='live' WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .execute(&store.pool)
+    .await?;
+    store.mode = super::store::StoreMode::Live;
+    let person = draft(&store, &actor, "模拟待核验员工").await?;
+    let root:Uuid=sqlx::query_scalar("SELECT id FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND parent_scope_id IS NULL")
+        .bind(&store.tenant).fetch_one(&store.pool).await?;
+    let gateway = format!("live-ui-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'employee',true)")
+        .bind(&store.tenant).bind(&gateway).bind(&store.identity_namespace).bind(root).execute(&store.pool).await?;
+    let source = format!("simulated-employee-{}", Uuid::new_v4());
+    let evidence = Uuid::new_v4();
+    let link: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal',$2,jsonb_build_object('first_observation_ref',$3::text)) RETURNING id")
+        .bind(&store.identity_namespace).bind(&source).bind(evidence).fetch_one(&store.pool).await?;
+    let list = store.identities(&actor, Some(person)).await?;
+    let candidate = list["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == json!(link))
+        .unwrap();
+    assert_eq!(candidate["selectable"], false);
+    let mut command = IdentityUiCommand {
+        operation_id: Uuid::new_v4(),
+        link_ref: link,
+        person_ref: person,
+        expected_version: candidate["version"].as_i64().unwrap(),
+        expected_configuration_version: list["version"].as_i64().unwrap(),
+        expected_gateway_version: candidate["gateway_version"].as_i64().unwrap(),
+        revoke: false,
+    };
+    assert_eq!(
+        store
+            .preview_identity(&actor, &command)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "trusted_source_observation_required"
+    );
+    assert_eq!(
+        store
+            .save_identity(&actor, &command)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "trusted_source_observation_required"
+    );
+    let wrong_namespace = json!({"tenant_key":store.tenant,"gateway_key":gateway,"namespace":"wrong-namespace","scope_ref":root,"sender_hash":super::digest(source.as_bytes())});
+    sqlx::query("INSERT INTO qintopia_messages.raw_events(id,event_id,source,subject,received_at,payload,ingress_auth_verified) VALUES($1,$2,'wecom-host','qintopia.wecom.host.observed',clock_timestamp(),$3,false)")
+        .bind(evidence).bind(format!("simulated-{}", Uuid::new_v4())).bind(&wrong_namespace).execute(&store.pool).await?;
+    assert_eq!(
+        store
+            .preview_identity(&actor, &command)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "trusted_source_observation_required"
+    );
+    let valid = json!({"tenant_key":store.tenant,"gateway_key":gateway,"namespace":store.identity_namespace,"scope_ref":root,"sender_hash":super::digest(source.as_bytes())});
+    sqlx::query("UPDATE qintopia_messages.raw_events SET payload=$2 WHERE id=$1")
+        .bind(evidence)
+        .bind(&valid)
+        .execute(&store.pool)
+        .await?;
+    let list = store.identities(&actor, Some(person)).await?;
+    assert!(list["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["id"] == json!(link) && row["selectable"] == true));
+    command.expected_gateway_version += 1;
+    assert_eq!(
+        store
+            .preview_identity(&actor, &command)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "identity_gateway_version_conflict"
+    );
+    command.expected_gateway_version -= 1;
+    command.expected_version += 1;
+    assert_eq!(
+        store
+            .preview_identity(&actor, &command)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "identity_version_conflict"
+    );
+    command.expected_version -= 1;
+    assert_eq!(
+        store.preview_identity(&actor, &command).await?["impact"]["activates_person"],
+        true
+    );
+    assert_eq!(store.save_identity(&actor, &command).await?["saved"], true);
+    let confirmed: Option<Uuid> = sqlx::query_scalar(
+        "SELECT person_id FROM qintopia_identity.source_identity_links WHERE id=$1",
+    )
+    .bind(link)
+    .fetch_one(&store.pool)
+    .await?;
+    assert_eq!(confirmed, Some(person));
+
+    let shared_source = format!("simulated-shared-{}", Uuid::new_v4());
+    let shared_gateway = format!("live-shared-{}", Uuid::new_v4());
+    let shared_namespace = format!("{}/shared-{}", store.tenant, Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'shared',true)")
+        .bind(&store.tenant).bind(&shared_gateway).bind(&shared_namespace).bind(root).execute(&store.pool).await?;
+    let shared_link: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal',$2,jsonb_build_object('first_observation_ref',$3::text)) RETURNING id")
+        .bind(&shared_namespace).bind(&shared_source).bind(Uuid::new_v4()).fetch_one(&store.pool).await?;
+    let list = store.identities(&actor, Some(person)).await?;
+    let shared = list["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == json!(shared_link))
+        .unwrap();
+    assert_eq!(shared["selectable"], false);
+    let shared_command = IdentityUiCommand {
+        operation_id: Uuid::new_v4(),
+        link_ref: shared_link,
+        person_ref: person,
+        expected_version: shared["version"].as_i64().unwrap(),
+        expected_configuration_version: list["version"].as_i64().unwrap(),
+        expected_gateway_version: shared["gateway_version"].as_i64().unwrap(),
+        revoke: false,
+    };
+    assert_eq!(
+        store
+            .save_identity(&actor, &shared_command)
+            .await
+            .unwrap_err()
+            .to_string(),
+        "shared_account_person_unknown"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
 async fn identity_ui_rejects_stale_configuration_link_and_gateway_versions() -> Result<()> {
     let (store, actor, _) = fixture().await?;
     let person = draft(&store, &actor, "版本验证人员").await?;

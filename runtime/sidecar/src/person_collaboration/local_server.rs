@@ -201,26 +201,26 @@ pub(super) async fn handle(
     dispatch(stream, store, actor, r).await
 }
 
+#[cfg(all(test, feature = "postgres-integration-tests"))]
 pub(super) async fn dispatch(
     stream: &mut TcpStream,
     store: &Store,
     actor: &Actor,
     r: crate::local_http::Request,
 ) -> Result<()> {
+    let configuration_write_started = super::ConfigurationWrite::default();
+    dispatch_tracked(stream, store, actor, r, &configuration_write_started).await
+}
+
+pub(super) async fn dispatch_tracked(
+    stream: &mut TcpStream,
+    store: &Store,
+    actor: &Actor,
+    r: crate::local_http::Request,
+    configuration_write_started: &super::ConfigurationWrite,
+) -> Result<()> {
     let result: Result<Value> = async {
-        if store.is_live()
-            && !matches!(
-                (r.method.as_str(), r.path.as_str()),
-                ("GET", "/api/state" | "/api/business")
-                    | (
-                        "POST",
-                        "/api/business/preview"
-                            | "/api/business/save"
-                            | "/api/preview"
-                            | "/api/save"
-                    )
-            )
-        {
+        if store.is_live() && !live_ui_route_allowed(&r.method, &r.path) {
             anyhow::bail!("production_configuration_change_denied");
         }
         match (r.method.as_str(), r.path.as_str()) {
@@ -234,6 +234,9 @@ pub(super) async fn dispatch(
                 let command: super::store::business_config::BusinessConfigCommand =
                     serde_json::from_slice(&r.body)
                         .map_err(|_| anyhow::anyhow!("invalid_command"))?;
+                if r.path == "/api/business/save" {
+                    configuration_write_started.start(Some(("operation_id", command.operation_id)));
+                }
                 store
                     .business_configure(actor, &command, r.path.ends_with("/save"))
                     .await
@@ -262,6 +265,7 @@ pub(super) async fn dispatch(
                 if r.path.ends_with("/preview") {
                     store.preview_identity(actor, &command).await
                 } else {
+                    configuration_write_started.start(Some(("operation_id", command.operation_id)));
                     store.save_identity(actor, &command).await
                 }
             }
@@ -322,6 +326,16 @@ pub(super) async fn dispatch(
                                 | super::model::Change::EndAppointment { .. }
                                 | super::model::Change::EndCollaboration { .. }
                                 | super::model::Change::SetGroups { .. }
+                                | super::model::Change::SavePosition { .. }
+                                | super::model::Change::SaveLedger { .. }
+                                | super::model::Change::Lifecycle { .. }
+                                | super::model::Change::SetAudience { .. }
+                                | super::model::Change::CreateScope { .. }
+                                | super::model::Change::SaveDuty { .. }
+                                | super::model::Change::SaveRole { .. }
+                                | super::model::Change::RetireCatalog { .. }
+                                | super::model::Change::RestoreCatalog { .. }
+                                | super::model::Change::UpdateScope { .. }
                         ),
                         "production_configuration_change_denied"
                     );
@@ -332,15 +346,26 @@ pub(super) async fn dispatch(
                         "explicit_duty_permissions_required"
                     );
                 }
+                if r.path == "/api/save" {
+                    configuration_write_started.start(Some(("operation_id", command.operation_id)));
+                }
                 store.command(actor, &command, r.path == "/api/save").await
             }
             _ => anyhow::bail!("unknown_route"),
         }
     }
     .await;
+    if !result.as_ref().err().is_some_and(|error| {
+        store.is_live() && error.to_string() == "configuration_commit_outcome_unknown"
+    }) {
+        configuration_write_started.finish();
+    }
     let (status, body) = match result {
         Ok(value) => (200, value),
         Err(e) => {
+            if store.is_live() && e.to_string() == "configuration_commit_outcome_unknown" {
+                return Err(e);
+            }
             let message = e.to_string();
             let code = match message.as_str() {
                 "command_already_processed_refresh_state"
@@ -413,6 +438,8 @@ pub(super) async fn dispatch(
                 | "audience_management_denied"
                 | "audience_authority_revoked"
                 | "identity_scope_unbound"
+                | "trusted_source_observation_required"
+                | "production_configuration_change_denied"
                 | "shared_account_person_unknown"
                 | "delegation_envelope_required"
                 | "invalid_delegation" => message.as_str(),
@@ -444,4 +471,26 @@ pub(super) async fn dispatch(
         None,
     )
     .await
+}
+
+fn live_ui_route_allowed(method: &str, path: &str) -> bool {
+    match method {
+        "GET" => {
+            matches!(path, "/api/state" | "/api/business" | "/api/identities")
+                || path.starts_with("/api/ontology?scope=")
+                || path.starts_with("/api/identities?person=")
+        }
+        "POST" => matches!(
+            path,
+            "/api/business/preview"
+                | "/api/business/save"
+                | "/api/preview"
+                | "/api/save"
+                | "/api/identities/preview"
+                | "/api/identities/save"
+                | "/api/audience-preview"
+                | "/api/decision"
+        ),
+        _ => false,
+    }
 }

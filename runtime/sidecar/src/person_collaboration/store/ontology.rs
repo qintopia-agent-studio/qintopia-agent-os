@@ -43,16 +43,15 @@ impl Store {
             if kind == "rule" {
                 // Match the consuming runtime: a replacement appointment must not
                 // revive an executable rule authored under a revoked grant.
-                let authority = foundation::authorize_current(
-                    &mut tx,
-                    &self.tenant,
+                let authority = foundation::authority_from_policy(
+                    &policy,
+                    version,
                     r.get("author_person_id"),
                     r.get("scope_id"),
                     "erhua",
                     "community_service",
                     "change_rules",
-                )
-                .await?;
+                );
                 if authority.status == "denied"
                     || authority.grant_id != Some(r.get("authority_grant_id"))
                 {

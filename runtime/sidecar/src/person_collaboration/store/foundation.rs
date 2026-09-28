@@ -93,6 +93,26 @@ pub async fn authorize_current(
         .fetch_one(&mut **tx)
         .await?;
     let policy = load_policy(tx, tenant, tenant, now).await?;
+    Ok(authority_from_policy(
+        &policy,
+        row.get("version"),
+        person,
+        scope,
+        agent,
+        domain,
+        action,
+    ))
+}
+
+pub(super) fn authority_from_policy(
+    policy: &Policy,
+    configuration_version: i64,
+    person: Uuid,
+    scope: Uuid,
+    agent: &str,
+    domain: &str,
+    action: &str,
+) -> Authority {
     let matching: Vec<_> = policy
         .grants
         .iter()
@@ -110,7 +130,7 @@ pub async fn authorize_current(
         reviewer: None,
         grant_id: None,
         collaboration_id: None,
-        configuration_version: row.get("version"),
+        configuration_version,
     };
     if let [g] = matching.as_slice() {
         let d = policy.decision(g.collaboration, action);
@@ -121,7 +141,7 @@ pub async fn authorize_current(
             result.collaboration_id = Some(g.collaboration);
         }
     }
-    Ok(result)
+    result
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
