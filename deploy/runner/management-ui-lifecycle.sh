@@ -183,6 +183,37 @@ if pid:
 else:
     data["ExecutableIdentity"] = None
 invocation = data["InvocationID"]
+data["JournalStopSuccess"] = False
+if not invocation and data["LoadState"] == "loaded" and data["ActiveState"] == "inactive":
+    # systemd clears the invocation and exit code on stop; manager entries retain them.
+    stopped = subprocess.run(["/usr/bin/journalctl", "--no-pager", "-n", "1",
+                              "-o", "json", "UNIT=" + unit],
+                             capture_output=True, text=True, check=True)
+    if stopped.stdout.strip():
+        event = json.loads(stopped.stdout.strip().splitlines()[-1])
+        if (event.get("UNIT") != unit or event.get("JOB_TYPE") != "stop" or
+                event.get("JOB_RESULT") != "done" or
+                event.get("MESSAGE_ID") != "9d1aaa27d60140bd96365438aad20286"):
+            raise SystemExit("management UI final manager event is not a successful stop")
+        invocation = event.get("INVOCATION_ID", "")
+        if not re.fullmatch(r"[0-9a-f]{32}", invocation):
+            raise SystemExit("management UI stop invocation identity is invalid")
+        deactivated = subprocess.run(
+            ["/usr/bin/journalctl", "--no-pager", "-n", "1", "-o", "json",
+             "UNIT=" + unit, "INVOCATION_ID=" + invocation,
+             "MESSAGE_ID=7ad2d189f7e94e70a38c781354912448"],
+            capture_output=True, text=True, check=True)
+        if not deactivated.stdout.strip():
+            raise SystemExit("management UI successful deactivation journal is missing")
+        success_event = json.loads(deactivated.stdout.strip().splitlines()[-1])
+        if (success_event.get("UNIT") != unit or
+                success_event.get("INVOCATION_ID") != invocation or
+                success_event.get("MESSAGE_ID") != "7ad2d189f7e94e70a38c781354912448"):
+            raise SystemExit("management UI deactivation journal identity changed")
+        data["JournalStopSuccess"] = True
+    elif data["ExecMainCode"] not in ("0", ""):
+        raise SystemExit("management UI stop invocation journal is missing")
+    data["InvocationID"] = invocation
 data["Unknown"] = False
 if invocation:
     if not re.fullmatch(r"[0-9a-f]{32}", invocation):
@@ -219,9 +250,11 @@ if after["LoadState"] == "loaded":
     if (after["UnitFileState"] != "disabled" or after["ActiveState"] != "inactive" or
             after["MainPID"] != "0" or after["ControlPID"] != "0"):
         raise SystemExit("management UI unit is not disabled and inactive")
-    if after["InvocationID"] and (after["Result"] != "success" or
-                                     after["ExecMainCode"] not in ("1", "exited") or
-                                     after["ExecMainStatus"] != "0"):
+    if (after["Result"] != "success" or after["ExecMainStatus"] != "0" or
+            (after["InvocationID"] and not after["JournalStopSuccess"] and
+             after["ExecMainCode"] not in ("1", "exited")) or
+            (after["JournalStopSuccess"] and
+             after["ExecMainCode"] not in ("0", "1", "exited"))):
         raise SystemExit("management UI exit was abnormal")
 elif after["ActiveState"] != "inactive":
     raise SystemExit("absent management UI unit is not inactive")
@@ -233,7 +266,7 @@ if group:
     if not events.is_file() or "populated 0" not in events.read_text().splitlines():
         raise SystemExit("management UI cgroup is populated or unreadable")
 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
-    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
         listener.bind(("127.0.0.1", 18780))
     except OSError:

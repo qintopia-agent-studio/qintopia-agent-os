@@ -27,14 +27,29 @@ production installation, certificate request, database grant or account bootstra
 
 ## Verification And Production Boundary
 
+2026-09-29 isolated Ubuntu 24.04/systemd 255 validation found that systemd clears
+`InvocationID` and `ExecMainCode` from `systemctl show` after a unit stops. The former
+same-invocation and exit-code comparison therefore rejects a successful drain. For a
+previously running unit, the stop check must correlate the final `UNIT=<unit>` manager
+journal entry's completed stop job and `INVOCATION_ID` with the pre-stop ID, verify the
+same invocation's successful deactivation entry, and inspect its service journal for an
+UNKNOWN code. Missing or conflicting journal evidence retains the hold. The Linux
+fixture and mock must exercise this real post-stop state.
+
+The same real unit drained an in-flight request and exited cleanly, but the port check
+rejected its short-lived `TIME_WAIT` sockets as an occupied listener. The closure probe
+must permit `SO_REUSEADDR` while still rejecting a live bind on `127.0.0.1:18780`;
+process, unit, cgroup and HTTPS 503 checks remain required.
+
 Targeted simulated tests check rendered unit isolation, disabled installation, runner
 ordering, Linux FD 8/9 locking, same-invocation stop evidence, UNKNOWN rejection and
 static route constraints. Run the new Nginx route test explicitly; the existing
 `runtime:nginx:check` script does not discover it. The systemd PID1 fixture contains a
-drain/invocation probe and recovery-lock probe, but the full fixture could not run on
-this host. Actual HTTP/HTTPS Nginx response and site restore, Certbot, database
-effective privileges and Chrome checks remain production acceptance under a separately
-approved runbook. No passing local check authorizes merge, release or activation.
+drain/invocation probe and recovery-lock probe. Its initial host limitation, and the
+initial Nginx and restricted-role gaps, were closed by the isolated validation below.
+Real Certbot/ACME, production role and tenant, and Chrome checks remain production
+acceptance under a separately approved runbook. No passing local check authorizes merge,
+release or activation.
 
 The first `pnpm check:pr:auto` stopped at `deploy:contracts:check`: its existing Space
 contract required the literal `failedPromotionEvents !== "quiesce\\npromote"`, while the
@@ -51,10 +66,10 @@ Python 3.12. With `/opt/homebrew/opt/python@3.12/libexec/bin` first on `PATH`, t
 suite passed all 326 tests (one Linux-only skip). This was a local interpreter mismatch;
 no QiWe code, checker or CI setting changed.
 
-The Linux lock and stop simulation passed in the cached container. Docker could not
-fetch the Nginx image or Ubuntu apt packages because of network EOF errors, so actual
-Nginx HTTP/HTTPS behavior and the Ubuntu systemd PID 1 fixture are unverified. They
-remain release-preparation acceptance items, not local passes.
+The initial Linux lock and stop simulation passed in the cached container. Docker could
+not fetch the Nginx image or Ubuntu apt packages because of network EOF errors, so
+actual Nginx HTTP/HTTPS behavior and the Ubuntu systemd PID 1 fixture were unverified at
+that point. The later isolated VM results supersede that gap.
 
 The following `pnpm check:pr:auto` again passed `check:light` and QiWe but stopped at
 `cargo fmt --check` because the installed Rust 1.96 toolchain was not on this shell's
@@ -105,7 +120,69 @@ The next PR review found that an unknown Host could reach the HTTP redirect if t
 vhost became port 80's default server. Both the bootstrap and HTTPS redirect templates
 now return 421 for a nonmatching Host before route selection. The Nginx template test
 covers both HTTP server blocks, and the runtime contract and deploy bundle checks pass.
-Actual Nginx behavior remains in the production acceptance boundary above.
+The isolated real Nginx result is recorded below; production host behavior remains an
+independent acceptance item.
+
+### 2026-09-29 Isolated Linux, Nginx And Database Validation
+
+- A fresh `qintopia-management-ui-pr728` VM ran Ubuntu 24.04.5, systemd 255 and Nginx
+  1.24.0. The older `qintopia-recovery-test` VM and its request/result files were not
+  used. The full `test-deploy-runner-systemd-linux.mjs` fixture passed its real PID 1
+  lock, hold, recovery and invocation probes. The actual rendered management unit also
+  passed `systemd-analyze verify` and ran disabled by default under dedicated UID 999,
+  its sole group, a root-owned mode-0600 environment file and an exact-release
+  executable. Another user could not read the environment file. The disposable VM's
+  `/home/ubuntu` initially lacked traversal permission for that UID, so the first start
+  failed `203/EXEC`; granting traversal in this VM allowed the test. Production
+  traversal must be checked before activation.
+- Real `systemctl` clears both `InvocationID` and `ExecMainCode` when this service
+  stops. The lifecycle helper now correlates the last successful manager stop job and
+  deactivation entry with the pre-stop invocation, and scans that invocation's service
+  journal for UNKNOWN. An in-flight simulated HTTPS request completed with 200 while
+  `quiesce` returned success; the process and listener closed, `verify-closed` passed,
+  and HTTPS returned 503. `TIME_WAIT` sockets initially caused a false port-occupied
+  failure; the corrected bind accepts them but still rejected a separate live listener.
+- With the actual unit's `TimeoutStopSec=35s` and `SendSIGKILL=no`, a simulated stuck
+  drain returned nonzero, recorded `Result=timeout`, and left the process and listener
+  alive. `verify-closed` refused continuation. The test process was then killed by PID
+  inside the disposable VM. A separate `production_ui_stop_outcome_unknown` journal
+  injection made both `quiesce` and `verify-closed` fail even after normal process exit.
+- Real Nginx on loopback returned 404 for the HTTP challenge bootstrap root, 308 for the
+  final HTTP redirect, 421 for an unrelated HTTP Host and unrelated HTTPS SNI or Host,
+  200 through a simulated UI upstream, and 503 with `Cache-Control: no-store` when the
+  UI stopped. Forged forwarded headers did not reach the upstream. Using the actual
+  `install-https` helper, a simulated certificate/key mismatch made `nginx -t` fail and
+  restored the prior HTTP site (404); after restoring the matching simulated key and
+  trusting its certificate only in the VM, the helper installed HTTPS and verified 503.
+  Certbot renewal was stubbed to succeed solely for this local switch test; no ACME
+  request or production certificate was made.
+- A separate local PostgreSQL 18.6 instance on `127.0.0.1:55681/qintopia_test` applied
+  all 46 migrations. Five lock functions were transferred to a dedicated `NOLOGIN` owner
+  with fixed table privileges and Gateway `MAINTAIN`, and their `PUBLIC EXECUTE`
+  remained revoked. The UI and original runtime role had explicit execute rights; an
+  unrelated role was denied; an inherited UI role could call; and the UI had no
+  Person/Gateway UPDATE, Gateway MAINTAIN, identity-schema CREATE or owner-role SET.
+  Four row-lock functions returned true on nonempty simulated rows and false on
+  mismatches. The fifth function held the Gateway table lock: a competing insert
+  received SQLSTATE `55P03`. This verifies the post-transfer lock boundary; the earlier
+  PR #723 report contains the broader restricted-role HTTP workflow test.
+
+The local probe binary, certificates, account and role names above are simulations, not
+production assets. The final reviewed artifact identity and production preflight remain
+pending; production credentials, certificate issuance, deployment, activation and Chrome
+acceptance were not performed.
+
+On the final lifecycle helper and fixture, `pnpm check:pr:auto` passed the quick tier,
+QiWe, both sidecar smokes, the default 858-test sidecar suite, both feature-boundary
+tests, Clippy and the all-feature suite (873 passed, 208 ignored). A first run reached
+the PostgreSQL tier because the disposable port-55681 instance was still running, but
+earlier tests had left simulated Space administrators in that database; the Space
+integration test then hit its administrator ceiling. After stopping only that instance
+and pinning the auto check to its closed URL, the full quick and heavy Rust tiers passed
+with PostgreSQL explicitly skipped. The separate fresh-database lock and ACL probes
+above remain the database evidence; neither the contaminated rerun nor the skipped tier
+is recorded as a PostgreSQL pass. CI still owns the fixed-URL PostgreSQL tier, and
+production acceptance remains separate.
 
 ## Rollback
 

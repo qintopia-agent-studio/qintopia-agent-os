@@ -60,12 +60,25 @@ if (process.argv[2] === "--management-ui-mock") {
   try {
     fs.writeFileSync(
       path.join(fixture, "systemctl"),
-      '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "$1" == show ]]; then cat /tmp/management-ui-state; exit 0; fi\nif [[ "$1" == disable && "$2" == --now ]]; then\n  kill -TERM "$(cat /tmp/management-ui-pid)"\n  cp /tmp/management-ui-stopped /tmp/management-ui-state\n  if [[ -f /tmp/management-ui-emit-unknown ]]; then printf "%s\\n" production_ui_stop_outcome_unknown >>/tmp/management-ui-journal; fi\n  exit 0\nfi\nexit 75\n',
+      '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "$1" == show ]]; then cat /tmp/management-ui-state; exit 0; fi\nif [[ "$1" == disable && "$2" == --now ]]; then\n  sed -n "s/^InvocationID=//p" /tmp/management-ui-state >/tmp/management-ui-last-invocation\n  kill -TERM "$(cat /tmp/management-ui-pid)"\n  cp /tmp/management-ui-stopped /tmp/management-ui-state\n  if [[ -f /tmp/management-ui-emit-unknown ]]; then printf "%s\\n" production_ui_stop_outcome_unknown >>/tmp/management-ui-journal; fi\n  exit 0\nfi\nexit 75\n',
       { mode: 0o755 }
     );
     fs.writeFileSync(
       path.join(fixture, "journalctl"),
-      "#!/usr/bin/env bash\ncat /tmp/management-ui-journal\n",
+      `#!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *" -o json "* ]]; then
+  if [[ -s /tmp/management-ui-last-invocation ]]; then
+    if [[ " $* " == *"MESSAGE_ID=7ad2d189f7e94e70a38c781354912448"* ]]; then
+      printf '{"UNIT":"qintopia-agentos-management-ui.service","MESSAGE_ID":"7ad2d189f7e94e70a38c781354912448","INVOCATION_ID":"%s"}\\n' "$(cat /tmp/management-ui-last-invocation)"
+    else
+      printf '{"UNIT":"qintopia-agentos-management-ui.service","JOB_TYPE":"stop","JOB_RESULT":"done","MESSAGE_ID":"9d1aaa27d60140bd96365438aad20286","INVOCATION_ID":"%s"}\\n' "$(cat /tmp/management-ui-last-invocation)"
+    fi
+  fi
+else
+  cat /tmp/management-ui-journal
+fi
+`,
       { mode: 0o755 }
     );
     fs.writeFileSync(
@@ -101,11 +114,12 @@ ln -s "$release" /home/ubuntu/qintopia-agent-os-releases/current
 install -m 0755 /fixture/systemctl /usr/bin/systemctl
 install -m 0755 /fixture/journalctl /usr/bin/journalctl
 printf '%s\\n' 'LoadState=loaded' 'ActiveState=inactive' 'SubState=dead' \
-  'UnitFileState=disabled' 'InvocationID=11111111111111111111111111111111' \
-  'Result=success' 'ExecMainCode=1' 'ExecMainStatus=0' 'MainPID=0' \
+  'UnitFileState=disabled' 'InvocationID=' \
+  'Result=success' 'ExecMainCode=0' 'ExecMainStatus=0' 'MainPID=0' \
   'ControlPID=0' 'ControlGroup=' 'NRestarts=0' >/tmp/management-ui-stopped
 cp /tmp/management-ui-stopped /tmp/management-ui-state
 : >/tmp/management-ui-journal
+rm -f /tmp/management-ui-last-invocation
 helper="$release/deploy/runner/management-ui-lifecycle.sh"
 if "$helper" verify-closed >/dev/null 2>&1; then
   echo 'missing inherited FD9 was accepted' >&2
@@ -150,8 +164,6 @@ wait "$holder"
     'ControlPID=0' 'ControlGroup=' 'NRestarts=0' >/tmp/management-ui-state
   "$helper" quiesce
   wait "$ui_pid" || true
-  sed -i 's/11111111111111111111111111111111/22222222222222222222222222222222/' \
-    /tmp/management-ui-stopped
   "$release/sidecar/qintopia-message-sidecar" 100 &
   ui_pid=$!
   printf '%s\\n' "$ui_pid" >/tmp/management-ui-pid
@@ -2146,7 +2158,24 @@ SendSIGKILL=no
   assert.match(managementUiInvocation, /^[0-9a-f]{32}$/);
   requireSuccess("systemctl", ["stop", managementUiProbeUnit]);
   assert.equal(show(managementUiProbeUnit, "ActiveState"), "inactive");
-  assert.equal(show(managementUiProbeUnit, "InvocationID"), managementUiInvocation);
+  assert.equal(show(managementUiProbeUnit, "InvocationID"), "");
+  const stopEvent = JSON.parse(
+    requireSuccess("journalctl", [
+      "--no-pager",
+      "-b",
+      "-n",
+      "1",
+      "-o",
+      "json",
+      `UNIT=${managementUiProbeUnit}`,
+    ])
+      .trim()
+      .split("\n")
+      .at(-1)
+  );
+  assert.equal(stopEvent.INVOCATION_ID, managementUiInvocation);
+  assert.equal(stopEvent.JOB_TYPE, "stop");
+  assert.equal(stopEvent.JOB_RESULT, "done");
   assert.equal(show(managementUiProbeUnit, "Result"), "success");
   assert.equal(show(managementUiProbeUnit, "ExecMainStatus"), "0");
   assert.equal(show(managementUiProbeUnit, "NRestarts"), "0");
