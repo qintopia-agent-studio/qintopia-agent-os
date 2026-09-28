@@ -6,11 +6,16 @@ function selectedOrg() {
   );
 }
 function renderOrganization() {
+  const target = $("overview");
+  if (businessScope) {
+    renderBusiness(target, businessScope);
+    return;
+  }
+  target.removeAttribute("aria-describedby");
   if (!state.management_available) {
     renderPersonalWork();
     return;
   }
-  const target = $("overview");
   target.replaceChildren();
   const layout = el("div", undefined, "qo-layout"),
     tree = el("aside", undefined, "qo-tree"),
@@ -75,6 +80,13 @@ function renderOrganization() {
         navigate("ledger");
       })
     );
+  if (state.business?.manageable_scopes?.length) {
+    const scopes = el("div", undefined, "qo-management-scopes");
+    scopes.append(el("h4", "可管理范围"));
+    for (const scope of state.business.manageable_scopes)
+      scopes.append(businessEntry(scope.id, `${scope.label} · 物业业务授权`));
+    tree.append(scopes);
+  }
   layout.append(tree, detail);
   target.append(layout);
   if (!pos) {
@@ -107,7 +119,11 @@ function renderOrganization() {
     titleRow(
       `${people.join("、") || "暂缺任职人员"} · ${pos.label}`,
       `上级岗位：${parent?.label || (pos.parent_id ? "当前权限未展示上级岗位" : "无上级岗位")}`,
-      edit
+      edit,
+      ...(rs.some((r) => r.agent === "anan" && r.domain === "hospitality") &&
+      state.business?.manageable_scopes?.some((scope) => scope.id === pos.scope_id)
+        ? [businessEntry(pos.scope_id, "物业业务授权")]
+        : [])
     )
   );
   const manage = box("谁负责什么"),
@@ -314,6 +330,10 @@ function renderPersonalWork() {
   );
   const name = state.actor_person ? personName(state.actor_person) : "当前账号";
   target.append(titleRow("我的工作", `${name}，这里只显示与你有关的工作。`));
+  if (state.business?.manageable_scopes?.length)
+    target.append(
+      businessEntry(state.business.manageable_scopes[0].id, "物业业务授权")
+    );
   if (state.delegated_reviews?.length) target.append(stewardProgress());
   if (!own.length) {
     if (state.delegated_reviews?.length) return;

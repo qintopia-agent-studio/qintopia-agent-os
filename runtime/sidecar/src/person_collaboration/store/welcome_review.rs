@@ -74,6 +74,7 @@ impl Store {
         Ok(WelcomeSubject::Person(Actor {
             link: actor.link,
             person: actor.person,
+            work_account: None,
             identity_version: actor.identity_version,
             identity_namespace: actor.identity_namespace.clone(),
             gateway: actor.gateway.clone(),
@@ -1127,6 +1128,7 @@ pub(crate) async fn assert_operations_review(
         WelcomeSubject::Person(Actor {
             link: serde_json::from_value(proof["link"].clone())?,
             person: id,
+            work_account: None,
             identity_version: version,
             identity_namespace: proof["namespace"]
                 .as_str()

@@ -13,6 +13,13 @@ pub(crate) struct Request {
     pub(crate) body: Vec<u8>,
 }
 pub(crate) async fn request(stream: &mut TcpStream, port: u16) -> Result<Request> {
+    request_for_host(stream, &format!("127.0.0.1:{port}")).await
+}
+
+pub(crate) async fn request_for_host(
+    stream: &mut TcpStream,
+    expected_host: &str,
+) -> Result<Request> {
     let mut buffer = Vec::new();
     let mut byte = [0_u8; 1];
     while !buffer.ends_with(b"\r\n\r\n") {
@@ -44,7 +51,7 @@ pub(crate) async fn request(stream: &mut TcpStream, port: u16) -> Result<Request
         );
     }
     ensure!(
-        headers.get("host") == Some(&format!("127.0.0.1:{port}")),
+        headers.get("host").map(String::as_str) == Some(expected_host),
         "host_forbidden"
     );
     ensure!(
@@ -74,9 +81,25 @@ pub(crate) async fn respond(
     body: &[u8],
     cookie: Option<(&str, &str)>,
 ) -> Result<()> {
+    respond_with_cookie_options(stream, status, mime, body, cookie, false, false).await
+}
+
+pub(crate) async fn respond_with_cookie_options(
+    stream: &mut TcpStream,
+    status: u16,
+    mime: &str,
+    body: &[u8],
+    cookie: Option<(&str, &str)>,
+    secure_cookie: bool,
+    clear_cookie: bool,
+) -> Result<()> {
     let cookie = cookie
         .map(|(name, value)| {
-            format!("Set-Cookie: {name}={value}; HttpOnly; SameSite=Strict; Path=/\r\n")
+            format!(
+                "Set-Cookie: {name}={value}; HttpOnly; SameSite=Strict; Path=/{}{}\r\n",
+                if secure_cookie { "; Secure" } else { "" },
+                if clear_cookie { "; Max-Age=0" } else { "" }
+            )
         })
         .unwrap_or_default();
     stream.write_all(format!("HTTP/1.1 {status} Response\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; frame-ancestors 'none'\r\n{cookie}Connection: close\r\n\r\n",body.len()).as_bytes()).await?;

@@ -15,6 +15,10 @@
       "query": "reference_catalog"
     },
     "pms.quote": { "action": "read_business", "command": "CREATE_QUOTE" },
+    "pms.reminder.snooze": {
+      "action": "execute_business",
+      "control": "SNOOZE_REMINDER"
+    },
     "pms.command.CREATE_ORDER": {
       "action": "execute_business",
       "command": "CREATE_ORDER"

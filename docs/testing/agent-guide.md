@@ -118,7 +118,10 @@ pnpm test:report
 `operations-control-plane-apply-smoke.sh` 报
 `database URL hash is not in the reviewed allowlist`，记录此前 Rust
 PG 用例结果和该 smoke 的失败边界；不要改 allowlist、复用 staging 凭据或将总 tier 记为通过。既有固定 CI
-URL 有合法哈希；先核对本机 5432 归属，不能停用或写入其他任务的库。随机端口适配方案见[独立测试契约提案](../plans/active/disposable-postgres-boundary-review.md)，尚未批准实施。见[岸岸本地验收记录](../reports/2026-09-24-anan-pms-local-acceptance.md)。
+URL 有合法哈希；先核对本机 5432 归属，不能停用或写入其他任务的库。随机端口适配方案见[独立测试契约提案](../plans/active/disposable-postgres-boundary-review.md)，尚未批准实施。见[岸岸本地验收记录](../reports/2026-09-24-anan-pms-local-acceptance.md)。运行
+`pnpm check:pr:auto` 时必须同时将 `QINTOPIA_SIDECAR_DATABASE_URL`
+指向所持有的一次性库；仅设置 `QINTOPIA_COLLABORATION_TEST_DATABASE_URL`
+不会覆盖脚本的 5432 默认值。见[PR #723 本地检查记录](../reports/2026-09-27-pr723-business-ui-validation.md)。
 
 ## 欢迎渲染与跨平台任期回归
 

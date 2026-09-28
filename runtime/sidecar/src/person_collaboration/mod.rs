@@ -42,6 +42,7 @@ use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::{postgres::PgPoolOptions, PgPool};
+use tokio::net::TcpListener;
 use url::Url;
 
 pub fn digest(input: &[u8]) -> String {
@@ -97,6 +98,167 @@ async fn production_store() -> Result<Store> {
 pub async fn run_production_broker() -> Result<()> {
     let store = production_store().await?;
     foundation_server::broker_live(store).await
+}
+
+pub async fn run_production_ui(port: u16) -> Result<()> {
+    let public_origin = auth_server::UiOrigin::from_env()?;
+    let store = production_store().await?;
+    ensure!(
+        std::env::var("QINTOPIA_COLLABORATION_LOCAL_ENABLE").as_deref() != Ok("1")
+            && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1"),
+        "production_ui_local_mode_denied"
+    );
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, port)).await?;
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    serve_production_ui_until(listener, &store, &public_origin, async move {
+        terminate.recv().await;
+    })
+    .await
+}
+
+#[derive(Default)]
+pub(super) struct ConfigurationWrite {
+    started: std::sync::atomic::AtomicBool,
+    correlation: std::sync::Mutex<Option<(&'static str, uuid::Uuid)>>,
+}
+
+impl ConfigurationWrite {
+    fn start(&self, correlation: Option<(&'static str, uuid::Uuid)>) {
+        *self.correlation.lock().expect("write tracker mutex") = correlation;
+        self.started
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    fn finish(&self) {
+        self.started
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+
+    fn pending(&self) -> bool {
+        self.started.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    fn log_unknown(&self, code: &str) {
+        if let Some((key, value)) = *self.correlation.lock().expect("write tracker mutex") {
+            eprintln!("{code} {key}={value}");
+        } else {
+            eprintln!("{code}");
+        }
+    }
+}
+
+async fn serve_production_ui_until(
+    listener: TcpListener,
+    store: &Store,
+    public_origin: &auth_server::UiOrigin,
+    shutdown: impl std::future::Future<Output = ()>,
+) -> Result<()> {
+    tokio::pin!(shutdown);
+    loop {
+        let (mut stream, peer) = tokio::select! {
+            biased;
+            _ = &mut shutdown => return Ok(()),
+            accepted = listener.accept() => accepted?,
+        };
+        if !peer.ip().is_loopback() {
+            continue;
+        }
+        let configuration_write_started = ConfigurationWrite::default();
+        let request = auth_server::handle_with_origin_tracked(
+            &mut stream,
+            store,
+            public_origin,
+            &configuration_write_started,
+        );
+        tokio::pin!(request);
+        let result = tokio::select! {
+            biased;
+            _ = &mut shutdown => {
+                drop(listener);
+                return drain_production_ui_request(
+                    request,
+                    &configuration_write_started,
+                    std::time::Duration::from_secs(30),
+                ).await;
+            }
+            result = tokio::time::timeout(std::time::Duration::from_secs(5), &mut request) => result,
+        };
+        if !matches!(result, Ok(Ok(()))) && configuration_write_started.pending() {
+            configuration_write_started.log_unknown("production_ui_request_outcome_unknown");
+            anyhow::bail!("production_ui_request_outcome_unknown");
+        }
+    }
+}
+
+async fn drain_production_ui_request(
+    request: impl std::future::Future<Output = Result<()>>,
+    configuration_write_started: &ConfigurationWrite,
+    limit: std::time::Duration,
+) -> Result<()> {
+    match tokio::time::timeout(limit, request).await {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) | Err(_) if !configuration_write_started.pending() => Ok(()),
+        Ok(Err(_)) | Err(_) => {
+            configuration_write_started.log_unknown("production_ui_stop_outcome_unknown");
+            anyhow::bail!("production_ui_stop_outcome_unknown")
+        }
+    }
+}
+
+#[cfg(test)]
+mod production_ui_stop_tests {
+    use super::drain_production_ui_request;
+    use std::{future::pending, time::Duration};
+
+    #[tokio::test]
+    async fn drain_distinguishes_unfinished_reads_from_uncertain_writes() {
+        let limit = Duration::from_millis(5);
+        let read = super::ConfigurationWrite::default();
+        drain_production_ui_request(pending(), &read, limit)
+            .await
+            .unwrap();
+        drain_production_ui_request(async { anyhow::bail!("read_failed") }, &read, limit)
+            .await
+            .unwrap();
+
+        let write = super::ConfigurationWrite::default();
+        write.start(Some(("operation_id", uuid::Uuid::new_v4())));
+        assert_eq!(
+            drain_production_ui_request(pending(), &write, limit)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "production_ui_stop_outcome_unknown"
+        );
+        assert_eq!(
+            drain_production_ui_request(async { anyhow::bail!("write_failed") }, &write, limit)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "production_ui_stop_outcome_unknown"
+        );
+        drain_production_ui_request(async { Ok(()) }, &write, limit)
+            .await
+            .unwrap();
+    }
+}
+
+pub async fn bootstrap_production_account(person: uuid::Uuid, username: &str) -> Result<()> {
+    use std::io::Read;
+    use zeroize::Zeroizing;
+    let store = production_store().await?;
+    ensure!(
+        std::env::var("QINTOPIA_COLLABORATION_LOCAL_ENABLE").as_deref() != Ok("1"),
+        "production_ui_local_mode_denied"
+    );
+    let mut password = Zeroizing::new(String::new());
+    std::io::stdin().take(1024).read_to_string(&mut password)?;
+    ensure!(password.len() < 1024, "password_length");
+    store
+        .bootstrap_account(person, username, password.trim_end_matches(['\r', '\n']))
+        .await?;
+    println!("Account initialized; no business permissions added.");
+    Ok(())
 }
 
 pub async fn run_production_payment_events(port: u16) -> Result<()> {

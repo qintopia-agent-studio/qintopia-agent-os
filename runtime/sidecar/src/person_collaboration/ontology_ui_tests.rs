@@ -376,7 +376,7 @@ async fn scheduled_permissions_remain_editable_and_revocable_without_early_autho
 #[ignore = "explicit task-isolated local database required"]
 async fn ontology_explains_current_inherited_rules_without_other_buildings_or_live_claims(
 ) -> Result<()> {
-    let (store, owner, state) = fixture().await?;
+    let (mut store, owner, state) = fixture().await?;
     let one = find(&state, "scopes", "一栋");
     let two = find(&state, "scopes", "二栋");
     let house = actor(&store, find(&state, "people", "人员甲 · 合成样例 B")).await?;
@@ -420,6 +420,26 @@ async fn ontology_explains_current_inherited_rules_without_other_buildings_or_li
     assert_eq!(current["version"], 1);
     assert_ne!(current["content"]["text"], "未来才适用的规则");
     assert!(current["author"]["label"].as_str().is_some());
+    sqlx::query(
+        "UPDATE qintopia_agent_os.collaboration_tenants SET mode='live' WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .execute(&store.pool)
+    .await?;
+    store.mode = super::store::StoreMode::Live;
+    let live = store.ontology(&house, two).await?;
+    assert!(live["constraints"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|rule| rule["key"] == "kitchen"));
+    sqlx::query(
+        "UPDATE qintopia_agent_os.collaboration_tenants SET mode='synthetic' WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .execute(&store.pool)
+    .await?;
+    store.mode = super::store::StoreMode::Synthetic;
     assert!(store.ontology(&owner, Uuid::new_v4()).await.is_err());
 
     // Actual identity receipts must not bypass the identity endpoint through

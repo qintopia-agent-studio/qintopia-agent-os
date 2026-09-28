@@ -4,6 +4,7 @@ let state,
   pending = null,
   page = "overview",
   selectedPosition = null,
+  businessScope = null,
   editing = null;
 let ledgerKind = "agent",
   ledgerSelection = null,
@@ -131,6 +132,8 @@ const errors = {
   shared_account_person_unknown:
     "共享账号不能直接确认为某个人，请选择已有可信观测的个人账号。",
   identity_source_evidence_required: "来源缺少可信观测，请先由来源接入方补齐记录。",
+  trusted_source_observation_required:
+    "来源缺少可信企微宿主观测，暂不能核验。请由来源维护者先补齐记录。",
   identity_observation_required: "来源缺少可信观测，请先由来源接入方补齐记录。",
   identity_namespace_conflict:
     "来源登记存在冲突，请先由技术负责人核对，再重新选择账号。",
@@ -222,10 +225,15 @@ async function readState() {
   if (!next.organization || !Array.isArray(next.relations))
     throw new Error("配置响应不完整，请检查本地服务版本。");
   state = next;
+  state.business = await api("/api/business");
+  if (!state.business.manageable_scopes?.some((scope) => scope.id === businessScope))
+    businessScope = null;
   ontologyRequests.clear();
   updateWorkspaceNavigation();
+  $("workspace-mode").textContent =
+    state.mode === "live" ? "受控业务管理" : "本地模拟资料 · 真实渠道未启用";
   $("result").textContent = state.management_available
-    ? `已读取配置版本 ${state.version} · 本地验收`
+    ? `已读取配置版本 ${state.version}`
     : "已读取最新工作安排";
   $("recovery").hidden = true;
 }
@@ -278,9 +286,10 @@ function updateWorkspaceNavigation() {
   }
   for (const id of ["overview", "settings", "ledger"]) $(id).hidden = id !== page;
 }
-function navigate(next) {
+function navigate(next, { keepBusiness = false } = {}) {
   if (busy || !state) return;
   discardPreview();
+  if (!keepBusiness) businessScope = null;
   page = availablePage(next) ? next : "overview";
   document.querySelectorAll("[data-page]").forEach((b) => {
     const yes = b.dataset.page === page;
@@ -355,13 +364,14 @@ async function preview(change, summary, host, onSaved) {
 async function savePending() {
   if (!pending || busy) return;
   const operation = pending;
+  const previousBusinessScope = businessScope;
   setBusy(true);
   let saved = false;
   try {
     const result = await api(operation.savePath || "/api/save", operation.command);
     if (
       operation.savePath
-        ? result.saved !== true && result.replayed !== true
+        ? result.saved !== true && result.persisted !== true && result.replayed !== true
         : result.persisted !== true
     )
       throw new Error("服务端未确认持久保存，请核对状态后重试。");
@@ -374,7 +384,11 @@ async function savePending() {
       editing = null;
     }
     setBusy(false);
-    navigate(page);
+    navigate(page, { keepBusiness: operation.savePath === "/api/business/save" });
+    if (previousBusinessScope) {
+      if (businessScope) $("business-heading")?.focus();
+      else focusBusinessReturn(previousBusinessScope);
+    }
     notice(operation.successMessage || "本次变更已保存，页面已读取最新状态。");
   } catch (e) {
     if (saved) notice("变更已保存，但读取失败。请重新读取核对，避免重复新建。", true);

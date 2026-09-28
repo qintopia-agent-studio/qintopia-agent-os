@@ -66,7 +66,10 @@ async fn manual_amendments_reject_old_racing_changed_and_ambiguous_effects() -> 
         }
         f.capture("manual_done", "已在PMS办理这个方案，订单号order_manual")
             .await?;
-        let record = json!({"id":"amend_new","order_id":"order_manual","sequence":5,"amendment_type":command,"prior_version":4,"new_version":5,"payload":effect,"command_id":"command_staff","created_at":Utc::now()});
+        let observed_at: chrono::DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&f.store.pool)
+            .await?;
+        let record = json!({"id":"amend_new","order_id":"order_manual","sequence":5,"amendment_type":command,"prior_version":4,"new_version":5,"payload":effect,"command_id":"command_staff","created_at":observed_at});
         let good = json!({"order":{"id":"order_manual","property_id":"property_a","version":5,"status":status},"amendments":[record]});
         let mut bad = Vec::new();
         let mut old = good.clone();
@@ -155,7 +158,10 @@ async fn manual_collection_requires_unique_new_unreversed_reference() -> Result<
         .await?;
         f.capture("manual_done", "已在PMS办理这个方案，订单号order_manual")
             .await?;
-        let fact = json!({"fact_id":"fact_new","command_id":"command_staff","order_id":"order_manual","fact_type":"COLLECTION","amount_minor":12000,"net_effect_minor":12000,"currency":"CNY","method":if reference.is_some() {"BANK_TRANSFER"} else {"CASH"},"transaction_reference":reference,"created_at":Utc::now(),"transfer":null});
+        let observed_at: chrono::DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+            .fetch_one(&f.store.pool)
+            .await?;
+        let fact = json!({"fact_id":"fact_new","command_id":"command_staff","order_id":"order_manual","fact_type":"COLLECTION","amount_minor":12000,"net_effect_minor":12000,"currency":"CNY","method":if reference.is_some() {"BANK_TRANSFER"} else {"CASH"},"transaction_reference":reference,"created_at":observed_at,"transfer":null});
         let mut good = before();
         good["collectionFacts"] = json!([fact]);
         let mut bad = Vec::new();

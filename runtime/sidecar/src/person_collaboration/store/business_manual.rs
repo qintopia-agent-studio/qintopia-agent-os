@@ -280,7 +280,7 @@ pub(super) async fn adopt_order(
     .map(|(_, label)| *label)
     .collect();
     let hash = crate::person_collaboration::digest(&serde_json::to_vec(
-        &json!({"action":id,"version":row.get::<i64,_>("version"),"preview":preview,"order":observed,"person":actor.person,"gateway":gateway,"chat":chat}),
+        &json!({"action":id,"version":row.get::<i64,_>("version"),"preview":preview,"order":observed,"person":actor.business_id(),"gateway":gateway,"chat":chat}),
     )?);
     let mut base: Value = row.get::<Option<Value>, _>("readback").unwrap_or(json!({}));
     let proposal = &base["order_proposal"];
@@ -292,8 +292,8 @@ pub(super) async fn adopt_order(
     let fresh = turn.get::<DateTime<Utc>, _>("observed_at")
         > row.get::<DateTime<Utc>, _>("updated_at")
         && turn.get::<DateTime<Utc>, _>("observed_at") > now - chrono::Duration::minutes(15);
-    let candidates:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.business_actions a JOIN qintopia_agent_os.business_turn_evidence e ON e.id=a.source_evidence_id WHERE a.tenant_key=$1 AND a.phase='manual_handoff' AND a.operation_key='pms.command.CREATE_ORDER' AND a.actor_person_id=$2 AND e.gateway_key=$3 AND e.chat_hash=$4")
-        .bind(&store.tenant).bind(actor.person).bind(&gateway).bind(&chat).fetch_one(&mut **tx).await?;
+    let candidates:i64=sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.business_actions a JOIN qintopia_agent_os.business_turn_evidence e ON e.id=a.source_evidence_id WHERE a.tenant_key=$1 AND a.phase='manual_handoff' AND a.operation_key='pms.command.CREATE_ORDER' AND a.actor_person_id IS NOT DISTINCT FROM $2::uuid AND a.actor_work_account_id IS NOT DISTINCT FROM $5::uuid AND e.gateway_key=$3 AND e.chat_hash=$4")
+        .bind(&store.tenant).bind(actor.business_person()).bind(&gateway).bind(&chat).bind(actor.work_account.map(|v|v.0)).fetch_one(&mut **tx).await?;
     let exact = &intent["manual_booking_exact"];
     let complete_report = candidates == 1
         && intent["manual_order"] == order
@@ -321,7 +321,7 @@ pub(super) async fn adopt_order(
         fresh && ((current_proposal && intent["manual_order_adoption"] == hash) || complete_report);
     if !approved {
         if !current_proposal {
-            base["order_proposal"] = json!({"hash":hash,"order":order,"person":actor.person,"gateway":gateway,"chat":chat,"created":now,"expires":now+chrono::Duration::minutes(15)});
+            base["order_proposal"] = json!({"hash":hash,"order":order,"person":actor.business_id(),"gateway":gateway,"chat":chat,"created":now,"expires":now+chrono::Duration::minutes(15)});
             sqlx::query("UPDATE qintopia_agent_os.business_actions SET readback=$3 WHERE tenant_key=$1 AND id=$2")
                 .bind(&store.tenant).bind(id).bind(base).execute(&mut **tx).await?;
         }
@@ -329,9 +329,9 @@ pub(super) async fn adopt_order(
             json!({"action":id,"phase":"manual_handoff","original_plan":original,"current_order":observed,"differences":differences,"confirmation_hint":"核对具体订单与以上差异后，确认此订单承接原订房事项。仅记录人工采纳，不表示原预览执行成功，也不认人、收款或办理入住"}),
         );
     }
-    let saved = json!({"order":current["order"],"manual_evidence":{"kind":"human_order_adoption","original_version":row.get::<i64,_>("version"),"previewId":preview["previewId"],"proposal_hash":hash,"accepted_order":observed,"differences":differences,"confirmed_by":actor.person,"confirmed_at":now}});
-    sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='manual_completed',readback=$3,confirmation_evidence_id=$4,confirmed_by=$5,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
-        .bind(&store.tenant).bind(id).bind(saved).bind(evidence).bind(actor.person).execute(&mut **tx).await?;
+    let saved = json!({"order":current["order"],"manual_evidence":{"kind":"human_order_adoption","original_version":row.get::<i64,_>("version"),"previewId":preview["previewId"],"proposal_hash":hash,"accepted_order":observed,"differences":differences,"confirmed_by_account":actor.work_account.map(|v|v.0),"confirmed_by_person":actor.business_person(),"confirmed_at":now}});
+    sqlx::query("UPDATE qintopia_agent_os.business_actions SET phase='manual_completed',readback=$3,confirmation_evidence_id=$4,confirmed_by=$5,confirmed_by_work_account=$6,updated_at=clock_timestamp() WHERE tenant_key=$1 AND id=$2")
+        .bind(&store.tenant).bind(id).bind(saved).bind(evidence).bind(actor.business_person()).bind(actor.work_account.map(|v|v.0)).execute(&mut **tx).await?;
     super::foundation::work_event(tx,work,"human_pms_order_adopted","anan",&json!({"action":id,"order_ref":order,"version":observed["version"],"evidence":evidence,"decision":"adopt_existing_order"})).await?;
     Ok(
         json!({"action":id,"phase":"manual_completed","readback":{"order":current["order"]},"completion_basis":"human_order_adoption"}),
