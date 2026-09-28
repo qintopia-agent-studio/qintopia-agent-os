@@ -908,7 +908,15 @@ async fn shared_work_account_confirms_collection_and_revocation_stops_recovery()
             .fetch_one(&f.store.pool)
             .await?;
     let residual_grant: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.business_operation_grants(tenant_key,authority_grant_id,binding_id,operation_key,issued_by,work_account_id,work_account_version,account_role) VALUES($1,$2,$3,'pms.command.CREATE_ORDER',$4,$5,$6,'operator') RETURNING id")
-        .bind(&f.store.tenant).bind(f.grant).bind(f.binding).bind(f.store.verified_person(&f.actor).await?).bind(account).bind(disabled_version).fetch_one(&f.store.pool).await?;
+        .bind(&f.store.tenant).bind(f.grant).bind(f.binding).bind(f.store.verified_person(&f.actor).await?).bind(account).bind(account_version).fetch_one(&f.store.pool).await?;
+    assert_eq!(
+        f.store
+            .business_authorize(&actor, f.binding, "pms.command.CREATE_ORDER")
+            .await
+            .unwrap_err()
+            .to_string(),
+        "work_account_changed_or_revoked"
+    );
     assert_eq!(
         f.store
             .business_configure(
