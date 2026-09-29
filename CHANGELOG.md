@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.4](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.3...v0.3.4) (2026-09-29)
+
+
+### Features
+
+* **anan:** add scoped work-account business access ([#723](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/723)) ([f72077a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/f72077aae6557790d7f5fb3791eb74b41c8ca5f4))
+* **deploy:** wire management UI release lifecycle ([#728](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/728)) ([56f3cac](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/56f3cac5f13d326c9a1e42341fa37eb0b989db26))
+
+
+### Bug Fixes
+
+* **deploy:** harden runner takeover and mixed rollback ([#726](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/726)) ([3a84f2f](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/3a84f2fe9a079c79545b0b6d649c4255edbe2b4a))
+
+
+### Documentation
+
+* reassess v0.3.3 runner takeover recovery scope ([#724](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/724)) ([776644a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/776644a94ae8d65601fedd7cd16b89acff09cbd6))
+
 ## [0.3.3](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.2...v0.3.3) (2026-09-26)
 
 
