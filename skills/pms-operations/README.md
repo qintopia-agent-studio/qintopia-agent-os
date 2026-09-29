@@ -72,8 +72,8 @@ hook，先评估该具体功能的替代执行边界。
 ### 宿主恢复与通知边界（2026-09-29）
 
 `recovery_host.py` 消费共同服务的只读 `pms_workitem_recovery`：固定宿主 `gateway_id`
-与独立 HOST_TOKEN、受限的
-`QINTOPIA_PMS_RECOVERY_BINDING`，单次最多 10 页、每页最多 100 个原 WorkItem。 `list`
+与独立 HOST_TOKEN，单次最多 10 页、每页最多 100 个原 WorkItem。业务 binding 由共同服务的受限
+`QINTOPIA_PMS_RECOVERY_BINDING` 固定，宿主不能提交或改选 binding。 `list`
 给引用及可用的投递状态；`detail` 重新核对当前事项、通用工作群配置及版本。目标失效或
 `contact_required=false`
 时不唤醒；已领取的原发送键为 UNKNOWN 时只保留原键待查，不换键、不盲目重发。恢复入口只向既有官方 Generic

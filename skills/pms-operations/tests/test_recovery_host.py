@@ -46,8 +46,7 @@ class RecoveryTests(unittest.TestCase):
                 return {"items": [item("f5827ad5-e118-4be1-8889-01731219be24")], "next": None}
             return detail(args["work_item"])
 
-        with patch.dict(os.environ, {"QINTOPIA_PMS_RECOVERY_BINDING": BINDING}):
-            result = recovery.scan(broker, sent.append)
+        result = recovery.scan(broker, sent.append)
         self.assertEqual(sent, [WORK, "f5827ad5-e118-4be1-8889-01731219be24"])
         self.assertEqual(result, {"hint_accepted": 2, "held": 1, "incomplete": 0, "more": False})
         self.assertEqual(calls[0], {"action": "list", "limit": 100})
@@ -63,8 +62,7 @@ class RecoveryTests(unittest.TestCase):
                     if args["action"] == "list":
                         return {"items": [item()], "next": None}
                     return detail(**changes)
-                with patch.dict(os.environ, {"QINTOPIA_PMS_RECOVERY_BINDING": BINDING}):
-                    self.assertEqual(recovery.scan(broker, sent.append)["held"], 1)
+                self.assertEqual(recovery.scan(broker, sent.append)["held"], 1)
                 self.assertEqual(sent, [])
 
     def test_current_shared_route_shape_hints_only_before_first_claim(self):
@@ -105,9 +103,8 @@ class RecoveryTests(unittest.TestCase):
             return {"items": [item()], "next": None} if args["action"] == "list" else detail()
         def lost(_):
             raise TimeoutError("simulated lost acknowledgement")
-        with patch.dict(os.environ, {"QINTOPIA_PMS_RECOVERY_BINDING": BINDING}):
-            self.assertEqual(recovery.scan(broker, lost),
-                             {"hint_accepted": 0, "held": 0, "incomplete": 1, "more": False})
+        self.assertEqual(recovery.scan(broker, lost),
+                         {"hint_accepted": 0, "held": 0, "incomplete": 1, "more": False})
         self.assertEqual(calls, ["list", "detail"])
 
     def test_page_budget_and_cursor_or_duplicate_ref_fail_closed(self):
@@ -119,9 +116,13 @@ class RecoveryTests(unittest.TestCase):
             if args["action"] == "list":
                 return {"items": [item(), item()], "next": None}
             return detail()
-        with patch.dict(os.environ, {"QINTOPIA_PMS_RECOVERY_BINDING": BINDING}):
-            with self.assertRaisesRegex(ValueError, "duplicate"):
-                recovery.scan(duplicate, lambda _: None)
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            recovery.scan(duplicate, lambda _: None)
+
+    def test_main_loads_plugin_before_disabled_gate(self):
+        with patch.dict(os.environ, {"QINTOPIA_PMS_RECOVERY_PRODUCTION_ENABLE": "0"}):
+            with self.assertRaisesRegex(ValueError, "recovery_disabled"):
+                recovery.main()
 
     def test_official_webhook_202_only_accepts_internal_hint(self):
         seen = []

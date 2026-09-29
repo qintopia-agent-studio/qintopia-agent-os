@@ -131,7 +131,6 @@ def main():
     if (os.environ.get("QINTOPIA_PMS_RECOVERY_PRODUCTION_ENABLE") != "1"
             or plugin.production.mode() != "production"):
         raise ValueError("recovery_disabled")
-    _uuid(os.environ.get("QINTOPIA_PMS_RECOVERY_BINDING"))
     plugin.production.require()
     if not plugin.workitem_wake.available(plugin.production):
         raise ValueError("recovery_webhook_unavailable")

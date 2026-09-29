@@ -371,7 +371,7 @@ claim 和当前共享 group/channel 快照发送前重验；响应丢失保持�
 
 若现有 API 无法证明单次群效果，需由官方通道维护方提供受审的单次发送/原键回查能力或等效协议，不能直接解除本次工作人员群通知阻断。
 
-本轮包级 103 项测试通过；恢复专项 6 项、静态预检 3 项和生产隔离专项 12 项通过。生产安装与真实消息验收仍待负责人另行发起。
+本轮包级 104 项测试通过；恢复专项 7 项、静态预检 3 项和生产隔离专项 12 项通过。生产安装与真实消息验收仍待负责人另行发起。
 
 共享基础 `ecb8e0f` 已提交当前沟通路由，`beb6159b` 已提交 `pms_workitem_recovery`
 读路径。该恢复提交未带专项测试；当前路由 helper 的撤权、角色、职责和 Agent 停用链修正仍在基础线，不能把
@@ -384,6 +384,13 @@ claim 和当前共享 group/channel 快照发送前重验；响应丢失保持�
 
 已按共享提交逐字段核对本包模拟响应；现阶段仍不能记为真实 Sidecar 联合通过。基础线完成撤权链与恢复专项后，须以隔离 PostgreSQL 联跑撤权、停用、UNKNOWN 和重启场景。
 
+PR #730 的建议审阅指出宿主曾只验证 `QINTOPIA_PMS_RECOVERY_BINDING`
+的 UUID 格式，未用它筛选返回事项。核对共享 `beb6159b`：`RecoveryRequest`
+拒绝额外字段，`foundation_server` 从受限服务环境读取该 binding；Store 的 `list/detail`
+SQL 都按同一 binding、版本与 gateway 限定 WorkItem。`detail.target.binding_id`
+是工作人员群 binding，不是业务 binding，不可相互比较。移除宿主的无效同名环境检查，并新增实际
+`main()` 导入回归；范围强制仍在共享服务，真实发送另须 action-specific 授权。
+
 ### 本轮本地 PR 检查
 
 `pnpm check:pr:auto` 检测到 11 个改动路径，选择 quick
@@ -395,7 +402,7 @@ tier。格式、Markdown、registry、MCP、Skill/Workflow、runtime 和已执�
 
 该阶段不涉及本轮 PMS 包测试；当前仅能确认超时位置，尚无证据将耗时归因于本轮改动或认定检查已通过。
 
-本轮不修改 CI、runner 或超时阈值。代码审核使用已通过的 PMS 包 103 项、单独的
+本轮不修改 CI、runner 或超时阈值。代码审核使用已通过的 PMS 包 104 项、单独的
 `pnpm lint:md` 与 `pnpm registry:check`，PR 后仍需 CI 对最终 head 完整执行。
 
 如同一固定测试在隔离负载下仍超时，由 runner/CI
@@ -404,5 +411,5 @@ owner 按现有审批规则单独调查。此本地失败不解除生产安装�
 后续独立 `pnpm secrets:check` 首次报 `test_recovery_host.py:97`
 高置信凭据赋值；该行是固定模拟 HMAC 材料，根因是夹具变量名命中规则。
 
-将变量改为 `fixture_key`，不改签名行为或扫描器；恢复专项 6 项与 `pnpm secrets:check`
+将变量改为 `fixture_key`，不改签名行为或扫描器；恢复专项 7 项与 `pnpm secrets:check`
 重跑通过。
