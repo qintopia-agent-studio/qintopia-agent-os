@@ -1,6 +1,9 @@
 //! Scope-bound staff-group choices; display labels never authorize a route.
 use super::{Actor, Store};
-use crate::person_collaboration::digest;
+use crate::person_collaboration::{
+    digest,
+    model::{PermissionMode, Policy},
+};
 use anyhow::{ensure, Result};
 use base64ct::{Base64UrlUnpadded, Encoding};
 use serde::{Deserialize, Serialize};
@@ -62,12 +65,53 @@ fn authority_basis(value: &Value) -> Value {
             "subject_kind":c["subject_kind"],"subject_id":c["subject_id"],
             "channel_source_link_id":c["channel_source_link_id"],"source_version":c["source_version"],
             "gateway":c["gateway"],"gateway_version":c["gateway_version"],
-            "account_version":c["account_version"]
+            "platform":c["platform"],"account_version":c["account_version"]
         })).collect::<Vec<_>>())
     })
 }
 
 impl Store {
+    async fn communication_allowed_groups_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        scope: Uuid,
+        policy: &Policy,
+    ) -> Result<Vec<Uuid>> {
+        let collaborations = policy
+            .grants
+            .iter()
+            .filter(|grant| {
+                grant.agent == "anan"
+                    && grant.domain == "hospitality"
+                    && grant.action == "read_business"
+                    && grant.mode == PermissionMode::Autonomous
+                    && policy.effective(grant)
+                    && policy.decision(grant.collaboration, "read_business")["status"]
+                        == "autonomous"
+                    && policy.in_scope(scope, grant.scope, grant.descendants)
+            })
+            .map(|grant| grant.collaboration)
+            .collect::<Vec<_>>();
+        if collaborations.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rows = sqlx::query("SELECT configuration FROM qintopia_agent_os.collaboration_audiences WHERE tenant_key=$1 AND collaboration_id=ANY($2)")
+            .bind(&self.tenant).bind(&collaborations).fetch_all(&mut **tx).await?;
+        let mut groups = std::collections::BTreeSet::new();
+        for row in rows {
+            let configuration: Value = row.get("configuration");
+            if configuration["proactive"] != "autonomous" {
+                continue;
+            }
+            for group in configuration["groups"].as_array().into_iter().flatten() {
+                if let Some(id) = group.as_str().and_then(|value| Uuid::parse_str(value).ok()) {
+                    groups.insert(id);
+                }
+            }
+        }
+        Ok(groups.into_iter().collect())
+    }
+
     pub(crate) async fn scope_communication_candidates(
         &self,
         actor: &Actor,
@@ -110,6 +154,9 @@ impl Store {
         let active: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=$2 AND status='active')")
             .bind(&self.tenant).bind(scope).fetch_one(&mut *tx).await?;
         ensure!(active, "business_scope_unavailable");
+        let allowed_groups = self
+            .communication_allowed_groups_in(&mut tx, scope, &policy)
+            .await?;
         let rows = sqlx::query(
             r#"
             WITH candidates AS (
@@ -123,14 +170,7 @@ impl Store {
                   AND c.status='active' AND c.chat_type='group' AND c.platform IN ('wecom','qiwe')
                   AND NOT EXISTS (SELECT 1 FROM qintopia_agent_os.collaboration_ledger l
                     WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active')
-                  AND EXISTS (SELECT 1 FROM qintopia_agent_os.agent_collaborations a
-                    JOIN qintopia_agent_os.collaboration_appointments ap ON ap.id=a.appointment_id
-                    JOIN qintopia_agent_os.collaboration_audiences au ON au.collaboration_id=a.id AND au.tenant_key=a.tenant_key
-                    WHERE a.tenant_key=$1 AND a.agent_key='anan' AND a.domain_key='hospitality'
-                      AND a.status='active' AND ap.status='active' AND ap.scope_id=$2
-                      AND ap.valid_from<=clock_timestamp() AND (ap.valid_until IS NULL OR ap.valid_until>clock_timestamp())
-                      AND au.configuration->>'proactive'='autonomous'
-                      AND (au.configuration->'groups') ? c.id::text)
+                  AND c.id=ANY($8::uuid[])
                 UNION ALL
                 SELECT 1, l.id,
                   jsonb_build_object('subject_kind','person','subject_id',p.id,
@@ -215,6 +255,7 @@ impl Store {
         .bind(after_id)
         .bind(limit + 1)
         .bind(kind)
+        .bind(&allowed_groups)
         .fetch_all(&mut *tx)
         .await?;
         let has_more = rows.len() as i64 > limit;
@@ -278,9 +319,22 @@ impl Store {
         selection: &CommunicationSelection,
     ) -> Result<Value> {
         ensure!(selection.contacts.len() <= 20, "too_many_contacts");
+        let policy = self.policy(tx, chrono::Utc::now()).await?;
+        let allowed_groups = self
+            .communication_allowed_groups_in(tx, scope, &policy)
+            .await?;
+        if self.is_live() {
+            sqlx::query("SELECT qintopia_identity.management_ui_lock_gateway_registry()")
+                .execute(&mut **tx)
+                .await?;
+        } else {
+            sqlx::query("LOCK TABLE qintopia_identity.person_identity_gateways IN SHARE MODE")
+                .execute(&mut **tx)
+                .await?;
+        }
         let group = sqlx::query(
-            "SELECT b.id,b.version,c.id AS conversation,c.platform,c.display_name FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id AND c.tenant_id=b.tenant_key JOIN qintopia_agent_os.collaboration_scopes s ON s.id=b.scope_id AND s.tenant_key=b.tenant_key WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.id=$3 AND b.revoked_at IS NULL AND s.status='active' AND c.status='active' AND c.chat_type='group' AND c.platform IN ('wecom','qiwe') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active') AND EXISTS(SELECT 1 FROM qintopia_agent_os.agent_collaborations a JOIN qintopia_agent_os.collaboration_appointments ap ON ap.id=a.appointment_id JOIN qintopia_agent_os.collaboration_audiences au ON au.collaboration_id=a.id AND au.tenant_key=a.tenant_key WHERE a.tenant_key=$1 AND a.agent_key='anan' AND a.domain_key='hospitality' AND a.status='active' AND ap.status='active' AND ap.scope_id=$2 AND ap.valid_from<=clock_timestamp() AND (ap.valid_until IS NULL OR ap.valid_until>clock_timestamp()) AND au.configuration->>'proactive'='autonomous' AND (au.configuration->'groups') ? c.id::text) FOR SHARE OF b,c,s"
-        ).bind(&self.tenant).bind(scope).bind(selection.staff_group_binding_id).fetch_optional(&mut **tx).await?
+            "SELECT b.id,b.version,c.id AS conversation,c.platform,c.display_name FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id AND c.tenant_id=b.tenant_key JOIN qintopia_agent_os.collaboration_scopes s ON s.id=b.scope_id AND s.tenant_key=b.tenant_key WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.id=$3 AND c.id=ANY($4::uuid[]) AND b.revoked_at IS NULL AND s.status='active' AND c.status='active' AND c.chat_type='group' AND c.platform IN ('wecom','qiwe') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='group' AND l.object_ref=c.id::text AND l.status<>'active') FOR SHARE OF b,c,s"
+        ).bind(&self.tenant).bind(scope).bind(selection.staff_group_binding_id).bind(&allowed_groups).fetch_optional(&mut **tx).await?
             .ok_or_else(||anyhow::anyhow!("communication_group_unavailable"))?;
         let platform: String = group.get("platform");
         let mut contacts = Vec::new();
@@ -290,13 +344,48 @@ impl Store {
                 seen.insert(contact.channel_source_link_id),
                 "duplicate_communication_contact"
             );
+            if self.is_live() {
+                let locked: bool = match contact.subject_kind.as_str() {
+                    "person" => sqlx::query_scalar("SELECT qintopia_identity.management_ui_lock_communication_person($1,$2,$3,$4)")
+                        .bind(&self.tenant).bind(scope).bind(contact.channel_source_link_id).bind(contact.subject_id)
+                        .fetch_one(&mut **tx).await?,
+                    "work_account" => sqlx::query_scalar("SELECT qintopia_identity.management_ui_lock_business_account($1,$2)")
+                        .bind(&self.tenant).bind(contact.subject_id).fetch_one(&mut **tx).await?,
+                    _ => anyhow::bail!("invalid_communication_contact"),
+                };
+                ensure!(locked, "communication_contact_unavailable");
+            }
             let value: Option<Value> = match contact.subject_kind.as_str() {
-                "person" => sqlx::query_scalar(
-                    "SELECT jsonb_build_object('subject_kind','person','subject_id',p.id,'subject_label',coalesce(p.preferred_name,p.display_name),'channel_source_link_id',l.id,'channel_label',coalesce(nullif(ci.display_name,''),nullif(l.adapter_metadata->>'display_name',''),'已观测账号'),'platform',$5::text,'source_version',l.version,'gateway',g.gateway_key,'gateway_version',g.version) FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_identity.persons p ON p.id=l.person_id LEFT JOIN qintopia_identity.channel_identities ci ON ci.id=l.channel_identity_id WHERE g.tenant_key=$1 AND g.scope_id=$2 AND g.active AND g.account_kind IN ('personal','employee') AND l.id=$3 AND p.id=$4 AND p.status='active' AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND (l.confirmed_by IS NOT NULL OR l.confirmed_by_work_account IS NOT NULL) AND l.adapter_metadata ? 'first_observation_ref' AND (($5='wecom' AND g.subject_type='wecom_internal') OR ($5='qiwe' AND g.subject_type='qiwe_sender')) AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1 FOR SHARE OF l,g,p"
-                ).bind(&self.tenant).bind(scope).bind(contact.channel_source_link_id).bind(contact.subject_id).bind(&platform).fetch_optional(&mut **tx).await?,
-                "work_account" => sqlx::query_scalar(
-                    "SELECT jsonb_build_object('subject_kind','work_account','subject_id',w.id,'subject_label',w.label,'channel_source_link_id',l.id,'channel_label',coalesce(nullif(ci.display_name,''),nullif(l.adapter_metadata->>'display_name',''),w.label),'platform',$5::text,'source_version',l.version,'gateway',g.gateway_key,'gateway_version',g.version,'account_version',w.version) FROM qintopia_identity.work_accounts w JOIN qintopia_identity.source_identity_links l ON l.id=w.source_link_id JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key AND g.namespace=l.namespace AND g.subject_type=l.subject_type LEFT JOIN qintopia_identity.channel_identities ci ON ci.id=l.channel_identity_id WHERE w.tenant_key=$1 AND g.scope_id=$2 AND w.id=$4 AND l.id=$3 AND w.active AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status<>'revoked' AND l.adapter_metadata ? 'first_observation_ref' AND w.source_version=l.version AND w.gateway_version=g.version AND (($5='wecom' AND g.subject_type='wecom_internal') OR ($5='qiwe' AND g.subject_type='qiwe_sender')) AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1 FOR SHARE OF w,l,g"
-                ).bind(&self.tenant).bind(scope).bind(contact.channel_source_link_id).bind(contact.subject_id).bind(&platform).fetch_optional(&mut **tx).await?,
+                "person" => {
+                    let query = "SELECT jsonb_build_object('subject_kind','person','subject_id',p.id,'subject_label',coalesce(p.preferred_name,p.display_name),'channel_source_link_id',l.id,'channel_label',coalesce(nullif(ci.display_name,''),nullif(l.adapter_metadata->>'display_name',''),'已观测账号'),'platform',CASE WHEN g.subject_type='qiwe_sender' THEN 'qiwe' ELSE 'wecom' END,'source_version',l.version,'gateway',g.gateway_key,'gateway_version',g.version) FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_identity.persons p ON p.id=l.person_id LEFT JOIN qintopia_identity.channel_identities ci ON ci.id=l.channel_identity_id WHERE g.tenant_key=$1 AND g.scope_id=$2 AND g.active AND g.account_kind IN ('personal','employee') AND l.id=$3 AND p.id=$4 AND p.status='active' AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND (l.confirmed_by IS NOT NULL OR l.confirmed_by_work_account IS NOT NULL) AND l.adapter_metadata ? 'first_observation_ref' AND g.subject_type IN ('wecom_internal','qiwe_sender') AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1";
+                    let query = if self.is_live() {
+                        query.to_owned()
+                    } else {
+                        format!("{query} FOR SHARE OF l,g,p")
+                    };
+                    sqlx::query_scalar(&query)
+                        .bind(&self.tenant)
+                        .bind(scope)
+                        .bind(contact.channel_source_link_id)
+                        .bind(contact.subject_id)
+                        .fetch_optional(&mut **tx)
+                        .await?
+                }
+                "work_account" => {
+                    let query = "SELECT jsonb_build_object('subject_kind','work_account','subject_id',w.id,'subject_label',w.label,'channel_source_link_id',l.id,'channel_label',coalesce(nullif(ci.display_name,''),nullif(l.adapter_metadata->>'display_name',''),w.label),'platform',CASE WHEN g.subject_type='qiwe_sender' THEN 'qiwe' ELSE 'wecom' END,'source_version',l.version,'gateway',g.gateway_key,'gateway_version',g.version,'account_version',w.version) FROM qintopia_identity.work_accounts w JOIN qintopia_identity.source_identity_links l ON l.id=w.source_link_id JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key AND g.namespace=l.namespace AND g.subject_type=l.subject_type LEFT JOIN qintopia_identity.channel_identities ci ON ci.id=l.channel_identity_id WHERE w.tenant_key=$1 AND g.scope_id=$2 AND w.id=$4 AND l.id=$3 AND w.active AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status<>'revoked' AND l.adapter_metadata ? 'first_observation_ref' AND w.source_version=l.version AND w.gateway_version=g.version AND g.subject_type IN ('wecom_internal','qiwe_sender') AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1";
+                    let query = if self.is_live() {
+                        query.to_owned()
+                    } else {
+                        format!("{query} FOR SHARE OF w,l,g")
+                    };
+                    sqlx::query_scalar(&query)
+                        .bind(&self.tenant)
+                        .bind(scope)
+                        .bind(contact.channel_source_link_id)
+                        .bind(contact.subject_id)
+                        .fetch_optional(&mut **tx)
+                        .await?
+                }
                 _ => anyhow::bail!("invalid_communication_contact"),
             };
             contacts

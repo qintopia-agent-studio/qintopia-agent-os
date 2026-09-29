@@ -3570,6 +3570,48 @@
           }
         },
         {
+          "id": "anan-pms/scope-communication-group-pages",
+          "name": "超过256个工作群候选的翻页与授权重验",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/scope_communication_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::scope_communication_tests::scope_communication_group_pages_recheck_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务工作群候选翻页、授权和PostgreSQL查询"],
+            "simulated": ["本地工作群；无真实渠道发送或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/scope-communication-account-pages",
+          "name": "超过256个渠道账号候选的翻页、同名区分与管理撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/scope_communication_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::scope_communication_tests::scope_communication_account_pages_keep_channels_and_recheck_manager",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务已观测与已登记账号翻页、渠道标识和管理撤权"],
+            "simulated": ["本地渠道账号；无真实联系人读取或生产配置"]
+          }
+        },
+        {
           "id": "anan-pms/private-contacts-real-broker-original-confirmation",
           "name": "私有电话宿主与原确认联合链",
           "aliases": ["电话复验联合"],
