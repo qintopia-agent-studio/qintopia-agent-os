@@ -55,6 +55,42 @@ Docker。候选策略在读取凭据前核对有效 native 配置、已加载 po
 
 当前尚未完成该生产启动接线，不能用一次成功预检或工具拒绝代替进程隔离。
 
+`startup_preflight.py`
+只做无凭据静态检查：以受审发布清单给出的 SHA-256 核对安装插件代码/声明，要求插件目录与 Profile 配置在 Gateway 的挂载命名空间中只读，并复用受管配置从根到叶的所有权检查。
+
+它不打开 PMS、Foundation、飞书凭据，也不启动 Gateway、MCP 或渠道。独立的
+`check_loaded_plugin`
+供实际 Gateway 同进程装载探针核对插件来源、工具、hook 及残留 shell 回调；另须由服务启动边界在入口开放前验证该探针，重载先关闭入口，防止官方加载失败后仍运行 Gateway 的窗口。静态预检或另一进程的插件装载不能替代此条件。
+
+生产预检同时静态核对 Profile 原始、受管和有效配置的 `hooks`：只保留官方非 shell 的
+`output_spill`/`outbound` 段及空事件列表；任何非空事件项（即使声明 `enabled:false`、关闭
+`hooks_auto_accept`
+或当前未获 allowlist）都拒绝生产启用。运行时还拒绝实际已登记的官方 shell
+hook 回调，防止旧注册在配置移除后继续存活。这不删除配置或禁用普通 Python 插件 hook，也不影响官方 Docker 中的 terminal、文件和 execute_code。若生产清点发现现用 shell
+hook，先评估该具体功能的替代执行边界。
+
+### 宿主恢复与通知边界（2026-09-29）
+
+`recovery_host.py` 消费共同服务的只读 `pms_workitem_recovery`：固定宿主 `gateway_id`
+与独立 HOST_TOKEN、受限的
+`QINTOPIA_PMS_RECOVERY_BINDING`，单次最多 10 页、每页最多 100 个原 WorkItem。 `list`
+给引用及可用的投递状态；`detail` 重新核对当前事项、通用工作群配置及版本。目标失效或
+`contact_required=false`
+时不唤醒；已领取的原发送键为 UNKNOWN 时只保留原键待查，不换键、不盲目重发。恢复入口只向既有官方 Generic
+webhook 提交同一 WorkItem UUID 的 HMAC 只读提示，正文不含资金、申请或群目标。HTTP
+`202`、`duplicate` 与模型回合均不证明工作人员收到消息；扫描不写投递成功状态。
+
+真正的工作人员群发送须使用岸岸原企微身份和当前有效的工作人员群绑定，发送前再次读取共享 scope/channel 版本；提醒仍沿
+`pms_reminder` 原
+`claim/validate/settle`。官方 WeCom 现有群回复在外部已接收但 ACK 丢失时会 fallback 再发，且没有已验证的原键查询协议。因此真实群适配器保持关闭，不能用本入口或
+`LocalRecordingAdapter`
+代替群投递。需先修正或选定可证明单次外部效果的官方调用路径，并在独立模拟中核验超时、重启与原回执。
+
+申请继续由四老师 Bridge 的原持久 wake 调
+`application_intake.readback_one`；欢迎群确认复用
+`WelcomeHost.callback(refresh_contacts=StayContactsHost.refresh_contacts)` 和既有
+`welcome_review_settings`，不从通用工作群推导欢迎授权。两者保留原来源/WorkItem、读 token和未知回执，不新建计时器、消息账本或人员/订单库。生产安装、cron 声明、服务归属与真实发送仍是单独审核和验收项。
+
 显式隔离模拟脚本分别为 `tests/production_isolation_journey.py`（官方工具与 Docker）、
 `tests/browser_isolation_journey.py`（离线路由）、
 `tests/browser_container_journey.py`（真实容器文件系统与 CDP 发现，无页面自动操作）及
