@@ -3528,6 +3528,27 @@
           }
         },
         {
+          "id": "anan-pms/scope-communication-current-route",
+          "name": "范围工作群候选与撤销后目标失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/scope_communication_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::scope_communication_tests::scope_communication_candidates_and_current_route_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务候选查询、管理授权、PostgreSQL与目标版本重验"],
+            "simulated": ["本地工作群和人员；无真实渠道发送或生产配置"]
+          }
+        },
+        {
           "id": "anan-pms/private-contacts-real-broker-original-confirmation",
           "name": "私有电话宿主与原确认联合链",
           "aliases": ["电话复验联合"],

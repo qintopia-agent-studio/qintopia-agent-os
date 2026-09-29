@@ -24,6 +24,7 @@ pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
 pub(crate) mod foundation;
 mod rule_lifecycle;
+pub(crate) mod scope_communication;
 pub(crate) mod steward;
 pub(crate) use rule_lifecycle::{RuleCommand, RuleEdit};
 mod identity;

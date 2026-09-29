@@ -18,6 +18,8 @@ mod business_manual_tests;
 mod business_reminder_tests;
 #[path = "business_scope_tests.rs"]
 mod business_scope_tests;
+#[path = "scope_communication_tests.rs"]
+mod scope_communication_tests;
 
 struct Fixture {
     store: Store,
