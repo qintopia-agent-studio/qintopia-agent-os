@@ -103,6 +103,11 @@ pnpm test:report
 在 macOS 运行前核对 Rust 1.96、项目指定 pnpm、Python 3.12 与 Allure 所需的 Java
 17 路径；系统 Python 3.9 不能替代 QiWe 测试所需的新版解释器。
 
+本机 `check:pr:auto` 的 Light 阶段若在 NATS
+ACL 用例处被调用方的 20 秒等待上限截断，先保留总门禁失败结果，并单独执行原用例，区分测试断言失败与调用超时。独立用例通过不能补记为总门禁通过；调整共享检查入口或超时属于
+[CI 变更审批规则](../engineering/programming-agent-guardrails.md#ci-change-approval-rule)，须先提交实际耗时和影响供负责人评审。见
+[2026-09-29 渠道选择本地验证](../reports/2026-09-29-collaboration-channel-selection-local-validation.md)。
+
 若含空格的工作目录在 `test-collect-release-deploy-results.mjs` 出现 `results.json`
 缺失，核对收集脚本的 CLI 入口是否错误比较 URL 编码路径；不要通过跳过该断言或更改用户工作目录宣称总检查通过。记录总检查失败，继续运行受影响模块的原生验证。详见
 [2026-09-18 本地检查记录](../reports/2026-09-18-workbench-password-login.md)。

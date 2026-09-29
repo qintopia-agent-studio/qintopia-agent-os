@@ -56,6 +56,7 @@ fn cursor_encode(context: &str, kind: i32, id: Uuid) -> String {
     Base64UrlUnpadded::encode_string(format!("{context}:{kind}:{id}").as_bytes())
 }
 
+#[allow(dead_code)] // The host-only current route is wired by a separate change.
 fn authority_basis(value: &Value) -> Value {
     let group = &value["staff_group"];
     json!({
@@ -396,6 +397,7 @@ impl Store {
         )
     }
 
+    #[allow(dead_code)] // Retained for the host-only route after channel selection.
     pub(crate) async fn scope_communication_current(
         &self,
         gateway: &str,
