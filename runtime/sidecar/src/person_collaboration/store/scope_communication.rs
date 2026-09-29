@@ -8,14 +8,14 @@ use serde_json::{json, Value};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CommunicationSelection {
     pub staff_group_binding_id: Uuid,
     pub contacts: Vec<CommunicationContactSelection>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CommunicationContactSelection {
     pub subject_kind: String,
