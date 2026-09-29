@@ -432,6 +432,34 @@ render_all() {
   mkdir -p "$OUTPUT_DIR"
   render_plan
 
+  write_file "qintopia-agentos-management-ui.service" <<EOF
+[Unit]
+Description=Qintopia AgentOS management UI
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qintopia-management-ui
+Group=qintopia-management-ui
+WorkingDirectory=/
+EnvironmentFile=/etc/qintopia/collaboration-management-ui.env
+ExecStart=${BIN} run-collaboration-production-ui --port 18780
+Restart=no
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=35s
+SendSIGKILL=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
   render_long_running_service \
     "qintopia-message-sidecar.service" \
     "Qintopia Message Sidecar" \
@@ -812,6 +840,7 @@ validate_output() {
   local required_files=(
     "_M9_SYSTEMD_PLAN.txt"
     "qintopia-message-sidecar.service"
+    "qintopia-agentos-management-ui.service"
     "qintopia-agentos-operations-intake.service"
     "qintopia-agentos-automation-dispatcher.service"
     "qintopia-agentos-automation-dispatcher.timer"
@@ -883,6 +912,14 @@ validate_output() {
   done
 
   for file in "$OUTPUT_DIR"/*.service; do
+    if [[ "$(basename "$file")" == qintopia-agentos-management-ui.service ]]; then
+      grep -Fx "User=qintopia-management-ui" "$file" >/dev/null
+      grep -Fx "EnvironmentFile=/etc/qintopia/collaboration-management-ui.env" "$file" >/dev/null
+      grep -Fx "ExecStart=${BIN} run-collaboration-production-ui --port 18780" "$file" >/dev/null
+      grep -Fx "Restart=no" "$file" >/dev/null
+      grep -Fx "SendSIGKILL=no" "$file" >/dev/null
+      continue
+    fi
     grep -F "WorkingDirectory=${MONOREPO_DIR}" "$file" >/dev/null
     grep -F "Environment=QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null
     grep -F "ExecStart=/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${TARGET_SHA} QINTOPIA_SIDECAR_MIGRATIONS_DIR=${MIGRATIONS_DIR}" "$file" >/dev/null

@@ -13,6 +13,12 @@ values.
 
 ## Production Boundary
 
+- The `agentos.qintopia.cn` management site owns an independent HTTPS origin and root
+  path. Its versioned HTTP challenge and HTTPS proxy templates are inert until the
+  reviewed root lifecycle action installs them. It proxies only to `127.0.0.1:18780`; a
+  stopped UI returns 503 without public-site fallback.
+- The domain A record is present. Its exact-host certificate, renewal test, Nginx site
+  and dedicated UI service still require separate production approval.
 - The Qiwe ingress scaffold ships in the deploy bundle but remains disabled by default.
 - The repository contains no callback path token or internal authentication token.
 - Only the signed, owner-approved `production-runtime-one-shot` apply target may render
@@ -60,6 +66,7 @@ The sanitized incident and remediation evidence is recorded in
 
 ```bash
 pnpm runtime:nginx:check
+node runtime/nginx/tests/test-management-ui-route.mjs
 ```
 
 The check is local-only. It verifies the exact route, loopback upstream, fixed header

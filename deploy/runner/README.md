@@ -1,5 +1,20 @@
 # Production Deploy Runner
 
+## Management UI Release Boundary
+
+The existing R workbench receives a dedicated, disabled-by-default systemd unit bound to
+the immutable runtime binary and `127.0.0.1:18780`. T may install that unit while its
+private account and environment are absent, but cannot start it.
+`management-ui-lifecycle.sh` owns fixed root preparation, exact-host site and
+certificate actions, explicit R activation, and the inherited-lock stop/closure checks
+used by runner and recovery. The request-bound hold and existing FD 8 then FD 9 lock
+order remain authoritative. Before any R to T pointer change, the UI must stop with the
+same invocation's definite outcome and no listener, PID or cgroup task; a failure keeps
+the hold and forbids automatic replay or restart. Rollback leaves the HTTPS site
+returning 503 and retains accounts, sessions and audit. See the
+[implementation contract](../../docs/reports/2026-09-28-management-ui-deploy-wiring.md)
+and [production runbook](../../docs/operations/production-deploy-runner.md).
+
 ## Hermes Core Readiness
 
 `check-hermes-core-readiness.sh` is a read-only server-side preflight for the Hermes

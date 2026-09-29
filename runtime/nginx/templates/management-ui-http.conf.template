@@ -1,0 +1,15 @@
+# Temporary exact-host ACME bootstrap. Replace with the reviewed HTTPS site.
+server {
+    listen 80;
+    server_name agentos.qintopia.cn;
+    if ($host != "agentos.qintopia.cn") { return 421; }
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 404;
+    }
+}

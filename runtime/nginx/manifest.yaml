@@ -6,7 +6,7 @@ status: draft
 risk_level: high
 description:
   Default-disabled webhook and API ingress templates, including the owner-gated Qiwe
-  authenticated callback scaffold and fixed rollback boundary.
+  authenticated callback scaffold and the independent management UI HTTPS origin.
 source:
   path: docs/operations/runtime-baseline.md
   reference: current-monorepo
@@ -19,6 +19,7 @@ production_boundary:
 validation:
   commands:
     - pnpm runtime:nginx:check
+    - node runtime/nginx/tests/test-management-ui-route.mjs
 dependencies:
   - deploy/sidecar
 tags:

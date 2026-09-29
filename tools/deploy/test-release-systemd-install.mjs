@@ -106,6 +106,9 @@ case "$1" in
           qintopia-agentos-space-automation-execution-worker.service)
             if [[ "\${FAKE_SPACE_WORKER_ACTIVE:-0}" == "1" ]]; then state="active"; fi
             ;;
+          qintopia-agentos-management-ui.service)
+            if [[ "\${FAKE_UI_ACTIVE:-0}" == "1" ]]; then state="active"; fi
+            ;;
         esac
         printf '%s\\n' "$state"
         ;;
@@ -185,6 +188,33 @@ exec /usr/bin/install "$@"
     path.join(unitDir, "qintopia-message-sidecar.service"),
     "utf8"
   );
+  const managementUiUnit = fs.readFileSync(
+    path.join(unitDir, "qintopia-agentos-management-ui.service"),
+    "utf8"
+  );
+  for (const required of [
+    "User=qintopia-management-ui",
+    "Group=qintopia-management-ui",
+    "WorkingDirectory=/",
+    "EnvironmentFile=/etc/qintopia/collaboration-management-ui.env",
+    `ExecStart=${resolvedReleaseDir}/sidecar/qintopia-message-sidecar run-collaboration-production-ui --port 18780`,
+    "Restart=no",
+    "TimeoutStopSec=35s",
+    "SendSIGKILL=no",
+    "ProtectSystem=strict",
+  ]) {
+    if (!managementUiUnit.includes(required)) {
+      throw new Error(`management UI unit is missing ${required}`);
+    }
+  }
+  if (
+    managementUiUnit.includes("message-sidecar.env") ||
+    managementUiUnit.includes("User=ubuntu")
+  ) {
+    throw new Error(
+      "management UI unit must not inherit the shared sidecar identity or env"
+    );
+  }
   const migrationsBinding = `QINTOPIA_SIDECAR_MIGRATIONS_DIR=${resolvedReleaseDir}/runtime/postgres/migrations`;
   const releaseExecPrefix = `/usr/bin/env QINTOPIA_DEPLOYED_COMMIT_SHA=${releaseSha} ${migrationsBinding}`;
   for (const required of [
@@ -279,6 +309,18 @@ exec /usr/bin/install "$@"
   );
   const firstInstallIndex = systemctlLogText.indexOf("install -m 0644");
   const daemonReloadIndex = systemctlLogText.indexOf("daemon-reload");
+  const uiDisableIndex = systemctlLogText.indexOf(
+    "disable --now qintopia-agentos-management-ui.service"
+  );
+  if (
+    uiDisableIndex < daemonReloadIndex ||
+    uiDisableIndex < 0 ||
+    enabledUnit("qintopia-agentos-management-ui.service")
+  ) {
+    throw new Error(
+      "management UI must be disabled and stopped after unit installation"
+    );
+  }
   if (
     firstShutdownIndex < 0 ||
     firstInstallIndex < 0 ||
@@ -655,6 +697,39 @@ exec /usr/bin/install "$@"
         `release installer must not automatically enable Xiaoman poster unit ${unitName}`
       );
     }
+  }
+
+  fs.writeFileSync(systemctlLog, "", "utf8");
+  const activeUiInstall = spawnSync(
+    "bash",
+    [
+      path.join(repoRoot, "deploy", "runner", "install-release-systemd-units.sh"),
+      "--release-root",
+      releaseRoot,
+      "--release-sha",
+      releaseSha,
+    ],
+    {
+      cwd: repoRoot,
+      env: {
+        ...process.env,
+        PATH: `${path.join(tmpRoot, "bin")}:${process.env.PATH}`,
+        SYSTEMCTL: systemctl,
+        QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+        QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE: envFile,
+        FAKE_UI_ACTIVE: "1",
+      },
+      encoding: "utf8",
+    }
+  );
+  if (
+    activeUiInstall.status === 0 ||
+    !activeUiInstall.stderr.includes("management UI must be quiesced") ||
+    fs.readFileSync(systemctlLog, "utf8").includes("install -m 0644")
+  ) {
+    throw new Error(
+      "release installer must refuse an active management UI before unit replacement"
+    );
   }
 
   fs.writeFileSync(systemctlLog, "", "utf8");

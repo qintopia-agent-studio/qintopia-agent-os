@@ -71,6 +71,8 @@ render_script="${release_dir}/deploy/sidecar/scripts/render-systemd-units.sh"
 systemctl_bin="${SYSTEMCTL:-systemctl}"
 unit_dir="${QINTOPIA_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 sidecar_env_file="/etc/qintopia/message-sidecar.env"
+management_ui_env_file="/etc/qintopia/collaboration-management-ui.env"
+management_ui_unit="qintopia-agentos-management-ui.service"
 ubuntu_user_systemd_unit_dir="/home/ubuntu/.config/systemd/user"
 erhua_profile_scripts_dir="/home/ubuntu/.hermes/profiles/erhua/scripts"
 xiaoman_profile_scripts_dir="/home/ubuntu/.hermes/profiles/xiaoman/scripts"
@@ -354,6 +356,7 @@ prepare_ubuntu_owned_directory \
 
 unit_files=(
   qintopia-message-sidecar.service
+  qintopia-agentos-management-ui.service
   qintopia-agentos-automation-dispatcher.service
   qintopia-agentos-automation-dispatcher.timer
   qintopia-agentos-space-automation-execution-worker.service
@@ -415,6 +418,30 @@ unit_files=(
 )
 
 mkdir -p "$unit_dir"
+if [[ -e "$management_ui_env_file" || -L "$management_ui_env_file" ]]; then
+  python3 - "$management_ui_env_file" <<'PY'
+import os
+import stat
+import sys
+
+metadata = os.lstat(sys.argv[1])
+if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or
+        metadata.st_gid != 0 or metadata.st_nlink != 1 or
+        stat.S_IMODE(metadata.st_mode) != 0o600):
+    raise SystemExit("management UI environment metadata is invalid")
+PY
+fi
+ui_load_state="$("$systemctl_bin" show --property=LoadState --value "$management_ui_unit")"
+if [[ "$ui_load_state" == loaded ]]; then
+  ui_active_state="$("$systemctl_bin" show --property=ActiveState --value "$management_ui_unit")"
+  [[ "$ui_active_state" == inactive || "$ui_active_state" == failed ]] || {
+    echo "management UI must be quiesced before unit replacement" >&2
+    exit 1
+  }
+elif [[ "$ui_load_state" != not-found ]]; then
+  echo "management UI load state is unknown" >&2
+  exit 1
+fi
 for unit_file in "${unit_files[@]}"; do
   source_path="${render_dir}/${unit_file}"
   if [[ ! -f "$source_path" ]]; then
@@ -439,6 +466,10 @@ for unit_file in "${runner_unit_files[@]}"; do
 done
 
 "$systemctl_bin" daemon-reload
+
+"$systemctl_bin" disable --now "$management_ui_unit"
+[[ "$("$systemctl_bin" show --property=UnitFileState --value "$management_ui_unit")" == disabled ]]
+[[ "$("$systemctl_bin" show --property=ActiveState --value "$management_ui_unit")" == inactive ]]
 
 if ! quiesce_space_automation_runtime; then
   echo "release install could not prove the Space automation runtime is disabled" >&2

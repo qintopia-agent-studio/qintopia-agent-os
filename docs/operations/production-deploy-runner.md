@@ -1,5 +1,97 @@
 # Production Deploy Runner
 
+## Management UI Preparation And Stop
+
+`agentos.qintopia.cn` resolves to the origin, but DNS is only the first external
+prerequisite. The reviewed root operator prepares the dedicated account and five-key
+private environment, installs the HTTP challenge site, requests the separate exact-host
+certificate, verifies renewal, and installs the HTTPS proxy before approving activation.
+Verify the real live tenant, UI database role's effective privileges, manager identity
+and grant, binary traversal, route 503 while stopped, and the 30-second drain on the
+exact R binary. Do not install a certificate or activate the service as a side effect of
+release installation.
+
+The installer always leaves `qintopia-agentos-management-ui.service` disabled and
+stopped. Runner/recovery call the fixed lifecycle helper while retaining their deploy
+lock; unknown stop outcomes retain the request hold and require readback of the original
+operation and audit/version evidence. After R to T, leave the HTTPS route in place
+returning 503. A restored R is not automatically reactivated. Removing the route and
+archiving only its renewal declaration is a separate reviewed decommission step. Chrome
+login, permission, save and rollback checks remain manual production acceptance.
+
+### Management UI Preflight And Rollback Commands
+
+Run these on the reviewed origin host with the approved immutable R release SHA, after
+the signed request-bound hold exists. The operator supplies `RELEASE_SHA` from the
+reviewed artifact identity; the commands do not create an account, grant a role, request
+a certificate or enable the UI.
+
+```bash
+RELEASE_SHA='<reviewed-40-character-SHA>'
+RELEASE_DIR="/home/ubuntu/qintopia-agent-os-releases/$RELEASE_SHA"
+test "$(readlink -f /home/ubuntu/qintopia-agent-os-releases/current)" = "$RELEASE_DIR"
+test -x "$RELEASE_DIR/sidecar/qintopia-message-sidecar"
+namei -l "$RELEASE_DIR/sidecar/qintopia-message-sidecar"
+getent passwd qintopia-management-ui
+sudo -u qintopia-management-ui test -x "$RELEASE_DIR/sidecar/qintopia-message-sidecar"
+sudo stat -c '%U:%G %a' /etc/qintopia/collaboration-management-ui.env
+sudo systemd-analyze verify /etc/systemd/system/qintopia-agentos-management-ui.service
+systemctl show qintopia-agentos-management-ui.service \
+  --property=LoadState,ActiveState,UnitFileState,User,Group,Restart,SendSIGKILL,TimeoutStopUSec
+sudo nginx -t
+```
+
+Require the file mode to be `root:root 600`, the unit to be disabled and inactive before
+activation, and the rendered unit to have `Restart=no`, `SendSIGKILL=no`, the dedicated
+user/group and a 35-second stop timeout. Check binary traversal as that service user;
+the file's execute bit alone is insufficient. In the approved administrator database
+session, inspect all five `qintopia_identity.management_ui_lock_%` function owners,
+`SECURITY DEFINER`, fixed `search_path`, explicit UI/runtime EXECUTE and effective ACL.
+Confirm `PUBLIC EXECUTE` is absent; the UI must have no Person/Gateway UPDATE, Gateway
+MAINTAIN, identity-schema CREATE or owner-role SET. Run the restricted-role nonempty
+transaction and concurrent Gateway insert probe from the
+[lock capability design](../../runtime/postgres/docs/data-design/2026-09-28-management-ui-lock-capabilities.md)
+before enabling the unit. A default ACL listing alone does not prove effective access.
+
+After the separate certificate and renewal operation, verify the exact SAN, renewal,
+route and stopped state before activation:
+
+```bash
+sudo openssl x509 -in /etc/letsencrypt/live/qintopia-management-ui/fullchain.pem \
+  -noout -checkend 604800 -ext subjectAltName
+sudo certbot renew --cert-name qintopia-management-ui --dry-run
+sudo nginx -t
+curl --noproxy '*' --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+  --resolve agentos.qintopia.cn:443:127.0.0.1 https://agentos.qintopia.cn/
+```
+
+The stopped HTTPS response must be `503` with no public-site content. When a reviewed
+rollback or R to T operation requires quiescence, the runner/recovery helper owns FD 9.
+For an explicitly approved root maintenance stop outside that process, take FD 8 then FD
+9 and use the same immutable helper:
+
+```bash
+UI_HELPER="$RELEASE_DIR/deploy/runner/management-ui-lifecycle.sh"
+sudo bash -c '
+  exec 8>/var/lib/qintopia-agent-os-deploy/poller.lock
+  flock -n 8 || exit 75
+  exec 9>/var/lib/qintopia-agent-os-deploy/deploy.lock
+  flock -n 9 || exit 75
+  "$1" quiesce || exit $?
+  "$1" verify-closed
+' bash "$UI_HELPER"
+```
+
+Keep the HTTPS site installed and returning `503` while T runs. A failed HTTPS switch
+restores the prior reviewed HTTP site inside `install-https`; check `nginx -t` and the
+HTTP `404` bootstrap route before deciding any next action. If quiescence or
+`verify-closed` returns nonzero, retain the hold and inspect the original invocation,
+operation ID and audit/version state; do not replay a possibly committed save or restart
+the UI. For an interrupted pointer operation, the reviewed recovery entry is
+`$RELEASE_DIR/deploy/runner/recover-release-lineage.sh --request-id <original-request-id>`
+under its own signed-request and absence checks. Do not change release pointers or
+delete the certificate and renewal declaration by hand.
+
 This document records the intended production deploy automation after the server moved
 to `qintopia-agent-os-releases/current`.
 

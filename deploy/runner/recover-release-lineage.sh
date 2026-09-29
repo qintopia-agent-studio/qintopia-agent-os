@@ -773,6 +773,7 @@ if [[ "$recovery_phase" == installer-started || "$recovery_phase" == smoke-start
 fi
 if [[ "$recovery_phase" == smoke-completed ]]; then
   [[ "$current" == "$original_current" && "$previous" == "$original_previous" ]] || exit 75
+  "${verified_release}/deploy/runner/management-ui-lifecycle.sh" verify-closed || exit 75
   echo "limited recovery was already completed; hold remains"
   exit 0
 fi
@@ -782,6 +783,7 @@ if [[ "$current" == "$original_current" && "$previous" == "$original_previous" ]
   case "$recovery_phase" in
     ""|read-only-original-pointers)
       record_recovery_phase "read-only-original-pointers"
+      "${verified_release}/deploy/runner/management-ui-lifecycle.sh" quiesce || exit 75
       echo "original pointers unchanged; no installer, smoke or request replay; hold remains"
       exit 0 ;;
     cas-*-started|cas-*-completed)
@@ -836,6 +838,8 @@ metadata = rollback.lstat()
 if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o755:
     raise SystemExit("recovery rollback primitive drifted")
 PY
+
+"${verified_release}/deploy/runner/management-ui-lifecycle.sh" quiesce || exit 75
 
 cas_pointer() {
   record_recovery_phase "cas-$1-$2-to-$3-started"
@@ -924,5 +928,6 @@ unit_stopped "$timer"
 record_recovery_phase "smoke-started"
 "${release_root}/${restore_sha}/deploy/runner/smoke-release.sh" \
   --release-root "$release_root" --restart-targets "$restart_targets"
+"${verified_release}/deploy/runner/management-ui-lifecycle.sh" verify-closed || exit 75
 record_recovery_phase "smoke-completed"
 echo "limited recovery reached ${restore_sha}; hold remains until signed COS and archive reconciliation"
