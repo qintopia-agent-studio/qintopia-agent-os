@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -20,6 +22,12 @@ production = importlib.util.module_from_spec(production_spec)
 production_spec.loader.exec_module(production)
 
 
+def check_static_with_json_fixtures(**kwargs):
+    # The isolated business-test venv lacks the PyYAML supplied by Hermes at runtime.
+    with patch.dict(sys.modules, {"yaml": SimpleNamespace(safe_load=json.loads)}):
+        preflight.check_static(**kwargs)
+
+
 class StartupPreflightTests(unittest.TestCase):
     def test_fixed_source_digest_and_readonly_inputs(self):
         with tempfile.TemporaryDirectory() as root:
@@ -31,14 +39,14 @@ class StartupPreflightTests(unittest.TestCase):
                 shutil.copy2(SOURCE / name, release / name)
                 shutil.copy2(SOURCE / name, installed / name)
             profile = Path(root) / "config.yaml"
-            profile.write_text("plugins: {}\n")
+            profile.write_text(json.dumps({"plugins": {}}))
             managed = Path(root) / "managed"
             managed.mkdir()
-            (managed / "config.yaml").write_text("hooks: {}\n")
+            (managed / "config.yaml").write_text(json.dumps({"hooks": {}}))
             digest = preflight.fingerprint(release, required_uid=os.getuid())
             readonly_calls = []
             with patch.object(preflight, "readonly", side_effect=lambda p, **_: readonly_calls.append(Path(p))):
-                preflight.check_static(installed=installed, release=release,
+                check_static_with_json_fixtures(installed=installed, release=release,
                     expected_sha256=digest, profile_config=profile,
                     managed_directory=managed, managed_check=lambda _: None,
                     required_uid=os.getuid())
@@ -46,24 +54,28 @@ class StartupPreflightTests(unittest.TestCase):
             (installed / "production.py").write_text("# simulated replacement\n")
             with patch.object(preflight, "readonly"):
                 with self.assertRaisesRegex(ValueError, preflight.ERROR):
-                    preflight.check_static(installed=installed, release=release,
+                    check_static_with_json_fixtures(installed=installed, release=release,
                         expected_sha256=digest, profile_config=profile,
                         managed_directory=managed, managed_check=lambda _: None,
                         required_uid=os.getuid())
             (installed / "production.py").unlink()
             shutil.copy2(SOURCE / "production.py", installed / "production.py")
-            profile.write_text("hooks:\n  pre_tool_call:\n    - command: /bin/true\n      enabled: false\n")
+            profile.write_text(json.dumps({"hooks": {
+                "pre_tool_call": [{"command": "/bin/true", "enabled": False}],
+            }}))
             with patch.object(preflight, "readonly"):
                 with self.assertRaises(ValueError):
-                    preflight.check_static(installed=installed, release=release,
+                    check_static_with_json_fixtures(installed=installed, release=release,
                         expected_sha256=digest, profile_config=profile,
                         managed_directory=managed, managed_check=lambda _: None,
                         required_uid=os.getuid())
-            profile.write_text("hooks: {}\n")
-            (managed / "config.yaml").write_text("hooks:\n  post_tool_call:\n    - command: /bin/true\n")
+            profile.write_text(json.dumps({"hooks": {}}))
+            (managed / "config.yaml").write_text(json.dumps({"hooks": {
+                "post_tool_call": [{"command": "/bin/true"}],
+            }}))
             with patch.object(preflight, "readonly"):
                 with self.assertRaises(ValueError):
-                    preflight.check_static(installed=installed, release=release,
+                    check_static_with_json_fixtures(installed=installed, release=release,
                         expected_sha256=digest, profile_config=profile,
                         managed_directory=managed, managed_check=lambda _: None,
                         required_uid=os.getuid())

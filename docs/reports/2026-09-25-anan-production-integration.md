@@ -413,3 +413,25 @@ owner 按现有审批规则单独调查。此本地失败不解除生产安装�
 
 将变量改为 `fixture_key`，不改签名行为或扫描器；恢复专项 7 项与 `pnpm secrets:check`
 重跑通过。
+
+### 独立 business 检查的预检测试依赖
+
+PR #730 在 `78e2b6c7` 的独立 business run `36555345910`
+中执行全部 170 个已登记场景；其中“受控客户端和可信宿主工具边界”的 104 项执行 103 项通过、1 项报错，整轮为
+`BROKEN`。报错在 `test_startup_preflight.py`
+的静态预检正例：隔离测试 venv 没有 PyYAML，`check_static` 导入 `yaml` 时抛出
+`ModuleNotFoundError`。这不是预检安全拒绝或真实生产 Gateway 验收失败，但该 head 的 business 不能记为通过。
+
+修复只调整 PMS 包测试的配置夹具：使用 JSON（YAML 的兼容子集）及标准库解码替身，继续验证摘要、只读路径与非空 shell
+hook 拒绝。生产预检继续用 Hermes 运行环境的 PyYAML 解析原始 Profile 与受管 YAML；缺少该依赖时仍失败关闭。本轮不修改 CI、共享测试依赖或预检业务规则。修复后的本地和远端结果另记，不能沿用失败 run 的结论。
+
+本地 `python3 -S` 隐去站点包后，预检 3 项及 PMS 全包 104 项均通过；普通 `python3`
+的 PMS 全包 104 项通过，`pnpm lint:md`、`pnpm collaboration:check` 及 `git diff --check`
+通过。首次 `pnpm format:check`
+与自动 PR 检查在本报告新增段落的 Prettier 排版处停止，未进入其他自动检查阶段；排版修正后需重跑。
+
+排版后再次运行 `pnpm check:pr:auto`，选择 quick
+tier。格式、Markdown、registry、MCP、技能、Workflow、runtime、部署合同、inventory、CI 合同及提交信息检查通过；到
+`agents:check` 的既有 `test-agent-runtime-management.mjs` 调用 `check-deploy-runner.mjs`
+时，再次超过固定 600 秒，抛出
+`spawnSync /usr/local/bin/node ETIMEDOUT`，整条命令退出 1；后续检查未执行。未修改检查器、CI 或超时上限，也不把已通过的前段记作整条通过。
