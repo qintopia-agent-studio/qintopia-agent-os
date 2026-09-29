@@ -622,8 +622,8 @@ async fn live_https_restricted_role_runs_nonempty_account_and_read_paths() -> Re
         .bind(&admin.tenant).bind(owner).bind(root).fetch_one(&admin.pool).await?;
     let collaboration: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.agent_collaborations(tenant_key,appointment_id,agent_key,domain_key,responsibility_text) VALUES($1,$2,'anan','hospitality','模拟业务管理') RETURNING id")
         .bind(&admin.tenant).bind(appointment).fetch_one(&admin.pool).await?;
-    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,include_descendants,managed_agents,managed_domains,managed_actions,delegation_depth) VALUES($1,$2,'manage',true,ARRAY['anan']::text[],ARRAY['hospitality']::text[],ARRAY['read_business','execute_business']::text[],1)")
-        .bind(&admin.tenant).bind(collaboration).execute(&admin.pool).await?;
+    let management_grant: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,include_descendants,managed_agents,managed_domains,managed_actions,delegation_depth) VALUES($1,$2,'manage',true,ARRAY['anan']::text[],ARRAY['hospitality']::text[],ARRAY['read_business','execute_business']::text[],1) RETURNING id")
+        .bind(&admin.tenant).bind(collaboration).fetch_one(&admin.pool).await?;
     let (status, business, _) = send("GET", "/api/business", json!({})).await?;
     assert_eq!(status, 200, "{business}");
     assert!(business["manageable_scopes"]
@@ -783,6 +783,83 @@ async fn live_https_restricted_role_runs_nonempty_account_and_read_paths() -> Re
     assert_eq!(replay["current_state_requires_read"], true);
     assert_eq!(replay["historical_receipt"], saved);
 
+    let group: Uuid = sqlx::query_scalar("INSERT INTO qintopia_messages.conversations(tenant_id,platform,chat_id,chat_type,display_name) VALUES($1,'wecom',$2,'group','模拟运营工作群') RETURNING id")
+        .bind(&admin.tenant).bind(format!("simulated-staff-group-{}",Uuid::new_v4()))
+        .fetch_one(&admin.pool).await?;
+    let group_binding: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_scope_bindings(tenant_key,scope_id,conversation_id) VALUES($1,$2,$3) RETURNING id")
+        .bind(&admin.tenant).bind(root).bind(group).fetch_one(&admin.pool).await?;
+    let duty: Uuid = sqlx::query_scalar("INSERT INTO qintopia_agent_os.collaboration_duties(tenant_key,label,description,domain_key) VALUES($1,$2,'模拟运营群联系职责','hospitality') RETURNING id")
+        .bind(&admin.tenant).bind(format!("模拟联系-{}",Uuid::new_v4()))
+        .fetch_one(&admin.pool).await?;
+    sqlx::query("UPDATE qintopia_agent_os.agent_collaborations SET duty_id=$2 WHERE id=$1")
+        .bind(collaboration)
+        .bind(duty)
+        .execute(&admin.pool)
+        .await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_grants(tenant_key,collaboration_id,action_key,parent_grant_id,decision_mode) VALUES($1,$2,'read_business',$3,'autonomous')")
+        .bind(&admin.tenant).bind(collaboration).bind(management_grant)
+        .execute(&admin.pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_audiences(tenant_key,collaboration_id,configuration) VALUES($1,$2,$3)")
+        .bind(&admin.tenant).bind(collaboration)
+        .bind(json!({"proactive":"autonomous","groups":[group]}))
+        .execute(&admin.pool).await?;
+    let qiwe_namespace = format!("{}/qiwe-{}", admin.tenant, Uuid::new_v4());
+    let qiwe_gateway = format!("simulated-qiwe-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'qiwe_sender',$4,'personal',true)")
+        .bind(&admin.tenant).bind(&qiwe_gateway).bind(&qiwe_namespace).bind(root)
+        .execute(&admin.pool).await?;
+    let qiwe_link: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,person_id,status,evidence_ref,confirmed_by,adapter_metadata) VALUES($1,'qiwe_sender',$2,$3,'confirmed',$4,$5,jsonb_build_object('first_observation_ref',$6::text)) RETURNING id")
+        .bind(&qiwe_namespace).bind(format!("simulated-qiwe-source-{}",Uuid::new_v4()))
+        .bind(person_ref).bind(Uuid::new_v4()).bind(owner).bind(Uuid::new_v4())
+        .fetch_one(&admin.pool).await?;
+    let groups_path = format!("/api/business/candidates?scope={root}&kind=groups&limit=50");
+    let (status, groups, _) = send("GET", &groups_path, json!({})).await?;
+    assert_eq!(status, 200, "{groups}");
+    assert!(groups["groups"].as_array().is_some_and(|items| items
+        .iter()
+        .any(|item| item["binding_id"] == json!(group_binding))));
+    let contacts_path = format!("/api/business/candidates?scope={root}&kind=contacts&limit=50");
+    let (status, contacts, _) = send("GET", &contacts_path, json!({})).await?;
+    assert_eq!(status, 200, "{contacts}");
+    for link in [employee_link, qiwe_link] {
+        assert!(contacts["contacts"].as_array().is_some_and(|items| items
+            .iter()
+            .any(|item| item["channel_source_link_id"] == json!(link))));
+    }
+    let version = send("GET", "/api/state", json!({})).await?.1["version"]
+        .as_i64()
+        .unwrap();
+    let communication = business_command(
+        version,
+        json!({
+            "kind":"set_scope_communication","scope":root,
+            "staff_group_binding_id":group_binding,
+            "contacts":[
+                {"subject_kind":"person","subject_id":person_ref,"channel_source_link_id":employee_link},
+                {"subject_kind":"person","subject_id":person_ref,"channel_source_link_id":qiwe_link}
+            ]
+        }),
+    );
+    let (status, preview, _) = send("POST", "/api/business/preview", communication.clone()).await?;
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["persisted"], false);
+    let (status, saved, _) = send("POST", "/api/business/save", communication).await?;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved["persisted"], true);
+    assert_eq!(
+        saved["change"]["communication"]["contacts"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+    let current = restricted
+        .scope_communication_current(&employee_gateway, binding)
+        .await?;
+    assert_eq!(current["current"], true);
+    assert_eq!(current["contacts"].as_array().map(Vec::len), Some(2));
+    assert_eq!(current["contacts"][0]["platform"], "wecom");
+    assert_eq!(current["contacts"][1]["platform"], "qiwe");
+
     let person_password = password();
     let (status, created, _) = send("POST", "/api/accounts", json!({
         "kind":"create","person":person_ref,"username":"reviewed-employee","password":person_password
@@ -845,6 +922,12 @@ async fn live_https_restricted_role_runs_nonempty_account_and_read_paths() -> Re
     let (status, saved, _) = send("POST", "/api/identities/save", identity_command).await?;
     assert_eq!(status, 200, "{saved}");
     assert!(restricted.session_actor(&person_token).await.is_err());
+    assert_eq!(
+        restricted
+            .scope_communication_current(&employee_gateway, binding)
+            .await?["current"],
+        false
+    );
     let case_state: (i64, bool) = sqlx::query_as(
         "SELECT version,manual_hold FROM qintopia_agent_os.welcome_cases WHERE id=$1",
     )

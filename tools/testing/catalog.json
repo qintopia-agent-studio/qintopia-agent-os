@@ -3397,6 +3397,27 @@
           }
         },
         {
+          "id": "anan-pms/business-state-bounds-large-account-lists",
+          "name": "工作账号与待登记观测超过256条仍可读取管理页",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_state_keeps_bounded_account_summaries_above_256",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务管理范围与账号摘要查询、PostgreSQL事务"],
+            "simulated": ["257个已登记账号及257个可信观测；无真实企微或PMS操作"]
+          }
+        },
+        {
           "id": "anan-pms/two-valid-scopes-isolate-identical-external-ids",
           "name": "两个合法作用域同标识同额正向接收与交叉权限隔离",
           "aliases": [],
