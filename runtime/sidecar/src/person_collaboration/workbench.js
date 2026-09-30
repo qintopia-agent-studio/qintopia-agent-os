@@ -112,6 +112,10 @@ const errors = {
   local_session_required: "本地会话已失效，请重新打开页面。",
   invalid_label: "请补全名称与说明，并检查长度。",
   invalid_text: "请填写实际工作说明，长度不超过 2000 字。",
+  invalid_candidate_query: "候选查询条件已失效，请重新查找并核对范围。",
+  candidate_source_unavailable: "此查询需要的可信目录暂不可用，请稍后重新读取。",
+  foundation_disabled: "本栋知识与约定服务尚未启用，请联系负责人核对服务状态。",
+  authentication_required: "登录或身份已失效，请重新登录。",
   invalid_audience: "请核对人员范围与信息可见性。",
   existing_term_differs:
     "此人有同岗位同范围的其他工作。请沿用相同任期，或先结束原任职再配置。",
@@ -199,7 +203,10 @@ async function api(path, body) {
   }
   if (response.status === 401) {
     location.replace("/login");
-    throw new Error("登录已失效");
+    const error = new Error("登录已失效，请重新登录。");
+    error.code = "authentication_required";
+    error.status = 401;
+    throw error;
   }
   if (!response.ok) {
     const e = new Error(
@@ -208,9 +215,19 @@ async function api(path, body) {
           (data.code ? `（${data.code}）` : "")
     );
     e.code = data.code;
+    e.status = response.status;
     throw e;
   }
   return data;
+}
+function workspaceAccessLost(error) {
+  return (
+    error.status === 401 ||
+    error.status === 403 ||
+    ["authentication_required", "scope_access_denied", "foundation_disabled"].includes(
+      error.code
+    )
+  );
 }
 function discardPreview() {
   pending = null;

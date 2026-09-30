@@ -745,22 +745,28 @@ function openBindings(item) {
   );
   const host = el("div");
   form.append(host);
+  let candidates;
   const draw = () => {
     host.replaceChildren();
-    searchableCheckList(
-      host,
-      "binding-groups",
-      "可访问群",
-      state.groups,
-      state.bindings.filter((b) => b.scope === scope.value).map((b) => b.conversation)
-    );
+    candidates = workspaceCandidateField(host, "binding-groups", "可绑定群", {
+      scope: scope.value,
+      kind: "groups",
+      purpose: "set_groups",
+      multiple: true,
+      chosen: state.bindings
+        .filter((b) => b.scope === scope.value)
+        .map((b) => b.conversation),
+      known: state.groups,
+    });
   };
   scope.addEventListener("change", draw);
   draw();
   form.append(
     sub("这里维护该范围全部群绑定。移除绑定后，依赖它的触达在执行查询时立即失效。")
   );
-  formSubmit(form, () =>
+  formSubmit(form, () => {
+    if (!candidates.candidatesReady())
+      return notice("候选尚未读完或当前不可用，请先重新读取群候选后预览。", true);
     preview(
       {
         kind: "set_groups",
@@ -771,13 +777,11 @@ function openBindings(item) {
         ["范围", labelOf("scopes", scope.value)],
         [
           "绑定的群",
-          selected("binding-groups")
-            .map((x) => labelOf("groups", x))
-            .join("、") || "无",
+          selected("binding-groups").map(candidates.candidateLabel).join("、") || "无",
         ],
         ["影响", "仅更新此范围的群绑定；不解散外部群。"],
       ],
       form
-    )
-  );
+    );
+  });
 }

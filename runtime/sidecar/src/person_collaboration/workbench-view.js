@@ -133,6 +133,163 @@ function searchableSelectField(parent, id, label, items, value = "", empty) {
   renderOptions();
   return select;
 }
+// Query the scoped directory; selected references stay independent of the current page.
+function workspaceCandidateField(
+  parent,
+  id,
+  label,
+  { scope, kind, purpose, value = "", chosen = [], known = [], multiple = false }
+) {
+  const root = el("div"),
+    search = inputField(root, `${id}-search`, `查找${label}`, "", "search"),
+    field = multiple
+      ? el("div", undefined, "scroll-list")
+      : selectField(root, id, label, [], "", `请选择${label}`),
+    status = sub("");
+  search.maxLength = 80;
+  status.setAttribute("role", "status");
+  status.setAttribute("aria-live", "polite");
+  if (multiple) {
+    field.id = id;
+    field.setAttribute("aria-label", label);
+    root.append(field);
+  }
+  const selectedRefs = new Set(multiple ? chosen : value ? [value] : []),
+    records = new Map();
+  for (const item of known)
+    if (selectedRefs.has(item.id)) records.set(item.id, { ...item, ref: item.id });
+  let items = [],
+    cursors = [null],
+    nextCursor = null,
+    appliedSearch = "",
+    generation = 0,
+    ready = false;
+  const labelFor = (ref) => records.get(ref)?.label || "已有选择（保存时重新核对）";
+  const previous = button("上一页", () => {
+      if (!ready || cursors.length === 1) return;
+      cursors.pop();
+      load();
+    }),
+    next = button("下一页", () => {
+      if (!ready || !nextCursor) return;
+      cursors.push(nextCursor);
+      load();
+    }),
+    lookup = button("查找 / 重新读取", () => {
+      appliedSearch = search.value.trim();
+      cursors = [null];
+      load();
+    });
+  search.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      lookup.click();
+    }
+  });
+  function render() {
+    field.replaceChildren();
+    const refs = [...new Set([...selectedRefs, ...items.map((item) => item.ref)])];
+    if (!multiple) field.add(new Option(`请选择${label}`, ""));
+    for (const ref of refs) {
+      const item = records.get(ref),
+        caption = labelFor(ref),
+        description = [item?.description, item?.platform, item?.gateway_label]
+          .filter(Boolean)
+          .join(" · ");
+      if (multiple) {
+        const row = el("label", undefined, "qo-check"),
+          input = el("input"),
+          text = el("span", caption);
+        input.type = "checkbox";
+        input.value = ref;
+        input.checked = selectedRefs.has(ref);
+        input.disabled = !ready;
+        if (description) text.append(sub(description));
+        input.addEventListener("change", () => {
+          if (input.checked) selectedRefs.add(ref);
+          else selectedRefs.delete(ref);
+          discardPreview();
+        });
+        row.append(input, text);
+        field.append(row);
+      } else
+        field.add(new Option(caption + (description ? ` · ${description}` : ""), ref));
+    }
+    if (!multiple) {
+      field.value = [...selectedRefs][0] || "";
+      field.disabled = !ready;
+    }
+    field.inert = !ready;
+    field.setAttribute("aria-busy", String(!ready));
+    previous.disabled = !ready || cursors.length === 1;
+    next.disabled = !ready || !nextCursor;
+  }
+  if (!multiple)
+    field.addEventListener("change", () => {
+      selectedRefs.clear();
+      if (field.value) selectedRefs.add(field.value);
+      discardPreview();
+    });
+  async function load() {
+    const request = ++generation;
+    ready = false;
+    items = [];
+    nextCursor = null;
+    discardPreview();
+    render();
+    status.textContent = "正在读取当前可用候选……";
+    const query = new URLSearchParams({
+      scope,
+      kind,
+      purpose,
+      search: appliedSearch,
+      limit: "50",
+    });
+    if (cursors.at(-1)) query.set("after", cursors.at(-1));
+    try {
+      const result = await api(`/api/workspace/candidates?${query}`);
+      if (!root.isConnected || request !== generation) return;
+      if (
+        result.scope !== scope ||
+        result.kind !== kind ||
+        result.purpose !== purpose ||
+        !Array.isArray(result.items) ||
+        result.items.length > 50 ||
+        result.items.some(
+          (item) =>
+            typeof item.ref !== "string" ||
+            !item.ref ||
+            typeof item.label !== "string" ||
+            !Number.isInteger(item.version)
+        ) ||
+        (result.next_cursor !== null && typeof result.next_cursor !== "string")
+      )
+        throw new Error("候选响应不完整，请重新读取或核对服务版本。");
+      items = result.items;
+      for (const item of items) records.set(item.ref, item);
+      nextCursor = result.next_cursor;
+      ready = true;
+      render();
+      status.textContent = items.length
+        ? `第 ${cursors.length} 页 · 本页 ${items.length} 项。已选值跨页保留，保存时重新核验。`
+        : `没有找到符合条件的${label}。已有选择保留，保存时重新核验。`;
+    } catch (error) {
+      if (!root.isConnected || request !== generation) return;
+      if (workspaceAccessLost(error)) {
+        selectedRefs.clear();
+        records.clear();
+      }
+      render();
+      status.textContent = error.message;
+    }
+  }
+  field.candidatesReady = () => ready;
+  field.candidateLabel = labelFor;
+  root.append(actions(lookup, previous, next), status);
+  parent.append(root);
+  load();
+  return field;
+}
 function inputField(parent, id, label, value = "", type = "text", required = false) {
   const row = el("div", undefined, "qo-field"),
     caption = el("label", label),

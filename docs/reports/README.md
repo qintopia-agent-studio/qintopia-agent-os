@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-09-30 舍长与二花岗位入口前端收尾及 Git 恢复](2026-09-30-steward-workbench-closeout.md)
+
 - [2026-09-29 协作渠道选择本地验证](2026-09-29-collaboration-channel-selection-local-validation.md)
 
 - [2026-09-28 Management UI deployment wiring](2026-09-28-management-ui-deploy-wiring.md)
