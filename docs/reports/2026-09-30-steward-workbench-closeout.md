@@ -232,3 +232,27 @@ PR #731 已通过 GitHub API 核实仍开放，head 仍是原 `b450755`。
 
 本切片以 Conventional
 Commit 作为本地交付。远端 PR 尚未创建，依赖/基线安排仍待统筹确认。本任务的对象增补步骤已全部结束，未扩大修复其余历史坏 ref；基础原索引恢复仍由统筹安排。
+
+## 正确工具链下的自动门禁复核
+
+前端切片已由正常提交 hook 验证并保存为
+`d6a47637abb819d9e1f1386eab0fbf37ccb31535`，包含原定七个文件。首次提交因本记录的 Markdown 格式问题被拒绝；修正格式后提交成功，没有绕过 hook。
+
+随后以精确 `b450755cd7046e9fd55beaa3d0e1228aea63f1d6` 为比较基线，使用已有 Python
+3.12.14 与 Rust 1.96.0 执行原 `pnpm check:pr:auto`，退出 0；本次 quick 与 heavy
+Rust 两层通过：
+
+- QiWe 执行 326 项，1 项按原配置跳过。
+- 默认 Rust 单元测试 858 项通过，3 项按原配置忽略；原两个 sidecar smoke 通过。
+- QiWe staging 与 production 的两个专用编译边界用例分别通过。
+- 无默认 feature 和全部 feature 两种 Clippy 配置均通过，保持 `-D warnings`。
+- 全部 feature 的 Rust 单元测试 873 项通过，212 项按原配置忽略。
+
+自动入口明确跳过 PostgreSQL 层：本机 5432 无监听服务，一次性 `qintopia_test`
+未就绪。没有连接或写入其他任务的数据库；数据库集成层仍待一次性环境或后续 CI 验证，不将退出 0 描述为三层全部通过。
+
+本次日志和退出码保留在忽略目录的 `steward-closeout-pr-auto-python312.log` 与
+`steward-closeout-pr-auto-python312.exit`。此前 Python
+3.9 和 socket 用例的失败证据保留，前节描述为各次运行的历史结果。
+
+本次仅更新验证记录与本地 PR 正文，未修改工作台 JS、共享 Rust、SQL 或 CI。指定 Chrome、真实后端及二花联合验收，工作账号/渠道保存 DTO 与 PR 基线安排仍待后续完成。
