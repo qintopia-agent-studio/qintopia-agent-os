@@ -2883,6 +2883,98 @@
             ],
             "simulated": ["虚构任务与姓名简介；无真实资料、Hermes、网络或模型"]
           }
+        },
+        {
+          "id": "person-foundation/steward-directory",
+          "name": "本栋人员目录分页与撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/steward_production_minimal_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::steward_production_minimal_tests::candidates_paginate_full_directory_and_recheck_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["实际人员、Policy、知识版本、持久收据及 HTTP/broker 业务处理"],
+            "simulated": [
+              "隔离 PostgreSQL 中的人员、群及已认证事件；无真实 Hermes、微信或生产 runner"
+            ]
+          }
+        },
+        {
+          "id": "person-foundation/steward-shared-rules",
+          "name": "两栋共用二花与知识版本同步",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/steward_production_minimal_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::steward_production_minimal_tests::live_rules_share_versions_and_route_one_erhua_to_two_buildings",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["实际人员、Policy、知识版本、持久收据及 HTTP/broker 业务处理"],
+            "simulated": [
+              "隔离 PostgreSQL 中的人员、群及已认证事件；无真实 Hermes、微信或生产 runner"
+            ]
+          }
+        },
+        {
+          "id": "person-foundation/steward-formal-http",
+          "name": "正式约定与网页聊天独立及准确错误状态",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/steward_production_minimal_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::steward_production_minimal_tests::authenticated_http_keeps_formal_rules_independent_and_errors_distinct",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["实际人员、Policy、知识版本、持久收据及 HTTP/broker 业务处理"],
+            "simulated": [
+              "隔离 PostgreSQL 中的人员、群及已认证事件；无真实 Hermes、微信或生产 runner"
+            ]
+          }
+        },
+        {
+          "id": "person-foundation/steward-contact-subjects",
+          "name": "人员、工作账号与多渠道候选区分",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/steward_production_minimal_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::steward_production_minimal_tests::contact_candidates_keep_people_work_accounts_and_channels_distinct",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["docker", "postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["实际人员、Policy、知识版本、持久收据及 HTTP/broker 业务处理"],
+            "simulated": [
+              "隔离 PostgreSQL 中的人员、群及已认证事件；无真实 Hermes、微信或生产 runner"
+            ]
+          }
         }
       ]
     },

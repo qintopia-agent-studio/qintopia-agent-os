@@ -5,15 +5,15 @@ owner: PatrickLiveCool
 status: draft
 risk_level: high
 description:
-  Local-only Hermes tools for current identity, governed memory, scoped rules and
-  persisted dispatch.
+  Trusted Hermes tools for current identity, governed memory and scoped steward rules;
+  production Erhua supports a default-disabled minimal broker.
 source:
   path: docs/plans/active/person-agent-foundation-parallel-handoff.md
   reference: confirmed-local-batch-2026-09-22-section-8
   disposition: template
 production_boundary:
   external_sends: false
-  database_writes: false
+  database_writes: true
   runtime_profile: false
   secrets: false
 validation:
@@ -27,7 +27,7 @@ dependencies:
 tags:
   - identity
   - authorization
-  - local-only
+  - production-gated
   - hermes-plugin
 next_actions:
   - Record synthetic persistence, actual Hermes LLM and external channel evidence

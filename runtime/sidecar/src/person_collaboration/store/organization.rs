@@ -699,6 +699,7 @@ pub(super) struct AudienceResolution {
     pub(super) people: Vec<Value>,
     pub(super) unresolved: Vec<Value>,
     pub(super) source_count: usize,
+    pub(super) sources_available: bool,
 }
 #[derive(Default)]
 struct ResidentEvidence {
@@ -800,8 +801,8 @@ impl Store {
         let mut people: BTreeMap<Uuid, ResidentEvidence> = BTreeMap::new();
         let mut unresolved: BTreeMap<String, usize> = BTreeMap::new();
         for person in &audience.people {
-            let name:Option<String>=sqlx::query_scalar("SELECT coalesce(p.preferred_name,p.display_name) FROM qintopia_identity.persons p WHERE p.id=$2 AND p.status='active' AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.namespace=$1 AND l.person_id=p.id AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND coalesce(l.adapter_metadata->>'account_kind','personal')<>'shared') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='person' AND l.object_ref=p.id::text AND l.status<>'active')")
-                .bind(&self.tenant).bind(person).fetch_optional(&mut **tx).await?;
+            let name:Option<String>=sqlx::query_scalar("SELECT coalesce(p.preferred_name,p.display_name) FROM qintopia_identity.persons p WHERE p.id=$2 AND p.status='active' AND EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links l WHERE l.namespace=$3 AND l.person_id=p.id AND l.status='confirmed' AND l.evidence_ref IS NOT NULL AND l.confirmed_by IS NOT NULL AND coalesce(l.adapter_metadata->>'account_kind','personal')<>'shared') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger l WHERE l.tenant_key=$1 AND l.kind='person' AND l.object_ref=p.id::text AND l.status<>'active')")
+                .bind(&self.tenant).bind(person).bind(&self.identity_namespace).fetch_optional(&mut **tx).await?;
             if let Some(label) = name {
                 people.entry(*person).or_default().label = label;
                 people.entry(*person).or_default().explicit = true;
@@ -842,10 +843,14 @@ impl Store {
             unresolved.insert("pms_source_not_bound".into(), 1);
         }
         let source_count = mappings.len();
+        let mut sources_available = source_count > 0;
         let mut rejected = BTreeSet::new();
         for ((source, property), buildings) in mappings {
-            let rows=sqlx::query("SELECT h.stay_id,h.occupant_id,h.order_id,h.building_code,v.projection,v.invalidated,v.conflicted,s.enabled,s.rebuilding,s.mode,l.person_id,l.status AS link_status,l.evidence_ref,l.confirmed_by,l.adapter_metadata,p.status AS person_status,coalesce(p.preferred_name,p.display_name) AS label, EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links t WHERE t.namespace=$3 AND t.person_id=p.id AND t.status='confirmed' AND t.evidence_ref IS NOT NULL AND t.confirmed_by IS NOT NULL AND coalesce(t.adapter_metadata->>'account_kind','personal')<>'shared') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger t WHERE t.tenant_key=$3 AND t.kind='person' AND t.object_ref=p.id::text AND t.status<>'active') AS tenant_person, EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g WHERE g.namespace=l.namespace AND g.subject_type=l.subject_type AND g.active AND g.account_kind='shared') AS shared_gateway FROM qintopia_identity.person_stay_building_history h JOIN qintopia_agent_os.welcome_sources s ON s.source_instance=h.source_instance AND s.property_id=h.property_id LEFT JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=h.source_instance AND v.property_id=h.property_id AND v.aggregate_type='order' AND v.aggregate_id=h.order_id LEFT JOIN qintopia_identity.source_identity_links l ON l.namespace=('pms/'||h.source_instance||'/'||h.property_id||'/occupant') AND l.subject_type='pms_occupant' AND l.source_ref=h.occupant_id LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE h.source_instance=$1 AND h.property_id=$2")
-                .bind(&source).bind(&property).bind(&self.tenant).fetch_all(&mut **tx).await?;
+            let ready: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.welcome_sources WHERE source_instance=$1 AND property_id=$2 AND enabled AND NOT rebuilding AND mode<>'live')")
+                .bind(&source).bind(&property).fetch_one(&mut **tx).await?;
+            sources_available &= ready;
+            let rows=sqlx::query("SELECT h.stay_id,h.occupant_id,h.order_id,h.building_code,v.projection,v.invalidated,v.conflicted,s.enabled,s.rebuilding,s.mode,l.person_id,l.status AS link_status,l.evidence_ref,l.confirmed_by,l.adapter_metadata,p.status AS person_status,coalesce(p.preferred_name,p.display_name) AS label, EXISTS(SELECT 1 FROM qintopia_identity.source_identity_links t WHERE t.namespace=$4 AND t.person_id=p.id AND t.status='confirmed' AND t.evidence_ref IS NOT NULL AND t.confirmed_by IS NOT NULL AND coalesce(t.adapter_metadata->>'account_kind','personal')<>'shared') AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_ledger t WHERE t.tenant_key=$3 AND t.kind='person' AND t.object_ref=p.id::text AND t.status<>'active') AS tenant_person, EXISTS(SELECT 1 FROM qintopia_identity.person_identity_gateways g WHERE g.namespace=l.namespace AND g.subject_type=l.subject_type AND g.active AND g.account_kind='shared') AS shared_gateway FROM qintopia_identity.person_stay_building_history h JOIN qintopia_agent_os.welcome_sources s ON s.source_instance=h.source_instance AND s.property_id=h.property_id LEFT JOIN qintopia_agent_os.welcome_source_versions v ON v.source_instance=h.source_instance AND v.property_id=h.property_id AND v.aggregate_type='order' AND v.aggregate_id=h.order_id LEFT JOIN qintopia_identity.source_identity_links l ON l.namespace=('pms/'||h.source_instance||'/'||h.property_id||'/occupant') AND l.subject_type='pms_occupant' AND l.source_ref=h.occupant_id LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id WHERE h.source_instance=$1 AND h.property_id=$2")
+                .bind(&source).bind(&property).bind(&self.tenant).bind(&self.identity_namespace).fetch_all(&mut **tx).await?;
             for row in rows {
                 let history_building: String = row.get("building_code");
                 if buildings
@@ -954,6 +959,7 @@ impl Store {
                 .map(|(reason, count)| json!({"reason":reason,"count":count}))
                 .collect(),
             source_count,
+            sources_available,
         })
     }
 }

@@ -22,9 +22,11 @@ pub(crate) mod welcome_pages;
 pub(crate) mod welcome_review;
 pub(super) use auth::{AccountCommand, Credentials};
 mod catalog;
+mod erhua_scope;
 pub(crate) mod foundation;
 mod rule_lifecycle;
 pub(crate) mod steward;
+pub(crate) mod workspace_candidates;
 pub(crate) use rule_lifecycle::{RuleCommand, RuleEdit};
 mod identity;
 mod ontology;
@@ -66,12 +68,20 @@ pub struct Actor {
     identity_namespace: String,
     gateway: Option<(String, i64, Uuid)>,
     session_hash: Option<String>,
+    foundation_turn_scope: Option<erhua_scope::TurnScope>,
     tenant: String,
 }
 
 impl Actor {
     pub(super) fn person_ref(&self) -> Uuid {
         self.person
+    }
+
+    pub(super) fn foundation_scope(&self) -> Option<Uuid> {
+        self.foundation_turn_scope
+            .as_ref()
+            .map(|s| s.scope())
+            .or_else(|| self.gateway.as_ref().map(|(_, _, s)| *s))
     }
 
     fn business_id(&self) -> Uuid {
@@ -198,6 +208,7 @@ impl Store {
         Ok(Actor {
             link,
             session_hash: None,
+            foundation_turn_scope: None,
             person: row.get("person_id"),
             work_account: None,
             identity_version: row.get("version"),
@@ -273,6 +284,7 @@ impl Store {
                 && row.get::<String, _>("person_status") == "active",
             "identity_changed_or_revoked"
         );
+        self.verify_foundation_turn_scope(tx, actor).await?;
         Ok(())
     }
 
@@ -511,7 +523,7 @@ impl Store {
                 vec!["只变更所选工作安排；没有启用真实消息或上传。"],
             _ => vec!["保存配置与历史记录；登记或恢复对象不自动增加业务权限。"],
         });
-        let result = json!({"persisted":apply,"version":if apply{version+1}else{version},"change":result,"replayed":false,"runtime_connected":self.is_live()});
+        let result = json!({"persisted":apply,"version":if apply{version+1}else{version},"change":result,"replayed":false,"runtime_connected":false});
         if !apply {
             tx.rollback().await?;
             return Ok(result);
@@ -1122,7 +1134,7 @@ impl Store {
             .filter(|key| !personal || grants.iter().any(|g| g["action"] == **key))
             .collect();
         Ok(
-            json!({"version":version,"actor_person":actor.person,"delegated_reviews":delegated_reviews,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"local_dialogue_available":!self.is_live() && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":self.mode.as_str(),"runtime_connected":self.is_live()}),
+            json!({"version":version,"actor_person":actor.person,"delegated_reviews":delegated_reviews,"people":people,"scopes":scopes,"roles":roles,"duties":duties,"relations":relations,"agents":agents,"domains":domains,"actions":actions,"grants":grants,"groups":groups,"bindings":bindings,"organization":organization,"catalog_admin":root_manager,"management_available":management_available,"contact_configuration_visible":actor.session_hash.is_none() || root_manager,"foundation_available":true,"dialogue_available":false,"local_dialogue_available":!self.is_live() && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref()==Ok("1"),"mode":self.mode.as_str(),"runtime_connected":false}),
         )
     }
 
