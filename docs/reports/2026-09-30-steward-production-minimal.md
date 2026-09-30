@@ -78,3 +78,15 @@ daemon 不可用，最终 test:doctor 已确认可用，但本轮未执行不同
 工作目录沿用任务专用 `steward-production-minimal`。根目录未提交规格、前台互动草稿、旧
 `foundation-production-bridge`
 索引和恢复资料原样保留。Git 原对象由唯一修复任务恢复后已核验闭包；本批没有重置、清理或修复其他工作目录。本任务两套临时 PostgreSQL（64192 和原受支持测试端口 5432）均已正常停止；各自数据、连接说明和日志原样保留用于恢复和验收。
+
+## 远端交付与检查读取
+
+已通过仓库入口建立 PR
+[#733](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/733)，分支已推送，当前工作目录干净。最终提交 SHA 在交付消息中回报。
+
+远端 CI 诊断读取未完成：Code Review 工具返回“Sign in to Codex with ChatGPT to connect
+GitHub”，未返回 head
+revision 或检查数据。因此本报告只确认上述本地验证，不声明远端 CI 通过或失败。连接恢复后，按实际最新 head 重新读取检查结果；本次没有改用源控 CLI 获取 CI，也没有修改工作流或门禁。
+
+提交期间 Git 另报旧 `refs/stash`
+引用不指向有效对象。当前提交对象闭包只读核验无缺失，分支推送成功；未修复或删除旧 stash。观察记录保存在本任务本地验证目录。
