@@ -192,3 +192,473 @@ units under the existing recovery hold; it never reopens the UI. Inspect the ori
 operation ID and audit/version evidence if a stop reports UNKNOWN. Site retirement is a
 separate reviewed root maintenance action after quiescence; it removes only this vhost
 and archives its renewal declaration.
+
+## 2026-09-29 v0.3.4 Production Preparation (Read-Only)
+
+This dated snapshot supersedes the earlier statement that R's source identity was
+pending. It records preparation, not production approval or a deployed management UI.
+The deployment wiring PR (#728) is merged. Release Please PR #725 merged at
+`2026-09-29T04:38:24Z`; `master`, tag `v0.3.4` and the draft's `targetCommitish` resolve
+to `8173e53795062d4df53fc78f5099325b2e37ce59` (R). Release Please run `36522521842`
+succeeded. The Release remains a draft with no GitHub assets. R's runtime and
+deploy-bundle COS objects have no evidence from a published Release workflow; their
+generation or presence, content digests and production request IDs remain **unverified
+and pending**. Empty GitHub Release assets do not prove COS absence. The production
+workflow requires the Release tag to equal the then-current `origin/master` HEAD. This
+preparation edit is on a separate branch; merging it before the v0.3.4 publication would
+advance `master` beyond fixed R and fail that gate. Keep the record reviewable off
+`master` until publication, or make a separate explicit decision to regenerate the
+Release and R identity.
+
+### Current Evidence And Source Identity
+
+- Public DNS and the origin resolver return `agentos.qintopia.cn A 122.51.77.220`.
+  Direct origin HTTP and HTTPS requests return `200`; HTTPS certificate verification
+  fails for this hostname. This is not the required stopped management UI `503` route.
+  The fixed `/etc/nginx/sites-available/qintopia-management-ui.conf` and
+  `/etc/nginx/sites-enabled/qintopia-management-ui.conf` paths, separate certificate and
+  renewal declaration are absent; the active Nginx config has no exact-host block.
+- Production `current=16e8d56b98001579c6288ba13199b80d6d3dfc74` (O) and
+  `previous=83d694f2c3bc21fd78a73d25da3197379e2a14d5` (P). O's manifest has
+  `commit_sha=deploy_bundle_sha=O`, `runtime_sha=previous_sha=P`; its request result is
+  `succeeded`. The `v0.3.3` request `deploy-20260926T005852Z-62f403e3c5e6` has a local
+  `failed` result and cannot be replayed.
+- The ordinary deploy timer is enabled and waiting. The poller briefly ran during
+  observation and exited successfully. No recovery hold, hold drop-in, `takeover.json`,
+  or claim directory exists. `deploy.lock` exists; `poller.lock` is absent on O. The
+  single recovery JSON is an older September 16 snapshot wrapper. The management UI
+  account, unit and five-key environment file are absent. No credential values, private
+  records or config file contents were read.
+- The owner authorized changing only the existing repository variable
+  `RELEASE_DEPLOY_DRY_RUN` to `true`; the command owner read it back with
+  `updated_at=2026-09-29T04:51:16Z`, and this task independently read `true`. The
+  production environment has no same-name override. This closes the earlier automatic
+  **live** R request blocker. Publication still starts a workflow and a dry-run request,
+  which must be inspected; old O may reject its six targets. A failed request is not
+  retried. No Release or production deployment was authorized here.
+
+### One Release, Two Signed Transitions
+
+Use O and P above, `T=70e7984fab92ddab956009585212d0e9729767b5` and R above. T is a
+fixed immutable transition directory identity, **not** another tag or Release. The old O
+runner assembles T from the verified P runtime, the R deploy bundle and a new signed
+O->T request. The R bundle contains the fixed launcher, new poller, recovery helper and
+hold drop-in. Until that request has installed and verified T, there is no T-local
+recovery executable; if T does not exist, keep the hold and perform read-only O/P,
+original request and result analysis.
+
+Publishing the single `v0.3.4` Release triggers `build-release-artifacts`, whose GitHub
+Actions artifact is `qintopia-agent-os-release-build`. After protected `request-deploy`
+approval, the workflow uploads the R primary runtime, QiWe companion and deploy bundle
+to COS. The bundle key family is
+`qintopia-agent-os/deploy-bundle/<R>/qintopia-agent-os-deploy-bundle/`. From the
+reviewed immutable O tree and approved private COS environment, the existing
+`deploy/sidecar/scripts/fetch-cos-artifact.sh --artifact-type deploy-bundle --sha <R> --output-dir /var/lib/qintopia-agent-os-deploy/recovery/staged`
+checks the exact manifest commit SHA and `SHA256SUMS` and extracts `payload/`. Before
+any `prepare`, record the published run, COS object/expected archive digests and
+root-owned staged metadata. The launcher checks the staged inventory and bytes but does
+not itself bind the manifest's `commit_sha` to R; the fetch and independent
+approved-digest comparison remain mandatory. No R artifact has been verified or staged
+for this batch. Recheck the existing P primary and QiWe companion COS objects, O/P
+manifests and O's original signed success result before the first live request; the
+September 26 verification is historical evidence, not a live preflight substitute.
+
+The following are future command shapes, **not executed in this preparation**. Each
+write requires separate production approval, a fresh read of live state and the
+published R artifact. Issue workflow requests from reviewed `master`; obtain each signed
+request ID from its own run, never from the tag or the failed v0.3.3 request.
+
+```bash
+O=16e8d56b98001579c6288ba13199b80d6d3dfc74
+P=83d694f2c3bc21fd78a73d25da3197379e2a14d5
+T=70e7984fab92ddab956009585212d0e9729767b5
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+TARGETS=qintopia-system-services,hermes-erhua,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-anan
+
+# Inspect the automatic Release dry-run result first; never replay it.
+# Signed O->T dry run while the ordinary O poller still runs:
+gh workflow run deploy-production.yml --ref master \
+  -f commit_sha="$O" -f runtime_sha="$P" -f deploy_bundle_sha="$R" \
+  -f release_sha="$T" -f release_scope=deploy-bundle \
+  -f restart_targets=qintopia-system-services -f dry_run=true \
+  -f rollback_on_smoke_failure=true
+```
+
+After its signed `dry_run_succeeded` result, an approved root operator on the origin
+uses the existing immutable O fetch script and private COS environment. The approved R
+bundle archive digest must come from the published run and COS readback; its value is
+pending. An absent staged path is required before this one-time fetch.
+
+```bash
+set -euo pipefail
+O=16e8d56b98001579c6288ba13199b80d6d3dfc74
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+STAGED=/var/lib/qintopia-agent-os-deploy/recovery/staged
+APPROVED_R_BUNDLE_TAR_SHA256='<verified-published-digest>'
+[[ "$APPROVED_R_BUNDLE_TAR_SHA256" =~ ^[0-9a-f]{64}$ ]]
+cd "/home/ubuntu/qintopia-agent-os-releases/$O"
+test ! -e "$STAGED" && test ! -L "$STAGED"
+deploy/sidecar/scripts/fetch-cos-artifact.sh --artifact-type deploy-bundle \
+  --sha "$R" --output-dir "$STAGED"
+test "$(sha256sum "$STAGED/qintopia-agent-os-deploy-bundle.tar.gz" | cut -d' ' -f1)" = \
+  "$APPROVED_R_BUNDLE_TAR_SHA256"
+"$STAGED/payload/deploy/runner/run-fixed-takeover-request.sh" prepare
+```
+
+Only after `prepare` verifies the hold, the separately approved live workflow request
+uses the same tuple with `dry_run=false`. Run it from reviewed `master` on the operator
+workstation, then read its actual signed request ID before invoking the fixed consumer
+on the origin.
+
+```bash
+O=16e8d56b98001579c6288ba13199b80d6d3dfc74
+P=83d694f2c3bc21fd78a73d25da3197379e2a14d5
+T=70e7984fab92ddab956009585212d0e9729767b5
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+gh workflow run deploy-production.yml --ref master \
+  -f commit_sha="$O" -f runtime_sha="$P" -f deploy_bundle_sha="$R" \
+  -f release_sha="$T" -f release_scope=deploy-bundle \
+  -f restart_targets=qintopia-system-services -f dry_run=false \
+  -f rollback_on_smoke_failure=true
+```
+
+On the origin, using only the signed ID from that run:
+
+```bash
+STAGED=/var/lib/qintopia-agent-os-deploy/recovery/staged
+"$STAGED/payload/deploy/runner/run-fixed-takeover-request.sh" consume \
+  '<O-to-T-live-request-id>'
+```
+
+Only if signed success exists but finalization was interrupted, inspect that evidence
+first and then run this separate, evidence-only command with the original ID:
+
+```bash
+STAGED=/var/lib/qintopia-agent-os-deploy/recovery/staged
+"$STAGED/payload/deploy/runner/run-fixed-takeover-request.sh" finalize \
+  '<O-to-T-live-request-id>'
+```
+
+After verified T/O success, run the distinct full-R dry run on the operator workstation.
+Its signed result must succeed before a separately approved live request with the same
+tuple and another new request ID.
+
+```bash
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+TARGETS=qintopia-system-services,hermes-erhua,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-anan
+gh workflow run deploy-production.yml --ref master \
+  -f commit_sha="$R" -f runtime_sha="$R" -f deploy_bundle_sha="$R" \
+  -f release_sha="$R" -f release_scope=sidecar-runtime,deploy-bundle,hermes-plugins \
+  -f restart_targets="$TARGETS" -f dry_run=true \
+  -f rollback_on_smoke_failure=true
+```
+
+After the full-R dry-run result succeeds and the distinct live request is approved:
+
+```bash
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+TARGETS=qintopia-system-services,hermes-erhua,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-anan
+gh workflow run deploy-production.yml --ref master \
+  -f commit_sha="$R" -f runtime_sha="$R" -f deploy_bundle_sha="$R" \
+  -f release_sha="$R" -f release_scope=sidecar-runtime,deploy-bundle,hermes-plugins \
+  -f restart_targets="$TARGETS" -f dry_run=false \
+  -f rollback_on_smoke_failure=true
+```
+
+The O->T live request is signed by the existing production workflow. The fixed consumer
+compares its approved ID to the COS pointer at the actual read and to the parsed
+request; `poller.lock`, a durable claim and `deploy.lock` protect consumption. `consume`
+normally verifies the signed success result, archived request, T/O pointers, journal and
+manifests and **finalizes in the same invocation**. `finalize <original-id>` only
+resumes those evidence checks after interruption. It cannot clear a later T->R or R->T
+hold. T->R uses a new request ID and a direction-bound journal; unknown result upload or
+archive retains isolation and forbids replay.
+
+After R/T success, normal exact-previous rollback to T/O uses a fresh signed
+`rollback-production.yml` mixed-mode request: `expected_current_release_tag=v0.3.4`,
+`previous_commit_sha=O`, `previous_runtime_sha=P`, `previous_deploy_bundle_sha=R`,
+`previous_release_sha=T`, an approved `action_restart_targets_csv`, and `dry_run=true`
+before a separately approved live request. The runner binds T's original signed O->T
+success to its mixed manifest. Before R->T, quiesce and prove the UI closed; rollback
+does not reactivate it. For an interrupted O->T, T->R or R->T operation with verified T
+installed, use only the fixed
+`/home/ubuntu/qintopia-agent-os-releases/<T>/deploy/runner/recover-release-lineage.sh --request-id <original-request-id>`
+entry with its original journal, signed request, COS result absence proof and FD 8 then
+FD 9. Upload intent or unknown COS response retains the hold. Never change pointers by
+hand.
+
+The normal rollback command shapes below produce two **different** signed request IDs;
+they do not invoke maintenance recovery. The action target CSV must be approved for the
+actual rollback, even if it equals the six forward targets.
+
+```bash
+O=16e8d56b98001579c6288ba13199b80d6d3dfc74
+P=83d694f2c3bc21fd78a73d25da3197379e2a14d5
+T=70e7984fab92ddab956009585212d0e9729767b5
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+TARGETS=qintopia-system-services,hermes-erhua,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-anan
+gh workflow run rollback-production.yml --ref master \
+  -f expected_current_release_tag=v0.3.4 \
+  -f previous_commit_sha="$O" -f previous_runtime_sha="$P" \
+  -f previous_deploy_bundle_sha="$R" -f previous_release_sha="$T" \
+  -f action_restart_targets_csv="$TARGETS" -f dry_run=true
+```
+
+After its signed dry-run result succeeds and live rollback is separately approved:
+
+```bash
+O=16e8d56b98001579c6288ba13199b80d6d3dfc74
+P=83d694f2c3bc21fd78a73d25da3197379e2a14d5
+T=70e7984fab92ddab956009585212d0e9729767b5
+R=8173e53795062d4df53fc78f5099325b2e37ce59
+TARGETS=qintopia-system-services,hermes-erhua,hermes-xiaoman,hermes-silaoshi,hermes-huabaosi,hermes-anan
+gh workflow run rollback-production.yml --ref master \
+  -f expected_current_release_tag=v0.3.4 \
+  -f previous_commit_sha="$O" -f previous_runtime_sha="$P" \
+  -f previous_deploy_bundle_sha="$R" -f previous_release_sha="$T" \
+  -f action_restart_targets_csv="$TARGETS" -f dry_run=false
+```
+
+### First Management UI Configuration
+
+The R/T `management-ui-lifecycle.sh` exposes `prepare`, `install-http`, `issue-cert`,
+`install-https` and `activate`. The immutable release installer only places a disabled,
+stopped unit. These are later, separately authorized production actions:
+
+| Step            | Object and effect                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Required check                                                                                                                                                                                                                                |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prepare`       | Create the sole-group `qintopia-management-ui` system account (`/nonexistent`, `nologin`) and `/etc/qintopia/collaboration-management-ui.env` as `root:root 0600`, using private stdin. Its five keys are `QINTOPIA_FOUNDATION_PRODUCTION_ENABLE=1`, live `QINTOPIA_FOUNDATION_TENANT`, live `QINTOPIA_FOUNDATION_IDENTITY_NAMESPACE`, restricted `QINTOPIA_FOUNDATION_DATABASE_URL` for login role `qintopia_management_ui`, and `QINTOPIA_COLLABORATION_PUBLIC_ORIGIN=https://agentos.qintopia.cn`. | Confirm actual tenant, namespace, role and release binary traversal. Do not put values or credentials in Git or this report.                                                                                                                  |
+| Database        | Apply the versioned five-function migration through the release path, then create the `qintopia_management_ui` restricted login role and dedicated `NOLOGIN` function owner (local validation used `qintopia_management_ui_lock_owner`). Transfer five `qintopia_identity.management_ui_lock_%` owners and grant only fixed lock rights to that owner, including Gateway `MAINTAIN`; grant explicit function `EXECUTE` to the UI and retain runtime `EXECUTE`.                                        | Check effective ACL, fixed `SECURITY DEFINER` search path, no `PUBLIC EXECUTE`, no UI Person/Gateway UPDATE, Gateway MAINTAIN, schema CREATE, owner membership or `SET ROLE`; exercise nonempty restricted-role and concurrent insert probes. |
+| `install-http`  | Install the exact-host HTTP challenge site at `/etc/nginx/sites-{available,enabled}/qintopia-management-ui.conf`; root returns 404.                                                                                                                                                                                                                                                                                                                                                                   | No conflicting `server_name`; `nginx -t` and stopped-state check pass.                                                                                                                                                                        |
+| `issue-cert`    | Obtain independent Certbot certificate `qintopia-management-ui` for only `agentos.qintopia.cn`, with its renewal declaration.                                                                                                                                                                                                                                                                                                                                                                         | Inspect uncertain issuance before retry; verify exact SAN and validity.                                                                                                                                                                       |
+| `install-https` | Verify renewal dry run and switch the site to HTTPS proxy `127.0.0.1:18780`; disabled UI returns 503.                                                                                                                                                                                                                                                                                                                                                                                                 | `nginx -t`, exact SAN, HTTPS 503 and no public-site response.                                                                                                                                                                                 |
+| `activate`      | Enable/start `qintopia-agentos-management-ui.service` on the exact current approved full-scope release binary.                                                                                                                                                                                                                                                                                                                                                                                        | Current full-scope release, no hold or claim, dedicated identity, role and stopped-route checks passed.                                                                                                                                       |
+
+**Unresolved call sequence:** `management-ui-lifecycle.sh` takes FD 8 then FD 9 itself.
+Its `prepare`, HTTP and certificate modes additionally require an authenticated
+request-bound maintenance hold and an exact current immutable release. The fixed O->T
+launcher's `prepare` creates a hold before T exists or a request ID is bound; its
+successful `consume` binds the request, then automatically finalizes and removes that
+hold. The ordinary T->R runner writes a direction-bound journal, but installs a hold
+only on failure or unknown closure; a successful T->R poller clears its claim without
+leaving a hold. Thus neither successful path provides a reviewed first-setup window. Do
+not race the consumer, hand-write a hold or manufacture an uncertain result. The exact
+source boundaries are `deploy/runner/management-ui-lifecycle.sh`'s
+`check_maintenance_hold` and non-activation mode branch,
+`deploy/runner/run-fixed-takeover-request.sh`'s combined `consume|finalize` branch,
+`deploy/runner/qintopia-agent-os-deploy-runner`'s T-to-R `write_recovery_journal` and
+failure-only `install_recovery_hold` calls, and
+`deploy/runner/poll-deploy-requests.sh`'s post-archive claim removal.
+
+## 2026-09-29 Maintenance Patch Implementation (Local Only)
+
+### Minimal Maintenance Patch
+
+The owner agreed to the specific maintenance-gate scope on 2026-09-29. The
+`begin <T-to-R-request-id>` and `finish <same-id>` modes are now implemented on this
+branch in the existing `management-ui-lifecycle.sh` root entry; they are not executable
+behavior in fixed R. The change reuses the request ID as `hold_token`, the existing
+recovery hold and systemd drop-in, FD 8 then FD 9, and the immutable current release. It
+adds no deploy request type, result schema, workflow, service or general recovery
+protocol. One private, root-owned maintenance record is necessary to persist the
+original timer enabled state, request/result digests and begin/finish phase across
+process death. Do not overload `takeover.json` or forge a recovery claim: those
+represent different transactions.
+
+1. `begin` locks FD 8 then FD 9, checks their identities, the exact current R and
+   previous T pointers, closed management UI, the immutable R files and manifest, and no
+   outstanding claim, foreign hold or later direction journal. It requires T-to-R
+   `smoke-passed` journal identity and its recorded `upload_intent` digest. It verifies
+   the processed original production request and local `succeeded` result with the
+   existing `wait-deploy-result.sh --verify-archived-request`, then matches their
+   full-scope R/R/R tuple, six targets, result checks, journal request digest, R/T
+   manifests and pointers. The cleared claim is evidence of the poller's result PUT
+   readback and archive finalization; a still-present claim, failed result or uncertain
+   upload is never converted into a maintenance success.
+2. Under those locks, `begin` records and fsyncs the timer's exact enabled/disabled
+   state before changing it, disables and stops the timer, proves the ordinary service
+   and fixed consumer are stopped, then rechecks the request/claim and pointer evidence.
+   It creates the request-bound hold with exclusive creation and fsync, installs and
+   verifies the existing drop-in, reloads systemd and proves the timer remains stopped.
+   Only after all checks may the operator run `prepare`, HTTP, certificate and HTTPS
+   modes. A repeated `begin` for the same ID resumes from the durable record; a
+   different ID or ambiguous intermediate state stops for review. A crash before the
+   hold/drop-in is complete never authorizes setup, and a crash after it leaves the
+   ordinary poller isolated.
+3. `finish` takes the same locks and revalidates the record, hold owner, drop-in,
+   original signed success, R/T lineage, no claim or later journal, disabled UI and
+   exact-host HTTPS `503`. It restores and verifies the recorded timer state while the
+   hold still blocks the service, then unlinks only that request's hold as the final
+   state change and fsyncs its directory. Repeating `finish` after an uncertain return
+   may succeed only if the record, absent hold and restored timer state match. Any
+   failed reload, timer restoration, 503 check, changed identity or unknown stop leaves
+   the hold and requires readback; it never replays the deploy or enables UI.
+
+The source change is one existing file: `deploy/runner/management-ui-lifecycle.sh`.
+Focused regression cases belong in the existing
+`tools/deploy/test-deploy-runner-systemd-linux.mjs` fixture. Update
+`deploy/runner/README.md`, this report and `docs/operations/production-deploy-runner.md`
+for the new operating contract. Relative to approved #728, these are five
+already-touched paths and no new tracked path; #728 also touched runner, recovery,
+installer, renderer, Nginx and bundle builder, which this proposal does not need to
+change. `build-deploy-bundle.mjs` already packages the lifecycle script, result verifier
+and hold drop-in. If implementation proves a second source file or production gate
+necessary, rescope and review it before editing.
+
+The smallest meaningful verification matrix is: successful signed T-to-R begin,
+setup-window hold and stopped timer, then HTTPS 503 finish with both initially enabled
+and initially disabled timers; forged or mismatched request/result/journal, changed R/T
+pointers, unfinished or newer claim, later journal and foreign hold all fail closed;
+kill or injected failure before/after each durable begin and finish boundary must either
+resume on the same ID or retain isolation. The targeted container mode
+`node tools/deploy/test-deploy-runner-systemd-linux.mjs --management-ui-maintenance`
+passed with simulated signed request/results for both originally enabled and disabled
+timers. It rejected a mismatched upload digest, unfinished claim, active UI, foreign
+hold, later journal, bad result signature, changed pointer, failed HTTPS 503 and failed
+timer restoration; an interrupted `preparing` record resumed on the same ID. The
+existing `--management-ui-mock` lock/drain test and `pnpm deploy:runner:check` passed. A
+separate Ubuntu 24.04/systemd 255 PID 1 probe used the actual hold drop-in and timer: a
+held service did not start, timer disable/restore retained its prior state, and service
+start succeeded only after removing the hold. The same disposable VM then ran the actual
+lifecycle begin/finish entry with simulated signed request/result, generated test
+certificate and controlled 503 response; both originally enabled and disabled timers
+completed. The first attempt stopped on a stale UNKNOWN journal from the VM's prior UI
+test; a new successful simulated UI stop superseded it. The second attempt exposed that
+the simulated unit was `static`, not `disabled`; adding its normal `[Install]` section
+corrected the fixture. Neither failure relaxed lifecycle checks. The final helper also
+requires the signing environment to be root-owned, mode 0600 and singly linked before
+sourcing it; the isolated fixture rejects mode 0644.
+
+A later VM run used the repository's `create-deploy-request.mjs` to produce a signed,
+schema-validated full-scope R request with simulated credentials. The existing test
+file's `--management-ui-maintenance-systemd-producer` mode put it in a simulated local
+COS store and ran the actual T runner and poller. T's mixed manifest caused the runner
+to write the T-to-R `smoke-passed` direction journal and signed result; the poller wrote
+`upload_intent`, read the result back from the simulated store, archived the original
+request and removed its claim. The producer emitted mode 0644 request/result files and a
+mode 0600 journal in the root-owned mode 0700 state directory. The same run then
+executed real PID 1
+`begin -> prepare -> install-http -> issue-cert -> install-https -> finish` and all
+eight `SIGKILL` recovery boundaries for both initially enabled and disabled timers. The
+promotion, installer and smoke commands were fixture stubs; Certbot created only a
+VM-local trusted test certificate. COS, ACME, PostgreSQL, production DNS routing and
+user-visible login were not exercised. The VM cleanup removed its test units, hold,
+certificate and release tree after each run. The directory `fsync` failure injection
+also confirmed the timer does not change before the maintenance record is durable. This
+is isolated system behavior evidence, not production acceptance. The final Docker
+maintenance fixtures for both original timer states, the earlier UI lock/stop fixtures,
+`bash -n`, ShellCheck, `node --check`, `pnpm lint:md`, `pnpm format:check` and
+`git diff --check` passed. The final `pnpm deploy:runner:check` failed at the existing
+NATS ACL wrapper's fixed 20-second timeout; repeating that wrapper reached the same
+seventh-case timeout. Directly running
+`python3 tools/deploy/test_space_automation_nats_acl_preflight.py` passed all nine cases
+in 21.2 seconds. That direct result isolates the timeout but does not make the aggregate
+check pass. The wrapper needs a separately reviewed CI/check change; this five-file
+patch does not alter it.
+
+With Python 3.12 and Rust 1.96 on `PATH`, the first subsequent `pnpm check:pr:auto`
+passed its quick and heavy Rust tiers but failed in the PostgreSQL Space configuration
+test: the existing local `127.0.0.1:5432/qintopia_test` had more active simulated
+administrators than the supported ceiling. The checker's default URL reached that
+existing cluster; it was not reset or cleaned. A final rerun pinned
+`QINTOPIA_SIDECAR_DATABASE_URL` to the confirmed closed loopback port 55682. It passed
+the full quick and heavy Rust tiers, including the QiWe suite, 858 default sidecar tests
+(three ignored), both smokes, feature-boundary tests, Clippy and 873 all-feature sidecar
+tests (208 ignored). The PostgreSQL tier was explicitly skipped, not passed. Earlier
+fresh-database lock and ACL evidence above remains separate; CI still owns the fixed-URL
+PostgreSQL tier. No production change or activation occurred.
+
+### Independent Failure Reproduction
+
+The ignored local script `.local-workspace/management-ui-success-no-hold-probe.sh` runs
+the **current real** lifecycle helper in disposable `python:3.12-slim`, with root-owned
+fixed R metadata, `current=R`, `previous=T`, a simulated successful request/result and
+T-to-R journal, and no hold or claim. Command:
+
+```bash
+docker run --rm -v "$PWD:/repo:ro" python:3.12-slim \
+  bash /repo/.local-workspace/management-ui-success-no-hold-probe.sh
+```
+
+At simulated request `deploy-20260929T120000Z-8173e53`, the helper's `prepare` exited
+`1`; Python raised `FileNotFoundError` for
+`/var/lib/qintopia-agent-os-deploy/recovery/hold` at `hold.lstat()`. The wrapper
+asserted that the environment file was not created. The fixture does **not** sign its
+simulated records or run the deploy consumer, systemd or COS; it isolates the exact
+local rejection that occurs before those services are called. The signature and
+end-to-end positive path remain for the proposed code's focused tests.
+
+### CI Nine-Principle Review
+
+1. Actual problem: successful T-to-R clears its claim and lacks a setup hold, so first
+   `prepare` fails despite a valid deployed R; the isolated invocation confirms the
+   rejection point.
+2. Proposed CI delta: **0** new or modified workflows, jobs, steps, check rules,
+   dependencies and configuration values. The two lifecycle modes do change the
+   production maintenance authorization gate, so they require a separate owner review.
+3. Evidence: lifecycle lines 95-153, fixed takeover `consume|finalize`, runner's
+   failure-only `install_recovery_hold`, poller's post-archive claim removal, and the
+   reproduction above.
+4. Complexity: reuse existing signed request/result and drop-in; add only the durable
+   state needed to restore the timer after interruption.
+5. Existing CI runs runner checks, while the existing real systemd PID 1 fixture is
+   invoked explicitly in an isolated Linux VM. The failure is lifecycle behavior, so add
+   focused cases to that fixture and existing runner checks without a new CI entry.
+6. Limit scope to the five existing paths listed above; no runner, recovery, COS,
+   release workflow, Nginx or database changes are proposed.
+7. No business-specific CI gate exception or weakened assertion is proposed.
+8. No non-deploy task enters production deployment; setup remains an explicit root
+   maintenance action after a verified deployment.
+9. The request-bound hold, signed-result verifier and timer restoration pattern are
+   already used by takeover/recovery. No additional shared framework is justified.
+
+The technical conclusion is **no CI change request**, but **new production maintenance
+gate scope relative to #728**. The owner agreed to this specific code scope; CI passing
+does not authorize merging, publication or production execution.
+
+### Release Order Consequences
+
+- The first usable management UI requires this maintenance entry. Keep the fixed v0.3.4
+  draft unpublished and its tag unchanged. After review, merge the patch through the
+  normal protected process and let Release Please produce the next valid draft/version.
+  Rebind R and its artifact digests to that new immutable commit; recheck the O-to-T
+  bundle and T-to-new-R requests against those identities. Do not move the existing tag
+  or edit the old draft target in place.
+- Publishing fixed R first triggers the existing automatic **dry-run** request because
+  `RELEASE_DEPLOY_DRY_RUN=true`; it also fixes R's bundle without this maintenance
+  entry. O-to-T and T-to-R may then deploy the disabled unit, but no supported first
+  account/HTTP/certificate/HTTPS setup window exists. The UI stays unavailable until a
+  separately reviewed later release and maintenance operation. This is a real feature
+  delay, not the default resolution of the first-UI requirement.
+
+Do not publish the old v0.3.4 draft after this patch advances `master`: its tag would no
+longer equal `origin/master` HEAD. A reviewed patch may enter `master` for the next
+Release Please version. This PR itself does not authorize merging, publication,
+deployment, certificate requests or production modification.
+
+After that entry and private inputs are approved, complete account, database, HTTP,
+certificate and stopped HTTPS checks, then activate on the approved current full-scope
+release. Only then can Chrome verify real login, permission, save and rollback on the
+deployed page, followed by approved real business observation. Those checks cannot be
+pre-publication gates. For an unknown save/stop outcome, read back the original
+operation ID and audit/version evidence; do not replay the save, delete
+credentials/certificate or restart the UI.
+
+### Remaining Authorizations And Evidence
+
+1. Review this maintenance patch and use the next valid Release Please draft for the
+   first usable UI. Publication and the protected workflow's production step need their
+   own authorization. The repository dry-run variable is already `true`; reconfirm its
+   effective value and tag-to-HEAD equality for the chosen new version just before
+   publication, then inspect the automatic signed dry-run result, including any
+   old-runner rejection.
+2. Exact chosen release COS object digests, P/O identity recheck and approved root
+   staging, followed by distinct signed O->T dry-run/live and T->release dry-run/live
+   decisions. Capture each original request, signed result,
+   pointer/manifest/installer/smoke evidence, and rollback identities. No digest or live
+   result can be filled before its action.
+3. A reviewed immutable maintenance-hold entry before first UI setup; separately
+   approved private account/DB grant, ACME certificate, exact-host site and activation.
+   Check the real tenant and manager identity/grant before activation. Chrome and real
+   business acceptance follow activation; any outbound business action needs its own
+   authorization.
