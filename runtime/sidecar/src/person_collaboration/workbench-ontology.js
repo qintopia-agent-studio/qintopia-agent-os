@@ -351,6 +351,21 @@ function audiencePreview(relation, draft = false) {
           `本次核对：${displayTime(result.observed_at)}。实际纳入 ${result.counts?.selected ?? "未提供"} 人。`
         )
       );
+      const contactRows = result.contacts || [];
+      if (contactRows.length) {
+        const section = el("div", undefined, "qo-scope-row");
+        section.append(el("h4", `已保存联系渠道 · ${contactRows.length} 项`));
+        section.append(
+          sub(
+            result.contacts_current === true
+              ? "本次核对渠道有效；实际联系前仍会重新检查。"
+              : "已保存渠道的来源或授权已变化，请回到工作配置重新选择并保存。"
+          )
+        );
+        if (result.contacts_current !== true) section.classList.add("qo-warning");
+        for (const contact of contactRows) section.append(sub(contactCaption(contact)));
+        output.append(section);
+      } else output.append(sub("没有保存明确的联系渠道。"));
       for (const [status, label] of [
         ["current", "目前在住"],
         ["past", "曾经住过"],
