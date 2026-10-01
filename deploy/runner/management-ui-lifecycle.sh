@@ -910,6 +910,34 @@ PY
     ;;
 esac
 
+foundation_broker_lifecycle() {
+  local trusted_release="$release" closing_helper="$release/deploy/runner/foundation-broker-lifecycle.sh"
+  python3 - "$trusted_release" "$closing_helper" <<'PY' || return 75
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+root, helper = map(Path, sys.argv[1:])
+owner = root.stat().st_uid
+if str(root.parent) == '/home/ubuntu/qintopia-agent-os-releases' and owner != 0:
+    raise SystemExit('closing release ownership drifted')
+for path, mode in ((helper,0o755),(root/'manifest.json',0o444),(root/'deploy-bundle/artifact-manifest.json',0o444)):
+    item = path.lstat()
+    if not stat.S_ISREG(item.st_mode) or item.st_uid != owner or item.st_nlink != 1 or stat.S_IMODE(item.st_mode)!=mode:
+        raise SystemExit('closing helper metadata drifted')
+manifest = json.loads((root/'manifest.json').read_text())
+artifact = json.loads((root/'deploy-bundle/artifact-manifest.json').read_text())
+relative = helper.relative_to(root).as_posix()
+entries = [item for item in artifact.get('files',[]) if item.get('path')=='payload/'+relative]
+if (manifest.get('release_sha')!=root.name or artifact.get('commit_sha')!=manifest.get('deploy_bundle_sha') or
+        len(entries)!=1 or hashlib.sha256(helper.read_bytes()).hexdigest()!=entries[0].get('sha256')):
+    raise SystemExit('closing helper identity/digest drifted')
+PY
+  "$closing_helper" "$1" || return 75
+}
+
 case "$mode" in
   quiesce)
     before="$(snapshot)"
@@ -922,9 +950,11 @@ PY
     fi
     after="$(snapshot)"
     check_closed "$after" "$before"
+    foundation_broker_lifecycle quiesce || exit 75
     ;;
   verify-closed)
     check_closed "$(snapshot)"
+    foundation_broker_lifecycle verify-closed || exit 75
     ;;
   *) : ;;
 esac

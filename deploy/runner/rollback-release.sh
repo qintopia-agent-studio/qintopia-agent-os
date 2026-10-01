@@ -260,6 +260,39 @@ finally:
 PY
 }
 
+# Fixed caller R, not mutable current nor the previous T. No repeated quiesce.
+trusted_release="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+closing_helper="$trusted_release/deploy/runner/management-ui-lifecycle.sh"
+if ! {
+  python3 - "$trusted_release" "$closing_helper" <<'PY' || exit 75
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+root, helper = map(Path, sys.argv[1:])
+owner = root.stat().st_uid
+if str(root.parent) == '/home/ubuntu/qintopia-agent-os-releases' and owner != 0:
+    raise SystemExit('closing release ownership drifted')
+for path, mode in ((helper,0o755),(root/'manifest.json',0o444),(root/'deploy-bundle/artifact-manifest.json',0o444)):
+    item = path.lstat()
+    if not stat.S_ISREG(item.st_mode) or item.st_uid != owner or item.st_nlink != 1 or stat.S_IMODE(item.st_mode)!=mode:
+        raise SystemExit('closing helper metadata drifted')
+manifest = json.loads((root/'manifest.json').read_text())
+artifact = json.loads((root/'deploy-bundle/artifact-manifest.json').read_text())
+relative = helper.relative_to(root).as_posix()
+entries = [item for item in artifact.get('files',[]) if item.get('path')=='payload/'+relative]
+if (manifest.get('release_sha')!=root.name or artifact.get('commit_sha')!=manifest.get('deploy_bundle_sha') or
+        len(entries)!=1 or hashlib.sha256(helper.read_bytes()).hexdigest()!=entries[0].get('sha256')):
+    raise SystemExit('closing helper identity/digest drifted')
+PY
+  "$closing_helper" verify-closed
+}; then
+  echo "rollback closure is unverified; pointers unchanged" >&2
+  exit 75
+fi
+
 atomic_symlink rollback-from "$current_target"
 atomic_symlink current "$previous_target"
 if [[ "$restore_previous_absent" == "true" ]]; then

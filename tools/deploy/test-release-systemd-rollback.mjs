@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -59,6 +60,49 @@ try {
     `${JSON.stringify({ release_sha: restorePreviousSha })}\n`,
     "utf8"
   );
+  const rollbackScript = path.join(candidateDir, "deploy/runner/rollback-release.sh");
+  fs.mkdirSync(path.dirname(rollbackScript), { recursive: true });
+  fs.copyFileSync(
+    path.join(repoRoot, "deploy/runner/rollback-release.sh"),
+    rollbackScript
+  );
+  const closingProbe = `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == verify-closed ]]
+printf 'closure verified before pointers\\n' >>"\${ROLLBACK_TEST_LOG}"
+[[ "\${FAKE_CLOSURE_CLOSED:-1}" == 1 ]]
+`;
+  writeExecutable(
+    path.join(candidateDir, "deploy/runner/management-ui-lifecycle.sh"),
+    closingProbe
+  );
+  fs.writeFileSync(
+    path.join(candidateDir, "manifest.json"),
+    JSON.stringify({
+      release_sha: candidateSha,
+      previous_sha: previousSha,
+      deploy_bundle_sha: candidateSha,
+    })
+  );
+  fs.chmodSync(path.join(candidateDir, "manifest.json"), 0o444);
+  const closingArtifact = path.join(
+    candidateDir,
+    "deploy-bundle/artifact-manifest.json"
+  );
+  fs.mkdirSync(path.dirname(closingArtifact), { recursive: true });
+  fs.writeFileSync(
+    closingArtifact,
+    JSON.stringify({
+      commit_sha: candidateSha,
+      files: [
+        {
+          path: "payload/deploy/runner/management-ui-lifecycle.sh",
+          sha256: crypto.createHash("sha256").update(closingProbe).digest("hex"),
+        },
+      ],
+    })
+  );
+  fs.chmodSync(closingArtifact, 0o444);
   fs.symlinkSync(candidateDir, path.join(releaseRoot, "current"));
   fs.symlinkSync(previousDir, path.join(releaseRoot, "previous"));
   const resolvedCandidateDir = fs.realpathSync(candidateDir);
@@ -110,10 +154,58 @@ printf 'systemctl %s\\n' "$*" >>"${logFile}"
 `
   );
 
+  // Gate plumbing; the real Linux/systemd cases remain separate.
+  const closeHelper = path.join(
+    candidateDir,
+    "deploy/runner/management-ui-lifecycle.sh"
+  );
+  for (const fault of ["live", "metadata", "digest"]) {
+    fs.writeFileSync(logFile, "");
+    if (fault === "metadata") fs.chmodSync(closeHelper, 0o700);
+    if (fault === "digest") fs.appendFileSync(closeHelper, "# simulated drift\n");
+    const gate = spawnSync(
+      "bash",
+      [
+        rollbackScript,
+        "--release-root",
+        releaseRoot,
+        "--expected-current-sha",
+        candidateSha,
+        "--expected-previous-sha",
+        previousSha,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          SYSTEMCTL: fakeSystemctl,
+          QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+          ROLLBACK_TEST_LOG: logFile,
+          FAKE_CLOSURE_CLOSED: fault === "live" ? "0" : "1",
+        },
+      }
+    );
+    writeExecutable(closeHelper, closingProbe);
+    if (
+      gate.status !== 75 ||
+      fs.realpathSync(path.join(releaseRoot, "current")) !== resolvedCandidateDir ||
+      fs.realpathSync(path.join(releaseRoot, "previous")) !== resolvedPreviousDir ||
+      fs.existsSync(path.join(releaseRoot, "rollback-from"))
+    )
+      throw new Error(`${fault}: rollback crossed the closure gate: ${gate.stderr}`);
+    const events = fs.readFileSync(logFile, "utf8");
+    if (
+      events.includes("candidate units") ||
+      events.includes("previous units") ||
+      (fault !== "live" && events.includes("closure verified before pointers"))
+    )
+      throw new Error(`${fault}: untrusted helper or installer ran`);
+  }
   const result = spawnSync(
     "bash",
     [
-      path.join(repoRoot, "deploy", "runner", "rollback-release.sh"),
+      rollbackScript,
       "--release-root",
       releaseRoot,
       "--expected-current-sha",
@@ -197,7 +289,7 @@ printf 'systemctl %s\\n' "$*" >>"${logFile}"
   const absentPreviousResult = spawnSync(
     "bash",
     [
-      path.join(repoRoot, "deploy", "runner", "rollback-release.sh"),
+      rollbackScript,
       "--release-root",
       releaseRoot,
       "--expected-current-sha",
@@ -238,7 +330,7 @@ printf 'systemctl %s\\n' "$*" >>"${logFile}"
   const conflictingRestoreResult = spawnSync(
     "bash",
     [
-      path.join(repoRoot, "deploy", "runner", "rollback-release.sh"),
+      rollbackScript,
       "--release-root",
       releaseRoot,
       "--expected-current-sha",
@@ -294,7 +386,7 @@ raise SystemExit(result.returncode)
     const outcome = spawnSync(
       "bash",
       [
-        path.join(repoRoot, "deploy/runner/rollback-release.sh"),
+        rollbackScript,
         "--release-root",
         releaseRoot,
         "--expected-current-sha",

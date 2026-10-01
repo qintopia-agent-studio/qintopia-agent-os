@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -63,6 +64,39 @@ try {
     );
   }
   fs.mkdirSync(releaseRoot, { recursive: true });
+  // Ordinary installer plumbing uses a closure probe; real helper/systemd is
+  // exercised separately by the Linux fixture, not claimed by this probe.
+  const brokerHelper = path.join(
+    releaseDir,
+    "deploy/runner/foundation-broker-lifecycle.sh"
+  );
+  const brokerProbe = `#!/usr/bin/env bash
+set -euo pipefail
+[[ "$1" == verify-closed ]]
+printf 'broker verify-closed\\n' >>"${systemctlLog}"
+[[ "\${FAKE_BROKER_CLOSED:-1}" == 1 ]]
+`;
+  writeExecutable(brokerHelper, brokerProbe);
+  const brokerArtifact = path.join(releaseDir, "deploy-bundle/artifact-manifest.json");
+  fs.mkdirSync(path.dirname(brokerArtifact), { recursive: true });
+  fs.writeFileSync(
+    brokerArtifact,
+    JSON.stringify({
+      commit_sha: releaseSha,
+      files: [
+        {
+          path: "payload/deploy/runner/foundation-broker-lifecycle.sh",
+          sha256: crypto.createHash("sha256").update(brokerProbe).digest("hex"),
+        },
+      ],
+    })
+  );
+  fs.chmodSync(brokerArtifact, 0o444);
+  fs.writeFileSync(
+    path.join(releaseDir, "manifest.json"),
+    JSON.stringify({ release_sha: releaseSha, deploy_bundle_sha: releaseSha })
+  );
+  fs.chmodSync(path.join(releaseDir, "manifest.json"), 0o444);
   fs.symlinkSync(releaseDir, path.join(releaseRoot, "current"));
   const resolvedReleaseDir = fs.realpathSync(releaseDir);
 
@@ -816,6 +850,52 @@ exec /usr/bin/install "$@"
     if (!stuckWorkerLog.includes(attempted)) {
       throw new Error(`failed release shutdown did not attempt ${attempted}`);
     }
+  }
+  // Plumbing probes; not substitutes for the real Linux broker cases.
+  const runBrokerGate = (env = {}) =>
+    spawnSync(
+      "bash",
+      [
+        path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
+        "--release-root",
+        releaseRoot,
+        "--release-sha",
+        releaseSha,
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${path.join(tmpRoot, "bin")}:${process.env.PATH}`,
+          SYSTEMCTL: systemctl,
+          QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+          QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE: envFile,
+          ...env,
+        },
+      }
+    );
+  for (const fault of ["live", "metadata", "digest"]) {
+    const before = new Map(
+      fs
+        .readdirSync(unitDir)
+        .map((name) => [name, fs.readFileSync(path.join(unitDir, name), "utf8")])
+    );
+    fs.writeFileSync(systemctlLog, "");
+    if (fault === "metadata") fs.chmodSync(brokerHelper, 0o700);
+    if (fault === "digest") fs.appendFileSync(brokerHelper, "# simulated drift\n");
+    const rejected = runBrokerGate(fault === "live" ? { FAKE_BROKER_CLOSED: "0" } : {});
+    writeExecutable(brokerHelper, brokerProbe);
+    if (rejected.status !== 75)
+      throw new Error(`${fault}: broker gate must defer: ${rejected.stderr}`);
+    for (const [name, value] of before)
+      if (fs.readFileSync(path.join(unitDir, name), "utf8") !== value)
+        throw new Error(`${fault}: unit changed before broker closure`);
+    const events = fs.readFileSync(systemctlLog, "utf8");
+    if (events.includes("install -m 0644") || events.includes("daemon-reload"))
+      throw new Error(`${fault}: installer crossed the closure gate`);
+    if (fault !== "live" && events.includes("broker verify-closed"))
+      throw new Error(`${fault}: untrusted helper was executed`);
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });

@@ -310,9 +310,39 @@ printf 'quiesce\n' >>"${promotionEventLog}"
     "deploy/runner/management-ui-lifecycle.sh",
     `#!/usr/bin/env bash
 printf 'ui-%s\n' "$1" >>"${promotionEventLog}"
-exit 62
+exit 75
 `
   );
+  // Original runner writes the hold; only the closure/timer probes are simulated.
+  // Timer failure occurs before the fixed global drop-in path can be written.
+  fs.mkdirSync(path.join(releaseRoot, previousSha), { recursive: true });
+  fs.mkdirSync(path.join(releaseRoot, originalPreviousSha), { recursive: true });
+  fs.symlinkSync(
+    path.join(releaseRoot, previousSha),
+    path.join(releaseRoot, "current")
+  );
+  fs.symlinkSync(
+    path.join(releaseRoot, originalPreviousSha),
+    path.join(releaseRoot, "previous")
+  );
+  fs.writeFileSync(
+    path.join(releaseRoot, previousSha, "manifest.json"),
+    JSON.stringify({ release_sha: previousSha, previous_sha: originalPreviousSha })
+  );
+  const holdSource = path.join(
+    releaseRoot,
+    originalPreviousSha,
+    "deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+  );
+  fs.mkdirSync(path.dirname(holdSource), { recursive: true });
+  fs.copyFileSync(
+    path.join(
+      repoRoot,
+      "deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+    ),
+    holdSource
+  );
+  writeExecutable("bin/systemctl", "#!/bin/bash\nexit 1\n");
   const uiQuiesceFailure = spawnSync(
     "bash",
     [runnerPath, "--request-file", requestFile],
@@ -335,7 +365,7 @@ exit 62
   const uiFailedDeployResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
   const uiFailureDetail = JSON.parse(uiFailedDeployResult.checks[0].detail);
   if (
-    uiQuiesceFailure.status !== 62 ||
+    uiQuiesceFailure.status !== 75 ||
     fs.readFileSync(promotionEventLog, "utf8").trim() !== "quiesce\nui-quiesce" ||
     uiFailedDeployResult.status !== "failed" ||
     uiFailureDetail.failure_stage !== "quiesce-management-ui" ||
@@ -345,6 +375,16 @@ exit 62
       `management UI quiesce failure did not block promotion: ${uiQuiesceFailure.stderr}`
     );
   }
+  if (uiFailureDetail.exit_status !== 75)
+    throw new Error("closure deferral must retain exit 75");
+  const deferredHold = path.join(stateDir, "recovery/hold");
+  if (
+    fs.readFileSync(deferredHold, "utf8") !== `${requestId}\n` ||
+    (fs.statSync(deferredHold).mode & 0o777) !== 0o600
+  )
+    throw new Error("original runner did not persist a private request-bound hold");
+  if (fs.readFileSync(promotionEventLog, "utf8").includes("promote"))
+    throw new Error("closure deferral continued to promotion");
   writeExecutable(
     "deploy/runner/management-ui-lifecycle.sh",
     `#!/usr/bin/env bash
