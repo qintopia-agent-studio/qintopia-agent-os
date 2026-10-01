@@ -101,6 +101,38 @@ function selectField(parent, id, label, items, value = "", empty) {
   parent.append(row);
   return input;
 }
+function searchableSelectField(parent, id, label, items, value = "", empty) {
+  const search = inputField(parent, `${id}-search`, `查找${label}`, "", "search");
+  const select = selectField(parent, id, label, [], value, empty);
+  let selectedValue = value;
+  select.addEventListener("change", () => (selectedValue = select.value));
+  const renderOptions = () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    const matches = items.filter((item) =>
+      item.label.toLocaleLowerCase().includes(query)
+    );
+    const shown = matches.some((item) => item.id === selectedValue)
+      ? matches
+      : [...items.filter((item) => item.id === selectedValue), ...matches];
+    select.replaceChildren();
+    if (empty !== undefined) select.add(new Option(empty, ""));
+    for (const item of shown) {
+      const option = new Option(item.label, item.id);
+      option.disabled = !!item.disabled;
+      select.add(option);
+    }
+    if (!shown.length) {
+      const unavailable = new Option("没有匹配候选", "");
+      unavailable.disabled = true;
+      select.add(unavailable);
+    }
+    select.value = selectedValue;
+    if (!select.value && empty !== undefined) select.value = "";
+  };
+  search.addEventListener("input", renderOptions);
+  renderOptions();
+  return select;
+}
 function inputField(parent, id, label, value = "", type = "text", required = false) {
   const row = el("div", undefined, "qo-field"),
     caption = el("label", label),
@@ -132,6 +164,25 @@ function checkList(parent, id, items, chosen = []) {
   }
   parent.append(group);
   return group;
+}
+function searchableCheckList(parent, id, label, items, chosen = []) {
+  const search = inputField(parent, `${id}-search`, `查找${label}`, "", "search");
+  const list = checkList(parent, id, items, chosen);
+  const none = sub("没有匹配候选");
+  none.hidden = true;
+  parent.append(none);
+  search.addEventListener("input", () => {
+    const query = search.value.trim().toLocaleLowerCase();
+    let visible = 0;
+    for (const row of list.querySelectorAll("label")) {
+      row.hidden =
+        !row.textContent.toLocaleLowerCase().includes(query) &&
+        !row.querySelector("input").checked;
+      if (!row.hidden) visible++;
+    }
+    none.hidden = visible > 0;
+  });
+  return list;
 }
 const selected = (id) =>
   [...$(id).querySelectorAll("input:checked")].map((x) => x.value);

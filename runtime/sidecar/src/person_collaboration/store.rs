@@ -25,6 +25,7 @@ mod catalog;
 mod erhua_scope;
 pub(crate) mod foundation;
 mod rule_lifecycle;
+pub(crate) mod scope_communication;
 pub(crate) mod steward;
 pub(crate) mod workspace_candidates;
 pub(crate) use rule_lifecycle::{RuleCommand, RuleEdit};

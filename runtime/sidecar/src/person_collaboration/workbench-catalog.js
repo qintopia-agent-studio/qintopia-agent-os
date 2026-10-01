@@ -366,7 +366,9 @@ function openLedger(item) {
       id: item.object_ref,
       label: item.label + " · 已有登记，待接入 / 核验",
     });
-  const reference = selectField(
+  const reference = (
+    kind === "person" || kind === "group" ? searchableSelectField : selectField
+  )(
     form,
     "record-reference",
     kind === "person"
@@ -414,7 +416,7 @@ function openLedger(item) {
     item?.scope_id || "",
     "尚未指定"
   );
-  selectField(
+  searchableSelectField(
     form,
     "record-owner",
     "维护负责人（可选）",
@@ -745,9 +747,10 @@ function openBindings(item) {
   form.append(host);
   const draw = () => {
     host.replaceChildren();
-    checkList(
+    searchableCheckList(
       host,
       "binding-groups",
+      "可访问群",
       state.groups,
       state.bindings.filter((b) => b.scope === scope.value).map((b) => b.conversation)
     );

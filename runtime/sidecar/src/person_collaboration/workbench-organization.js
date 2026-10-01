@@ -488,15 +488,7 @@ function renderSettings() {
   const one = box("1 · 谁在这个岗位工作"),
     two = el("div", undefined, "qo-two");
   const peopleBox = el("div");
-  const search = inputField(
-    peopleBox,
-    "person-search",
-    "按姓名或昵称查找",
-    "",
-    "search"
-  );
-  search.placeholder = "搜索已有人员，核对同名候选";
-  const person = selectField(
+  const person = searchableSelectField(
     peopleBox,
     "person",
     "任职人员",
@@ -570,18 +562,6 @@ function renderSettings() {
     two,
     sub("新登记但未核验的人员不会出现在任职候选中；可从基础台账查看其待核验状态。")
   );
-  search.addEventListener("input", () => {
-    const old = person.value;
-    person.replaceChildren(new Option("请选择具体人员", ""));
-    personOptions()
-      .filter((p) => p.label.includes(search.value.trim()))
-      .forEach((p) => {
-        const o = new Option(p.label, p.id);
-        o.disabled = p.disabled;
-        person.add(o);
-      });
-    person.value = old;
-  });
   form.append(one);
   const work = box("2 · 管到哪里、管理哪些智能体");
   work.append(
@@ -676,9 +656,10 @@ function renderSettings() {
   const bound = state.bindings
     .filter((b) => b.scope === pos.scope_id)
     .map((b) => b.conversation);
-  checkList(
+  searchableCheckList(
     groupBox,
     "audience-groups",
+    "联系群",
     state.groups.map((g) => ({
       id: g.id,
       label: g.label + (!bound.includes(g.id) ? " · 超出范围" : ""),
@@ -749,7 +730,7 @@ function renderSettings() {
       audience.proactive
     );
   contacts.append(modeFields);
-  const contactReviewer = selectField(
+  const contactReviewer = searchableSelectField(
     contacts,
     "contact-reviewer",
     "触达确认人",
