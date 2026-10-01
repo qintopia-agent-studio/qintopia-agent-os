@@ -200,3 +200,36 @@ Chrome 继续等待总指挥交接，本轮没有并行操作浏览器。
 账号／渠道准确 DTO 到齐前仅准备同版入口，未猜字段、借用 PMS 保存接口或授予舍长 PMS 权限。
 
 沿用此前 4/4 与 169/169 的集成结果，本次仅追加报告和 HTTP／恢复证据，不复跑未受改动影响的 Rust 全量。
+
+## 文档推送后的审查与 CI 取消记录
+
+本次记录提交 `1dd40437cd84c39bb6e8952afef5975cad465c5f`
+已普通推送至原页面 PR。最新完整 Reviewer Guide 于 2026-10-01
+15:18:48（北京时间）更新至该 head，仍无安全或主要问题，保留 No relevant
+tests 的覆盖限制。已读全部三条 conversation comments；reviews 和 inline review
+threads 为零，无下一页。远端差分仍恰好八份页面与记录文件，不含共同 Rust、SQL、CI 或部署文件。
+
+2026-10-01 15:22 的公开状态元数据出现同一 head 的两次 CI 运行：
+
+- 原运行 `36829507191` 的 Runtime、Rust
+  quality、Light、PostgreSQL 四项为 cancelled；其聚合 `check` 为 failure，Release Please
+  validation 也被取消。原失败和取消均保留，不回填为通过。
+- 替代运行 `36829591181` 的 `changes`
+  success，四项实际检查仍在执行，尚未生成替代聚合结果。
+- PR-Agent 的运行 `36829507249` 为 success；business 的独立运行 `36829507174` 仍在执行。
+
+本轮推送后更新了 PR 正文。现行 `.github/workflows/ci.yml` 同时监听 `synchronize` 与
+`edited`，同一 PR 的 concurrency group 使用
+`cancel-in-progress: true`；聚合检查在依赖取消时仍运行且要求成功。结合正文更新和上述时间顺序，判断旧运行被更新事件替代。这是根据配置与状态元数据作出的诊断推断；没有取得 CI 日志，不能将取消归因于源码断言失败。
+
+CI 诊断工具再次返回 GitHub 登录连接阻断，未取得诊断。公开读取仅包含状态、准确 head、check/run
+ID 和时间，没有通过源控 CLI 读取 CI 诊断日志，也没有修改 workflow、触发条件、断言或批准门禁。
+
+后续读取按精确 head 和 run ID 区分历史取消与当前运行，待替代 `check`
+产生后才能报告该 head 的最终门禁结论。后续 PR 正文先准备完整再推送；本轮不继续改正文或手动重跑检查，以免再次取消正在执行的替代运行。状态快照保留在原忽略证据目录，此报告仍由原报告索引收录。
+
+2026-10-01 15:28:34 的后续公开快照确认，替代运行 `36829591181` 的 `check`
+已 success，Runtime、Rust quality、Light、PostgreSQL、changes 均 success，Release Please
+validation skipped；同一 head 的 PR-Agent 也 success。至此 `1dd40437` 的两个 required
+checks 已通过，旧运行的 failure／cancelled 仍保留为历史结果。该通过结论只属于
+`1dd40437`，不提前授予本报告后续提交的替代 head。
