@@ -328,3 +328,25 @@ head 的本地集成版本中实际保存、回读、更换、清空和跨栋拒
 
 仍待基础任务修正管理员候选阻断后，在新精确版本上复验；指定 Chrome 仍等待总指挥交接。真实 Hermes 独立进程交接由基础任务负责。本轮不复跑未受影响的 Rust 全量，旧 169 项结果只属于此前
 `5ecc0ea`。PR 保持 Draft，base 对齐 master，依赖 #733 先合入。没有合并、发布、部署、改 CI／部署机制、外发消息或修改生产授权。
+
+## position 配置查询接线计划（实施前）
+
+依据共享唯一作者的
+`admin-first-config-contract.md`，本轮仅修改候选组件和工作配置接线。新建及编辑统一在 contact 的 people/accounts/channels 查询中传已有
+`pos.id` 为
+`position`，scope 保持岗位范围；不传可选 collaboration，不依赖已保存受众。assign、set_groups 及无 position 的普通查询不增加参数，contacts 保存三字段不变。
+
+岗位／范围／目标连接切换沿用整个表单重建，销毁旧控件，隔离草稿和游标并忽略晚回包。同一上下文搜索保留已明确加入的草稿。配置模式翻页遇到 400
+`invalid_candidate_query`
+自动丢弃旧游标并只重取一次第一页；第一页错误不循环重试。403 保持清候选与联系人草稿、阻止预览；不更新 state.version 绕过保存版本冲突。
+
+实际后端响应仅顶层有 `configuration_version`，候选项没有
+`version`；旧前端却要求逐项整数 version。已通过留存 HTTP 证据和共享候选序列化代码确认该不匹配，本轮去掉无契约的逐项要求，配置查询验证顶层版本。用真实响应形状验证，避免继续由模拟数据额外字段掩盖问题。
+
+既有 30 项证据不重跑。新增检查仅覆盖 position 传播与非 contact 隔离、无连接首次查询、实际无逐项版本的响应、配置游标失效回第一页、上下文切换晚回包、同上下文草稿保留和撤权。
+
+后端提交尚待交付，真实同版 HTTP 与指定 Chrome 验收不提前计为通过；不改共享后端、CI 或生产。
+
+本轮 position 实施完成：新建及编辑均采用 position-only 配置查询，不依赖连接 ID。新增
+`.local-workspace/test-steward-position.cjs`
+的 8/8 项通过，包含实际 renderSettings 的首次／空受众查询，以及留存真实 HTTP 候选响应的回放。这些检查仍为本地状态模拟，不是浏览器验收；旧 30 项未重跑，后端新 head 的实际联合验证待交付。
