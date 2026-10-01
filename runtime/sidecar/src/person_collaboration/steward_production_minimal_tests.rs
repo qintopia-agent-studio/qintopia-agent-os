@@ -1088,6 +1088,25 @@ pub(crate) async fn linux_production_probe() -> Result<()> {
         std::env::set_var(key, value);
     }
     std::env::remove_var("QINTOPIA_FOUNDATION_LOCAL_ENABLE");
+    // A non-runner foreign owner with otherwise valid group/mode must fail
+    // before creating a lock or listener, without inferring trust from its UID.
+    std::os::unix::fs::chown(&socket_dir, Some(2002), None)?;
+    let foreign_owner = super::foundation_server::broker_live(Store {
+        pool: store.pool.clone(),
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: StoreMode::Live,
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(
+        foreign_owner.to_string(),
+        "isolated_foundation_runner_required"
+    );
+    assert!(!endpoint.exists());
+    assert!(!endpoint.with_extension("lock").exists());
+    std::os::unix::fs::chown(&socket_dir, Some(0), None)?;
+    println!("foreign_parent_owner_rejected_before_listener=true");
     let mut broker = tokio::spawn(super::foundation_server::broker_live(Store {
         pool: store.pool.clone(),
         tenant: store.tenant.clone(),

@@ -1101,7 +1101,7 @@ impl ErhuaBrokerConfig {
             runner_gid: gid,
         })
     }
-    fn check_parent(&self, path: &std::path::Path) -> Result<()> {
+    fn check_parent(&self, path: &std::path::Path, broker_uid: u32) -> Result<()> {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         let parent = path
             .parent()
@@ -1110,6 +1110,7 @@ impl ErhuaBrokerConfig {
         ensure!(
             meta.is_dir()
                 && !meta.file_type().is_symlink()
+                && meta.uid() == broker_uid
                 && meta.uid() != self.runner_uid
                 && meta.gid() == self.runner_gid
                 && meta.permissions().mode() & 0o7777 == 0o750,
@@ -1392,7 +1393,10 @@ async fn serve_broker_until(
         "private_foundation_socket_required"
     );
     if let Some(config) = &isolated {
-        config.check_parent(path)?;
+        // The kernel supplies this process's identity; never trust a configured
+        // owner value or infer the broker identity from the directory itself.
+        let (identity, _peer) = tokio::net::UnixStream::pair()?;
+        config.check_parent(path, identity.peer_cred()?.uid())?;
     }
     let mut socket = FoundationSocketGuard::prepare(path).await?;
     let listener = tokio::net::UnixListener::bind(path)
@@ -2150,10 +2154,11 @@ fn erhua_isolation_rejects_same_user_and_writable_parent() -> Result<()> {
         runner_gid: meta.gid(),
     };
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o750))?;
-    assert!(config.check_parent(&path).is_err());
+    assert!(config.check_parent(&path, meta.uid()).is_err());
     config.runner_uid = meta.uid() + 1;
-    config.check_parent(&path)?;
+    config.check_parent(&path, meta.uid())?;
+    assert!(config.check_parent(&path, meta.uid() + 2).is_err());
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o770))?;
-    assert!(config.check_parent(&path).is_err());
+    assert!(config.check_parent(&path, meta.uid()).is_err());
     Ok(())
 }

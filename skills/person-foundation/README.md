@@ -183,6 +183,10 @@ cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integr
 
 ## Broker 停止与排空
 
+二花生产 broker 的 socket 父目录必须由 broker 的实际内核 UID 拥有，且 group 为已配置 runner
+GID、权限为
+`0750`。通过启动时的本进程 socket-pair 取得 UID；不从目录 owner 推导运行身份，不增加可伪造的 owner 配置。其他用户拥有的目录在创建锁和监听之前拒绝。
+
 Foundation
 broker 收到 SIGTERM／SIGINT 后关闭监听，等待已经接收的单项请求完成。客户端 10 秒超时仍返回
 `outcome_unknown`；不取消数据库工作，恢复必须沿用原 `operation_id`
