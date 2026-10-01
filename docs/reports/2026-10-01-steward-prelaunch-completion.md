@@ -45,17 +45,7 @@ SDK 16 项通过；原统一业务入口 7 个场景通过，运行编号
 正向覆盖知识保存、更正、停止、旧版本拒绝、条件记忆与回读。负向覆盖相同 UID、错误 UID、错误 token、未认证事件、跨栋、参数伪造和权限撤销。原 broker
 token 与数据库环境不传给客户端；客户端无法读取权限 0600 的 broker 文件。
 
-实际 PostgreSQL 行锁使已接收操作等待。
-
-客户端 10 秒后超时，SIGTERM 关闭接入；
-
-30 秒排空期限到达时操作继续等待。
-
-释放锁后保存完成，停止并重启 broker，通过原操作恢复收据，数据库执行事件计数仍为 1。
-
-原 UI 服务回读一致；
-
-空闲停止也正常排空。
+实际 PostgreSQL 行锁使已接收操作等待。客户端 10 秒后超时，SIGTERM 关闭接入；30 秒排空期限到达时操作继续等待。释放锁后保存完成，停止并重启 broker，通过原操作恢复收据，数据库执行事件计数仍为 1。原 UI 服务回读一致；空闲停止也正常排空。
 
 ## 失败与处置
 
@@ -69,13 +59,7 @@ token 与数据库环境不传给客户端；客户端无法读取权限 0600 �
 Linux 验证曾断言错误的 UI 字段 `status`。改为原服务实际返回的
 `stopped_at`，保留版本、停止、回读及不重复执行断言后整条通过。
 
-自动总检查起初因新增文档的 Markdown 换行失败，修复文档后重跑。
-
-总检查随后发现仓库内模拟缓存的官方 Hermes 自带 C# 文件，协作检查拒绝将它视作项目源码。
-
-已将完整固定源码移至仓库外的本任务依赖缓存，保留原 SHA 和实际验证证据；
-
-未调整检查器。
+自动总检查起初因新增文档的 Markdown 换行失败，修复文档后重跑。总检查随后发现仓库内模拟缓存的官方 Hermes 自带 C# 文件，协作检查拒绝将它视作项目源码。已将完整固定源码移至仓库外的本任务依赖缓存，保留原 SHA 和实际验证证据；未调整检查器。
 
 本任务容器在验证结束后均停止，数据库和镜像保留。官方源码缓存位置记录在本地证据中。
 
@@ -120,13 +104,7 @@ SSH 拉取主线时连接关闭；改用现有 GitHub 凭据进行单次 HTTPS �
 已完整读取 `9be47253` 的新 Guide、所有后续评论、review 和 inline
 comment。Guide 对该提交为 partial，排除 31 文件；没有 review 或 inline
 comment。新增归属意见 `f9325c9c4973`
-已修复：通过内核返回的本进程 UID 明确检查父目录 owner。
-
-原生专项 1 项、实际 Linux 全链 1 项与总检查均通过；
-
-未增加 owner 配置、依赖、CI 或部署规则。
-
-最终提交仍须核对最新远端审查，不把旧 Guide 的结果视为新提交已通过。
+已修复：通过内核返回的本进程 UID 明确检查父目录 owner。原生专项 1 项、实际 Linux 全链 1 项与总检查均通过；未增加 owner 配置、依赖、CI 或部署规则。最终提交仍须核对最新远端审查，不把旧 Guide 的结果视为新提交已通过。
 
 完整读取 `5eb59cb3` 的最新 Reviewer Guide、后续评论、review 和 inline
 comment。原审查覆盖不完整；不会把“没有其他评论”称作独立完整审阅。最终提交的远端审查需按实际 head 核对，旧 Guide 不作为新提交通过证据；交付时读取最新评论、review 与 inline
@@ -150,17 +128,9 @@ UI 接线、真实聊天／模型理解、PMS 与微信／企微身份关联和�
 ## 独立复审 P2：候选来源归属与保存一致
 
 针对 `cc7cecd5`
-完整差分的独立复审确认：同一 namespace／subject_type 被多个有效 Gateway 声明时，候选仍可能展示人员渠道或工作账号，保存却按唯一归属拒绝。
+完整差分的独立复审确认：同一 namespace／subject_type 被多个有效 Gateway 声明时，候选仍可能展示人员渠道或工作账号，保存却按唯一归属拒绝。另有其他租户保留该 identity_namespace 的情况，不能把其来源当作本栋可信候选。
 
-另有其他租户保留该 identity_namespace 的情况，不能把其来源当作本栋可信候选。
-
-本次将现有有效 Gateway 归属计数与身份来源的保留命名空间规则组合为同一固定 SQL 条件，用于候选预筛选、最终结果查询和 contacts 保存校验。
-
-人员渠道、工作账号及其渠道统一生效；
-
-最终查询再次核验，避免其他租户在前后查询之间改变归属。
-
-contacts
+本次将现有有效 Gateway 归属计数与身份来源的保留命名空间规则组合为同一固定 SQL 条件，用于候选预筛选、最终结果查询和 contacts 保存校验。人员渠道、工作账号及其渠道统一生效；最终查询再次核验，避免其他租户在前后查询之间改变归属。contacts
 DTO、权限、版本和完整替换语义不变。未新增表、迁移、服务、配置项、CI 或部署机制。
 
 新增三个定向 PostgreSQL 场景已经通过，使用实际密码会话和本任务受限 UI 数据库角色：
@@ -192,13 +162,7 @@ PR 评论已重新分页完整读取：4 条 issue comments，0 条 reviews，0 
 总指挥已核对 `cc7cecd5` 的替代 CI
 `36844973117`、business 与 PR-Agent 成功。本任务的规定 CI 诊断工具仍要求登录；不会把上一提交绿灯当作本次修复通过。
 
-详细处置表与 Linux 构建／插件加载复现步骤按总指挥要求保存在 Git 外的共同收口记录，没有为重复交接新造提交。
-
-当前提交仅包含该有效 P2 修复及必要测试、规格和结果记录。
-
-整批仍需独立复核、#734 同版联调与获准后的正式安装／回退验证；
-
-不标为已上线。
+详细处置表与 Linux 构建／插件加载复现步骤按总指挥要求保存在 Git 外的共同收口记录，没有为重复交接新造提交。当前提交仅包含该有效 P2 修复及必要测试、规格和结果记录。整批仍需独立复核、#734 同版联调与获准后的正式安装／回退验证；不标为已上线。
 
 ## 管理员联系人候选 403 修复
 
@@ -247,7 +211,11 @@ CI 诊断连接仍提示需要通过 ChatGPT 登录 Codex，不能据此确认�
 
 ## 管理员首次配置收口（接替 f975）
 
-经 UI 实际时序复核，首次查询没有任职/连接 ID，候选先于完整 ConfigureWork 的 preview/save；已有连接也必须允许在内存草稿中扩大或更换联系对象。f975 的已保存受众路径不能覆盖这一流程。
+经 UI 实际时序复核，首次查询没有任职/连接 ID，候选先于完整 ConfigureWork 的 preview/save；
+
+已有连接也必须允许在内存草稿中扩大或更换联系对象。
+
+f975 的已保存受众路径不能覆盖这一流程。
 
 新增 contact 查询的可选 position，复用当前 SetAudience 管理配置权；
 
@@ -261,7 +229,11 @@ CI 诊断连接仍提示需要通过 ChatGPT 登录 Codex，不能据此确认�
 
 无 position 的普通舍长路径不扩权。
 
-配置游标绑定岗位、可选目标、查询上下文及 tenant 配置版本，每页核验权限；最终完整 preview/save 仍按当前权和来源重验。无新增 DTO 必填项、数据表、权限系统或预保存步骤。
+配置游标绑定岗位、可选目标、查询上下文及 tenant 配置版本，每页核验权限；
+
+最终完整 preview/save 仍按当前权和来源重验。
+
+无新增 DTO 必填项、数据表、权限系统或预保存步骤。
 
 首次真实 HTTP 验证在本任务新建的一次性 PG（5432，旧实例已停止且端口无其他任务占用）及受限 UI 数据库角色下完成，密码会话通过生产 origin
 handler 的本机 TCP 请求执行。
@@ -311,3 +283,127 @@ first-config-contact-regression.log 发现旧路径的游标错误顺序被改�
 定向复验通过，未更改既有断言以掩盖回归。
 
 first-config-markdown.log 的 7 处行长错误已通过拆分新增文档段落修正，first-config-markdown-2.log 通过。
+
+独立增量审阅已核对 428f392d 的运行时候选源码及 HTTP/来源回归证据，未发现新运行时阻断。
+
+源码 SHA256 为 4bb6be97f4cc2101a86d480683f3fab89609d99c81a2757a1c913bfedcc48db1，后续文档/测试补证未改此源码。
+
+按独立审阅补充了 HTTP handler 同一单连接池的非敏感身份凭证。
+
+first-config-http-role-proof.log 的完整 HTTP 差分场景通过（1.62 秒）。
+
+连接的 session_user/current_user/current_role 均为 steward_ui_test；
+
+is_superuser 与 rolsuper 为 false。
+
+rolinherit、rolcreatedb、rolcreaterole、rolbypassrls 均为 false，role_memberships 为 0，无 Person
+INSERT 权限。
+
+没有输出连接串、密码或私人资料；
+
+本次凭证不依赖缺省拥有者连接。
+
+旧执行计划的 f975 段落明确标为历史并被 position 契约替代，不再要求先保存再搜索。
+
+已撤回无关历史段落的格式改动；
+
+最终差分只保留本次规格、报告与必要测试。
+
+first-config-auto.log：quick 通过，heavy 的 QiWe 因 PATH 选到系统 Python 3.9 而失败。
+
+其类型语法导入与 asyncio 错误均属既有测试环境前提，见测试指南的 Python 3.12 要求。
+
+保留失败结果，使用已安装 Python 3.12 修正执行环境，不改业务代码、断言或门禁。
+
+first-config-heavy-recovery.log 在新历史标注的 Markdown 行长检查处停止，已拆分该段修正。
+
+既有 heavy 入口自身包含 quick 和 PostgreSQL；
+
+修正后直接在正确环境重新执行完整 auto 门禁。
+
+最终结果与日志在下方记录；
+
+不将失败的 auto 或单项通过冒充总门禁通过。
+
+first-config-pr-doctor-draft.log 的命令多传了分隔符，修正参数后 pr-doctor-draft-2.log 通过。
+
+Code Review 在精确运行时 head
+428f392d 仍要求通过 ChatGPT 登录 Codex，未用 CLI 绕过 CI 诊断。
+
+PR-Agent 的 428f392d 审阅仍为 partial，排除 24 文件，原 3 个历史 finding 仍为 ACTIVE。
+
+独立审阅与具体修复证据用于处置，不声称机器人已完整批准或远端 CI 已通过。
+
+### PostgreSQL 受限角色准备缺口与修复
+
+first-config-auto-final.log 在正确 Python 3.12 环境完成 quick/heavy：默认 Rust
+860 通过、3 忽略。
+
+全功能 Rust 875 通过、220 忽略，两组 warnings-as-errors Clippy 与 QiWe
+325 通过、1 平台条件跳过。
+
+该次完整 auto 仍以非零结束，原因是 PG 人员协作 172 通过、1 失败。
+
+失败原场景为 live_https_restricted_role_runs_nonempty_account_and_read_paths，第 714 行登记人员保存返回 409，预期 200。
+
+按总指挥要求单独复现，同一受限角色及原断言仍失败，见 first-config-role-regression-reproduce.log。
+
+未换 owner 连接，未修改源测试断言或生产权限。
+
+根因是本任务模拟角色只准备了联系人能力所需权限，却被用于既有完整管理 UI 场景。
+
+该场景的既有 SaveLedger(person) 实际执行 INSERT
+persons(id,display_name,preferred_name)。
+
+first-config-role-diagnostic-before.log 在受限角色上复现 SQLSTATE 42501：permission
+denied for table persons。
+
+三列 INSERT 权限均为 false，SQL 事务随即回滚，证明是权限配置缺失，而非测试间状态污染。
+
+仅在本任务一次性 PG 补授上述三列的 INSERT，没有授表级全量 INSERT、UPDATE、继承、超级用户或其他操作权。
+
+修复 SQL 保留在 Git 外 first-config-role-fixture-repair.sql，回滚诊断结果见 role-diagnostic-after.log。
+
+同一受限角色的原完整 HTTPS 管理场景保持原断言通过（1.49 秒），见 first-config-role-regression-repaired.log。
+
+没有运行时或 UI 修复；
+
+未重跑已过 quick/heavy，也未重复已过的联合 UI 流程。
+
+补权限前的 role-proof.log 凭证只说明当时角色状态，不冒充修复后状态。
+
+最终同连接凭证区分表级 INSERT 与三列 INSERT，保留于 first-config-http-role-proof-final.log。
+
+当前角色仍非超级用户、无继承/成员关系/建库/建角色/bypass RLS；
+
+三列最小 INSERT 为 true，表级 INSERT 为 false。
+
+之后只运行既有 PostgreSQL tier；
+
+结果记录于 first-config-postgres-recovery.log 与对应 .exit。
+
+不把非零的 first-config-auto-final.log 补记为零；
+
+所有失败证据保留。
+
+总指挥已告知固定运行时 428f392d 与 UI 的联合 HTTP 通过，本任务没有自行声称 Chrome 或生产验收通过。
+
+最终恢复结果：first-config-postgres-recovery.exit 为 0；
+
+既有 PostgreSQL tier 完整通过。人员协作 173/173、欢迎回归 24/24 及 operations
+control-plane apply smoke 均通过。
+
+修正模拟三列权限后，完整首次配置 HTTP 与最终同连接角色凭证再次通过（1.56 秒）。日志为 first-config-http-role-proof-final.log；
+
+受限角色仍非超级用户，表级 INSERT 为 false，三列 INSERT 为 true。
+
+正确 Python 环境的 auto 已通过 quick/heavy。
+
+PG 失败经单场景复现和最小模拟权限修正后，独立 PostgreSQL
+tier 通过。原 auto 非零日志仍保留，不宣称一次完整 auto 已全绿，不重复已过的 quick/heavy 或联合 UI。
+
+测试指南补充该可选角色被完整管理 HTTP 场景复用的准备前提与非敏感身份凭证要求。本机 rtk 不在 PATH；
+
+使用原生 pnpm/cargo 命令并保留完整日志，没有改工具或检查器。本任务模拟 PG 数据和证据保留，其他任务服务未停用；
+
+没有生产变更。
