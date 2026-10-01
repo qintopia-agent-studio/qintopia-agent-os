@@ -574,7 +574,36 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
         .conversation_actor("synthetic-qiwe-one", "synthetic-resident")
         .await?;
     let person = user.person_ref();
-    let relation = appoint(&store, &owner, &state, person, scope).await?;
+    let mut service = assignment(&state, person, scope);
+    service.permissions.push(PermissionSetting {
+        action: "publish".into(),
+        mode: PermissionMode::Autonomous,
+        reviewer: None,
+    });
+    let relation = id(
+        &command(&store, &owner, Change::Assign(Box::new(service))).await?["change"]
+            ["collaboration"],
+    );
+    let mut management = assignment(&state, person, scope);
+    management.role = find(&state, "roles", "社区负责人");
+    management.duty = Some(find(&state, "duties", "组织管理"));
+    management.agent = "default".into();
+    management.domain = "organization".into();
+    management.permissions = vec![PermissionSetting {
+        action: "manage".into(),
+        mode: PermissionMode::Autonomous,
+        reviewer: None,
+    }];
+    management.delegation = Some(Delegation {
+        agents: vec!["erhua".into()],
+        domains: vec!["community_service".into()],
+        actions: vec!["publish".into()],
+        depth: 0,
+    });
+    let management_relation = id(
+        &command(&store, &owner, Change::Assign(Box::new(management))).await?["change"]
+            ["collaboration"],
+    );
     let audience: Audience = serde_json::from_value(
         json!({"groups":[],"people":[person],"residents":"none","reply":"autonomous","proactive":"denied","reviewer":null,"visibility":"general","topics":"本栋日常交流"}),
     )?;
@@ -587,6 +616,25 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
         },
     )
     .await?;
+    // A second permitted channel and the same person's foreign-scope channel are distinct.
+    let permitted_namespace = format!("{}/simulated-local-personal", store.tenant);
+    let foreign_namespace = format!("{}/simulated-foreign-personal", store.tenant);
+    let foreign_scope = find(&state, "scopes", "二栋");
+    let mut forbidden_links = Vec::new();
+    for (namespace, gateway, gateway_scope) in [
+        (&permitted_namespace, "simulated-local-personal", scope),
+        (
+            &foreign_namespace,
+            "simulated-foreign-personal",
+            foreign_scope,
+        ),
+    ] {
+        sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'personal',true)").bind(&store.tenant).bind(gateway).bind(namespace).bind(gateway_scope).execute(&store.pool).await?;
+        let link:Uuid=sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,person_id,status,evidence_ref,confirmed_by,adapter_metadata) VALUES($1,'wecom_internal',$2,$3,'confirmed',$4,$5,jsonb_build_object('first_observation_ref',$4::text)) RETURNING id").bind(namespace).bind(gateway).bind(person).bind(Uuid::new_v4()).bind(owner.person_ref()).fetch_one(&store.pool).await?;
+        if gateway_scope == foreign_scope {
+            forbidden_links.push(link);
+        }
+    }
     let source_namespace = format!("{}/simulated-shared", store.tenant);
     sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,'simulated-service',$2,'wecom_internal',$3,'shared',true)").bind(&store.tenant).bind(&source_namespace).bind(scope).execute(&store.pool).await?;
     let link:Uuid=sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal','simulated-service-account',jsonb_build_object('first_observation_ref',$2::text)) RETURNING id").bind(&source_namespace).bind(Uuid::new_v4().to_string()).fetch_one(&store.pool).await?;
@@ -646,6 +694,18 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
         platforms,
         std::collections::BTreeSet::from(["qiwe", "wecom"])
     );
+    for foreign in &forbidden_links {
+        assert!(!channels["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["ref"] == json!(foreign)));
+    }
+    assert!(!serde_json::to_string(&channels)?.contains("二栋"));
+    for channel in channels["items"].as_array().unwrap() {
+        assert_eq!(channel["subject_id"], json!(person));
+        assert_eq!(channel["channel_source_link_id"], channel["ref"]);
+    }
     let work = store
         .workspace_candidates(
             &user,
@@ -661,6 +721,205 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
         .await?;
     assert_eq!(work["items"][0]["ref"], json!(link));
     assert_eq!(work["items"][0]["subject_kind"], "work_account");
+    {
+        let restricted = std::env::var("QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL")
+            .ok()
+            .filter(|v| !v.trim().is_empty());
+        let selection_store = Store {
+            pool: if let Some(url) = restricted {
+                sqlx::PgPool::connect(&url).await?
+            } else {
+                store.pool.clone()
+            },
+            tenant: store.tenant.clone(),
+            identity_namespace: store.identity_namespace.clone(),
+            mode: StoreMode::Live,
+        };
+        let owner_link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed' ORDER BY id LIMIT 1").bind(&store.identity_namespace).bind(owner.person_ref()).fetch_one(&store.pool).await?;
+        let owner_live = store.actor(owner_link).await?;
+        store
+            .bootstrap_account(
+                owner_live.person_ref(),
+                "simulated-owner",
+                "simulated-contact-password",
+            )
+            .await?;
+        store
+            .account_command(
+                &owner_live,
+                &super::store::AccountCommand::Create {
+                    person,
+                    username: "simulated-steward".into(),
+                    password: "simulated-contact-password".into(),
+                },
+            )
+            .await?;
+        let token = selection_store
+            .login(&super::store::Credentials {
+                username: "simulated-steward".into(),
+                password: "simulated-contact-password".into(),
+            })
+            .await?;
+        let user = selection_store.session_actor(&token).await?;
+        // A steward uses organization rights, without any PMS/anan grant or staff group.
+        assert_eq!(
+            selection_store.business_configuration_state(&user).await?["manageable_scopes"],
+            json!([])
+        );
+        let person_channel = id(&channels["items"][0]["ref"]);
+        let mut audience: Audience = serde_json::from_value(
+            json!({"groups":[],"people":[person],"residents":"none","reply":"autonomous","proactive":"denied","reviewer":null,"visibility":"general","topics":"本栋生活联系","contacts":[{"subject_kind":"person","subject_id":person,"channel_source_link_id":person_channel},{"subject_kind":"work_account","subject_id":account,"channel_source_link_id":link}]}),
+        )?;
+        let make = |audience: Audience, version: i64| Command {
+            operation_id: Uuid::new_v4(),
+            expected_version: version,
+            change: Change::SetAudience {
+                collaboration: relation,
+                audience,
+            },
+        };
+        let cmd = make(
+            audience.clone(),
+            selection_store.state(&user).await?["version"]
+                .as_i64()
+                .unwrap(),
+        );
+        assert_eq!(
+            selection_store.command(&user, &cmd, false).await?["persisted"],
+            false
+        );
+        assert_eq!(
+            selection_store.audience_preview(&user, relation).await?["contacts"],
+            json!([])
+        );
+        assert_eq!(
+            selection_store.command(&user, &cmd, true).await?["persisted"],
+            true
+        );
+        assert_eq!(
+            selection_store
+                .command(&user, &cmd, true)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "command_already_processed_refresh_state"
+        );
+        let saved = selection_store.audience_preview(&user, relation).await?;
+        assert_eq!(saved["contacts"].as_array().unwrap().len(), 2);
+        assert_eq!(saved["contacts_current"], true);
+        assert_eq!(saved["contacts"][1]["subject_label"], "模拟小客服");
+        assert_eq!(
+            store
+                .contact_decision(&user, relation, "channel", link, false)
+                .await?["status"],
+            "autonomous"
+        );
+        let mut forged = audience.clone();
+        forged.contacts[0].channel_source_link_id = forbidden_links[0];
+        let bad = make(
+            forged,
+            selection_store.state(&user).await?["version"]
+                .as_i64()
+                .unwrap(),
+        );
+        assert_eq!(
+            store
+                .command(&user, &bad, true)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "contact_outside_scope"
+        );
+        let stale = make(audience.clone(), cmd.expected_version);
+        assert!(selection_store.command(&user, &stale, true).await.is_err());
+        audience.contacts.remove(0);
+        command(
+            &selection_store,
+            &user,
+            Change::SetAudience {
+                collaboration: relation,
+                audience: audience.clone(),
+            },
+        )
+        .await?;
+        assert_eq!(
+            selection_store.audience_preview(&user, relation).await?["contacts"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        sqlx::query(
+            "UPDATE qintopia_identity.work_accounts SET active=false,version=version+1 WHERE id=$1",
+        )
+        .bind(account)
+        .execute(&selection_store.pool)
+        .await?;
+        assert_eq!(
+            selection_store.audience_preview(&user, relation).await?["contacts_current"],
+            false
+        );
+        assert_eq!(
+            store
+                .contact_decision(&user, relation, "channel", link, false)
+                .await?["reason"],
+            "contact_source_changed_or_revoked"
+        );
+        let unavailable = make(
+            audience.clone(),
+            selection_store.state(&user).await?["version"]
+                .as_i64()
+                .unwrap(),
+        );
+        assert!(selection_store
+            .command(&user, &unavailable, true)
+            .await
+            .is_err());
+        audience.contacts.clear();
+        command(
+            &selection_store,
+            &user,
+            Change::SetAudience {
+                collaboration: relation,
+                audience: audience.clone(),
+            },
+        )
+        .await?;
+        assert_eq!(
+            selection_store
+                .command(&user, &cmd, true)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "command_already_processed_refresh_state"
+        );
+        assert_eq!(
+            selection_store.audience_preview(&user, relation).await?["contacts"],
+            json!([])
+        );
+        let manager_grant: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_agent_os.collaboration_grants WHERE collaboration_id=$1 AND action_key='manage'").bind(management_relation).fetch_one(&selection_store.pool).await?;
+        let revoked_version = selection_store.state(&user).await?["version"]
+            .as_i64()
+            .unwrap();
+        sqlx::query("UPDATE qintopia_agent_os.collaboration_grants SET status='revoked',version=version+1 WHERE id=$1").bind(manager_grant).execute(&selection_store.pool).await?;
+        let revoked = make(audience, revoked_version);
+        assert_eq!(
+            store
+                .command(&user, &revoked, true)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "management_denied"
+        );
+        sqlx::query("UPDATE qintopia_agent_os.collaboration_grants SET status='active',version=version+1 WHERE id=$1").bind(manager_grant).execute(&selection_store.pool).await?;
+        // Restore simulated fixture sources for the remaining independent directory checks.
+        sqlx::query(
+            "UPDATE qintopia_identity.work_accounts SET active=true,version=version+1 WHERE id=$1",
+        )
+        .bind(account)
+        .execute(&selection_store.pool)
+        .await?;
+    }
     // A missing resident source affects people, not independently verified work accounts.
     sqlx::query("UPDATE qintopia_agent_os.collaboration_audiences SET configuration=jsonb_set(configuration,'{residents}','\"current\"') WHERE tenant_key=$1 AND collaboration_id=$2").bind(&store.tenant).bind(relation).execute(&store.pool).await?;
     assert_eq!(
@@ -720,5 +979,399 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
             .await?["items"],
         json!([])
     );
+    Ok(())
+}
+
+/// The caller is the explicit Linux-only root test, never an automatic PG-tier case.
+#[cfg(target_os = "linux")]
+pub(crate) async fn linux_production_probe() -> Result<()> {
+    use anyhow::ensure;
+    use std::{os::unix::fs::PermissionsExt, path::Path};
+    ensure!(
+        std::env::var("QINTOPIA_FOUNDATION_LINUX_PROBE").as_deref() == Ok("1"),
+        "explicit_linux_probe_required"
+    );
+    let effective_uid = std::process::Command::new("id").arg("-u").output()?;
+    ensure!(
+        effective_uid.stdout == b"0\n",
+        "isolated_linux_root_required"
+    );
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
+    let (mut store, owner, state) = fixture().await?;
+    let one = find(&state, "scopes", "一栋");
+    let two = find(&state, "scopes", "二栋");
+    let user = store
+        .conversation_actor("synthetic-qiwe-one", "synthetic-resident")
+        .await?;
+    let relation = appoint(&store, &owner, &state, user.person_ref(), one).await?;
+    let foreign_chat = format!("simulated-linux-foreign-{}", Uuid::new_v4());
+    let conversation:Uuid=sqlx::query_scalar("INSERT INTO qintopia_messages.conversations(tenant_id,platform,chat_id,chat_type,display_name) VALUES($1,'qiwe',$2,'group','模拟其他栋') RETURNING id").bind(&store.tenant).bind(&foreign_chat).fetch_one(&store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_agent_os.collaboration_scope_bindings(tenant_key,scope_id,conversation_id) VALUES($1,$2,$3)").bind(&store.tenant).bind(two).bind(conversation).execute(&store.pool).await?;
+    sqlx::query(
+        "UPDATE qintopia_agent_os.collaboration_tenants SET mode='live' WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .execute(&store.pool)
+    .await?;
+    store.mode = StoreMode::Live;
+    let mut events = serde_json::Map::new();
+    for key in [
+        "context",
+        "save",
+        "update",
+        "stale",
+        "stop",
+        "memory_general",
+        "memory_fees",
+        "memory_stop",
+        "forged",
+        "revoked",
+        "drain",
+    ] {
+        let (message, operation) = source(
+            &store,
+            "synthetic-resident",
+            "direct",
+            "simulated-linux-direct",
+            key != "forged",
+        )
+        .await?;
+        events.insert(key.into(), json!({"message":message,"operation":operation}));
+    }
+    let root_path = format!("/run/steward-probe-{}", Uuid::new_v4());
+    let root = Path::new(&root_path);
+    std::fs::create_dir(root)?;
+    std::fs::set_permissions(root, std::fs::Permissions::from_mode(0o755))?;
+    let socket_dir = root.join("broker");
+    std::fs::create_dir(&socket_dir)?;
+    ensure!(
+        std::process::Command::new("chown")
+            .args(["0:2001", socket_dir.to_str().unwrap()])
+            .status()?
+            .success(),
+        "socket_owner_setup_failed"
+    );
+    std::fs::set_permissions(&socket_dir, std::fs::Permissions::from_mode(0o750))?;
+    let endpoint = socket_dir.join("foundation.sock");
+    let token = format!("simulated-{}", Uuid::new_v4());
+    let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
+    // These are local process flags in a network-isolated, task-owned container only.
+    for (key, value) in [
+        ("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE", "1".into()),
+        ("QINTOPIA_FOUNDATION_PROFILE", "erhua".into()),
+        (
+            "QINTOPIA_FOUNDATION_GATEWAY_ID",
+            "synthetic-qiwe-one".into(),
+        ),
+        (
+            "QINTOPIA_FOUNDATION_ERHUA_APPROVAL",
+            "steward-foundation-reviewed".into(),
+        ),
+        ("QINTOPIA_FOUNDATION_DATABASE_URL", database.clone()),
+        (
+            "QINTOPIA_FOUNDATION_DATABASE_URL_SHA256",
+            super::digest(database.as_bytes()),
+        ),
+        (
+            "QINTOPIA_FOUNDATION_TOKEN_SHA256",
+            super::digest(token.as_bytes()),
+        ),
+        ("QINTOPIA_FOUNDATION_RUNNER_UID", "2001".into()),
+        ("QINTOPIA_FOUNDATION_RUNNER_GID", "2001".into()),
+        (
+            "QINTOPIA_FOUNDATION_SOCKET",
+            endpoint.to_str().unwrap().into(),
+        ),
+    ] {
+        std::env::set_var(key, value);
+    }
+    std::env::remove_var("QINTOPIA_FOUNDATION_LOCAL_ENABLE");
+    // A non-runner foreign owner with otherwise valid group/mode must fail
+    // before creating a lock or listener, without inferring trust from its UID.
+    std::os::unix::fs::chown(&socket_dir, Some(2002), None)?;
+    let foreign_owner = super::foundation_server::broker_live(Store {
+        pool: store.pool.clone(),
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: StoreMode::Live,
+    })
+    .await
+    .unwrap_err();
+    assert_eq!(
+        foreign_owner.to_string(),
+        "isolated_foundation_runner_required"
+    );
+    assert!(!endpoint.exists());
+    assert!(!endpoint.with_extension("lock").exists());
+    std::os::unix::fs::chown(&socket_dir, Some(0), None)?;
+    println!("foreign_parent_owner_rejected_before_listener=true");
+    let mut broker = tokio::spawn(super::foundation_server::broker_live(Store {
+        pool: store.pool.clone(),
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: StoreMode::Live,
+    }));
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while !endpoint.exists() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()?;
+    let core = std::env::var("QINTOPIA_HERMES_CORE_DIR")?;
+    let core_sha = std::env::var("QINTOPIA_HERMES_CORE_SHA")?;
+    let input = root.join("input.json");
+    std::fs::write(
+        &input,
+        serde_json::to_vec(
+            &json!({"events":events,"foreign_scope":two,"foreign_chat":foreign_chat,"sdk":repo.join("skills/person-foundation/__init__.py"),"core_sha":core_sha,"uids":{"positive":2001,"revoked":2001,"same_uid":0,"wrong_uid":2002,"drain_timeout":2001,"drain_replay":2001}}),
+        )?,
+    )?;
+    let runtime_secret = root.join("broker-only.env");
+    std::fs::write(&runtime_secret, "simulated broker-only credential\n")?;
+    std::fs::set_permissions(&runtime_secret, std::fs::Permissions::from_mode(0o600))?;
+    ensure!(
+        !std::process::Command::new("runuser")
+            .args([
+                "-u",
+                "steward-runner",
+                "--",
+                "test",
+                "-r",
+                runtime_secret.to_str().unwrap()
+            ])
+            .status()?
+            .success(),
+        "client_read_broker_secret"
+    );
+    let run = |phase: &str| {
+        let mut cmd = std::process::Command::new("runuser");
+        let user = match phase {
+            "same_uid" => "root",
+            "wrong_uid" => "steward-foreign",
+            _ => "steward-runner",
+        };
+        let profile = root.join(format!("profile-{phase}"));
+        std::fs::create_dir(&profile).unwrap();
+        std::fs::create_dir(profile.join("plugins")).unwrap();
+        std::os::unix::fs::symlink(
+            repo.join("skills/qintopia-tools/variants/erhua"),
+            profile.join("plugins/qintopia-tools"),
+        )
+        .unwrap();
+        std::fs::write(
+            profile.join("config.yaml"),
+            "plugins:\n  enabled: [qintopia-tools]\n",
+        )
+        .unwrap();
+        assert!(std::process::Command::new("chown")
+            .args([
+                "-R",
+                "--no-dereference",
+                &format!("{user}:steward-runner"),
+                profile.to_str().unwrap(),
+            ])
+            .status()
+            .unwrap()
+            .success());
+        cmd.args([
+            "-u",
+            user,
+            "--",
+            "/opt/official-hermes-venv/bin/python",
+            "-I",
+            repo.join("skills/person-foundation/tests/linux_production_probe.py")
+                .to_str()
+                .unwrap(),
+            "--input",
+            input.to_str().unwrap(),
+            "--phase",
+            phase,
+        ]);
+        cmd.env_clear()
+            .env(
+                "PATH",
+                "/opt/official-hermes-venv/bin:/usr/sbin:/usr/bin:/bin",
+            )
+            .env("PYTHONDONTWRITEBYTECODE", "1")
+            .env("HERMES_HOME", profile)
+            .env("QINTOPIA_PROFILE_ID", "erhua")
+            .env("QINTOPIA_HERMES_CORE_DIR", &core)
+            .env("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE", "1")
+            .env("QINTOPIA_FOUNDATION_PROFILE", "erhua")
+            .env("QINTOPIA_FOUNDATION_SOCKET", &endpoint)
+            .env("QINTOPIA_FOUNDATION_TOKEN", &token)
+            .env("QINTOPIA_FOUNDATION_BROKER_UID", "0")
+            .env("QINTOPIA_FOUNDATION_GATEWAY_ID", "synthetic-qiwe-one");
+        cmd
+    };
+    for phase in ["positive", "same_uid", "wrong_uid"] {
+        let mut child = run(phase);
+        let output = tokio::time::timeout(
+            std::time::Duration::from_secs(90),
+            tokio::task::spawn_blocking(move || child.output()),
+        )
+        .await???;
+        ensure!(
+            output.status.success(),
+            "linux_probe_{phase}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+    }
+    let ui = dispatch(
+        &store,
+        &user,
+        "/api/foundation/rules",
+        &serde_json::to_vec(&json!({"scope":one}))?,
+    )
+    .await?;
+    let rule = ui["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|v| v["key"] == "linux-probe")
+        .unwrap();
+    assert_eq!(rule["version"], 3);
+    assert!(!rule["stopped_at"].is_null());
+    // Hold the actual tenant row so the accepted broker transaction waits in PostgreSQL.
+    let mut held = store.pool.begin().await?;
+    sqlx::query("SELECT version FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1 FOR UPDATE").bind(&store.tenant).fetch_one(&mut *held).await?;
+    let mut timeout_client = run("drain_timeout");
+    let timeout_task = tokio::task::spawn_blocking(move || timeout_client.output());
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let waiting: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%collaboration_tenants%FOR UPDATE%')").fetch_one(&store.pool).await?;
+            if waiting { break; }
+            tokio::task::yield_now().await;
+        }
+        Ok::<_, anyhow::Error>(())
+    }).await??;
+    let timeout_output =
+        tokio::time::timeout(std::time::Duration::from_secs(20), timeout_task).await???;
+    ensure!(
+        timeout_output.status.success(),
+        "linux_probe_client_timeout: {}",
+        String::from_utf8_lossy(&timeout_output.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&timeout_output.stdout));
+    ensure!(
+        !broker.is_finished(),
+        "client_timeout_cancelled_database_work"
+    );
+    ensure!(
+        std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()?
+            .success(),
+        "termination_signal_failed"
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if tokio::net::UnixStream::connect(&endpoint).await.is_err() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    // Wait beyond the real 30s deadline: the accepted transaction must stay alive.
+    ensure!(
+        tokio::time::timeout(std::time::Duration::from_secs(31), &mut broker)
+            .await
+            .is_err(),
+        "drain_deadline_cancelled_work"
+    );
+    ensure!(!broker.is_finished(), "drain_deadline_killed_broker");
+    held.rollback().await?;
+    tokio::time::timeout(std::time::Duration::from_secs(10), broker).await???;
+    ensure!(!endpoint.exists(), "drained_socket_not_removed");
+    let readback = dispatch(
+        &store,
+        &owner,
+        "/api/foundation/rules",
+        &serde_json::to_vec(&json!({"scope":one}))?,
+    )
+    .await?;
+    let drain_rule = readback["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["key"] == "linux-drain")
+        .unwrap();
+    assert_eq!(drain_rule["version"], 1);
+    println!("actual_database_wait=true client_timeout=outcome_unknown stop_accepting=true deadline_deferred=true accepted_commit_preserved=true");
+    broker = tokio::spawn(super::foundation_server::broker_live(Store {
+        pool: store.pool.clone(),
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: StoreMode::Live,
+    }));
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while !endpoint.exists() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await?;
+    let mut replay_client = run("drain_replay");
+    let replay = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        tokio::task::spawn_blocking(move || replay_client.output()),
+    )
+    .await???;
+    ensure!(
+        replay.status.success(),
+        "linux_probe_drain_replay: {}",
+        String::from_utf8_lossy(&replay.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&replay.stdout));
+    let operation: Uuid = serde_json::from_value(events["drain"]["operation"].clone())?;
+    let applies: i64 = sqlx::query_scalar("SELECT count(*) FROM qintopia_agent_os.collaboration_rule_events WHERE tenant_key=$1 AND operation_id=$2").bind(&store.tenant).bind(operation).fetch_one(&store.pool).await?;
+    assert_eq!(applies, 1);
+    println!("original_operation_apply_count=1 receipt_recovered=true");
+    let grant:Uuid=sqlx::query_scalar("SELECT id FROM qintopia_agent_os.collaboration_grants WHERE tenant_key=$1 AND collaboration_id=$2 AND action_key='change_rules' AND status='active'").bind(&store.tenant).bind(relation).fetch_one(&store.pool).await?;
+    command(&store, &owner, Change::RevokeGrant { grant }).await?;
+    let mut child = run("revoked");
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(90),
+        tokio::task::spawn_blocking(move || child.output()),
+    )
+    .await???;
+    ensure!(
+        output.status.success(),
+        "linux_probe_revoked: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+    let after = dispatch(
+        &store,
+        &owner,
+        "/api/foundation/rules",
+        &serde_json::to_vec(&json!({"scope":one}))?,
+    )
+    .await?;
+    assert_eq!(
+        after["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["key"] == "linux-probe")
+            .unwrap()["version"],
+        3
+    );
+    println!("actual_ui_service_readback=passed revoked_and_peer_attempts_changed_state=false");
+    ensure!(
+        std::process::Command::new("kill")
+            .args(["-TERM", &std::process::id().to_string()])
+            .status()?
+            .success(),
+        "termination_signal_failed"
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(10), broker).await???;
+    println!("idle_broker_shutdown=drained");
     Ok(())
 }
