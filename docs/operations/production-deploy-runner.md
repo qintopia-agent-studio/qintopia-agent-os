@@ -1,5 +1,23 @@
 # Production Deploy Runner
 
+## Steward Prelaunch Preparation Boundary (2026-10-01)
+
+The [dated preparation report](../reports/2026-10-01-steward-install-preparation.md)
+records the target x86_64 observation, missing managed management entry, actual non-root
+broker/context ACL slice, and local build/systemd failures. It does not approve or
+implement the proposed broker service. Do not install the preparation archive, treat an
+arm64 or emulated fixture as final target-system acceptance, or trigger Artifacts merely
+with `upload_cos=false` (old GitHub artifacts are still pruned).
+
+With `SendSIGKILL=no`, a timed-out stop can retain a live cgroup and return a successful
+`systemctl` exit code. Preserve the existing strict result/invocation/process checks and
+request-bound hold. The proposed broker helper's bounded 35-second wait and full
+installer/rollback integration remain subject to C1 implementation and real validation;
+late completion must not automatically clear the hold or resume a deployment. All
+production setup, certificate, activation and real business acceptance remain separate
+authorized actions. Preserve runtime data, credentials, sessions, memories, jobs and
+channel state; do not roll back the business database.
+
 ## Management UI Preparation And Stop
 
 `agentos.qintopia.cn` resolves to the origin, but DNS is only the first external

@@ -460,6 +460,38 @@ UMask=0077
 WantedBy=multi-user.target
 EOF
 
+  write_file "qintopia-agentos-foundation-broker.service" <<EOF
+[Unit]
+Description=Qintopia AgentOS Erhua foundation broker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=qintopia-foundation-broker
+Group=ubuntu
+WorkingDirectory=/
+EnvironmentFile=/etc/qintopia/foundation-broker.env
+Environment=RUST_LOG=qintopia_message_sidecar=info
+ExecStart=${BIN} run-foundation-production
+RuntimeDirectory=qintopia-foundation-erhua
+RuntimeDirectoryMode=0750
+Restart=no
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=35s
+SendSIGKILL=no
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/run/qintopia-foundation-erhua
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
   render_long_running_service \
     "qintopia-message-sidecar.service" \
     "Qintopia Message Sidecar" \
@@ -841,6 +873,7 @@ validate_output() {
     "_M9_SYSTEMD_PLAN.txt"
     "qintopia-message-sidecar.service"
     "qintopia-agentos-management-ui.service"
+    "qintopia-agentos-foundation-broker.service"
     "qintopia-agentos-operations-intake.service"
     "qintopia-agentos-automation-dispatcher.service"
     "qintopia-agentos-automation-dispatcher.timer"
@@ -912,6 +945,16 @@ validate_output() {
   done
 
   for file in "$OUTPUT_DIR"/*.service; do
+    if [[ "$(basename "$file")" == qintopia-agentos-foundation-broker.service ]]; then
+      for expected in "User=qintopia-foundation-broker" "Group=ubuntu" \
+        "EnvironmentFile=/etc/qintopia/foundation-broker.env" \
+        "ExecStart=${BIN} run-foundation-production" "RuntimeDirectory=qintopia-foundation-erhua" \
+        "RuntimeDirectoryMode=0750" "Restart=no" "SendSIGKILL=no" \
+        "KillMode=control-group" "TimeoutStopSec=35s" "ProtectSystem=strict"; do
+        grep -Fx "$expected" "$file" >/dev/null
+      done
+      continue
+    fi
     if [[ "$(basename "$file")" == qintopia-agentos-management-ui.service ]]; then
       grep -Fx "User=qintopia-management-ui" "$file" >/dev/null
       grep -Fx "EnvironmentFile=/etc/qintopia/collaboration-management-ui.env" "$file" >/dev/null

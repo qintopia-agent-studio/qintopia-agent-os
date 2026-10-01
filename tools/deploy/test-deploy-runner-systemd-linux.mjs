@@ -52,6 +52,174 @@ fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
 PY
 `;
 
+// Optional additive C1 cases in the existing real-systemd producer fixture.
+// Requires a deliberately prepared disposable Lima/PG lab; no CI selector,
+// timeout, shared framework, production configuration or live tool is changed.
+if (
+  process.argv[2] === "--management-ui-maintenance-systemd-producer" &&
+  process.env.QINTOPIA_FOUNDATION_LAB_VM
+) {
+  assert.ok(process.env.QINTOPIA_FOUNDATION_LAB_PG_CONTAINER);
+  const result = spawnSync(
+    "python3",
+    [
+      "-c",
+      String.raw`# This test uses an explicitly prepared disposable Linux/systemd/PG fixture.
+# Never run against production. It preserves failed units and uncertain outcomes.
+import datetime,hashlib,hmac,json,pathlib,subprocess,sys,time
+repo=pathlib.Path(sys.argv[1]);vm=sys.argv[2];pg=sys.argv[3]
+R='1111111111111111111111111111111111111111';T='2222222222222222222222222222222222222222'
+root='/home/ubuntu/qintopia-agent-os-releases';release=root+'/'+R
+state='/var/lib/qintopia-agent-os-deploy';unit='qintopia-agentos-foundation-broker.service'
+helper=release+'/deploy/runner/foundation-broker-lifecycle.sh';ui=release+'/deploy/runner/management-ui-lifecycle.sh'
+lock='exec 9>'+state+'/deploy.lock; flock -n 9; '
+results=[]
+def call(script,raw=None,expected=0):
+ p=subprocess.run(['limactl','shell',vm,'--','sudo','bash','-c','set -euo pipefail; '+script],input=raw,capture_output=True)
+ if expected is not None and p.returncode!=expected:
+  raise AssertionError('Linux fixture exit '+str(p.returncode)+' expected '+str(expected)+'\n'+p.stdout.decode()+'\n'+p.stderr.decode())
+ return p
+def output(script):return call(script).stdout.decode().strip()
+def case(name,**values):
+ record={'case':name,**values};results.append(record);print(json.dumps(record),flush=True)
+def pointer_state():return output('for name in current previous rollback-from; do printf "%s=" "$name"; readlink '+root+'/$name || true; done')
+def state_data():
+ text=output('systemctl show '+unit+' -p MainPID -p InvocationID -p ActiveState -p SubState -p Result -p ControlGroup -p UnitFileState')
+ d=dict(l.split('=',1) for l in text.splitlines() if '=' in l)
+ if d['MainPID']!='0':
+  pid=d['MainPID'];d['starttime']=output("python3 -c \"s=open('/proc/"+pid+"/stat').read();print(s[s.rfind(')')+2:].split()[19])\"")
+  d['cgroup']=output('cat /proc/'+pid+'/cgroup');d['proc_uid_gid']=output('stat -c "%u:%g" /proc/'+pid)
+ return d
+# Explicit prepared fixture; never infer/create credentials or overwrite an env.
+call('test "$(readlink -f '+root+'/current)" = '+release+'; test -f /etc/qintopia/foundation-broker.env; test ! -e '+state+'/recovery/hold; test "$(systemctl show '+unit+' -p ActiveState --value)" = inactive')
+identity={'simulated_release':R,'runtime_source':'cc7cecd5afaa00037b970b45b002526642d368e2','architecture':output('uname -m'),'systemd':output('systemctl --version | head -1'),'formal_release':False,'production_action':False,'files':{}}
+for name in ['deploy/runner/foundation-broker-lifecycle.sh','deploy/runner/management-ui-lifecycle.sh','deploy/runner/rollback-release.sh','deploy/runner/install-release-systemd-units.sh','deploy/sidecar/scripts/render-systemd-units.sh']:
+ local=hashlib.sha256((repo/name).read_bytes()).hexdigest();actual=output('sha256sum '+release+'/'+name).split()[0];assert local==actual
+ identity['files'][name]=actual
+for name in ['sidecar/qintopia-message-sidecar','actual-sdk.py','client-probe.py']:
+ identity['files'][name]=output('sha256sum '+release+'/'+name).split()[0]
+case('source_to_linux_fixture_identity',**identity)
+# Source main runner/recovery is copied unchanged; only artifacts beyond the failed
+# closure stage are plumbing probes. No real COS call, business send or replays.
+for name in ['deploy/runner/qintopia-agent-os-deploy-runner','deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf']:
+ call('mkdir -p '+str(pathlib.PurePosixPath(release+'/'+name).parent)+'; cat > '+release+'/'+name+'; chmod 0755 '+release+'/'+name,(repo/name).read_bytes())
+call('mkdir -p '+root+'/'+T+'/deploy/runner/qintopia-agent-os-deploy-runner.service.d; cp '+release+'/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf '+root+'/'+T+'/deploy/runner/qintopia-agent-os-deploy-runner.service.d/; ln -s '+root+'/'+T+' '+root+'/previous')
+call('cat > '+root+'/'+T+'/manifest.json; chmod 0444 '+root+'/'+T+'/manifest.json',json.dumps({'release_sha':T}).encode())
+old_installer='#!/usr/bin/env bash\nset -euo pipefail\nunit_files=(\n  qintopia-agentos-foundation-broker.service\n)\nrunner_unit_files=(\n  qintopia-agent-os-deploy-runner.service\n  qintopia-agent-os-deploy-runner.timer\n)\nprintf "old T installer entered\\n" >> /tmp/qintopia-c1-install-events\nexit 55\n'
+call('cat > '+root+'/'+T+'/deploy/runner/install-release-systemd-units.sh; chmod 0755 '+root+'/'+T+'/deploy/runner/install-release-systemd-units.sh',old_installer.encode())
+call('cat > '+release+'/deploy/runner/promote-release.sh; chmod 0755 '+release+'/deploy/runner/promote-release.sh',b'#!/bin/bash\necho unexpected-promotion >> /tmp/qintopia-c1-install-events\nexit 96\n')
+call('cp '+release+'/deploy/runner/promote-release.sh '+release+'/deploy/runner/quiesce-space-automation-runtime.sh; printf "#!/bin/bash\\nexit 0\\n" > '+release+'/deploy/runner/quiesce-space-automation-runtime.sh')
+call('test ! -e /run/systemd/system/qintopia-agent-os-deploy-runner.timer; printf "[Unit]\\nDescription=Simulated C1 timer\\n[Timer]\\nOnCalendar=hourly\\n[Install]\\nWantedBy=timers.target\\n" > /run/systemd/system/qintopia-agent-os-deploy-runner.timer; systemctl daemon-reload; systemctl enable --now qintopia-agent-os-deploy-runner.timer; rm -f /tmp/qintopia-c1-install-events')
+# Missing FD9 has a consistent deferred status; no stop is submitted.
+p=call(helper+' verify-closed',expected=75);case('missing_fd9',exit=p.returncode)
+# Complete unit comparison, not a line-presence assertion.
+unit_file='/etc/systemd/system/'+unit
+original=call('cat '+unit_file).stdout
+for suffix in [b'\n[Service]\nUser=root\n',b'\n[Service]\nExecStartPre=/bin/true\n']:
+ call('cat > '+unit_file+'; systemctl daemon-reload',original+suffix)
+ p=call(helper+' activate',expected=75);assert state_data()['MainPID']=='0';case('complete_unit_drift_rejected',exit=p.returncode,extra_entry=suffix.decode().strip().splitlines()[-1])
+call('cat > '+unit_file+'; systemctl daemon-reload',original)
+call(helper+' activate');before=state_data();assert before['MainPID']!='0'
+pointers=pointer_state();rollback=release+'/deploy/runner/rollback-release.sh --release-root '+root+' --expected-current-sha '+R+' --expected-previous-sha '+T
+p=call(lock+rollback,expected=75);assert pointer_state()==pointers;assert state_data()['MainPID']==before['MainPID'];case('live_broker_blocks_first_rollback_pointer',exit=p.returncode,pointers_unchanged=True,broker_unstopped=True)
+unit_digest=output('sha256sum '+unit_file).split()[0]
+p=call(lock+release+'/deploy/runner/install-release-systemd-units.sh --release-root '+root+' --release-sha '+R,expected=75)
+assert output('sha256sum '+unit_file).split()[0]==unit_digest;assert state_data()['MainPID']==before['MainPID'];case('live_broker_blocks_installer_unit_replacement',exit=p.returncode,unit_unchanged=True,broker_unstopped=True)
+# Reject helper metadata and digest before executing it or writing a pointer.
+for mode in ['metadata','digest']:
+ original_ui=call('cat '+ui).stdout
+ if mode=='metadata':call('chmod 0700 '+ui)
+ else:call('printf "\\n# simulated digest drift\\n" >> '+ui)
+ p=call(lock+rollback,expected=75);assert pointer_state()==pointers;assert state_data()['MainPID']==before['MainPID']
+ call('cat > '+ui+'; chmod 0755 '+ui,original_ui);case('rollback_'+mode+'_drift',exit=p.returncode,pointers_unchanged=True,broker_unstopped=True)
+# Closed R->old T does not look for a missing T helper. Its installer fails after
+# the durable pointer phase; this is not claimed as a successful T installation.
+call(lock+ui+' quiesce');p=call(lock+rollback,expected=55)
+assert output('readlink -f '+root+'/current')==root+'/'+T
+assert output('readlink -f '+root+'/previous')==release
+assert output('readlink -f '+root+'/rollback-from')==release
+assert output('cat /tmp/qintopia-c1-install-events')=='old T installer entered'
+case('closed_fixed_R_to_old_T_installer_failure',exit=p.returncode,old_T_helper_absent=True,current=T,previous=R,rollback_from=R)
+# Test-fixture restoration, never an automatic recovery/clearing of unknown hold.
+call('ln -sfn '+release+' '+root+'/current; ln -sfn '+root+'/'+T+' '+root+'/previous; rm '+root+'/rollback-from; rm /tmp/qintopia-c1-install-events')
+# The exact actual binary can run under another nonroot UID. Quiesce must refuse
+# it before disable/stop (activation always rejects the modified unit).
+wrong=original.replace(b'User=qintopia-foundation-broker',b'User=nobody')
+call('cat > '+unit_file+'; systemctl daemon-reload; systemctl start '+unit,wrong)
+for _ in range(100):
+ if output('test -S /run/qintopia-foundation-erhua/broker.sock && echo ready || true')=='ready':break
+ time.sleep(.1)
+wrong_before=state_data();assert wrong_before['MainPID']!='0'
+p=call(lock+helper+' quiesce',expected=75);assert state_data()['MainPID']==wrong_before['MainPID'];case('same_binary_wrong_uid_rejected_before_stop',exit=p.returncode,broker_unstopped=True,observed_uid_gid=wrong_before.get('proc_uid_gid'))
+# Only the explicit local-fixture operator stops this idle identity-drift case.
+call('systemctl stop '+unit+'; cat > '+unit_file+'; systemctl daemon-reload',original)
+call(helper+' activate')
+# Preserve the original identity while SQL is blocked beyond the drain deadlines.
+request_id='deploy-'+datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+R[:7]
+source_message='simulated-c1-inflight-'+request_id
+probe=call('cat '+release+'/client-probe.py').stdout.decode().replace('simulated-install-lab-context-20261001',source_message)
+call('cat > '+release+'/inflight-probe.py; chmod 0644 '+release+'/inflight-probe.py',probe.encode())
+block=subprocess.Popen(['docker','exec',pg,'psql','-U','postgres','-d','qintopia_c1_lab','-v','ON_ERROR_STOP=1','-c','BEGIN; LOCK TABLE qintopia_identity.persons IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(53); COMMIT;'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+try:
+ for _ in range(100):
+  p=subprocess.run(['docker','exec',pg,'psql','-U','postgres','-d','qintopia_c1_lab','-At','-c',"select count(*) from pg_locks where relation='qintopia_identity.persons'::regclass and mode='AccessExclusiveLock' and granted;"],capture_output=True,text=True,check=True)
+  if p.stdout.strip()=='1':break
+  time.sleep(.1)
+ else:raise AssertionError('SQL blocker not ready')
+ client=subprocess.Popen(['limactl','shell',vm,'--','sudo','setpriv','--reuid=1000','--regid=1001','--clear-groups','python3',release+'/inflight-probe.py'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ for _ in range(100):
+  p=subprocess.run(['docker','exec',pg,'psql','-U','postgres','-d','qintopia_c1_lab','-At','-c',"select count(*) from pg_stat_activity where usename='qintopia_broker_lab' and wait_event_type='Lock';"],capture_output=True,text=True,check=True)
+  if int(p.stdout.strip())>=1:break
+  time.sleep(.1)
+ else:raise AssertionError('actual broker SQL request not accepted')
+ before=state_data();pointers=pointer_state()
+ now=datetime.datetime.now(datetime.timezone.utc);stamp=now.isoformat();target='3'*40
+ request={'schema_version':1,'request_id':request_id,'environment':'production','repository':'qintopia-agent-studio/qintopia-agent-os','requested_by':'simulated-C1-lab','created_at':stamp,'expires_at':(now+datetime.timedelta(hours=1)).isoformat(),'commit_sha':target,'runtime_sha':target,'runtime_artifact_profile':'huabaosi-production','deploy_bundle_sha':target,'release_sha':target,'release_scope':['sidecar-runtime','deploy-bundle','hermes-plugins'],'restart_targets':['qintopia-system-services'],'rollback_on_smoke_failure':True,'dry_run':False,'cos':{'bucket':'simulated','region':'simulated','prefix':'qintopia-agent-os','request_key':'qintopia-agent-os/deploy-requests/production/requests/'+request_id+'.json','result_key':'qintopia-agent-os/deploy-results/production/'+request_id+'.json'}}
+ metadata={'algorithm':'hmac-sha256','issuer':'github-actions','key_id':'simulated','signed_at':stamp}
+ canonical=json.dumps({'request':request,'signature':metadata},sort_keys=True,separators=(',',':'),ensure_ascii=False)
+ request['signature']={**metadata,'value':hmac.new(b'simulated-key',canonical.encode(),hashlib.sha256).hexdigest()}
+ request_path=state+'/requests/processed/'+request_id+'.json'
+ call('mkdir -p '+state+'/requests/processed; cat > '+request_path,json.dumps(request).encode())
+ started=time.monotonic()
+ p=call('DEPLOY_REQUEST_SIGNING_KEY=simulated-key DEPLOY_REQUEST_SIGNING_KEY_ID=simulated TENCENT_COS_BUCKET=simulated TENCENT_COS_REGION=simulated '+release+'/deploy/runner/qintopia-agent-os-deploy-runner --request-file '+request_path,expected=75)
+ elapsed=time.monotonic()-started;assert 34.8<=elapsed<38,p.stderr.decode()
+ assert b'foundation_broker_stop=deferred deadline_seconds=35 outcome=unknown' in p.stderr
+ after=state_data();assert after['MainPID']==before['MainPID'] and after['starttime']==before['starttime'] and after['InvocationID']==before['InvocationID'] and after['cgroup']==before['cgroup']
+ hold=output('stat -c "%u:%g:%a" '+state+'/recovery/hold');assert hold=='0:0:600';assert output('cat '+state+'/recovery/hold')==request_id
+ result=json.loads(output('cat '+state+'/results/'+request_id+'.json'));detail=json.loads(result['checks'][0]['detail']);assert detail['failure_stage']=='quiesce-management-ui' and detail['exit_status']==75 and detail['promoted_current'] is False
+ assert pointer_state()==pointers;assert output('test ! -e /tmp/qintopia-c1-install-events && echo absent')=='absent'
+ case('actual_inflight_35_second_runner_hold',exit=p.returncode,elapsed_seconds=round(elapsed,3),before=before,after=after,hold_metadata=hold,hold_created_by_original_runner=True,failure_stage=detail['failure_stage'],pointers_unchanged=True,no_installer_or_promotion=True)
+ block_out,block_err=block.communicate(timeout=30);assert block.returncode==0,block_err.decode()
+ client_out,client_err=client.communicate(timeout=10);assert client.returncode==0,client_err.decode()
+ client_result=json.loads(client_out);assert client_result['ok'] is False and client_result['error']['code']=='outcome_unknown',client_result
+ for _ in range(150):
+  if output('test -e /proc/'+before['MainPID']+' && echo exists || true')!='exists':break
+  time.sleep(.1)
+ else:raise AssertionError('broker did not naturally finish')
+ assert output('cat '+state+'/recovery/hold')==request_id and pointer_state()==pointers
+ assert output('test ! -e /tmp/qintopia-c1-install-events && echo absent')=='absent'
+ journal=output('journalctl --no-pager -o cat _SYSTEMD_INVOCATION_ID='+before['InvocationID'])
+ assert 'foundation_broker_drain_deferred' in journal,journal
+ # Report only whitelisted lifecycle markers; never quote request/private data.
+ case('late_completion_preserves_hold_no_replay',hold_unchanged=True,pointers_unchanged=True,no_promotion_or_install=True,client_outcome='outcome_unknown',new_request_attempted=False,original_process_naturally_gone=True,drain_deferred_30_seconds_observed=True,final=state_data())
+ # No reset-failed, no socket deletion, no retry of an unknown business call.
+ p=call(lock+helper+' verify-closed',expected=None);case('post_late_completion_closure_status',exit=p.returncode,hold_retained=True)
+finally:
+ # The PostgreSQL transaction has bounded pg_sleep and commits naturally; do not
+ # kill it or repeat an outcome-unknown request if a test assertion fails.
+ if block.poll() is None:block.communicate(timeout=80)
+print(json.dumps({'cases_passed':len(results),'actual_systemd_rust_sdk_pg':True,'installation_ready':False,'final_hold_retained':True}),flush=True)
+`,
+      process.cwd(),
+      process.env.QINTOPIA_FOUNDATION_LAB_VM,
+      process.env.QINTOPIA_FOUNDATION_LAB_PG_CONTAINER,
+    ],
+    { encoding: "utf8", stdio: "inherit" }
+  );
+  if (result.error) throw result.error;
+  process.exit(result.status ?? 1);
+}
+
 if (
   process.argv[2] === "--management-ui-maintenance" ||
   process.argv[2] === "--management-ui-maintenance-systemd" ||
