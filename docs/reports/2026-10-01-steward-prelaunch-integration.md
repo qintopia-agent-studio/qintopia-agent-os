@@ -57,3 +57,45 @@ Guide 未覆盖的文件由本任务补针对审阅。#733 当前渠道查询存
 必要验证使用一次性本机 PostgreSQL、实际共享服务和原生测试。覆盖搜索分页、保存回读、修改/撤权、版本冲突、来源不可用及跨栋拒绝。真实 Hermes 独立进程验证由基础方负责，页面记录其精确版本与交接结果。未受新差分影响的已有检查直接复用，不把模拟身份或渠道验证描述为线上送达。
 
 本次不合并、发布、部署、改真实授权或外发。旧 stash 和历史坏 ref 不作为本批新增前置。
+
+## 第一版实际集成结果
+
+本地临时分支 `codex/steward-prelaunch-integration-20261001` 的提交为
+`5ecc0eabc62b59118fc4c76efbf3c600c357f5e1`，父提交精确为
+`0ba09f429586d7e8f2752558bc6839e498a16b35` 与
+`5eb59cb3c376e8ea9acf85521e2487e6c21c8b2d`。普通合并只人工保留双方报告索引条目，没有人工改共同 Rust、SQL、认证测试或测试目录。#733 的主线祖先还带入已合入的部署接线内容；本任务未新编写或发布这些改动。
+
+本任务新建一次性 PostgreSQL 18.6，地址为本机 loopback 55483 的
+`qintopia_test`，数据位于忽略目录。没有复用其他任务的验收库或生产资料。
+
+- `steward_production_minimal_tests`：4/4 通过，0 忽略。
+- 完整 `person_collaboration`，含原标记忽略的数据库用例：169/169 通过，0 忽略。
+- 命令均用
+  `--locked --features postgres-integration-tests --include-ignored --test-threads=1`，退出 0。
+
+定向检查实际执行共享服务、认证 HTTP、305 个目录候选分页、人员/工作账号/渠道区分、权限撤销、错误状态，以及同一二花可信工具对两栋知识版本的读取、修改和停止。完整套件还覆盖 #731 的受限身份锁、既有业务接口和保存回执。日志及退出码保留在本地忽略目录，没有改断言或跳过失败。
+
+这些结果是合并后的实际后端配合模拟身份和请求的证据，不是指定 Chrome 页面交互、真实 Hermes 模型或线上渠道验收。它们也不处置 #733 已知的跨范围渠道意见；待基础方修正后对实际替代 head 复核新增与受影响场景。
+
+## PR #731 未覆盖文件的针对审阅
+
+审阅基线为 `8173e53795062d4df53fc78f5099325b2e37ce59`，head 为原
+`b450755`。本任务补读 Reviewer
+Guide 列出的全部 11 个文件差分，目前没有发现新增阻断问题：
+
+- `workbench-view.js` 与
+  `workbench-catalog.js`：搜索保留选择、空结果、同名稳定引用及旧列表范围；它们是已给数组内的搜索，不作为全可信目录证据。新页面候选服务另用 workspace 接口。
+- `tools/testing/catalog.json`：四个新增场景的路径、实际函数、完整 filter、数据库 feature 与 ignored 参数对应；描述明确模拟来源，不增加 CI 检查入口或新共享框架。
+- 两份 `20260929000*`
+  SQL：空配置不授予发送权；固定锁函数限定租户、范围、链接与 Person，锁定当前行，使用完全限定表名和固定 search_path，撤销 PUBLIC
+  EXECUTE；没有创建生产角色或授予生产 ACL。
+- 两份 scope communication / person
+  lock 数据设计：与上述存储和锁契约一致，保留版本失效、并发和回滚边界。
+- 岸岸 rollout、原本地验证报告、人员协作 README 与测试指南：明确专属业务权限、模拟与真实验收区别，保留原总检查失败和浏览器阻断，不把独立通过回填成总门禁通过。
+
+两条 PR 的共同文件衔接已核对：store 模块同时保留 scope communication 与 workspace
+candidates，认证测试、人员协作 README 与测试目录自动合并；唯一报告索引冲突保留了双方条目。本次完整数据库套件没有发现合并造成的认证、迁移或旧业务回归。
+
+PR #733 的当前 Reviewer Guide 在 `5eb59cb`
+仍列跨范围 gateway 候选信息披露为 ACTIVE，基础方负责修正。没有未读 inline
+threads；不能把无 inline comments、既有 CI success 或本地数据库通过当作该意见已关闭。
