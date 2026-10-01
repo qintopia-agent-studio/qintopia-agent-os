@@ -138,7 +138,18 @@ function workspaceCandidateField(
   parent,
   id,
   label,
-  { scope, kind, purpose, value = "", chosen = [], known = [], multiple = false }
+  {
+    scope,
+    kind,
+    purpose,
+    value = "",
+    chosen = [],
+    known = [],
+    multiple = false,
+    subject_kind,
+    subject_ref,
+    onAccessLost = () => {},
+  }
 ) {
   const root = el("div"),
     search = inputField(root, `${id}-search`, `查找${label}`, "", "search"),
@@ -245,6 +256,10 @@ function workspaceCandidateField(
       search: appliedSearch,
       limit: "50",
     });
+    if (kind === "channels") {
+      query.set("subject_kind", subject_kind);
+      query.set("subject_ref", subject_ref);
+    }
     if (cursors.at(-1)) query.set("after", cursors.at(-1));
     try {
       const result = await api(`/api/workspace/candidates?${query}`);
@@ -260,7 +275,9 @@ function workspaceCandidateField(
             typeof item.ref !== "string" ||
             !item.ref ||
             typeof item.label !== "string" ||
-            !Number.isInteger(item.version)
+            !Number.isInteger(item.version) ||
+            (kind === "channels" &&
+              (item.subject_kind !== subject_kind || item.subject_ref !== subject_ref))
         ) ||
         (result.next_cursor !== null && typeof result.next_cursor !== "string")
       )
@@ -278,6 +295,7 @@ function workspaceCandidateField(
       if (workspaceAccessLost(error)) {
         selectedRefs.clear();
         records.clear();
+        onAccessLost();
       }
       render();
       status.textContent = error.message;
@@ -285,10 +303,180 @@ function workspaceCandidateField(
   }
   field.candidatesReady = () => ready;
   field.candidateLabel = labelFor;
+  field.candidateRecord = (ref) => records.get(ref);
+  field.addSelection = (item) => {
+    if (!multiple || !item?.ref) return;
+    selectedRefs.add(item.ref);
+    records.set(item.ref, item);
+    render();
+    discardPreview();
+  };
   root.append(actions(lookup, previous, next), status);
   parent.append(root);
   load();
   return field;
+}
+function contactSelection(contact) {
+  return {
+    subject_kind: contact.subject_kind,
+    subject_id: contact.subject_id,
+    channel_source_link_id: contact.channel_source_link_id,
+  };
+}
+function contactCaption(contact) {
+  const kind = contact.subject_kind === "work_account" ? "工作账号" : "个人";
+  return `${kind} · ${contact.subject_label || "已保存对象"} · ${contact.channel_label || "已保存渠道"}${contact.platform ? ` · ${contact.platform}` : ""}`;
+}
+function audienceForCommand(audience) {
+  const { authority_grant, contact_basis, ...command } = audience;
+  return { ...command, contacts: (audience.contacts || []).map(contactSelection) };
+}
+function workspaceContactsField(parent, id, scope, audience, peopleField) {
+  const root = box("已验证联系渠道"),
+    selections = new Map(),
+    basis = new Map(
+      (audience.contact_basis || []).map((item) => [item.channel_source_link_id, item])
+    ),
+    chosen = el("div", undefined, "scroll-list"),
+    message = sub(""),
+    subjectHost = el("div"),
+    channelHost = el("div");
+  message.setAttribute("role", "status");
+  message.setAttribute("aria-live", "polite");
+  for (const contact of audience.contacts || [])
+    selections.set(contact.channel_source_link_id, {
+      ...basis.get(contact.channel_source_link_id),
+      ...contactSelection(contact),
+    });
+  root.append(
+    sub(
+      "先选择人员或工作账号，再选择已验证渠道。加入个人渠道会把该人员列入具体个人名单；工作账号单独保存。最多 20 项，保存前会重新核验。"
+    ),
+    chosen
+  );
+  function renderSelections() {
+    chosen.replaceChildren();
+    if (!selections.size) chosen.append(sub("尚未选择联系渠道。"));
+    for (const [ref, contact] of selections) {
+      const row = el("div", undefined, "qo-scope-row");
+      row.append(
+        el("span", contactCaption(contact)),
+        button("移除此渠道", () => {
+          selections.delete(ref);
+          renderSelections();
+          discardPreview();
+        })
+      );
+      chosen.append(row);
+    }
+  }
+  function clearSelections() {
+    selections.clear();
+    renderSelections();
+    discardPreview();
+  }
+  root.append(
+    button("清空联系渠道", clearSelections),
+    sub(
+      "移除或清空渠道保留原个人名单；停止与某个人联系时，还需调整上方的具体个人范围。"
+    )
+  );
+  const subjectKind = selectField(
+    root,
+    `${id}-kind`,
+    "联系对象类型",
+    [
+      { id: "person", label: "个人" },
+      { id: "work_account", label: "工作账号（不对应自然人）" },
+    ],
+    "person"
+  );
+  let subjectField, channelField;
+  const drawChannels = () => {
+    channelHost.replaceChildren();
+    channelField = null;
+    discardPreview();
+    if (!subjectField.value) return;
+    channelField = workspaceCandidateField(channelHost, `${id}-channel`, "已验证渠道", {
+      scope,
+      kind: "channels",
+      purpose: "contact",
+      subject_kind: subjectKind.value,
+      subject_ref: subjectField.value,
+      onAccessLost: clearSelections,
+    });
+  };
+  const drawSubject = () => {
+    subjectHost.replaceChildren();
+    channelHost.replaceChildren();
+    channelField = null;
+    message.textContent = "";
+    subjectField = workspaceCandidateField(
+      subjectHost,
+      `${id}-subject`,
+      subjectKind.value === "work_account" ? "工作账号" : "联系人员",
+      {
+        scope,
+        kind: subjectKind.value === "work_account" ? "accounts" : "people",
+        purpose: "contact",
+        onAccessLost: clearSelections,
+      }
+    );
+    subjectField.addEventListener("change", drawChannels);
+  };
+  subjectKind.addEventListener("change", drawSubject);
+  const ready = () =>
+    subjectField.candidatesReady() && (!channelField || channelField.candidatesReady());
+  root.append(
+    subjectHost,
+    channelHost,
+    button("加入联系渠道", () => {
+      if (!ready() || !subjectField.value || !channelField?.value) {
+        message.textContent = "请先读取并选择联系对象和已验证渠道。";
+        return;
+      }
+      const subject = subjectField.candidateRecord(subjectField.value),
+        channel = channelField.candidateRecord(channelField.value);
+      if (
+        !subject ||
+        !channel ||
+        channel.subject_kind !== subjectKind.value ||
+        channel.subject_ref !== subject.ref
+      ) {
+        message.textContent = "渠道与当前联系对象不一致，请重新读取。";
+        return;
+      }
+      if (selections.has(channel.ref)) {
+        message.textContent = "此渠道已经加入，无需重复选择。";
+        return;
+      }
+      if (selections.size >= 20) {
+        message.textContent = "最多选择 20 项联系渠道，请先移除不再使用的渠道。";
+        return;
+      }
+      selections.set(channel.ref, {
+        subject_kind: subjectKind.value,
+        subject_id: subject.ref,
+        channel_source_link_id: channel.ref,
+        subject_label: subject.label,
+        channel_label: channel.label,
+        platform: channel.platform,
+      });
+      if (subjectKind.value === "person") peopleField.addSelection(subject);
+      renderSelections();
+      discardPreview();
+      message.textContent = "已加入本次草稿，请预览并保存后生效。";
+    }),
+    message
+  );
+  parent.append(root);
+  renderSelections();
+  drawSubject();
+  return {
+    ready,
+    value: () => [...selections.values()].map(contactSelection),
+    summary: () => [...selections.values()].map(contactCaption).join("；") || "无",
+  };
 }
 function inputField(parent, id, label, value = "", type = "text", required = false) {
   const row = el("div", undefined, "qo-field"),

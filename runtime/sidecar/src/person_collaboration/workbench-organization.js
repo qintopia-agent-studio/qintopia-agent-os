@@ -642,7 +642,7 @@ function renderSettings() {
     visibility: "general",
     topics: "",
   };
-  const contacts = box("3 · 智能体可以触达哪些群和个人"),
+  const contacts = box("3 · 智能体可以触达哪些群、人员和工作账号"),
     contactColumns = el("div", undefined, "qo-two"),
     groupBox = el("fieldset"),
     personBox = el("fieldset");
@@ -683,6 +683,13 @@ function renderSettings() {
   );
   contactColumns.append(groupBox, personBox);
   contacts.append(contactColumns);
+  const contactChannels = workspaceContactsField(
+    contacts,
+    "audience-contacts",
+    pos.scope_id,
+    audience,
+    contactList
+  );
   const residents = selectField(
     contacts,
     "residents",
@@ -936,7 +943,11 @@ function renderSettings() {
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!person.candidatesReady() || !contactList.candidatesReady())
+    if (
+      !person.candidatesReady() ||
+      !contactList.candidatesReady() ||
+      !contactChannels.ready()
+    )
       return notice("候选尚未读完或当前不可用，请先重新读取候选后预览。", true);
     const d = duties.find((x) => x.id === duty.value);
     if (!d) return notice("请先选择岗位承担的职责。", true);
@@ -1000,6 +1011,7 @@ function renderSettings() {
     const a = {
       groups: selected("audience-groups"),
       people: selected("audience-people"),
+      contacts: contactChannels.value(),
       residents: $("residents").value,
       reply: reply.value,
       proactive: proactive.value,
@@ -1020,6 +1032,7 @@ function renderSettings() {
         ],
         ["群触达", a.groups.map((x) => labelOf("groups", x)).join("、") || "无"],
         ["个人触达", a.people.map(contactList.candidateLabel).join("、") || "无"],
+        ["联系渠道", contactChannels.summary()],
         ["触达方式", audienceSummary(a)],
         [
           "决定权",

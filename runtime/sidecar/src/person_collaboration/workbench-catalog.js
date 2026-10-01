@@ -196,7 +196,7 @@ function renderLedgerDetail(item, host) {
       row.append(
         button(ledgerKind === "group" ? "解除群触达" : "解除本项协作", () => {
           if (ledgerKind === "group") {
-            const { authority_grant, ...a } = audienceOf(r);
+            const a = audienceForCommand(audienceOf(r));
             a.groups = a.groups.filter((id) => id !== item.object_ref);
             preview(
               { kind: "set_audience", collaboration: r.id, audience: a },
