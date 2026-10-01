@@ -982,6 +982,255 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum ContactSourceConflict {
+    SameTenant,
+    OtherTenant,
+    ReservedNamespace,
+}
+
+async fn reject_ambiguous_contact_sources(conflict: ContactSourceConflict) -> Result<()> {
+    let (mut store, owner, state) = fixture().await?;
+    let scope = find(&state, "scopes", "一栋");
+    let other_scope = find(&state, "scopes", "二栋");
+    let person = store
+        .conversation_actor("synthetic-qiwe-one", "synthetic-resident")
+        .await?
+        .person_ref();
+    let relation = id(&command(
+        &store,
+        &owner,
+        Change::Assign(Box::new(assignment(&state, owner.person_ref(), scope))),
+    )
+    .await?["change"]["collaboration"]);
+    let mut audience: Audience = serde_json::from_value(json!({
+        "groups":[],"people":[person],"residents":"none","reply":"autonomous",
+        "proactive":"denied","reviewer":null,"visibility":"general","topics":"模拟联系人归属核验"
+    }))?;
+    command(
+        &store,
+        &owner,
+        Change::SetAudience {
+            collaboration: relation,
+            audience: audience.clone(),
+        },
+    )
+    .await?;
+    // Keep the password actor's canonical identity separate from the target sources.
+    let canonical = format!("simulated-canonical/{}", Uuid::new_v4());
+    sqlx::query(
+        "UPDATE qintopia_identity.source_identity_links SET namespace=$2 WHERE namespace=$1",
+    )
+    .bind(&store.identity_namespace)
+    .bind(&canonical)
+    .execute(&store.pool)
+    .await?;
+    sqlx::query("UPDATE qintopia_agent_os.collaboration_tenants SET identity_namespace=$2,mode='live' WHERE tenant_key=$1")
+        .bind(&store.tenant).bind(&canonical).execute(&store.pool).await?;
+    store.identity_namespace = canonical;
+    store.mode = StoreMode::Live;
+    let owner_link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed' ORDER BY id LIMIT 1")
+        .bind(&store.identity_namespace).bind(owner.person_ref()).fetch_one(&store.pool).await?;
+    let owner = store.actor(owner_link).await?;
+    store
+        .bootstrap_account(
+            owner.person_ref(),
+            "simulated-source-review",
+            "simulated-source-password",
+        )
+        .await?;
+    let selection_store = Store {
+        pool: if let Ok(url) = std::env::var("QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL") {
+            sqlx::PgPool::connect(&url).await?
+        } else {
+            store.pool.clone()
+        },
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: StoreMode::Live,
+    };
+    let token = selection_store
+        .login(&super::store::Credentials {
+            username: "simulated-source-review".into(),
+            password: "simulated-source-password".into(),
+        })
+        .await?;
+    let actor = selection_store.session_actor(&token).await?;
+    let (other, _, other_state) = fixture().await?;
+    let foreign_scope = find(&other_state, "scopes", "一栋");
+    for kind in ["person", "work_account"] {
+        let namespace = format!("{}/simulated-contact-{kind}", store.tenant);
+        let gateway = format!("simulated-contact-{kind}");
+        let label = format!("模拟待核验渠道-{kind}");
+        let account_kind = if kind == "person" {
+            "personal"
+        } else {
+            "shared"
+        };
+        sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,$5,true)")
+            .bind(&store.tenant).bind(&gateway).bind(&namespace).bind(scope).bind(account_kind).execute(&store.pool).await?;
+        let source: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,person_id,status,evidence_ref,confirmed_by,adapter_metadata) VALUES($1,'wecom_internal',$2,$3,$4,$5,$6,jsonb_build_object('first_observation_ref',$5::text,'display_name',$7::text)) RETURNING id")
+            .bind(&namespace).bind(&gateway).bind((kind == "person").then_some(person))
+            .bind(if kind == "person" { "confirmed" } else { "pending" })
+            .bind(Uuid::new_v4()).bind(owner.person_ref()).bind(&label).fetch_one(&store.pool).await?;
+        let subject = if kind == "person" {
+            person
+        } else {
+            sqlx::query_scalar("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) VALUES($1,$2,1,$3,1,$4,$5,$6) RETURNING id")
+                .bind(&store.tenant).bind(source).bind(&gateway).bind(&label).bind(owner.person_ref()).bind(Uuid::new_v4()).fetch_one(&store.pool).await?
+        };
+        let channel_query = Query {
+            scope,
+            kind: "channels".into(),
+            purpose: "contact".into(),
+            subject_kind: Some(kind.into()),
+            subject_ref: Some(subject),
+            ..Default::default()
+        };
+        let account_query = Query {
+            scope,
+            kind: "accounts".into(),
+            purpose: "contact".into(),
+            ..Default::default()
+        };
+        audience.contacts = vec![ContactSelection {
+            subject_kind: kind.into(),
+            subject_id: subject,
+            channel_source_link_id: source,
+        }];
+        let save = || Change::SetAudience {
+            collaboration: relation,
+            audience: audience.clone(),
+        };
+        command(&selection_store, &actor, save()).await?;
+        let normal = selection_store
+            .workspace_candidates(&actor, &channel_query)
+            .await?;
+        assert!(normal["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["ref"] == json!(source)));
+        if kind == "work_account" {
+            let accounts = selection_store
+                .workspace_candidates(&actor, &account_query)
+                .await?;
+            assert!(accounts["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["ref"] == json!(subject)));
+        }
+        match conflict {
+            ContactSourceConflict::SameTenant | ContactSourceConflict::OtherTenant => {
+                let (tenant, duplicate_scope) =
+                    if matches!(conflict, ContactSourceConflict::SameTenant) {
+                        (&store.tenant, other_scope)
+                    } else {
+                        (&other.tenant, foreign_scope)
+                    };
+                sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,'simulated-duplicate-owner',$2,'wecom_internal',$3,$4,true) ON CONFLICT(tenant_key,gateway_key) DO UPDATE SET namespace=EXCLUDED.namespace,active=true")
+                    .bind(tenant).bind(&namespace).bind(duplicate_scope).bind(account_kind).execute(&store.pool).await?;
+            }
+            ContactSourceConflict::ReservedNamespace => {
+                sqlx::query("UPDATE qintopia_agent_os.collaboration_tenants SET identity_namespace=$2 WHERE tenant_key=$1")
+                    .bind(&other.tenant).bind(&namespace).execute(&store.pool).await?;
+            }
+        }
+        let hidden = selection_store
+            .workspace_candidates(&actor, &channel_query)
+            .await?;
+        assert!(
+            !hidden["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["ref"] == json!(source)),
+            "ambiguous {kind} channel leaked"
+        );
+        assert!(!serde_json::to_string(&hidden)?.contains(&label));
+        if kind == "work_account" {
+            let accounts = selection_store
+                .workspace_candidates(&actor, &account_query)
+                .await?;
+            assert!(
+                !accounts["items"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|c| c["ref"] == json!(subject)),
+                "ambiguous work account leaked"
+            );
+            assert!(!serde_json::to_string(&accounts)?.contains(&label));
+        }
+        assert_eq!(
+            selection_store.audience_preview(&actor, relation).await?["contacts_current"],
+            false
+        );
+        let version = selection_store.state(&actor).await?["version"].clone();
+        assert_eq!(
+            command(&selection_store, &actor, save())
+                .await
+                .unwrap_err()
+                .to_string(),
+            "contact_source_unavailable"
+        );
+        assert_eq!(selection_store.state(&actor).await?["version"], version);
+        match conflict {
+            ContactSourceConflict::SameTenant | ContactSourceConflict::OtherTenant => {
+                sqlx::query("UPDATE qintopia_identity.person_identity_gateways SET active=false WHERE namespace=$1 AND gateway_key='simulated-duplicate-owner'")
+                    .bind(&namespace).execute(&store.pool).await?;
+            }
+            ContactSourceConflict::ReservedNamespace => {
+                sqlx::query("UPDATE qintopia_agent_os.collaboration_tenants SET identity_namespace=$2 WHERE tenant_key=$1")
+                    .bind(&other.tenant).bind(&other.identity_namespace).execute(&store.pool).await?;
+            }
+        }
+        let restored = selection_store
+            .workspace_candidates(&actor, &channel_query)
+            .await?;
+        assert!(restored["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["ref"] == json!(source)));
+        if kind == "work_account" {
+            let accounts = selection_store
+                .workspace_candidates(&actor, &account_query)
+                .await?;
+            assert!(accounts["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|c| c["ref"] == json!(subject)));
+        }
+        command(&selection_store, &actor, save()).await?;
+        assert_eq!(
+            selection_store.audience_preview(&actor, relation).await?["contacts_current"],
+            true
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "explicit disposable PostgreSQL required"]
+async fn contact_candidates_reject_same_tenant_gateway_ambiguity() -> Result<()> {
+    reject_ambiguous_contact_sources(ContactSourceConflict::SameTenant).await
+}
+
+#[tokio::test]
+#[ignore = "explicit disposable PostgreSQL required"]
+async fn contact_candidates_reject_cross_tenant_gateway_ambiguity() -> Result<()> {
+    reject_ambiguous_contact_sources(ContactSourceConflict::OtherTenant).await
+}
+
+#[tokio::test]
+#[ignore = "explicit disposable PostgreSQL required"]
+async fn contact_candidates_reject_reserved_identity_namespace() -> Result<()> {
+    reject_ambiguous_contact_sources(ContactSourceConflict::ReservedNamespace).await
+}
+
 /// The caller is the explicit Linux-only root test, never an automatic PG-tier case.
 #[cfg(target_os = "linux")]
 pub(crate) async fn linux_production_probe() -> Result<()> {

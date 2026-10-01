@@ -2,6 +2,15 @@
 use super::*;
 use std::collections::BTreeSet;
 
+// Shared by discovery and save; the SQL caller names its gateway alias `g`.
+// A display candidate is trusted only under the same source ownership as a save.
+pub(super) const CONTACT_GATEWAY_OWNERSHIP_SQL: &str = "
+    (SELECT count(*) FROM qintopia_identity.person_identity_gateways x
+     WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1
+    AND NOT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_tenants t
+                   WHERE t.tenant_key<>g.tenant_key AND t.identity_namespace=g.namespace)
+";
+
 impl Store {
     pub(super) async fn validate_audience_contacts(
         &self,
@@ -64,7 +73,7 @@ impl Store {
                     ensure!(locked, "contact_source_unavailable");
                 }
             }
-            let rows = sqlx::query("SELECT l.id,l.person_id,l.status,l.evidence_ref,l.confirmed_by,l.adapter_metadata,l.version AS source_version,g.gateway_key,g.scope_id,g.version AS gateway_version,g.account_kind,g.subject_type,p.status AS person_status,coalesce(nullif(p.primary_name,''),p.display_name,w.label) AS subject_label,coalesce(nullif(l.adapter_metadata->>'display_name',''),nullif(l.adapter_metadata->>'nickname',''),p.preferred_name,p.display_name,w.label) AS channel_label,w.id AS account_id,w.version AS account_version,w.active AS account_active,w.source_version AS account_source_version,w.gateway_version AS account_gateway_version FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=$1 AND g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id AND s.status='active' LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id LEFT JOIN qintopia_identity.work_accounts w ON w.tenant_key=g.tenant_key AND w.source_link_id=l.id AND w.gateway_key=g.gateway_key WHERE l.id=$2 AND g.active AND (SELECT count(*) FROM qintopia_identity.person_identity_gateways x WHERE x.namespace=g.namespace AND x.subject_type=g.subject_type AND x.active)=1")
+            let rows = sqlx::query(&format!("SELECT l.id,l.person_id,l.status,l.evidence_ref,l.confirmed_by,l.adapter_metadata,l.version AS source_version,g.gateway_key,g.scope_id,g.version AS gateway_version,g.account_kind,g.subject_type,p.status AS person_status,coalesce(nullif(p.primary_name,''),p.display_name,w.label) AS subject_label,coalesce(nullif(l.adapter_metadata->>'display_name',''),nullif(l.adapter_metadata->>'nickname',''),p.preferred_name,p.display_name,w.label) AS channel_label,w.id AS account_id,w.version AS account_version,w.active AS account_active,w.source_version AS account_source_version,w.gateway_version AS account_gateway_version FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=$1 AND g.namespace=l.namespace AND g.subject_type=l.subject_type JOIN qintopia_agent_os.collaboration_scopes s ON s.tenant_key=g.tenant_key AND s.id=g.scope_id AND s.status='active' LEFT JOIN qintopia_identity.persons p ON p.id=l.person_id LEFT JOIN qintopia_identity.work_accounts w ON w.tenant_key=g.tenant_key AND w.source_link_id=l.id AND w.gateway_key=g.gateway_key WHERE l.id=$2 AND g.active AND {CONTACT_GATEWAY_OWNERSHIP_SQL}"))
                 .bind(&self.tenant).bind(contact.channel_source_link_id).fetch_all(&mut **tx).await?;
             ensure!(rows.len() == 1, "contact_source_unavailable");
             let row = &rows[0];

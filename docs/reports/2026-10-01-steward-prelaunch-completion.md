@@ -23,6 +23,9 @@ Broker 收到 SIGTERM／SIGINT 关闭监听，等待已接收工作。30 秒到�
 
 ## 实际证据
 
+本节记录截至 `cc7cecd5`
+的验证；后续来源归属修复及其实际检查见文末，不将旧 Linux 二进制归到新源码。
+
 SDK 16 项通过；原统一业务入口 7 个场景通过，运行编号
 `20261001085803-984008ad86`。受限数据库角色下的联系人保存场景实际执行 1 项并通过，使用原密码会话和固定锁能力。
 
@@ -78,7 +81,7 @@ Rust 和 PostgreSQL 三层。最终运行保留于本任务
 | 默认 Rust 回归              | 860 通过，3 按原条件忽略                       |
 | 全功能 Rust 回归            | 875 通过，216 按原条件忽略                     |
 | 无默认功能／全功能 Clippy   | 两组通过，warnings 为 error                    |
-| QiWe 原生测试               | 326 通过，1 平台条件跳过                       |
+| QiWe 原生测试               | 325 通过，1 平台条件跳过                       |
 | PostgreSQL 人员协作         | 169 通过，包含实际受限角色与群聊／私聊同一关联 |
 | PostgreSQL 欢迎基础         | 24 通过                                        |
 | 既有 operations apply smoke | 通过，仅本任务测试库                           |
@@ -121,3 +124,40 @@ UI 接线、真实聊天／模型理解、PMS 与微信／企微身份关联和�
 前台互动草稿、其他工作树和旧验收数据原样保留。
 
 住客未加好友时，不以私聊作为关联前提。候选整理后交有权工作群人员确认再回写，区分申请／住宿关联与聊天账号关联。本 PR 记录已确认方向，不新增欢迎流程或发送。
+
+## 独立复审 P2：候选来源归属与保存一致
+
+针对 `cc7cecd5`
+完整差分的独立复审确认：同一 namespace／subject_type 被多个有效 Gateway 声明时，候选仍可能展示人员渠道或工作账号，保存却按唯一归属拒绝。另有其他租户保留该 identity_namespace 的情况，不能把其来源当作本栋可信候选。
+
+本次将现有有效 Gateway 归属计数与身份来源的保留命名空间规则组合为同一固定 SQL 条件，用于候选预筛选、最终结果查询和 contacts 保存校验。人员渠道、工作账号及其渠道统一生效；最终查询再次核验，避免其他租户在前后查询之间改变归属。contacts
+DTO、权限、版本和完整替换语义不变。未新增表、迁移、服务、配置项、CI 或部署机制。
+
+新增三个定向 PostgreSQL 场景已经通过，使用实际密码会话和本任务受限 UI 数据库角色：
+
+- 同租户另一栋出现相同来源的有效 Gateway。
+- 其他租户出现相同来源的有效 Gateway。
+- 没有第二个 Gateway，但来源 namespace 被其他租户作为 identity_namespace 保留。
+
+每个场景分别覆盖人员渠道与工作账号：候选不返回对应引用或标签；已有选择不再 current；保存拒绝且配置版本不变；解除歧义后候选、保存及 current 恢复。专项最终日志为本任务
+`.local-testing/steward-prelaunch-review/contacts-ownership-p2-targeted-final.log`，3 项通过、0 失败。测试准备阶段的编译失败与错误 bootstrap 参数已经修正，原日志保留；未扩大生产授权来通过测试。
+
+本次 `pnpm check:pr:auto` 已通过 quick、heavy Rust 和 PostgreSQL 三层，日志为
+`.local-testing/steward-prelaunch-review/auto-contact-ownership-p2.log`。默认 Rust
+860 项通过／3 项忽略，全功能 Rust 875 项通过／219 项忽略；两组 warnings-as-errors
+Clippy 通过；人员协作 PostgreSQL
+172 项通过，包含上述新场景；欢迎基础回归 24 项和原 apply
+smoke 通过。QiWe 总计 326 项，其中 325 项通过、1 项平台条件跳过。原报告把 QiWe 总数误写为通过数，已按原日志一并纠正。
+
+本轮不重跑未受影响的 Linux broker／SDK 专项；原 Linux arm64、broker UID 0／client UID
+2001 的 60.06 秒证据仍属于 `cc7cecd5`，不能替代新版本的目标服务器架构、非 root
+systemd、安装和回退验收。
+
+PR 评论已重新分页完整读取：4 条 issue comments，0 条 reviews，0 条 inline comments。覆盖
+`cc7cecd5`
+的 Guide 排除 29 文件；三条历史 ACTIVE 对应缺陷经独立核对已修复，不表示机器人已关闭。新修复提交后仍需读取对应 head 的最新审查和 CI。
+
+总指挥已核对 `cc7cecd5` 的替代 CI
+`36844973117`、business 与 PR-Agent 成功。本任务的规定 CI 诊断工具仍要求登录；不会把上一提交绿灯当作本次修复通过。
+
+详细处置表与 Linux 构建／插件加载复现步骤按总指挥要求保存在 Git 外的共同收口记录，没有为重复交接新造提交。当前提交仅包含该有效 P2 修复及必要测试、规格和结果记录。整批仍需独立复核、#734 同版联调与获准后的正式安装／回退验证；不标为已上线。

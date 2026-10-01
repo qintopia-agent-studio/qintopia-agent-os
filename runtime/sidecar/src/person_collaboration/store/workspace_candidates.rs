@@ -1,6 +1,7 @@
 //! Trusted, purpose-scoped directory selection. Read-only; selection never grants authority.
 use super::{
-    foundation::authorize_current, organization::AudienceResolution, Actor, Audience, Store,
+    audience_contacts::CONTACT_GATEWAY_OWNERSHIP_SQL, foundation::authorize_current,
+    organization::AudienceResolution, Actor, Audience, Store,
 };
 use crate::person_collaboration::{digest, model::*};
 use anyhow::{ensure, Result};
@@ -267,7 +268,7 @@ impl Store {
             _ => unreachable!(),
         }
         // Gateway directory entries belong to this tenant and the selected scope/its ancestors.
-        let gateways: Vec<String> = sqlx::query("SELECT gateway_key,scope_id FROM qintopia_identity.person_identity_gateways WHERE tenant_key=$1 AND active").bind(&self.tenant).fetch_all(&mut *tx).await?.iter().filter(|r| policy.in_scope(q.scope, r.get("scope_id"), true)).map(|r| r.get("gateway_key")).collect();
+        let gateways: Vec<String> = sqlx::query(&format!("SELECT g.gateway_key,g.scope_id FROM qintopia_identity.person_identity_gateways g WHERE g.tenant_key=$1 AND g.active AND {CONTACT_GATEWAY_OWNERSHIP_SQL}")).bind(&self.tenant).fetch_all(&mut *tx).await?.iter().filter(|r| policy.in_scope(q.scope, r.get("scope_id"), true)).map(|r| r.get("gateway_key")).collect();
         let mut channel_refs = Vec::<Uuid>::new();
         if q.kind == "channels" && q.subject_kind.as_deref() == Some("person") {
             let person = q.subject_ref.unwrap();
@@ -298,7 +299,14 @@ impl Store {
             }
             _ => unreachable!(),
         };
-        let sql = format!("WITH args AS (SELECT $1::text tenant,$2::uuid scope,$3::text search,$4::text last_label,$5::uuid last_ref,$6::bigint page_limit,$7::text namespace,$8::uuid[] eligible,$9::uuid subject_ref,$10::text subject_kind,$11::text[] gateways,$12::uuid[] channel_refs), directory AS ({directory}), unique_directory AS (SELECT DISTINCT ON (ref) ref,label,extra FROM directory ORDER BY ref,label) SELECT d.ref,d.label,d.extra,lower(d.label) AS sort_label FROM unique_directory d CROSS JOIN args a WHERE strpos(lower(d.label),lower(a.search))>0 AND (a.last_label IS NULL OR (lower(d.label) COLLATE \"C\",d.ref)>(a.last_label COLLATE \"C\",a.last_ref)) ORDER BY lower(d.label) COLLATE \"C\",d.ref LIMIT $6");
+        // Recheck at the row-producing statement too: another tenant may change
+        // its source ownership after the earlier gateway selection.
+        let source_ownership = if matches!(q.kind.as_str(), "accounts" | "channels") {
+            format!(" AND ({CONTACT_GATEWAY_OWNERSHIP_SQL})")
+        } else {
+            String::new()
+        };
+        let sql = format!("WITH args AS (SELECT $1::text tenant,$2::uuid scope,$3::text search,$4::text last_label,$5::uuid last_ref,$6::bigint page_limit,$7::text namespace,$8::uuid[] eligible,$9::uuid subject_ref,$10::text subject_kind,$11::text[] gateways,$12::uuid[] channel_refs), directory AS ({directory}{source_ownership}), unique_directory AS (SELECT DISTINCT ON (ref) ref,label,extra FROM directory ORDER BY ref,label) SELECT d.ref,d.label,d.extra,lower(d.label) AS sort_label FROM unique_directory d CROSS JOIN args a WHERE strpos(lower(d.label),lower(a.search))>0 AND (a.last_label IS NULL OR (lower(d.label) COLLATE \"C\",d.ref)>(a.last_label COLLATE \"C\",a.last_ref)) ORDER BY lower(d.label) COLLATE \"C\",d.ref LIMIT $6");
         let rows = sqlx::query(&sql)
             .bind(&self.tenant)
             .bind(q.scope)
