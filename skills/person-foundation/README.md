@@ -150,3 +150,52 @@ cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integr
 ```
 
 测试使用模拟身份、群和已认证事件，验证实际服务及 HTTP。它们不证明真实 Hermes 模型理解、微信送达或生产 runner 配置。完整欢迎和入住匹配另按原业务规格联调。
+
+## 舍长选择并保存联系渠道
+
+舍长联系对象沿用组织授权和工作连接，独立于岸岸的客房通信配置。复用
+`POST /api/preview`、`POST /api/save` 的 `set_audience`，或原 `configure_work` 的
+`audience`；不要求客房工作群、PMS 权限或新迁移。原字段继续完整提交；新增 `contacts`
+可省略，默认空数组，每项只有以下三个字段：
+
+```json
+{
+  "subject_kind": "work_account",
+  "subject_id": "<候选工作账号引用>",
+  "channel_source_link_id": "<已验证渠道候选引用>"
+}
+```
+
+`subject_kind` 也可为 `person`。候选来源为
+`/api/workspace/candidates`，每次只提取上述三个字段，不提交整个显示对象。`operation_id`
+使用当前配置操作的独立编号， `expected_version`
+为 tenant 配置版本；不是知识版本，也不是渠道来源版本。首次保存前可预览；修改替换完整列表，`contacts=[]`
+清空所选渠道。密码登录入口重复提交返回
+`command_already_processed_refresh_state`，应刷新当前状态；已提交记录保留，不恢复已清空列表。候选可见不产生管理权或发送权。
+
+`POST /api/audience-preview` 输入原 `collaboration`，回读新增 `contacts` 和
+`contacts_current`。联系人包含姓名、渠道昵称、平台和当前核验版本；UI 用可读标签，不要要求用户填写内部编号。保存核验本栋组织管理授权、已授权个人受众、人员／工作账号来源及范围；联系人最多 20 个，同一人可以选择多个不同渠道。
+
+`POST /api/contact-decision` 的原决策接口增加 `kind=channel`，`target`
+为所选来源引用。停用、撤权或来源版本变化后拒绝沿用旧选择；这个决策不是可复用发送票据。工具
+`candidates`
+只负责发现候选。当前二花生产工具清单没有开放通用组织配置命令，不能据此声称自然语言已能替用户保存全部组织设置。
+
+## Broker 停止与排空
+
+Foundation
+broker 收到 SIGTERM／SIGINT 后关闭监听，等待已经接收的单项请求完成。客户端 10 秒超时仍返回
+`outcome_unknown`；不取消数据库工作，恢复必须沿用原 `operation_id`
+读取或回放原收据。正常停止使用 SIGTERM，禁止以客户端超时或 Gateway 的 `active_agents=0`
+判断数据库已排空。
+
+等待超过 30 秒输出
+`foundation_broker_drain_deferred`，保持进程存活并继续等待；部署方应暂缓替换，不强杀、不换键重放。排空完成输出
+`foundation_broker_drained`
+并清理 socket。到期后的人工排查和宿主停止策略仍由部署任务负责，本 PR 不修改 systemd、runner、CI、调度器或提供管理控制 API。
+
+显式 Linux 验证入口是
+`person_foundation_linux_validation::actual_production_broker_and_hermes`，要求
+`QINTOPIA_FOUNDATION_LINUX_PROBE=1`、Linux
+root、独立客户端用户和固定官方 Hermes 源码；缺少前提直接失败。官方源码应保存在仓库外的任务依赖缓存，避免第三方语言文件被项目源码检查误识别。它不进入自动 PostgreSQL 业务过滤，不把官方源码依赖加入 CI。实际配置和本轮证据见
+[上线前差分报告](../../docs/reports/2026-10-01-steward-prelaunch-completion.md)。

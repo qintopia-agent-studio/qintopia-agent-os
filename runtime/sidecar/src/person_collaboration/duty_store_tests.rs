@@ -37,6 +37,7 @@ async fn group_retirement_preserves_work_but_agent_retirement_revokes_it() -> Re
         Change::ConfigureWork {
             assignment: Box::new(assignment.clone()),
             audience: Audience {
+                contacts: vec![],
                 open_reception: false,
                 groups: vec![group],
                 people: vec![],
@@ -147,6 +148,7 @@ async fn confirmed_workbench_saves_assignment_and_contact_atomically() -> Result
     let two = save(&store, &owner, Change::Assign(Box::new(other))).await?;
     let two_id = id(&two["change"]["collaboration"]);
     let audience = Audience {
+        contacts: vec![],
         open_reception: true,
         groups: vec![],
         people: vec![],
@@ -505,6 +507,7 @@ async fn contact_scope_and_hierarchy_are_explicit_and_revocable() -> Result<()> 
     let target = find(&state, "people", "人员乙 · 合成样例");
     let other = find(&state, "people", "人员丙 · 合成样例");
     let audience = Audience {
+        contacts: vec![],
         open_reception: true,
         groups: vec![],
         people: vec![target],

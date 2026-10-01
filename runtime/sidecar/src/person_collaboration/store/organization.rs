@@ -553,7 +553,11 @@ impl Store {
                 "reviewer_not_authorized"
             );
         }
+        let contacts = self
+            .validate_audience_contacts(tx, p, scope, a, now)
+            .await?;
         let mut configuration = serde_json::to_value(a)?;
+        configuration["contact_basis"] = contacts;
         configuration["authority_grant"] = json!(authority.id);
         sqlx::query("INSERT INTO qintopia_agent_os.collaboration_audiences(tenant_key,collaboration_id,configuration) VALUES($1,$2,$3) ON CONFLICT(collaboration_id) DO UPDATE SET configuration=EXCLUDED.configuration,version=collaboration_audiences.version+1")
             .bind(&self.tenant).bind(id).bind(configuration).execute(&mut **tx).await?;
@@ -597,7 +601,7 @@ impl Store {
         proactive: bool,
     ) -> Result<Value> {
         ensure!(
-            matches!(kind, "person" | "group" | "public"),
+            matches!(kind, "person" | "group" | "public" | "channel"),
             "invalid_audience"
         );
         let (mut tx, version, now) = self.begin().await?;
@@ -627,8 +631,22 @@ impl Store {
         if !authority.is_some_and(|id| p.grants.iter().any(|g| g.id == id && p.effective(g))) {
             return Ok(denied("contact_authority_revoked"));
         }
-        let a: Audience = serde_json::from_value(configuration)?;
-        if kind == "public" {
+        let a = Audience::from_configuration(configuration.clone())?;
+        if kind == "channel" {
+            if !a
+                .contacts
+                .iter()
+                .any(|c| c.channel_source_link_id == target)
+            {
+                return Ok(denied("target_outside_scope"));
+            }
+            if !self
+                .audience_contacts_current(&mut tx, &p, scope, &a, &configuration, now)
+                .await?
+            {
+                return Ok(denied("contact_source_changed_or_revoked"));
+            }
+        } else if kind == "public" {
             if proactive || !a.open_reception {
                 return Ok(denied("public_reception_not_enabled"));
             }
@@ -763,7 +781,7 @@ impl Store {
             authority.is_some_and(|id| p.grants.iter().any(|g| g.id == id && p.effective(g))),
             "contact_authority_revoked"
         );
-        let audience: Audience = serde_json::from_value(configuration)?;
+        let audience = Audience::from_configuration(configuration.clone())?;
         let resolved = self
             .resolve_audience(&mut tx, &p, scope, &audience, now)
             .await?;
@@ -782,9 +800,16 @@ impl Store {
         } else {
             "complete"
         };
+        let contacts_current = self
+            .audience_contacts_current(&mut tx, &p, scope, &audience, &configuration, now)
+            .await?;
+        let contacts = configuration
+            .get("contact_basis")
+            .cloned()
+            .unwrap_or_else(|| json!([]));
         tx.commit().await?;
         Ok(
-            json!({"collaboration_ref":collaboration,"scope_ref":scope,"scope_label":row.get::<String,_>("scope_label"),"residents":audience.residents,"configuration_version":version,"observed_at":now,"people":resolved.people,"unresolved":resolved.unresolved,"counts":counts,"completeness":completeness,"external_effects":false}),
+            json!({"contacts":contacts,"contacts_current":contacts_current,"collaboration_ref":collaboration,"scope_ref":scope,"scope_label":row.get::<String,_>("scope_label"),"residents":audience.residents,"configuration_version":version,"observed_at":now,"people":resolved.people,"unresolved":resolved.unresolved,"counts":counts,"completeness":completeness,"external_effects":false}),
         )
     }
 

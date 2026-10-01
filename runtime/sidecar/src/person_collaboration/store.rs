@@ -31,6 +31,7 @@ pub(crate) use rule_lifecycle::{RuleCommand, RuleEdit};
 mod identity;
 mod ontology;
 pub(crate) use identity::IdentityUiCommand;
+mod audience_contacts;
 mod organization;
 pub use identity::{IdentityCommand, QiweConversion};
 mod memory;

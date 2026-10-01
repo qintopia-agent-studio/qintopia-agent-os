@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-10-01 舍长与二花上线前差分验证](2026-10-01-steward-prelaunch-completion.md)
+
 - [2026-09-30 舍长与二花共享服务最小接入](2026-09-30-steward-production-minimal.md)
 
 - [2026-09-28 Management UI deployment wiring](2026-09-28-management-ui-deploy-wiring.md)

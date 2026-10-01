@@ -1218,6 +1218,25 @@ impl Drop for FoundationSocketGuard {
 #[cfg(test)]
 #[tokio::test]
 async fn foundation_socket_restarts_without_replacing_active_listener() -> Result<()> {
+    // Other parallel tests spawn subprocesses. Isolate the descriptor lifecycle
+    // rather than assuming a dropped lock/listener is immediately unreferenced.
+    if std::env::var("QINTOPIA_SOCKET_LIFECYCLE_TEST_CHILD").as_deref() != Ok("1") {
+        let output = tokio::task::spawn_blocking(|| {
+            std::process::Command::new(std::env::current_exe()?)
+                .arg("person_collaboration::foundation_server::foundation_socket_restarts_without_replacing_active_listener")
+                .args(["--exact", "--test-threads=1", "--nocapture"])
+                .env("QINTOPIA_SOCKET_LIFECYCLE_TEST_CHILD", "1")
+                .output()
+        })
+        .await??;
+        ensure!(
+            output.status.success(),
+            "foundation_socket_lifecycle_child_failed: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return Ok(());
+    }
     use std::os::unix::fs::PermissionsExt;
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("foundation.sock");
@@ -1235,6 +1254,21 @@ async fn foundation_socket_restarts_without_replacing_active_listener() -> Resul
     let stale = tokio::net::UnixListener::bind(&path)?;
     drop(stale);
     assert!(path.exists());
+    // Tokio may defer deregistration under concurrent test load. A stale fixture
+    // is ready only once the kernel rejects connections; never treat an active
+    // socket as stale or weaken the production guard to accommodate the test.
+    tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        loop {
+            match tokio::net::UnixStream::connect(&path).await {
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => break,
+                Ok(stream) => drop(stream),
+                Err(error) => return Err(anyhow::Error::from(error)),
+            }
+            tokio::task::yield_now().await;
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await??;
     let mut recovered = FoundationSocketGuard::prepare(&path).await?;
     assert!(!path.exists());
     let listener = tokio::net::UnixListener::bind(&path)?;
@@ -1323,8 +1357,19 @@ async fn foundation_broker_task_abort_removes_socket_and_restarts() -> Result<()
 }
 
 async fn serve_broker(store: Store) -> Result<()> {
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+    serve_broker_until(store, async move {
+        tokio::select! { _ = terminate.recv() => {}, _ = interrupt.recv() => {} }
+    })
+    .await
+}
+
+async fn serve_broker_until(
+    store: Store,
+    shutdown: impl std::future::Future<Output = ()>,
+) -> Result<()> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let socket = std::env::var("QINTOPIA_FOUNDATION_SOCKET")
         .map_err(|_| anyhow::anyhow!("private_foundation_socket_required"))?;
     let gateway = std::env::var("QINTOPIA_FOUNDATION_GATEWAY_ID")?;
@@ -1366,8 +1411,17 @@ async fn serve_broker(store: Store) -> Result<()> {
         "Foundation broker listening"
     );
     let owner = std::fs::metadata(path)?.uid();
+    tokio::pin!(shutdown);
     loop {
-        let (stream, _) = listener.accept().await?;
+        let stream = tokio::select! {
+            biased;
+            _ = &mut shutdown => {
+                drop(listener);
+                tracing::info!(code="foundation_broker_drained", in_flight=0, "Broker stopped accepting work");
+                return Ok(());
+            }
+            accepted = listener.accept() => accepted?.0,
+        };
         // A client can disconnect after connect but before accept/peer inspection.
         // Unreadable credentials reject this connection, not the listening broker.
         let Ok(credentials) = stream.peer_cred() else {
@@ -1382,74 +1436,128 @@ async fn serve_broker(store: Store) -> Result<()> {
         } {
             continue;
         }
-        let (read, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(read);
-        let mut raw = Vec::new();
-        // Incremental bounded read; an unterminated hostile request cannot allocate without limit.
-        let read = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            loop {
-                let chunk = reader.fill_buf().await?;
-                if chunk.is_empty() {
-                    anyhow::bail!("invalid_request");
-                }
-                let n = chunk
-                    .iter()
-                    .position(|b| *b == b'\n')
-                    .map_or(chunk.len(), |i| i + 1);
-                ensure!(raw.len() + n <= 256 * 1024, "request_too_large");
-                raw.extend_from_slice(&chunk[..n]);
-                reader.consume(n);
-                if raw.ends_with(b"\n") {
-                    break;
-                }
+        let work = handle_broker_connection(
+            stream,
+            &store,
+            &gateway,
+            &profile,
+            isolated.as_ref(),
+            token.as_ref(),
+        );
+        tokio::pin!(work);
+        tokio::select! {
+            biased;
+            _ = &mut shutdown => {
+                drop(listener);
+                tracing::info!(code="foundation_broker_draining", in_flight=1, "Broker stopped accepting work and is waiting for the accepted request");
+                drain_accepted(work.as_mut(), std::time::Duration::from_secs(30)).await?;
+                tracing::info!(code="foundation_broker_drained", in_flight=0, "Accepted work completed");
+                return Ok(());
             }
-            Ok::<_, anyhow::Error>(())
-        })
-        .await;
-        if !matches!(read, Ok(Ok(()))) {
-            continue;
+            result = &mut work => { result?; }
         }
-        let parsed = parse_broker_request(&raw);
-        use zeroize::Zeroize;
-        raw.zeroize();
-        let result = match parsed {
-            Ok(mut request) => {
-                let expected_hash = if let Some(config) = &isolated {
-                    Some(config.token_hash.clone())
-                } else if request.operation == "person_foundation_ingress" {
-                    std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")
-                        .ok()
-                        .filter(|v| {
-                            (32..=256).contains(&v.len())
-                                && token.as_ref().is_some_and(|t| {
-                                    super::digest(v.as_bytes()) != super::digest(t.as_bytes())
-                                })
-                        })
-                        .map(|v| super::digest(v.as_bytes()))
-                } else {
-                    token.as_ref().map(|t| super::digest(t.as_bytes()))
-                };
-                let authenticated = (32..=256).contains(&request.token.len())
-                    && expected_hash
-                        .as_ref()
-                        .is_some_and(|hash| *hash == super::digest(request.token.as_bytes()));
-                request.token.zeroize();
-                if !authenticated {
-                    Err(anyhow::anyhow!("authentication_required"))
-                } else {
-                    broker_invoke(&store, &gateway, &profile, request).await
-                }
-            }
-            Err(_) => Err(anyhow::anyhow!("invalid_request")),
-        };
-        let response = match result {
-            Ok(result) => json!({"ok":true,"result":result}),
-            Err(e) => json!({"ok":false,"error":{"code":error_code(&e)}}),
-        };
-        let mut bytes = serde_json::to_vec(&response)?;
-        bytes.push(b'\n');
-        let _ = writer.write_all(&bytes).await;
     }
+}
+
+async fn drain_accepted<T>(
+    work: std::pin::Pin<&mut impl std::future::Future<Output = Result<T>>>,
+    deadline: std::time::Duration,
+) -> Result<T> {
+    let mut work = work;
+    match tokio::time::timeout(deadline, work.as_mut()).await {
+        Ok(result) => result,
+        Err(_) => {
+            tracing::warn!(code="foundation_broker_drain_deferred", in_flight=1, "Drain deadline exceeded; keep waiting, defer replacement and do not replay with a new operation_id");
+            work.await
+        }
+    }
+}
+
+async fn handle_broker_connection(
+    stream: tokio::net::UnixStream,
+    store: &Store,
+    gateway: &str,
+    profile: &str,
+    isolated: Option<&ErhuaBrokerConfig>,
+    token: Option<&zeroize::Zeroizing<String>>,
+) -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    let (read, mut writer) = stream.into_split();
+    let mut reader = BufReader::new(read);
+    let mut raw = Vec::new();
+    // Incremental bounded read; an unterminated hostile request cannot allocate without limit.
+    let read = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let chunk = reader.fill_buf().await?;
+            if chunk.is_empty() {
+                anyhow::bail!("invalid_request");
+            }
+            let n = chunk
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(chunk.len(), |i| i + 1);
+            ensure!(raw.len() + n <= 256 * 1024, "request_too_large");
+            raw.extend_from_slice(&chunk[..n]);
+            reader.consume(n);
+            if raw.ends_with(b"\n") {
+                break;
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await;
+    if !matches!(read, Ok(Ok(()))) {
+        return Ok(());
+    }
+    let parsed = parse_broker_request(&raw);
+    use zeroize::Zeroize;
+    raw.zeroize();
+    let result = match parsed {
+        Ok(mut request) => {
+            let expected_hash = if let Some(config) = &isolated {
+                Some(config.token_hash.clone())
+            } else if request.operation == "person_foundation_ingress" {
+                std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")
+                    .ok()
+                    .filter(|v| {
+                        (32..=256).contains(&v.len())
+                            && token.as_ref().is_some_and(|t| {
+                                super::digest(v.as_bytes()) != super::digest(t.as_bytes())
+                            })
+                    })
+                    .map(|v| super::digest(v.as_bytes()))
+            } else {
+                token.as_ref().map(|t| super::digest(t.as_bytes()))
+            };
+            let authenticated = (32..=256).contains(&request.token.len())
+                && expected_hash
+                    .as_ref()
+                    .is_some_and(|hash| *hash == super::digest(request.token.as_bytes()));
+            request.token.zeroize();
+            if !authenticated {
+                Err(anyhow::anyhow!("authentication_required"))
+            } else {
+                broker_invoke(store, gateway, profile, request).await
+            }
+        }
+        Err(_) => Err(anyhow::anyhow!("invalid_request")),
+    };
+    let response = match result {
+        Ok(result) => json!({"ok":true,"result":result}),
+        Err(e) => json!({"ok":false,"error":{"code":error_code(&e)}}),
+    };
+    let mut bytes = serde_json::to_vec(&response)?;
+    bytes.push(b'\n');
+    if !matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(1), writer.write_all(&bytes)).await,
+        Ok(Ok(()))
+    ) {
+        tracing::warn!(
+            code = "foundation_broker_response_lost",
+            "Receipt may have persisted; recover with the original operation_id"
+        );
+    }
+    Ok(())
 }
 
 fn production_tool_allowed(operation: &str, tool: &str) -> bool {
