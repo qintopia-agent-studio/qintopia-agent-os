@@ -1,4 +1,5 @@
 //! Shared PMS scope configuration, guarded by current organizational management rights.
+use super::scope_communication::{CommunicationContactSelection, CommunicationSelection};
 use super::{business, Actor, Store};
 use crate::person_collaboration::{digest, model::PermissionMode};
 use anyhow::{ensure, Result};
@@ -53,6 +54,11 @@ pub(crate) enum BusinessConfigChange {
         operation: String,
         valid_until: Option<DateTime<Utc>>,
     },
+    SetScopeCommunication {
+        scope: Uuid,
+        staff_group_binding_id: Uuid,
+        contacts: Vec<CommunicationContactSelection>,
+    },
 }
 
 fn valid_source_key(value: &str) -> bool {
@@ -87,16 +93,17 @@ impl Store {
                 (read || execute).then_some((s.id, read, execute))
             })
             .collect();
-        ensure!(manageable.len() <= 256, "business_configuration_too_large");
+        let manageable_scopes_truncated = manageable.len() > 256;
+        let manageable: Vec<_> = manageable.into_iter().take(256).collect();
         let manageable_ids: Vec<Uuid> = manageable.iter().map(|(id, _, _)| *id).collect();
-        let scope_rows = sqlx::query("SELECT id,label FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2) AND status='active' ORDER BY label,id")
+        let scope_rows = sqlx::query("SELECT id,label,version,communication_config FROM qintopia_agent_os.collaboration_scopes WHERE tenant_key=$1 AND id=ANY($2) AND status='active' ORDER BY label,id")
             .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
         let manageable_scopes: Vec<Value> = scope_rows
             .iter()
             .filter_map(|row| {
                 let id: Uuid = row.get("id");
                 manageable.iter().find(|(scope, _, _)| *scope == id).map(|(_, read, execute)|
-                json!({"id":id,"label":row.get::<String,_>("label"),"read":read,"execute":execute}))
+                json!({"id":id,"label":row.get::<String,_>("label"),"read":read,"execute":execute,"communication_version":row.get::<i64,_>("version"),"communication":row.get::<Value,_>("communication_config")}))
             })
             .collect();
         let catalog: Value = serde_json::from_str(include_str!(
@@ -104,9 +111,9 @@ impl Store {
         ))?;
         let rows = sqlx::query("SELECT id,scope_id,source_instance,property_id,active,version FROM qintopia_agent_os.business_property_bindings WHERE tenant_key=$1 AND scope_id=ANY($2) ORDER BY scope_id,property_id LIMIT 257")
             .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
-        ensure!(rows.len() <= 256, "business_configuration_too_large");
+        let bindings_truncated = rows.len() > 256;
         let mut bindings = Vec::new();
-        for row in rows {
+        for row in rows.into_iter().take(256) {
             let scope: Uuid = row.get("scope_id");
             let can_read = policy
                 .manager(actor.person, scope, "anan", "hospitality", "read_business")
@@ -137,12 +144,12 @@ impl Store {
                 .collect();
             let grants = sqlx::query("SELECT o.id,o.authority_grant_id,o.work_account_id,o.account_role,o.operation_key,o.valid_until,o.revoked_at FROM qintopia_agent_os.business_operation_grants o WHERE o.tenant_key=$1 AND o.binding_id=$2 AND o.operation_key=ANY($3) ORDER BY o.created_at,o.id LIMIT 257")
                 .bind(&self.tenant).bind(binding).bind(&allowed_keys).fetch_all(&mut *tx).await?;
-            ensure!(grants.len() <= 256, "business_configuration_too_large");
+            let grants_truncated = grants.len() > 256;
             bindings.push(json!({
                 "id":binding,"scope":scope,"source":row.get::<String, _>("source_instance"),
                 "property":row.get::<String, _>("property_id"),"active":row.get::<bool, _>("active"),
-                "version":row.get::<i64, _>("version"),
-                "grants":grants.iter().filter(|g| {
+                "version":row.get::<i64, _>("version"),"grants_truncated":grants_truncated,
+                "grants":grants.iter().take(256).filter(|g| {
                     match business::operation(&g.get::<String,_>("operation_key")).ok().and_then(|v|v["action"].as_str().map(str::to_owned)).as_deref() {
                         Some("read_business") => can_read,
                         Some("execute_business") => can_execute,
@@ -160,8 +167,8 @@ impl Store {
         }
         let accounts=sqlx::query("SELECT w.id,w.label,w.active,w.version,w.gateway_key,g.scope_id,coalesce((SELECT array_agg(DISTINCT o.operation_key) FROM qintopia_agent_os.business_operation_grants o WHERE o.tenant_key=w.tenant_key AND o.work_account_id=w.id AND o.revoked_at IS NULL),ARRAY[]::text[]) AS granted_operations FROM qintopia_identity.work_accounts w JOIN qintopia_identity.person_identity_gateways g ON g.tenant_key=w.tenant_key AND g.gateway_key=w.gateway_key WHERE w.tenant_key=$1 AND g.scope_id=ANY($2) ORDER BY w.label,w.id LIMIT 257")
             .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
-        ensure!(accounts.len() <= 256, "business_configuration_too_large");
-        let accounts:Vec<_>=accounts.iter().filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
+        let accounts_truncated = accounts.len() > 256;
+        let accounts:Vec<_>=accounts.iter().take(256).filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
             .map(|r| {
                 let scope: Uuid = r.get("scope_id");
                 let can_disable = r.get::<Vec<String>,_>("granted_operations").iter().all(|operation| {
@@ -173,12 +180,12 @@ impl Store {
             }).collect();
         let observed=sqlx::query("SELECT l.id,g.gateway_key,g.scope_id,coalesce(nullif(l.adapter_metadata->>'display_name',''),'待核对工作账号') AS label FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE g.tenant_key=$1 AND g.scope_id=ANY($2) AND g.active AND g.account_kind='shared' AND l.person_id IS NULL AND l.status='pending' AND l.adapter_metadata ? 'first_observation_ref' AND NOT EXISTS(SELECT 1 FROM qintopia_identity.work_accounts w WHERE w.tenant_key=$1 AND w.source_link_id=l.id AND w.active) ORDER BY g.gateway_key,l.id LIMIT 257")
             .bind(&self.tenant).bind(&manageable_ids).fetch_all(&mut *tx).await?;
-        ensure!(observed.len() <= 256, "business_configuration_too_large");
-        let observed:Vec<_>=observed.iter().filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
+        let observed_truncated = observed.len() > 256;
+        let observed:Vec<_>=observed.iter().take(256).filter(|r| policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","read_business").is_some() || policy.manager(actor.person,r.get("scope_id"),"anan","hospitality","execute_business").is_some())
             .map(|r|json!({"source_link":r.get::<Uuid,_>("id"),"gateway":r.get::<String,_>("gateway_key"),"scope":r.get::<Uuid,_>("scope_id"),"label":r.get::<String,_>("label")})).collect();
         let can_manage = !manageable_scopes.is_empty();
         Ok(
-            json!({"version":version,"can_manage":can_manage,"manageable_scopes":manageable_scopes,"bindings":bindings,"accounts":accounts,"observed":observed,"operations":catalog["operations"]}),
+            json!({"version":version,"can_manage":can_manage,"manageable_scopes":manageable_scopes,"manageable_scopes_truncated":manageable_scopes_truncated,"bindings":bindings,"bindings_truncated":bindings_truncated,"accounts":accounts,"accounts_truncated":accounts_truncated,"observed":observed,"observed_truncated":observed_truncated,"operations":catalog["operations"]}),
         )
     }
 
@@ -528,6 +535,44 @@ impl Store {
                 let count = sqlx::query("WITH RECURSIVE affected(id) AS (SELECT id FROM qintopia_agent_os.business_operation_grants WHERE tenant_key=$1 AND id=$2 UNION SELECT child.id FROM qintopia_agent_os.business_operation_grants child JOIN affected parent ON child.parent_id=parent.id WHERE child.tenant_key=$1) UPDATE qintopia_agent_os.business_operation_grants SET revoked_at=$3 WHERE tenant_key=$1 AND id IN(SELECT id FROM affected) AND revoked_at IS NULL")
                     .bind(&self.tenant).bind(grant).bind(now).execute(&mut *tx).await?.rows_affected();
                 json!({"kind":"operation_grant","grant":grant,"active":false,"revoked_count":count})
+            }
+            BusinessConfigChange::SetScopeCommunication {
+                scope,
+                staff_group_binding_id,
+                contacts,
+            } => {
+                ensure!(
+                    policy
+                        .manager(actor.person, *scope, "anan", "hospitality", "read_business")
+                        .is_some()
+                        || policy
+                            .manager(
+                                actor.person,
+                                *scope,
+                                "anan",
+                                "hospitality",
+                                "execute_business",
+                            )
+                            .is_some(),
+                    "management_denied"
+                );
+                let selection = CommunicationSelection {
+                    staff_group_binding_id: *staff_group_binding_id,
+                    contacts: contacts
+                        .iter()
+                        .map(|contact| CommunicationContactSelection {
+                            subject_kind: contact.subject_kind.clone(),
+                            subject_id: contact.subject_id,
+                            channel_source_link_id: contact.channel_source_link_id,
+                        })
+                        .collect(),
+                };
+                let snapshot = self
+                    .validate_scope_communication_in(&mut tx, *scope, &selection)
+                    .await?;
+                let scope_version: i64 = sqlx::query_scalar("UPDATE qintopia_agent_os.collaboration_scopes SET communication_config=$3,version=version+1 WHERE tenant_key=$1 AND id=$2 AND status='active' RETURNING version")
+                    .bind(&self.tenant).bind(scope).bind(&snapshot).fetch_one(&mut *tx).await?;
+                json!({"kind":"scope_communication","scope":scope,"scope_version":scope_version,"communication":snapshot})
             }
         };
         let result = json!({"persisted":apply,"version":if apply {version+1} else {version},"change":change,"replayed":false});

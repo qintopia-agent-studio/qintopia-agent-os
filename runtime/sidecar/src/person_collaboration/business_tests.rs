@@ -18,6 +18,8 @@ mod business_manual_tests;
 mod business_reminder_tests;
 #[path = "business_scope_tests.rs"]
 mod business_scope_tests;
+#[path = "scope_communication_tests.rs"]
+mod scope_communication_tests;
 
 struct Fixture {
     store: Store,
@@ -111,6 +113,37 @@ impl Fixture {
         let saved=self.call("start","pms_save_preview",json!({"action":a["action"],"claim":claim["claim"],"preview":{"previewId":"preview_1","propertyId":"property_a","commandType":"CREATE_ORDER","effectHash":"a".repeat(64),"effect":{"amountMinor":12000},"expiresAt":(Utc::now()+Duration::minutes(10)).to_rfc3339()}})).await?;
         Ok((a, saved))
     }
+}
+
+#[tokio::test]
+#[ignore = "explicit task-isolated local database required"]
+async fn business_state_keeps_bounded_account_summaries_above_256() -> Result<()> {
+    let f = Fixture::new().await?;
+    let scope: Uuid = sqlx::query_scalar(
+        "SELECT scope_id FROM qintopia_agent_os.business_property_bindings WHERE id=$1",
+    )
+    .bind(f.binding)
+    .fetch_one(&f.store.pool)
+    .await?;
+    let owner = f.store.verified_person(&f.actor).await?;
+    let namespace = format!("synthetic-capacity-{}", Uuid::new_v4());
+    let gateway = format!("synthetic-capacity-gateway-{}", Uuid::new_v4());
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,$2,$3,'wecom_internal',$4,'shared',true)")
+        .bind(&f.store.tenant).bind(&gateway).bind(&namespace).bind(scope).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) SELECT $1,'wecom_internal','registered-'||n::text,jsonb_build_object('first_observation_ref',$2::text) FROM generate_series(1,257) n")
+        .bind(&namespace).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) SELECT $1,l.id,l.version,g.gateway_key,g.version,l.source_ref,$4,$5 FROM qintopia_identity.source_identity_links l JOIN qintopia_identity.person_identity_gateways g ON g.namespace=l.namespace AND g.subject_type=l.subject_type WHERE l.namespace=$2 AND l.source_ref LIKE 'registered-%' AND g.gateway_key=$3")
+        .bind(&f.store.tenant).bind(&namespace).bind(&gateway).bind(owner).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) SELECT $1,'wecom_internal','observed-'||n::text,jsonb_build_object('first_observation_ref',$2::text) FROM generate_series(1,257) n")
+        .bind(&namespace).bind(Uuid::new_v4()).execute(&f.store.pool).await?;
+
+    let state = f.store.business_configuration_state(&f.actor).await?;
+    assert_eq!(state["can_manage"], true);
+    assert_eq!(state["accounts_truncated"], true);
+    assert_eq!(state["accounts"].as_array().unwrap().len(), 256);
+    assert_eq!(state["observed_truncated"], true);
+    assert_eq!(state["observed"].as_array().unwrap().len(), 256);
+    Ok(())
 }
 
 #[tokio::test]
