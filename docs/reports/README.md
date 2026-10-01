@@ -6,6 +6,8 @@
 
 - [2026-09-29 协作渠道选择本地验证](2026-09-29-collaboration-channel-selection-local-validation.md)
 
+- [2026-09-30 舍长与二花共享服务最小接入](2026-09-30-steward-production-minimal.md)
+
 - [2026-09-28 Management UI deployment wiring](2026-09-28-management-ui-deploy-wiring.md)
 
 - [2026-09-27 PR #723 物业业务授权入口与本地验证](2026-09-27-pr723-business-ui-validation.md)

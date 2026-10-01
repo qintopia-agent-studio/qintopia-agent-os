@@ -6,10 +6,10 @@ use chrono::{Duration, Utc};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
-fn id(value: &Value) -> Uuid {
+pub(super) fn id(value: &Value) -> Uuid {
     serde_json::from_value(value.clone()).unwrap()
 }
-fn find(state: &Value, collection: &str, label: &str) -> Uuid {
+pub(super) fn find(state: &Value, collection: &str, label: &str) -> Uuid {
     id(&state[collection]
         .as_array()
         .unwrap()
@@ -17,7 +17,7 @@ fn find(state: &Value, collection: &str, label: &str) -> Uuid {
         .find(|v| v["label"] == label)
         .unwrap()["id"])
 }
-async fn fixture() -> Result<(Store, Actor, Value)> {
+pub(super) async fn fixture() -> Result<(Store, Actor, Value)> {
     let database = crate::foundation_test_support::database_url("QINTOPIA_COLLABORATION_TEST")?;
     let store = Store::local(
         &database,
@@ -30,11 +30,11 @@ async fn fixture() -> Result<(Store, Actor, Value)> {
     let state = store.state(&owner).await?;
     Ok((store, owner, state))
 }
-async fn actor(store: &Store, person: Uuid) -> Result<Actor> {
+pub(super) async fn actor(store: &Store, person: Uuid) -> Result<Actor> {
     let link:Uuid=sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed'").bind(&store.tenant).bind(person).fetch_one(&store.pool).await?;
     store.actor(link).await
 }
-async fn command(store: &Store, owner: &Actor, change: Change) -> Result<Value> {
+pub(super) async fn command(store: &Store, owner: &Actor, change: Change) -> Result<Value> {
     store
         .command(
             owner,
@@ -47,7 +47,7 @@ async fn command(store: &Store, owner: &Actor, change: Change) -> Result<Value> 
         )
         .await
 }
-fn assignment(state: &Value, person: Uuid, scope: Uuid) -> Assignment {
+pub(super) fn assignment(state: &Value, person: Uuid, scope: Uuid) -> Assignment {
     Assignment {
         collaboration: None,
         person,

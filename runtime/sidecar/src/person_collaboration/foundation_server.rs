@@ -59,6 +59,32 @@ struct WithdrawRequest {
     expected_version: i64,
 }
 
+pub(super) fn formal_route(path: &str) -> bool {
+    matches!(
+        path,
+        "/api/foundation/rules"
+            | "/api/foundation/rule/change"
+            | "/api/foundation/rule/decision"
+            | "/api/foundation/review-delegation"
+            | "/api/foundation/review-delegation/change"
+    )
+}
+
+fn erhua_tool_allowed(operation: &str, tool: &str) -> bool {
+    operation == "person_foundation_tool"
+        && matches!(
+            tool,
+            "context"
+                | "workspace"
+                | "change_knowledge"
+                | "remember"
+                | "history"
+                | "task_status"
+                | "delegate_review"
+                | "candidates"
+        )
+}
+
 pub(super) async fn dispatch(
     store: &Store,
     actor: &Actor,
@@ -66,7 +92,9 @@ pub(super) async fn dispatch(
     body: &[u8],
 ) -> Result<Value> {
     ensure!(
-        std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1"),
+        formal_route(path)
+            || (!store.is_live()
+                && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() == Ok("1")),
         "foundation_disabled"
     );
     if !body.is_empty() {
@@ -1011,21 +1039,84 @@ pub(super) async fn broker_live(store: Store) -> Result<()> {
     ensure!(store.is_live(), "live_broker_required");
     ensure!(
         std::env::var("QINTOPIA_FOUNDATION_PRODUCTION_ENABLE").as_deref() == Ok("1")
-            && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1")
-            && std::env::var("QINTOPIA_FOUNDATION_PROFILE").as_deref() == Ok("anan"),
+            && std::env::var("QINTOPIA_FOUNDATION_LOCAL_ENABLE").as_deref() != Ok("1"),
         "live_broker_configuration_required"
     );
-    let token = std::env::var("QINTOPIA_FOUNDATION_TOKEN")?;
-    let host_token = std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")?;
-    ensure!(
-        (32..=256).contains(&token.len())
-            && (32..=256).contains(&host_token.len())
-            && token != host_token,
-        "private_foundation_tokens_required"
-    );
+    let profile = std::env::var("QINTOPIA_FOUNDATION_PROFILE")?;
     let gateway = std::env::var("QINTOPIA_FOUNDATION_GATEWAY_ID")?;
-    store.preflight_business_gateway(&gateway).await?;
+    match profile.as_str() {
+        "erhua" => {
+            ErhuaBrokerConfig::from_env()?;
+            store.preflight_erhua_gateway(&gateway).await?;
+        }
+        "anan" => {
+            let token = zeroize::Zeroizing::new(std::env::var("QINTOPIA_FOUNDATION_TOKEN")?);
+            let host_token =
+                zeroize::Zeroizing::new(std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")?);
+            ensure!(
+                (32..=256).contains(&token.len())
+                    && (32..=256).contains(&host_token.len())
+                    && token != host_token,
+                "private_foundation_tokens_required"
+            );
+            store.preflight_business_gateway(&gateway).await?;
+        }
+        _ => anyhow::bail!("live_broker_configuration_required"),
+    }
     serve_broker(store).await
+}
+
+struct ErhuaBrokerConfig {
+    token_hash: String,
+    runner_uid: u32,
+    runner_gid: u32,
+}
+impl ErhuaBrokerConfig {
+    fn from_env() -> Result<Self> {
+        ensure!(
+            std::env::var("QINTOPIA_FOUNDATION_ERHUA_APPROVAL").as_deref()
+                == Ok("steward-foundation-reviewed"),
+            "erhua_owner_approval_required"
+        );
+        let database = zeroize::Zeroizing::new(std::env::var("QINTOPIA_FOUNDATION_DATABASE_URL")?);
+        let approved = std::env::var("QINTOPIA_FOUNDATION_DATABASE_URL_SHA256")?;
+        ensure!(
+            approved == super::digest(database.as_bytes()),
+            "erhua_database_approval_required"
+        );
+        let hash = std::env::var("QINTOPIA_FOUNDATION_TOKEN_SHA256")?;
+        ensure!(
+            hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+            "private_foundation_token_hash_required"
+        );
+        let uid = std::env::var("QINTOPIA_FOUNDATION_RUNNER_UID")?.parse()?;
+        let gid = std::env::var("QINTOPIA_FOUNDATION_RUNNER_GID")?.parse()?;
+        ensure!(uid > 0 && gid > 0, "isolated_foundation_runner_required");
+        Ok(Self {
+            token_hash: hash,
+            runner_uid: uid,
+            runner_gid: gid,
+        })
+    }
+    fn check_parent(&self, path: &std::path::Path) -> Result<()> {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("private_foundation_socket_directory_required"))?;
+        let meta = std::fs::symlink_metadata(parent)?;
+        ensure!(
+            meta.is_dir()
+                && !meta.file_type().is_symlink()
+                && meta.uid() != self.runner_uid
+                && meta.gid() == self.runner_gid
+                && meta.permissions().mode() & 0o7777 == 0o750,
+            "isolated_foundation_runner_required"
+        );
+        Ok(())
+    }
 }
 
 struct FoundationSocketGuard {
@@ -1236,18 +1327,44 @@ async fn serve_broker(store: Store) -> Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     let socket = std::env::var("QINTOPIA_FOUNDATION_SOCKET")
         .map_err(|_| anyhow::anyhow!("private_foundation_socket_required"))?;
-    let token = zeroize::Zeroizing::new(std::env::var("QINTOPIA_FOUNDATION_TOKEN")?);
     let gateway = std::env::var("QINTOPIA_FOUNDATION_GATEWAY_ID")?;
     let profile = std::env::var("QINTOPIA_FOUNDATION_PROFILE").unwrap_or_else(|_| "erhua".into());
+    let isolated = if store.is_live() && profile == "erhua" {
+        Some(ErhuaBrokerConfig::from_env()?)
+    } else {
+        None
+    };
+    let token = if isolated.is_none() {
+        Some(zeroize::Zeroizing::new(std::env::var(
+            "QINTOPIA_FOUNDATION_TOKEN",
+        )?))
+    } else {
+        None
+    };
     let path = std::path::Path::new(&socket);
-    ensure!(token.len() >= 32, "private_foundation_socket_required");
+    ensure!(
+        token.as_ref().is_none_or(|t| t.len() >= 32),
+        "private_foundation_socket_required"
+    );
+    if let Some(config) = &isolated {
+        config.check_parent(path)?;
+    }
     let mut socket = FoundationSocketGuard::prepare(path).await?;
     let listener = tokio::net::UnixListener::bind(path)
         .map_err(|_| anyhow::anyhow!("private_foundation_socket_unavailable"))?;
     socket.bound()?;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-        .map_err(|_| anyhow::anyhow!("private_foundation_socket_permissions_failed"))?;
-    tracing::info!(code = "foundation_broker_ready", "PMS broker listening");
+    if let Some(config) = &isolated {
+        std::os::unix::fs::chown(path, None, Some(config.runner_gid))?;
+    }
+    std::fs::set_permissions(
+        path,
+        std::fs::Permissions::from_mode(if isolated.is_some() { 0o660 } else { 0o600 }),
+    )
+    .map_err(|_| anyhow::anyhow!("private_foundation_socket_permissions_failed"))?;
+    tracing::info!(
+        code = "foundation_broker_ready",
+        "Foundation broker listening"
+    );
     let owner = std::fs::metadata(path)?.uid();
     loop {
         let (stream, _) = listener.accept().await?;
@@ -1256,7 +1373,13 @@ async fn serve_broker(store: Store) -> Result<()> {
         let Ok(credentials) = stream.peer_cred() else {
             continue;
         };
-        if credentials.uid() != owner {
+        if if let Some(config) = &isolated {
+            credentials.uid() != config.runner_uid
+                || credentials.gid() != config.runner_gid
+                || owner == config.runner_uid
+        } else {
+            credentials.uid() != owner
+        } {
             continue;
         }
         let (read, mut writer) = stream.into_split();
@@ -1290,20 +1413,28 @@ async fn serve_broker(store: Store) -> Result<()> {
         use zeroize::Zeroize;
         raw.zeroize();
         let result = match parsed {
-            Ok(request) => {
-                let expected = if request.operation == "person_foundation_ingress" {
+            Ok(mut request) => {
+                let expected_hash = if let Some(config) = &isolated {
+                    Some(config.token_hash.clone())
+                } else if request.operation == "person_foundation_ingress" {
                     std::env::var("QINTOPIA_FOUNDATION_HOST_TOKEN")
                         .ok()
                         .filter(|v| {
                             (32..=256).contains(&v.len())
-                                && super::digest(v.as_bytes()) != super::digest(token.as_bytes())
+                                && token.as_ref().is_some_and(|t| {
+                                    super::digest(v.as_bytes()) != super::digest(t.as_bytes())
+                                })
                         })
+                        .map(|v| super::digest(v.as_bytes()))
                 } else {
-                    Some(token.to_string())
+                    token.as_ref().map(|t| super::digest(t.as_bytes()))
                 };
-                if !expected.as_ref().is_some_and(|value| {
-                    super::digest(request.token.as_bytes()) == super::digest(value.as_bytes())
-                }) {
+                let authenticated = (32..=256).contains(&request.token.len())
+                    && expected_hash
+                        .as_ref()
+                        .is_some_and(|hash| *hash == super::digest(request.token.as_bytes()));
+                request.token.zeroize();
+                if !authenticated {
                     Err(anyhow::anyhow!("authentication_required"))
                 } else {
                     broker_invoke(&store, &gateway, &profile, request).await
@@ -1396,9 +1527,12 @@ pub(super) async fn broker_invoke(
 ) -> Result<Value> {
     if store.is_live() {
         ensure!(
-            profile == "anan"
-                && r.agent == "anan"
-                && production_tool_allowed(&r.operation, &r.tool),
+            r.agent == profile
+                && match profile {
+                    "anan" => production_tool_allowed(&r.operation, &r.tool),
+                    "erhua" => erhua_tool_allowed(&r.operation, &r.tool),
+                    _ => false,
+                },
             "agent_tool_denied"
         );
     }
@@ -1577,8 +1711,15 @@ pub(super) async fn broker_invoke(
         "trusted_context_unavailable"
     );
     let actor = store.conversation_actor(gateway, &t.sender_id).await?;
+    let actor = if store.is_live() && profile == "erhua" {
+        store
+            .route_erhua_actor(actor, &t.chat_type, &t.chat_id)
+            .await?
+    } else {
+        actor
+    };
     let scope = store.gateway_scope(&actor).await?;
-    if t.chat_type == "group" {
+    if t.chat_type == "group" && !(store.is_live() && profile == "erhua") {
         let bound:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM qintopia_agent_os.collaboration_scope_bindings b JOIN qintopia_messages.conversations c ON c.id=b.conversation_id WHERE b.tenant_key=$1 AND b.scope_id=$2 AND b.revoked_at IS NULL AND c.chat_id=$3 AND c.status='active')")
             .bind(&store.tenant).bind(scope).bind(&t.chat_id).fetch_one(&store.pool).await?;
         ensure!(bound, "gateway_scope_mismatch");
@@ -1587,6 +1728,13 @@ pub(super) async fn broker_invoke(
         .bind(&store.tenant).bind(&t.platform).bind(&t.chat_id).bind(&t.sender_id).bind(&t.message_id).bind(&t.chat_type).fetch_optional(&store.pool).await?.ok_or_else(||anyhow::anyhow!("trusted_message_evidence_required"))?;
     let a = r.arguments;
     ensure!(a.is_object(), "invalid_arguments");
+    let operation: Uuid = source.get("id");
+    if store.is_live() && profile == "erhua" && a.get("operation_id").is_some() {
+        ensure!(
+            a["operation_id"] == json!(operation),
+            "trusted_operation_required"
+        );
+    }
     match r.tool.as_str() {
         "context" => {
             only_keys(&a, &["purpose", "topic"])?;
@@ -1605,6 +1753,7 @@ pub(super) async fn broker_invoke(
                 }),
                 Err(error) => return Err(error),
             };
+            result["operation_id"] = json!(operation);
             if t.chat_type == "group" {
                 result["identity"] = json!({"identity_status":"confirmed"});
                 result["memory"] = json!({"reply_style":result["memory"]["reply_style"],"purpose":"reply_style_only","disclosure_allowed":false});
@@ -1631,8 +1780,41 @@ pub(super) async fn broker_invoke(
                 }
                 Err(e) => return Err(e),
             };
-            let targets = welcome_target_state(store, &actor, scope).await?;
-            Ok(json!({"knowledge":rules,"delegation":delegation,"welcome":targets}))
+            let targets = if store.is_live() {
+                vec![]
+            } else {
+                welcome_target_state(store, &actor, scope).await?
+            };
+            Ok(
+                json!({"knowledge":rules,"delegation":delegation,"welcome":targets,"operation_id":operation}),
+            )
+        }
+        "candidates" => {
+            ensure!(
+                profile == "erhua" && t.chat_type == "direct",
+                "private_workspace_only"
+            );
+            only_keys(
+                &a,
+                &[
+                    "kind",
+                    "purpose",
+                    "search",
+                    "limit",
+                    "after",
+                    "subject_kind",
+                    "subject_ref",
+                ],
+            )?;
+            let mut query = a;
+            query["scope"] = json!(scope);
+            store
+                .workspace_candidates(
+                    &actor,
+                    &serde_json::from_value(query)
+                        .map_err(|_| anyhow::anyhow!("invalid_candidate_query"))?,
+                )
+                .await
         }
         "change_knowledge" => {
             ensure!(profile == "erhua", "agent_tool_denied");
@@ -1816,4 +1998,54 @@ pub(crate) fn error_code(error: &anyhow::Error) -> String {
 pub(super) fn enable_test_http() {
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| std::env::set_var("QINTOPIA_FOUNDATION_LOCAL_ENABLE", "1"));
+}
+
+#[test]
+fn erhua_production_minimum_rejects_ingress_and_business_expansion() {
+    for tool in [
+        "context",
+        "workspace",
+        "change_knowledge",
+        "remember",
+        "history",
+        "task_status",
+        "delegate_review",
+        "candidates",
+    ] {
+        assert!(erhua_tool_allowed("person_foundation_tool", tool));
+        assert!(!erhua_tool_allowed("person_foundation_ingress", tool));
+    }
+    for tool in [
+        "welcome_approve",
+        "welcome_setting",
+        "dispatch",
+        "pms_context",
+        "save_rule",
+        "welcome_group_host",
+    ] {
+        assert!(!erhua_tool_allowed("person_foundation_tool", tool));
+    }
+    assert!(formal_route("/api/foundation/rules"));
+    assert!(!formal_route("/api/foundation/talk"));
+    assert!(!formal_route("/api/foundation/welcome"));
+}
+
+#[test]
+fn erhua_isolation_rejects_same_user_and_writable_parent() -> Result<()> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let directory = tempfile::tempdir()?;
+    let path = directory.path().join("foundation.sock");
+    let meta = std::fs::metadata(directory.path())?;
+    let mut config = ErhuaBrokerConfig {
+        token_hash: "0".repeat(64),
+        runner_uid: meta.uid(),
+        runner_gid: meta.gid(),
+    };
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o750))?;
+    assert!(config.check_parent(&path).is_err());
+    config.runner_uid = meta.uid() + 1;
+    config.check_parent(&path)?;
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o770))?;
+    assert!(config.check_parent(&path).is_err());
+    Ok(())
 }

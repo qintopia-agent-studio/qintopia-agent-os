@@ -25,7 +25,7 @@ impl Store {
         }
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        if let Some((_, _, bound)) = actor.gateway {
+        if let Some(bound) = actor.foundation_scope() {
             ensure!(scope == bound, "gateway_scope_mismatch");
         }
         ensure!(
@@ -67,7 +67,7 @@ impl Store {
     ) -> Result<Value> {
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        if let Some((_, _, bound)) = actor.gateway {
+        if let Some(bound) = actor.foundation_scope() {
             ensure!(bound == scope, "gateway_scope_mismatch");
         }
         let designate = authorize_current(
@@ -83,19 +83,23 @@ impl Store {
         ensure!(designate.status != "denied", "scope_access_denied");
         let current: Option<Value> = sqlx::query_scalar("SELECT jsonb_build_object('id',d.id,'delegate',d.delegate_person_id,'label',coalesce(p.preferred_name,p.display_name),'valid_from',d.valid_from,'valid_until',d.valid_until) FROM qintopia_agent_os.collaboration_review_delegations d JOIN qintopia_identity.persons p ON p.id=d.delegate_person_id WHERE d.tenant_key=$1 AND d.scope_id=$2 AND d.owner_person_id=$3 AND d.revoked_at IS NULL")
             .bind(&self.tenant).bind(scope).bind(actor.person).fetch_optional(&mut *tx).await?;
-        let candidates = self
-            .resident_candidates_in(&mut tx, scope)
-            .await?
-            .into_iter()
-            .filter(|p| p["person_ref"] != json!(actor.person))
-            .collect::<Vec<_>>();
+        let candidates = if self.is_live() {
+            Value::Null
+        } else {
+            json!(self
+                .resident_candidates_in(&mut tx, scope)
+                .await?
+                .into_iter()
+                .filter(|p| p["person_ref"] != json!(actor.person))
+                .collect::<Vec<_>>())
+        };
         let valid = content_reviewer(&self.pool, &self.tenant, &mut tx, scope, actor.person).await;
         let reason = valid
             .as_ref()
             .err()
             .map(super::super::foundation_server::error_code);
         Ok(
-            json!({"current":current,"candidates":candidates,"can_designate":designate.status=="autonomous","reason":reason,"purpose":"resident_welcome_content_review"}),
+            json!({"current":current,"candidates":candidates,"candidate_query_required":self.is_live(),"can_designate":designate.status=="autonomous","reason":reason,"purpose":"resident_welcome_content_review"}),
         )
     }
 
@@ -106,7 +110,7 @@ impl Store {
     ) -> Result<Value> {
         let (mut tx, _, now) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        if let Some((_, _, scope)) = actor.gateway {
+        if let Some(scope) = actor.foundation_scope() {
             ensure!(scope == cmd.scope, "gateway_scope_mismatch");
         }
         let designation = authorize_current(

@@ -100,3 +100,53 @@ QINTOPIA_FOUNDATION_SMOKE_ENABLE=1 python3 skills/person-foundation/tests/local_
 
 原自动工程检查的部署apply
 smoke要求受支持数据库白名单；动态本地PG端口被拒绝时记录失败，不改白名单、不把它算作通过，部署验证仍须使用原受支持环境。
+
+## 舍长与二花最小生产接线（默认未启用）
+
+生产源代码沿用既有二花注册入口接入共同服务。
+
+最小工具为 `context`、`workspace`、`change_knowledge`、`remember`、`history`、
+`task_status`、`delegate_review`、`candidates`。
+
+固定网页例句、欢迎、PMS 和内部宿主能力保持原门禁。本批未修改 Profile、部署和重启规则，也未启用生产工具。
+
+UI 与工具共用人员、任职、权限、知识版本及 WorkItem。保存、更正、停止和撤权按当前持久状态生效，不需要重新部署。
+
+`context`／`workspace` 提供可信消息的 `operation_id`，生产变更必须引用它。知识条目的
+`expected_version` 与 tenant 配置版本不同，应从对应返回值读取。
+
+群聊按当前唯一群绑定解析楼栋，私聊按当前唯一有效二花任职确定范围。多范围私聊返回
+`private_scope_ambiguous`，需在正确的本栋群内办理。每次操作重验身份、授权和范围；群内不披露个人历史。
+
+生产 broker 要求不同进程用户、固定 runner
+UID/GID 和批准的数据库 URL 摘要。仅保存 token 摘要，socket 目录权限为 0750，socket 权限为 0660。
+
+固定参数：
+
+| 环境字段                                                           | 含义或固定值                  |
+| ------------------------------------------------------------------ | ----------------------------- |
+| `QINTOPIA_FOUNDATION_PROFILE`                                      | `erhua`                       |
+| `QINTOPIA_FOUNDATION_PRODUCTION_ENABLE`                            | `1`                           |
+| `QINTOPIA_FOUNDATION_ERHUA_APPROVAL`                               | `steward-foundation-reviewed` |
+| `QINTOPIA_FOUNDATION_DATABASE_URL_SHA256`                          | 经批准的数据库 URL 摘要       |
+| `QINTOPIA_FOUNDATION_TOKEN_SHA256`                                 | 客户端 token 摘要             |
+| `QINTOPIA_FOUNDATION_RUNNER_UID`／`QINTOPIA_FOUNDATION_RUNNER_GID` | 独立客户端用户／组            |
+| `QINTOPIA_FOUNDATION_BROKER_UID`                                   | 客户端核验的 broker 用户      |
+
+客户端沿用 `QINTOPIA_FOUNDATION_TOKEN`，不能混用
+`QINTOPIA_FOUNDATION_LOCAL_ENABLE=1`。真实配置需后续部署审阅；本地同 UID 测试不证明实际多用户进程隔离已通过。
+
+候选可用 GET `/api/workspace/candidates` 或 `candidates`
+工具查询。每页最多 50 条；无权、来源不可用和无匹配分别返回，来源未核验时不可选临时审批人。
+
+生产 `workspace` 的
+`delegation.candidates=null`，`candidate_query_required=true`。这表示需要分页查询，不能理解为无人。
+
+运行新增持久服务测试（持有独立 PostgreSQL 后）：
+
+```sh
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests \
+  steward_production_minimal_tests -- --ignored --test-threads=1
+```
+
+测试使用模拟身份、群和已认证事件，验证实际服务及 HTTP。它们不证明真实 Hermes 模型理解、微信送达或生产 runner 配置。完整欢迎和入住匹配另按原业务规格联调。
