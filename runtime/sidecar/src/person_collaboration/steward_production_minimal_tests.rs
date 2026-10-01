@@ -2014,7 +2014,10 @@ async fn administrator_first_configuration_is_read_only_and_scope_bound_over_htt
     }
     let ui = Store {
         pool: if let Ok(url) = std::env::var("QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL") {
-            sqlx::PgPool::connect(&url).await?
+            sqlx::postgres::PgPoolOptions::new()
+                .max_connections(1)
+                .connect(&url)
+                .await?
         } else {
             store.pool.clone()
         },
@@ -2022,6 +2025,15 @@ async fn administrator_first_configuration_is_read_only_and_scope_bound_over_htt
         identity_namespace: store.identity_namespace.clone(),
         mode: StoreMode::Live,
     };
+    // This single-connection pool is the same pool used by every HTTP handler.
+    // Retain only non-sensitive database principal/role evidence, never the URL.
+    let database_identity: Value = sqlx::query_scalar("SELECT jsonb_build_object('session_user',session_user,'current_user',current_user,'current_role',current_role,'is_superuser',current_setting('is_superuser')='on','rolsuper',r.rolsuper,'rolinherit',r.rolinherit,'rolcreatedb',r.rolcreatedb,'rolcreaterole',r.rolcreaterole,'rolbypassrls',r.rolbypassrls,'role_memberships',(SELECT count(*) FROM pg_auth_members m WHERE m.member=r.oid),'person_insert_tablewide',has_table_privilege(current_user,'qintopia_identity.persons','INSERT'),'person_insert_id',has_column_privilege(current_user,'qintopia_identity.persons','id','INSERT'),'person_insert_display_name',has_column_privilege(current_user,'qintopia_identity.persons','display_name','INSERT'),'person_insert_preferred_name',has_column_privilege(current_user,'qintopia_identity.persons','preferred_name','INSERT')) FROM pg_roles r WHERE r.rolname=current_user")
+        .fetch_one(&ui.pool).await?;
+    eprintln!("HTTP database identity (same handler pool): {database_identity}");
+    if std::env::var("QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL").is_ok() {
+        assert_eq!(database_identity["is_superuser"], false);
+        assert_eq!(database_identity["rolsuper"], false);
+    }
     let admin_token =
         super::auth_tests::login(&ui, "simulated-config-admin", "simulated-config-password")
             .await?;
