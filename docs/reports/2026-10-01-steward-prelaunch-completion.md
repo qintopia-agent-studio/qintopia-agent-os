@@ -140,7 +140,9 @@ DTO、权限、版本和完整替换语义不变。未新增表、迁移、服�
 - 没有第二个 Gateway，但来源 namespace 被其他租户作为 identity_namespace 保留。
 
 每个场景分别覆盖人员渠道与工作账号：候选不返回对应引用或标签；已有选择不再 current；保存拒绝且配置版本不变；解除歧义后候选、保存及 current 恢复。专项最终日志为本任务
-`.local-testing/steward-prelaunch-review/contacts-ownership-p2-targeted-final.log`，3 项通过、0 失败。测试准备阶段的编译失败与错误 bootstrap 参数已经修正，原日志保留；未扩大生产授权来通过测试。
+`.local-testing/steward-prelaunch-review/contacts-ownership-p2-targeted-final.log`，3 项通过、0 失败。
+
+测试准备阶段的编译失败与错误 bootstrap 参数已经修正，原日志保留；未扩大生产授权来通过测试。
 
 本次 `pnpm check:pr:auto` 已通过 quick、heavy Rust 和 PostgreSQL 三层，日志为
 `.local-testing/steward-prelaunch-review/auto-contact-ownership-p2.log`。默认 Rust
@@ -161,3 +163,48 @@ PR 评论已重新分页完整读取：4 条 issue comments，0 条 reviews，0 
 `36844973117`、business 与 PR-Agent 成功。本任务的规定 CI 诊断工具仍要求登录；不会把上一提交绿灯当作本次修复通过。
 
 详细处置表与 Linux 构建／插件加载复现步骤按总指挥要求保存在 Git 外的共同收口记录，没有为重复交接新造提交。当前提交仅包含该有效 P2 修复及必要测试、规格和结果记录。整批仍需独立复核、#734 同版联调与获准后的正式安装／回退验证；不标为已上线。
+
+## 管理员联系人候选 403 修复
+
+UI 的 `85ae53ade0191a417dda5aac5a71020b1c365952`
+联调反馈：管理员有组织管理权限，能保存目标连接受众，但 people/accounts 联系人候选返回 403。
+
+根因是查询只读取登录者自己的二花工作连接。
+
+已扩展现有 contact 查询的可选 `collaboration`
+参数，复用 SetAudience 的组织管理授权，严格绑定同租户、同范围的有效目标连接及其已保存受众；原舍长无参数路径保留。
+
+人员渠道、工作账号、来源唯一归属及保存契约不变，游标绑定目标。
+
+UI 仍需附加此参数完成同版本联调；新建或未保存受众先用现有 preview/save 保存。
+
+先在本任务隔离数据库中，以无自身舍长任职的管理员密码会话复现
+`scope_access_denied`；新目标参数在修复前返回 `invalid_candidate_query`。
+
+扩展已有登记场景后，受限 UI 数据库角色下的实际 HTTP 验证通过：无目标仍为 403，指定目标的人员、工作账号、两类渠道均为 200。
+
+还覆盖原舍长路径、跨栋、外租户、无权人员、目标不存在、受众外人员、缺失受众、管理授权撤销、连接结束、非法参数与跨目标游标拒绝。
+
+日志保留在本任务 `.local-testing/steward-prelaunch-review/`：`admin-contact-red.log`
+为修复前失败；`admin-contact-targeted-http.log` 为最终定向通过。
+
+准备中曾错误调用受限角色的 fixture 身份构造器、遇到 Rust 测试辅助闭包生命周期错误，均已修正并保留相应失败日志；未扩大数据库权限或改变检查流程。
+
+完整工程检查结果见下方。
+
+本次不修改 UI、CI、部署、生产配置，不连接真实库或发送消息，不合并 PR。
+
+原 Linux broker 证据仍只归属原提交。
+
+本次 `pnpm check:pr:auto` 已以退出码 0 完成 quick、heavy 与 PostgreSQL 三层：
+
+- 默认 Rust：860 通过／3 忽略；全功能 Rust：875 通过／219 忽略。
+- 两组 warnings-as-errors Clippy 通过。
+- 人员协作 PostgreSQL 172 项、既有欢迎回归 24 项及 apply smoke 均通过。
+- QiWe 共 326 项，325 通过、1 平台条件跳过。
+
+完整日志：`.local-testing/steward-prelaunch-review/auto-admin-contact-final.log`。
+
+首次总检查仅发现新增文档两处行长问题，修正后重新完整执行并通过；没有修改检查规则。
+
+CI 诊断连接仍提示需要通过 ChatGPT 登录 Codex，不能据此确认新 head 的远端 CI。

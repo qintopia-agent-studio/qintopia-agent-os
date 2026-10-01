@@ -21,6 +21,7 @@ pub(crate) struct Query {
     pub after: Option<String>,
     pub subject_kind: Option<String>,
     pub subject_ref: Option<Uuid>,
+    pub collaboration: Option<Uuid>,
 }
 impl Query {
     pub(crate) fn from_path(path: &str) -> Result<Self> {
@@ -72,6 +73,11 @@ impl Query {
             },
             "invalid_candidate_query"
         );
+        ensure!(
+            self.collaboration
+                .is_none_or(|id| self.purpose == "contact" && !id.is_nil()),
+            "invalid_candidate_query"
+        );
         Ok(limit)
     }
     fn fingerprint(&self, tenant: &str, actor: Uuid) -> String {
@@ -84,7 +90,8 @@ impl Query {
                 self.purpose,
                 self.search,
                 self.subject_kind,
-                self.subject_ref
+                self.subject_ref,
+                self.collaboration
             ]))
             .expect("JSON query"),
         )
@@ -210,18 +217,53 @@ impl Store {
                 );
             }
             "contact" => {
-                let connections: Vec<Uuid> = policy
-                    .grants
-                    .iter()
-                    .filter(|g| {
-                        g.person == actor.person
-                            && g.agent == "erhua"
-                            && g.domain == "community_service"
-                            && policy.effective(g)
-                            && policy.in_scope(q.scope, g.scope, g.descendants)
-                    })
-                    .map(|g| g.collaboration)
-                    .collect();
+                let connections: Vec<Uuid> = if let Some(target) = q.collaboration {
+                    // Bind directory access to the exact saved connection being configured.
+                    // Use the same policy checks as set_audience, not the assign directory gate.
+                    let row = sqlx::query("SELECT a.scope_id FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND c.id=$2 AND c.agent_key='erhua' AND c.domain_key='community_service' AND c.status='active' AND a.status='active' AND (a.valid_until IS NULL OR a.valid_until>$3)")
+                        .bind(&self.tenant).bind(target).bind(now).fetch_optional(&mut *tx).await?
+                        .ok_or_else(|| anyhow::anyhow!("scope_access_denied"))?;
+                    ensure!(
+                        row.get::<Uuid, _>("scope_id") == q.scope,
+                        "scope_access_denied"
+                    );
+                    let owns_connection = policy.grants.iter().any(|g| {
+                        g.collaboration == target && g.person == actor.person && policy.effective(g)
+                    });
+                    let can_configure =
+                        policy.can_inspect(actor.person, q.scope, "erhua", "community_service")
+                            && policy
+                                .manager(
+                                    actor.person,
+                                    q.scope,
+                                    "erhua",
+                                    "community_service",
+                                    "publish",
+                                )
+                                .is_some();
+                    ensure!(owns_connection || can_configure, "scope_access_denied");
+                    ensure!(
+                        policy
+                            .grants
+                            .iter()
+                            .any(|g| g.collaboration == target && policy.effective(g)),
+                        "scope_access_denied"
+                    );
+                    vec![target]
+                } else {
+                    policy
+                        .grants
+                        .iter()
+                        .filter(|g| {
+                            g.person == actor.person
+                                && g.agent == "erhua"
+                                && g.domain == "community_service"
+                                && policy.effective(g)
+                                && policy.in_scope(q.scope, g.scope, g.descendants)
+                        })
+                        .map(|g| g.collaboration)
+                        .collect()
+                };
                 ensure!(!connections.is_empty(), "scope_access_denied");
                 let audiences: Vec<Value> = sqlx::query_scalar("SELECT configuration FROM qintopia_agent_os.collaboration_audiences WHERE tenant_key=$1 AND collaboration_id=ANY($2)").bind(&self.tenant).bind(&connections).fetch_all(&mut *tx).await?;
                 ensure!(!audiences.is_empty(), "scope_access_denied");

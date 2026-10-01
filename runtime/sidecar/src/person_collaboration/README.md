@@ -425,6 +425,10 @@ Unix客户端可能在connect成功后、服务读取OS凭据前断开。无法�
 新增只读 `/api/workspace/candidates`，人员、工作账号、渠道和群分别查询。用途为
 `assign`、`delegate_review`、`contact`、`set_groups`，每页最多 50 条。
 
+管理员为已有工作连接选择联系人时，`purpose=contact` 的 people/accounts/channels 查询须带
+`collaboration=<目标连接 UUID>` 和该连接的
+`scope`。沿用受众保存的组织管理授权；不要求管理员自己担任舍长。仅读取目标已保存且有效的受众，分页游标绑定目标。未保存受众先走正常 preview/save；不带目标时保留原舍长路径。其他用途不得附带此字段。
+
 当前在住仅约束 `delegate_review`，沿用现有 PMS 受众投影。来源未连接、失效或待刷新时返回
 `candidate_source_unavailable`。本批未完成真实入住同步。
 

@@ -754,6 +754,274 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
                 },
             )
             .await?;
+        let admin_token = selection_store
+            .login(&super::store::Credentials {
+                username: "simulated-owner".into(),
+                password: "simulated-contact-password".into(),
+            })
+            .await?;
+        let admin = selection_store.session_actor(&admin_token).await?;
+        let unscoped_path =
+            format!("/api/workspace/candidates?scope={scope}&kind=people&purpose=contact");
+        let (status, body, _) = super::auth_tests::https_request(
+            &selection_store,
+            "GET",
+            &unscoped_path,
+            Some(admin_token.as_str()),
+            Value::Null,
+            super::auth_tests::HttpsRequestHeaders {
+                host: "admin.example.test",
+                origin: Some("https://admin.example.test"),
+                content_type: "application/json",
+                extra: "",
+            },
+        )
+        .await?;
+        assert_eq!(status, 403);
+        assert_eq!(body["code"], "scope_access_denied");
+        for suffix in [
+            "kind=people".to_string(),
+            "kind=accounts".to_string(),
+            format!("kind=channels&subject_kind=person&subject_ref={person}"),
+            format!("kind=channels&subject_kind=work_account&subject_ref={account}"),
+        ] {
+            let path = format!("/api/workspace/candidates?scope={scope}&purpose=contact&collaboration={relation}&{suffix}");
+            let (status, body, _) = super::auth_tests::https_request(
+                &selection_store,
+                "GET",
+                &path,
+                Some(admin_token.as_str()),
+                Value::Null,
+                super::auth_tests::HttpsRequestHeaders {
+                    host: "admin.example.test",
+                    origin: Some("https://admin.example.test"),
+                    content_type: "application/json",
+                    extra: "",
+                },
+            )
+            .await?;
+            assert_eq!(status, 200, "{body}");
+            assert!(!body["items"].as_array().unwrap().is_empty());
+        }
+
+        // The administrator has no personal Erhua service connection.
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&admin, &query(scope, "contact"))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "scope_access_denied"
+        );
+        eprintln!(
+            "Reproduced: administrator without own service is denied unscoped contact candidates"
+        );
+        let targeted = Query::from_path(&format!(
+            "/api/workspace/candidates?scope={scope}&kind=people&purpose=contact&collaboration={relation}"
+        ))?;
+        let admin_people = selection_store
+            .workspace_candidates(&admin, &targeted)
+            .await?;
+        assert_eq!(admin_people["items"], people["items"]);
+        for (kind, subject_kind, subject_ref, expected) in [
+            ("accounts", None, None, &accounts),
+            ("channels", Some("person"), Some(person), &channels),
+            ("channels", Some("work_account"), Some(account), &work),
+        ] {
+            let q = Query {
+                scope,
+                kind: kind.into(),
+                purpose: "contact".into(),
+                collaboration: Some(relation),
+                subject_kind: subject_kind.map(str::to_owned),
+                subject_ref,
+                ..Default::default()
+            };
+            assert_eq!(
+                selection_store.workspace_candidates(&admin, &q).await?["items"],
+                expected["items"]
+            );
+        }
+        // The target's scope is exact, even for a global administrator.
+        for (requested_scope, target) in [(foreign_scope, relation), (scope, Uuid::new_v4())] {
+            let q = Query {
+                scope: requested_scope,
+                collaboration: Some(target),
+                ..query(scope, "contact")
+            };
+            assert_eq!(
+                selection_store
+                    .workspace_candidates(&admin, &q)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "scope_access_denied"
+            );
+        }
+        let outsider = find(&state, "people", "人员甲 · 合成样例 B");
+        let outsider_link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed' LIMIT 1")
+            .bind(&store.identity_namespace).bind(outsider).fetch_one(&store.pool).await?;
+        let outsider_actor = store.actor(outsider_link).await?;
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&outsider_actor, &targeted)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "scope_access_denied"
+        );
+        let mut channel_page = Query {
+            scope,
+            kind: "channels".into(),
+            purpose: "contact".into(),
+            collaboration: Some(relation),
+            subject_kind: Some("person".into()),
+            subject_ref: Some(person),
+            limit: Some(1),
+            ..Default::default()
+        };
+        let first_page = selection_store
+            .workspace_candidates(&admin, &channel_page)
+            .await?;
+        channel_page.after = Some(
+            first_page["next_cursor"]
+                .as_str()
+                .expect("two personal channels")
+                .to_owned(),
+        );
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&admin, &channel_page)
+                .await?["items"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        channel_page.collaboration = Some(Uuid::new_v4());
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&admin, &channel_page)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "invalid_candidate_query"
+        );
+        for q in [
+            Query {
+                collaboration: Some(relation),
+                ..query(scope, "assign")
+            },
+            Query {
+                collaboration: Some(Uuid::nil()),
+                ..query(scope, "contact")
+            },
+            Query {
+                subject_kind: Some("person".into()),
+                subject_ref: Some(outsider),
+                kind: "channels".into(),
+                collaboration: Some(relation),
+                ..query(scope, "contact")
+            },
+        ] {
+            let error = selection_store
+                .workspace_candidates(&admin, &q)
+                .await
+                .unwrap_err()
+                .to_string();
+            assert_eq!(
+                error,
+                if q.kind == "channels" {
+                    "scope_access_denied"
+                } else {
+                    "invalid_candidate_query"
+                }
+            );
+        }
+        // The administrator cannot borrow another tenant's real connection.
+        let (other_store, other_owner, other_state) = fixture().await?;
+        let other_scope = find(&other_state, "scopes", "一栋");
+        let other_relation = appoint(
+            &other_store,
+            &other_owner,
+            &other_state,
+            other_owner.person_ref(),
+            other_scope,
+        )
+        .await?;
+        let foreign_query = Query {
+            collaboration: Some(other_relation),
+            ..query(scope, "contact")
+        };
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&admin, &foreign_query)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "scope_access_denied"
+        );
+        // Removing the saved audience must not fall back to all known people/accounts.
+        let saved_configuration: Value = sqlx::query_scalar("DELETE FROM qintopia_agent_os.collaboration_audiences WHERE tenant_key=$1 AND collaboration_id=$2 RETURNING configuration")
+            .bind(&store.tenant).bind(relation).fetch_one(&store.pool).await?;
+        for kind in ["people", "accounts"] {
+            let q = Query {
+                kind: kind.into(),
+                collaboration: Some(relation),
+                ..query(scope, "contact")
+            };
+            assert_eq!(
+                selection_store
+                    .workspace_candidates(&admin, &q)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "scope_access_denied"
+            );
+        }
+        sqlx::query("INSERT INTO qintopia_agent_os.collaboration_audiences(tenant_key,collaboration_id,configuration) VALUES($1,$2,$3)")
+            .bind(&store.tenant).bind(relation).bind(saved_configuration).execute(&store.pool).await?;
+        let admin_grant: Uuid = sqlx::query_scalar("SELECT g.id FROM qintopia_agent_os.collaboration_grants g JOIN qintopia_agent_os.agent_collaborations c ON c.id=g.collaboration_id JOIN qintopia_agent_os.collaboration_appointments a ON a.id=c.appointment_id WHERE c.tenant_key=$1 AND a.person_id=$2 AND g.action_key='manage' AND g.status='active' LIMIT 1")
+            .bind(&store.tenant).bind(admin.person_ref()).fetch_one(&store.pool).await?;
+        sqlx::query(
+            "UPDATE qintopia_agent_os.collaboration_grants SET status='revoked' WHERE id=$1",
+        )
+        .bind(admin_grant)
+        .execute(&store.pool)
+        .await?;
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&admin, &targeted)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "scope_access_denied"
+        );
+        sqlx::query(
+            "UPDATE qintopia_agent_os.collaboration_grants SET status='active' WHERE id=$1",
+        )
+        .bind(admin_grant)
+        .execute(&store.pool)
+        .await?;
+        sqlx::query("UPDATE qintopia_agent_os.agent_collaborations SET status='ended' WHERE id=$1")
+            .bind(relation)
+            .execute(&store.pool)
+            .await?;
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&admin, &targeted)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "scope_access_denied"
+        );
+        sqlx::query(
+            "UPDATE qintopia_agent_os.agent_collaborations SET status='active' WHERE id=$1",
+        )
+        .bind(relation)
+        .execute(&store.pool)
+        .await?;
+
         let token = selection_store
             .login(&super::store::Credentials {
                 username: "simulated-steward".into(),
@@ -761,6 +1029,12 @@ async fn contact_candidates_keep_people_work_accounts_and_channels_distinct() ->
             })
             .await?;
         let user = selection_store.session_actor(&token).await?;
+        assert_eq!(
+            selection_store
+                .workspace_candidates(&user, &targeted)
+                .await?["items"],
+            people["items"]
+        );
         // A steward uses organization rights, without any PMS/anan grant or staff group.
         assert_eq!(
             selection_store.business_configuration_state(&user).await?["manageable_scopes"],
