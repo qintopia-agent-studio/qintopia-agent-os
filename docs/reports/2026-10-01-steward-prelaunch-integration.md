@@ -271,3 +271,82 @@ head 的本地集成版本中实际保存、回读、更换、清空和跨栋拒
 指定 Chrome 仍待交接，实际 UI 排版与交互不以 HTTP 或 DOM 模拟代替。
 
 基础方正在审阅的共享 Rust、SQL 和部署工作不由页面任务改写。
+
+## contacts 实施与同版本 HTTP 联调结果
+
+2026-10-01 18:50（北京时间）记录。UI 实现提交为
+`24c5fe24ac94dda86b94a8b784cf18d1712d02db`，已按上述计划完成六份工作台 JS 接线。
+
+原页面状态检查 18/18、新渠道状态检查 12/12 通过；新增检查覆盖三字段 DTO、主体分离、多渠道、去重、20 项上限、移除／清空、延迟回包、403／503 及失效提示。
+
+这些脚本位于忽略目录，属于页面状态模拟，不是新增登记测试，也不替代 Chrome 验收。
+
+实际服务源码固定为集成提交 `85ae53ade0191a417dda5aac5a71020b1c365952`，基础为
+`cc7cecd5afaa00037b970b45b002526642d368e2`。普通合并仅处理报告索引，相对基础只有六份 UI 与三份记录文件不同；未人工修改共享 Rust 或 SQL。新服务地址为
+`http://127.0.0.1:19275/`，使用独立模拟租户。实际 HTTP 返回的六份 JS 的 SHA-256 全部等于固定清单和 UI 实现提交。旧
+`19274` 服务仍保留，不能将其旧验证结果归给新版本。
+
+### 保存契约：已验证
+
+管理员通过正常 `/api/preview` 和 `/api/save`
+执行以下动作，每个预览／保存共用已留证的操作编号和最新版本：
+
+- 首次保存空渠道受众：200，预览 `persisted=false`，保存 `persisted=true`。
+- 同时保存同一个人的两条渠道及一条工作账号渠道：200；实际受众回读三项，
+  `contacts_current=true`，工作账号不进入个人范围。
+- 全量替换为一条个人渠道：200，回读一项；传入 `[]` 清空：200，回读空数组。
+- 使用页面实际的 `configure_work`
+  原子保存工作与两条渠道：200，回读两项；六项原有授权逐项相等，未新增权限，未修改任职范围。
+- 个人和工作账号的跨栋渠道分别在预览及保存被 409 拒绝，配置版本保持不变。实际错误码均为
+  `configuration_not_saved`，不虚报为更精确的联系人错误码。
+- 已配置的本栋舍长读取人员、工作账号及各自已验证渠道均为 200；跨栋候选读取为 403，二栋渠道未出现在本栋候选中。
+
+这些结果验证保存契约和已有授权的读取边界；管理员界面完整选择流程仍受下述阻断影响。模拟渠道仅写入本任务独立数据库，不涉及生产授权、真实身份或外部发送。
+
+### 管理员候选：阻断未解决
+
+管理员登录及 `/api/state` 均为 200，`management_available=true`，目标一栋关系
+`can_manage=true`；相同范围 `purpose=assign&kind=people` 为 200。但
+`/api/workspace/candidates` 的 `purpose=contact` 配合 `people` 或 `accounts`
+均返回 403／`scope_access_denied`。正常保存目标受众后再次读取仍为 403，证明不是单纯缺少目标初始化。
+
+定位于
+`runtime/sidecar/src/person_collaboration/store/workspace_candidates.rs`：约 151 行计算组织管理者，约 211–268 行的 contact 分支只查请求人自己的
+`erhua/community_service`
+授权及已保存受众，未覆盖管理者配置他人或首次配置的路径。本次管理员自己的受众尚未保存，而目标工作已正常保存。该条件与前端要求候选就绪后才允许预览共同阻断管理员完整配置流程。
+
+复现顺序：管理员登录 → 读取目标关系及 assign 候选 → 查询同范围 contact 人员／账号 →
+403；使用正常命令保存目标受众 → 原 contact 查询仍为 403。基础任务需依据组织管理权限与候选范围契约处理；本任务不扩权、不借用 assign 作为 contact 来源、不修改共享后端，也不把舍长身份成功记作管理员验收成功。
+
+### 证据、恢复与剩余验收
+
+无秘密证据保留在 `.local-workspace/steward-preview-85ae53a/`：
+`manifest.json`、`admin-contact-candidates-blocker.json`、`http-contacts-evidence.json`、
+`served-assets.json` 及各命令记录。一次误用 business 候选端点的五项探测已显式标注
+`excluded_from_acceptance=true`，不计入上述结论。该目录的 `launch.py start/status/stop`
+管理固定服务，恢复时不重复初始化模拟资料。随机口令及会话留在本机，未写入 Git 或 PR。
+
+仍待基础任务修正管理员候选阻断后，在新精确版本上复验；指定 Chrome 仍等待总指挥交接。真实 Hermes 独立进程交接由基础任务负责。本轮不复跑未受影响的 Rust 全量，旧 169 项结果只属于此前
+`5ecc0ea`。PR 保持 Draft，base 对齐 master，依赖 #733 先合入。没有合并、发布、部署、改 CI／部署机制、外发消息或修改生产授权。
+
+## position 配置查询接线计划（实施前）
+
+依据共享唯一作者的
+`admin-first-config-contract.md`，本轮仅修改候选组件和工作配置接线。新建及编辑统一在 contact 的 people/accounts/channels 查询中传已有
+`pos.id` 为
+`position`，scope 保持岗位范围；不传可选 collaboration，不依赖已保存受众。assign、set_groups 及无 position 的普通查询不增加参数，contacts 保存三字段不变。
+
+岗位／范围／目标连接切换沿用整个表单重建，销毁旧控件，隔离草稿和游标并忽略晚回包。同一上下文搜索保留已明确加入的草稿。配置模式翻页遇到 400
+`invalid_candidate_query`
+自动丢弃旧游标并只重取一次第一页；第一页错误不循环重试。403 保持清候选与联系人草稿、阻止预览；不更新 state.version 绕过保存版本冲突。
+
+实际后端响应仅顶层有 `configuration_version`，候选项没有
+`version`；旧前端却要求逐项整数 version。已通过留存 HTTP 证据和共享候选序列化代码确认该不匹配，本轮去掉无契约的逐项要求，配置查询验证顶层版本。用真实响应形状验证，避免继续由模拟数据额外字段掩盖问题。
+
+既有 30 项证据不重跑。新增检查仅覆盖 position 传播与非 contact 隔离、无连接首次查询、实际无逐项版本的响应、配置游标失效回第一页、上下文切换晚回包、同上下文草稿保留和撤权。
+
+后端提交尚待交付，真实同版 HTTP 与指定 Chrome 验收不提前计为通过；不改共享后端、CI 或生产。
+
+本轮 position 实施完成：新建及编辑均采用 position-only 配置查询，不依赖连接 ID。新增
+`.local-workspace/test-steward-position.cjs`
+的 8/8 项通过，包含实际 renderSettings 的首次／空受众查询，以及留存真实 HTTP 候选响应的回放。这些检查仍为本地状态模拟，不是浏览器验收；旧 30 项未重跑，后端新 head 的实际联合验证待交付。

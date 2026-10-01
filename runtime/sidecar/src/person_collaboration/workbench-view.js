@@ -142,6 +142,7 @@ function workspaceCandidateField(
     scope,
     kind,
     purpose,
+    position,
     value = "",
     chosen = [],
     known = [],
@@ -256,6 +257,7 @@ function workspaceCandidateField(
       search: appliedSearch,
       limit: "50",
     });
+    if (purpose === "contact" && position) query.set("position", position);
     if (kind === "channels") {
       query.set("subject_kind", subject_kind);
       query.set("subject_ref", subject_ref);
@@ -268,6 +270,9 @@ function workspaceCandidateField(
         result.scope !== scope ||
         result.kind !== kind ||
         result.purpose !== purpose ||
+        (purpose === "contact" &&
+          position &&
+          !Number.isInteger(result.configuration_version)) ||
         !Array.isArray(result.items) ||
         result.items.length > 50 ||
         result.items.some(
@@ -275,7 +280,6 @@ function workspaceCandidateField(
             typeof item.ref !== "string" ||
             !item.ref ||
             typeof item.label !== "string" ||
-            !Number.isInteger(item.version) ||
             (kind === "channels" &&
               (item.subject_kind !== subject_kind || item.subject_ref !== subject_ref))
         ) ||
@@ -292,7 +296,18 @@ function workspaceCandidateField(
         : `没有找到符合条件的${label}。已有选择保留，保存时重新核验。`;
     } catch (error) {
       if (!root.isConnected || request !== generation) return;
+      if (
+        purpose === "contact" &&
+        position &&
+        query.has("after") &&
+        error.status === 400 &&
+        error.code === "invalid_candidate_query"
+      ) {
+        cursors = [null];
+        return load();
+      }
       if (workspaceAccessLost(error)) {
+        cursors = [null];
         selectedRefs.clear();
         records.clear();
         onAccessLost();
@@ -331,7 +346,7 @@ function audienceForCommand(audience) {
   const { authority_grant, contact_basis, ...command } = audience;
   return { ...command, contacts: (audience.contacts || []).map(contactSelection) };
 }
-function workspaceContactsField(parent, id, scope, audience, peopleField) {
+function workspaceContactsField(parent, id, scope, audience, peopleField, position) {
   const root = box("已验证联系渠道"),
     selections = new Map(),
     basis = new Map(
@@ -401,6 +416,7 @@ function workspaceContactsField(parent, id, scope, audience, peopleField) {
       scope,
       kind: "channels",
       purpose: "contact",
+      position,
       subject_kind: subjectKind.value,
       subject_ref: subjectField.value,
       onAccessLost: clearSelections,
@@ -419,6 +435,7 @@ function workspaceContactsField(parent, id, scope, audience, peopleField) {
         scope,
         kind: subjectKind.value === "work_account" ? "accounts" : "people",
         purpose: "contact",
+        position,
         onAccessLost: clearSelections,
       }
     );

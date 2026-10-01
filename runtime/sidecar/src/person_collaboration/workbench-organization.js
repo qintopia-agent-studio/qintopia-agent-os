@@ -676,6 +676,7 @@ function renderSettings() {
       scope: pos.scope_id,
       kind: "people",
       purpose: "contact",
+      position: pos.id,
       multiple: true,
       chosen: audience.people,
       known: personOptions(),
@@ -688,7 +689,8 @@ function renderSettings() {
     "audience-contacts",
     pos.scope_id,
     audience,
-    contactList
+    contactList,
+    pos.id
   );
   const residents = selectField(
     contacts,
