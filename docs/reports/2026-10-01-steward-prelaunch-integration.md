@@ -116,5 +116,87 @@ tests；此项表示该 PR 没有新增登记测试，不能据此宣称页面�
 comments 可处置。
 
 针对该 PR 的 CI 诊断工具调用返回
-`Sign in to Codex with ChatGPT to connect GitHub`，没有返回诊断数据。因此远端 CI 未核实，没有改用源控 CLI 获取 CI 日志、降低门禁或请求 admin
-bypass。工具连接、指定 Chrome、基础准确 DTO/渠道安全修正及真实 Hermes 交接仍待完成，草稿未标为上线前全部就绪。
+`Sign in to Codex with ChatGPT to connect GitHub`，没有返回诊断数据。这是诊断连接阻断；本轮按负责人授权，通过无凭据公开 REST 另行核实精确 head 的检查状态元数据，没有读取 CI 日志。`fe6cd44d8bc3f5b316faa37c957b046c9c8c18f9`
+的九项检查为八项 success、一项 Release Please validation skipped，包含两个 required
+checks。诊断连接仍未恢复，不能把公开状态读取描述为已取得 CI 诊断。
+
+指定 Chrome、基础准确 DTO/渠道安全修正及真实 Hermes 交接仍待完成，草稿未标为上线前全部就绪。本次文档推送产生的替代 head 必须重新读取审查和检查；上述结果仅属于明确列出的实现 head。
+
+## PR #731 同步、替代 head 与外部合并
+
+本轮获准在原分支普通合并当时的最新 master，未获准自行合并 PR。原 head
+`b450755cd7046e9fd55beaa3d0e1228aea63f1d6` 与 master
+`74899d4191b810bc0cf5dc748c742c3b84aea0b5` 的合并提交为
+`7237824ffc4d2c8eb703fe95ed4f8fcc7e2870bb`，父提交、合并 tree 与预检相同，正常 hook、差分检查及新增脚本语法通过后普通推送。
+
+同步只带入 master 已有的五份部署脚本、验证与记录；runtime、skills 及测试目录相对原 head 完全未变。本任务没有新编写 CI 或部署机制。
+
+2026-10-01 15:05（北京时间）的公开 REST 和随后 GraphQL 读取确认：
+
+- 替代 head `7237824` 的九项检查已结束，八项 success，一项 Release Please validation
+  skipped；`check` 与 `PR-Agent review assistant` 均 success。
+- 完整 Reviewer Guide 明确更新至
+  `7237824`，没有安全或主要问题。未覆盖的仍为此前补读的同一组 11 个文件；本次同步未改变它们，原针对审阅处置仍适用。
+- 已读全部两条 conversation comments；reviews、inline review
+  threads 均为零，无下一页。没有用无评论代替人工批准或审查覆盖证明。
+- 远端 master ruleset 的已读契约要求 strict latest base、上述两个 required
+  checks 及 resolved review threads。传统 protection 404 不表示无门禁。
+- PR 已由仓库负责人 `PatrickLiveCool` 于 **2026-10-01 14:51:05** 合并，merge commit 为
+  `fe6466506cd1f5d73bfacc79f102ff641ec364dc`，也是此次查询的最新 master。本任务没有调用 PR
+  merge、admin bypass 或发布／部署。
+
+PR #734 仍开放且为草稿，stacked base 名称仍是
+`codex/collaboration-channel-selection`。PR metadata 保留原 base 快照
+`b450755`，该远端分支当前 ref 为
+`7237824`；两者分别记录，不以旧快照冒充当前分支。#733 公开 head 仍为
+`5eb59cb3c376e8ea9acf85521e2487e6c21c8b2d`，通用账号／渠道保存 DTO 和跨范围候选修正尚未交付。
+
+同步证据与当前公开检查、完整审查及线程快照保留在忽略目录
+`.local-workspace/prelaunch-strict-731/`，没有保留令牌或 CI 日志。
+
+## 可恢复的同版本地模拟服务
+
+入口为 `http://127.0.0.1:19274/`，登录页为 `/login`。固定服务目录是
+`.local-workspace/steward-preview-5ecc0ea/`，使用完整集成提交
+`5ecc0eabc62b59118fc4c76efbf3c600c357f5e1`
+的源码归档与复制后二进制。五份页面 JS 的源码和实际 HTTP 摘要逐一等于 #734 实现 head
+`fe6cd44d`；切换工作分支不会改变正在验收的版本。`manifest.json`
+记录源码、二进制、归档和页面摘要，不含秘密。
+
+在仓库根目录执行：
+
+```bash
+/Users/feather/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3 \
+  .local-workspace/steward-preview-5ecc0ea/launch.py start
+```
+
+末尾改成 `status` 查询，改成 `stop`
+仅停止本任务记录且身份核对通过的服务。启动会拒绝被占用端口和他人 PID；已存在 fixture 时不会再次初始化，初始化曾尝试但状态不明时拒绝重放。数据仍在本任务的 loopback
+PostgreSQL 18.6、55483 端口和 `qintopia_test`，没有复用其他任务的验收库。
+
+模拟账号为 `admin`、`house-one`、`house-two`。随机模拟口令仅保留在本机
+`fixture-password`
+文件，权限 0600；不放入报告、Git、URL 或启动输出。不接真实 Hermes、broker、Profile、外部渠道及生产环境变量，fixture
+observer 未启用。
+
+HTTP 核验 14/14 通过：未登录读状态被拒绝；管理员登录、状态与人员候选查询成功；一栋舍长没有组织管理入口；本栋上下文读取成功；跨栋只返回权限拒绝错误；五份页面文件的实际服务摘要一致。该入口验证的是原二花共享服务的本栋读取，不证明真实模型使用同版知识。
+
+初次诊断脚本误要求跨栋返回 403，断言失败；源码的 foundation
+dispatch 契约将业务错误映射为 HTTP 400。复查实际返回为
+`400 {"code":"scope_access_denied"}`，没有知识、身份或其他二栋内容。记录初次失败和准确契约，没有修改共享 Rust、放宽权限或将原失败记为通过。完整无秘密回执为
+`http-verification.json`。
+
+随后实际执行 stop／start／再次 start：源码与二进制身份、口令、初始化标记不变，重复 start 复用同一自有进程；管理员和一栋舍长原会话继续成功读取，无需再次登录或初始化。重启证据为
+`restart-verification.json`，服务继续运行供后续浏览器验收。
+
+本地准备中，系统 Python 3.9 不支持归档的
+`filter='data'`；核实解包目标为空后使用已有 Python
+3.12 恢复，保留失败证据。系统与项目解释器没有 Pillow，最终使用已有 Codex bundled Python
+3.12.14／Pillow
+12.3.0，不新增依赖。启动器固定该解释器并检查 Pillow，运行前核对二进制摘要，避免同一准备故障静默复现。
+
+Chrome 继续等待总指挥交接，本轮没有并行操作浏览器。
+
+账号／渠道准确 DTO 到齐前仅准备同版入口，未猜字段、借用 PMS 保存接口或授予舍长 PMS 权限。
+
+沿用此前 4/4 与 169/169 的集成结果，本次仅追加报告和 HTTP／恢复证据，不复跑未受改动影响的 Rust 全量。
