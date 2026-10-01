@@ -203,7 +203,10 @@ try:
  # Report only whitelisted lifecycle markers; never quote request/private data.
  case('late_completion_preserves_hold_no_replay',hold_unchanged=True,pointers_unchanged=True,no_promotion_or_install=True,client_outcome='outcome_unknown',new_request_attempted=False,original_process_naturally_gone=True,drain_deferred_30_seconds_observed=True,final=state_data())
  # No reset-failed, no socket deletion, no retry of an unknown business call.
- p=call(lock+helper+' verify-closed',expected=None);case('post_late_completion_closure_status',exit=p.returncode,hold_retained=True)
+ p=call(lock+helper+' verify-closed',expected=75)
+ assert output('cat '+state+'/recovery/hold')==request_id
+ assert output('stat -c "%u:%g:%a" '+state+'/recovery/hold')=='0:0:600'
+ case('post_late_completion_closure_status',exit=p.returncode,hold_retained=True)
 finally:
  # The PostgreSQL transaction has bounded pg_sleep and commits naturally; do not
  # kill it or repeat an outcome-unknown request if a test assertion fails.

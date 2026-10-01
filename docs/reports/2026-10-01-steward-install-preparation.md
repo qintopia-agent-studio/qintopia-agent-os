@@ -27,8 +27,7 @@
   最终 unit 保留 failed/Result=timeout， verify-closed 仍返回 75； 没有 reset-failed/强杀/删除 socket。
 
 **`installation_ready=false`。**
-这些是模拟 release 的本地行为证据，不是正式同版制品、目标 x86_64
-systemd、完整生产 ACL、管理页面/本人业务验收或 C2 上线许可。没有合并、Release 发布、Artifacts
+这些是模拟 release 的本地行为证据，不是正式同版制品、最终 x86_64 制品/目标安装预检、完整生产 ACL、管理页面/本人业务验收或 C2 上线许可。没有合并、Release 发布、Artifacts
 dispatch、生产安装、证书签发、启用或真实业务发送。
 
 ## 变更、批准与边界
@@ -119,10 +118,35 @@ x86_64，入口为现有 core 的 venv/python，工作目录为二花 Profile。
 MCP 配置。配置存在不等于工具可达或风险。按精确 core 的最终过滤/工具搜索/插件注册路径继续核对，未读取 env/token、未返回 raw
 Profile，未启动真实模型/通道、未调用业务工具。
 
-旧 `2237be355906fbe6065ce1815711eee52b2d646e` /
-Python3.12 的八工具发现只是准备阶段历史 API 兼容切片；不得当成现网 core 或最终工具隔离证明。独立 UID/env 不可读也只证明一层。如有实际可读取 future
-foundation
-token/socket 或冒充可信宿主的路径，集中提出原受管配置内最小收紧及功能影响；不关闭全部 MCP、不升级七 Profile、不做岸岸/PMS 全量沙箱。
+精确 d337 的官方 Git 归档已在隔离本地加载，七个关键源文件摘要与只读取得的部署磁盘源一致。Python3.12.14/Linux
+arm64 容器无网、source/deps 只读、HOME 为临时目录；使用 cc7 候选插件与脱敏等效工具授权配置，不读生产 Profile/env/会话，不启动模型/通道。
+`core-d337-tool-boundary-resolved.log` 与 `core-d337-isolated-source-identity.json`
+记录：
+
+- 官方 PluginManager 发现八个 foundation 工具和实际 QiWe 平台；SDK 摘要与 VM 实测 SDK 相同。
+- 本地 scoped catalog 为32工具；默认工具搜索组装为 `tool_search/tool_describe/tool_call`
+  三桥工具。这不是现网模型参数/进程内组装表，不将32或3直接称为生产工具总数。
+- 刻意注册 check_fn=true 的终端、文件、执行、委派、cronjob、MCP 文件/冒充宿主探针，仍被精确 core 的 qintopia/qiwe
+  grant 排除；不以缺依赖或 provider 不可用冒充隔离证明。
+- core MCP 注册固定 `mcp-qintopia-context` toolset 及 `qintopia-context`
+  alias；不等于 qintopia grant。真实 Tool
+  Search 桥拒绝两个越界 MCP 调用，探针 handler 执行次数为0。
+- 八工具 DTO 均 additionalProperties=false，不提供 actor/tenant/token/session/gateway 参数。实际 context
+  handler 拒绝模型身份注入，返回 invalid_arguments。
+- 无可信 turn 时，实际 provider 抛出
+  `trusted current QiWe session is required`，SDK 映射为 foundation_unavailable；这是实际 provider 拒绝，已排除缺依赖，不能写成另一错误码。未连接 broker
+  socket、未发消息或写业务数据库。
+
+初次本地探针缺 snowballstemmer/psutil；在独立 deps 目录补齐后真实加载。
+
+后一次把 SDK 拒绝码预期写成 trusted_context_unavailable，断言失败。直接核对 provider 的实际 ValueError 后，按原错误映射修正探针预期。
+
+未修改 SDK 或工具门禁。早期日志保留，不将泛化 foundation_unavailable 当隔离证明。
+
+未发现当前等效 grant 下可读 future
+token/socket 或冒充宿主的模型路径；因此不凭 cronjob 缺禁用项/MCP 配置存在强加收紧、不关闭全部 MCP。旧
+`2237be355906fbe6065ce1815711eee52b2d646e`
+八工具发现仅为历史 API 切片。生产进程最终工具表、完整 live 参数与最终集成插件仍待 C2，独立 UID/env 仍只证明一层。
 
 ## 架构、正式制品与历史快照
 
@@ -147,6 +171,17 @@ builder，由总指挥协调正式制品。未触发 Artifacts；`upload_cos=fal
 ACL 核对继续有效，但不代表完整生产 schema/最小 UI/broker/owner 权限。Dashboard 候选保留 upstream_typecheck=failed/Vite
 passed，不将其伪造全绿。公开管理入口 hostname mismatch 仍是既有待 C2 事项。
 
+### 目标架构验证的准确划分
+
+本次 shell/unit 机制已在真实 Linux/systemd255 验证并独立复审：锁与摘要门禁、unit 完整性、真实进程/权限/cgroup、单次停止预算、原 runner
+hold、晚完成拒绝、installer/rollback 接线。这些不是模拟 systemctl，已足以支撑本次 C1
+shell/unit 行为；不因 CPU 架构不同要求再跑一整套故障矩阵。
+
+尚未证明的是**最终同版 production feature 的 x86_64 制品与目标安装状态**：正式 GNU
+ELF/动态依赖/GLIBC、binary/runtime/deploy manifest 身份、实际 runner
+UID/GID、目标有效 ACL、固定 R 路径及 unit 预检、SDK/socket 单次就绪检查仍按原安装门禁执行。目标环境若出现具体系统版本/制品/权限差异，再补对应验证；不把“未运行 native
+x64 完整矩阵”新增为一项无依据的大型测试门禁。实际目标安装/启动/业务验收仍需 C2，不在本次许可内。
+
 ## 验证与剩余验收
 
 定向 renderer、普通 installer/rollback、promotion 测试和语法检查按最终差分执行；综合检查必须按部署高风险差分走
@@ -157,9 +192,9 @@ PR 首个固定 head 可供并行审阅；远端/最终本地检查及工具补�
 
 上线前集中保留：
 
-1. 最终 #733/#734/C1 同版、正式三包、native x86_64 systemd、完整 ACL/迁移与签名身份。
+1. 最终 #733/#734/C1 同版、正式三包、目标 x86_64 制品与安装预检、完整 ACL/迁移与签名身份。
 2. Chrome 与本人业务验收、真实可信目录/同配置读取/撤销、管理路由与精确证书、C2。
-3. 进程内最终工具表未直接获取；精确 core 的隔离过滤探针及具体 MCP 能力核对仍需补证。
+3. 精确 core 隔离过滤/桥接拒绝已补；生产进程最终工具表与真实参数、最终集成插件仍待 C2。
 4. 错误 GID/argv/cgroup、表面 inactive/PID0 但真实残留的独立实测仍未全覆盖； 当前源码严格拒绝不等于所有负例已实测。
 
 完整补偿/recovery/lost-ack/dry-run 继续复用原矩阵， 本次真实新增差异不替代原全部矩阵或最终集成验收。
@@ -167,3 +202,17 @@ PR 首个固定 head 可供并行审阅；远端/最终本地检查及工具补�
 生产回退只撤入口并恢复 reviewed
 release，不回滚业务数据库；保留凭据、配置、会话、记忆、任务、通道/Profile
 jobs/audit 与 UNKNOWN 原键。结果不明先查状态，不能自动补跑。
+
+## 固定提交审阅与后续检查
+
+唯一 Draft PR 为 #735，首 head `fdbee58a48ddb3a93f3f293122cc61662e78d664`
+六机制文件独立复审通过。后续只修 runbook 当前状态和真实测试末尾75/hold断言；`post-late-closure-assertion-resolved.log`
+已只重验该差分。六机制文件未改，不释放 hold、不重跑大型故障矩阵。
+
+Reviewer Guide 的 heredoc 提示不成立：固定 Git 对象第493行字节为顶格
+`EOF\n`，hex454f460a，已有 bash-n 与实际 renderer 通过。partial覆盖六文件不能代替全审；未声称机器人关闭。
+
+首个高风险 auto 检查通过 light 后，因 PATH 使用 macOS Python3.9.6，在既有 QiWe
+asyncio 用例失败。与仓库 CI 的 Python3.12 不一致；改用现有 bundled
+Python3.12.14 的局部 PATH，不改代码/checker。第二次因尚未格式化的小修 runbook 失败，格式修正后重验；原日志保留。Code
+Review 读取远端 checks 返回连接未登录，未通过 CLI 回退读取诊断；这是读取不可用，不代表远端 job 失败，也不能报告远端绿灯。
