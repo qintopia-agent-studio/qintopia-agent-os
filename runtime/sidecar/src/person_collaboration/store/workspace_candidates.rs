@@ -22,6 +22,7 @@ pub(crate) struct Query {
     pub subject_kind: Option<String>,
     pub subject_ref: Option<Uuid>,
     pub collaboration: Option<Uuid>,
+    pub position: Option<Uuid>,
 }
 impl Query {
     pub(crate) fn from_path(path: &str) -> Result<Self> {
@@ -78,23 +79,32 @@ impl Query {
                 .is_none_or(|id| self.purpose == "contact" && !id.is_nil()),
             "invalid_candidate_query"
         );
+        ensure!(
+            self.position
+                .is_none_or(|id| self.purpose == "contact" && !id.is_nil()),
+            "invalid_candidate_query"
+        );
         Ok(limit)
     }
-    fn fingerprint(&self, tenant: &str, actor: Uuid) -> String {
-        digest(
-            &serde_json::to_vec(&json!([
-                tenant,
-                actor,
-                self.scope,
-                self.kind,
-                self.purpose,
-                self.search,
-                self.subject_kind,
-                self.subject_ref,
-                self.collaboration
-            ]))
-            .expect("JSON query"),
-        )
+    fn fingerprint(&self, tenant: &str, actor: Uuid, version: i64) -> String {
+        let context = json!([
+            tenant,
+            actor,
+            self.scope,
+            self.kind,
+            self.purpose,
+            self.search,
+            self.subject_kind,
+            self.subject_ref,
+            self.collaboration
+        ]);
+        // Leave existing work-query cursors unchanged; configuration queries
+        // additionally bind the selected position and current tenant version.
+        let context = match self.position {
+            Some(position) => json!([context, position, version]),
+            None => context,
+        };
+        digest(&serde_json::to_vec(&context).expect("JSON query"))
     }
 }
 #[derive(Serialize, Deserialize)]
@@ -141,13 +151,19 @@ fn residence_directory_available(resolved: &AudienceResolution) -> bool {
 impl Store {
     pub(crate) async fn workspace_candidates(&self, actor: &Actor, q: &Query) -> Result<Value> {
         let limit = q.validate()?;
-        let fingerprint = q.fingerprint(&self.tenant, actor.person);
-        let cursor = q
-            .after
-            .as_deref()
-            .map(|raw| decode_cursor(raw, &fingerprint))
-            .transpose()?;
         let (mut tx, version, now) = self.begin().await?;
+        let fingerprint = q.fingerprint(&self.tenant, actor.person, version);
+        let decode = || {
+            q.after
+                .as_deref()
+                .map(|raw| decode_cursor(raw, &fingerprint))
+                .transpose()
+        };
+        let mut cursor = if q.position.is_none() {
+            decode()?
+        } else {
+            None
+        };
         self.verify(&mut tx, actor).await?;
         if let Some(scope) = actor.foundation_scope() {
             ensure!(scope == q.scope, "scope_access_denied");
@@ -215,6 +231,51 @@ impl Store {
                         .filter_map(|p| serde_json::from_value(p["person_ref"].clone()).ok())
                         .collect(),
                 );
+            }
+            "contact" if q.position.is_some() => {
+                // Configuration uses existing SetAudience management authority, not
+                // the caller's personal work or a partially persisted audience.
+                ensure!(
+                    policy.can_inspect(actor.person, q.scope, "erhua", "community_service")
+                        && policy
+                            .manager(
+                                actor.person,
+                                q.scope,
+                                "erhua",
+                                "community_service",
+                                "publish"
+                            )
+                            .is_some(),
+                    "scope_access_denied"
+                );
+                let position_scope: Option<Uuid> = sqlx::query_scalar("SELECT p.scope_id FROM qintopia_agent_os.collaboration_positions p JOIN qintopia_agent_os.collaboration_roles r ON r.tenant_key=p.tenant_key AND r.id=p.role_id WHERE p.tenant_key=$1 AND p.id=$2 AND p.status='active' AND r.status='active'")
+                    .bind(&self.tenant).bind(q.position).fetch_optional(&mut *tx).await?;
+                ensure!(position_scope == Some(q.scope), "scope_access_denied");
+                if let Some(target) = q.collaboration {
+                    let target_scope: Option<Uuid> = sqlx::query_scalar("SELECT a.scope_id FROM qintopia_agent_os.agent_collaborations c JOIN qintopia_agent_os.collaboration_appointments a ON a.tenant_key=c.tenant_key AND a.id=c.appointment_id WHERE c.tenant_key=$1 AND c.id=$2 AND c.agent_key='erhua' AND c.domain_key='community_service' AND c.status='active' AND a.status='active' AND (a.valid_until IS NULL OR a.valid_until>$3)")
+                        .bind(&self.tenant).bind(target).bind(now).fetch_optional(&mut *tx).await?;
+                    ensure!(
+                        target_scope == Some(q.scope)
+                            && policy
+                                .grants
+                                .iter()
+                                .any(|g| g.collaboration == target && policy.effective(g)),
+                        "scope_access_denied"
+                    );
+                }
+                if q.kind == "channels" && q.subject_kind.as_deref() == Some("person") {
+                    self.known_person(&mut tx, q.subject_ref.unwrap())
+                        .await
+                        .map_err(|error| {
+                            if error.to_string() == "person_not_verified" {
+                                anyhow::anyhow!("scope_access_denied")
+                            } else {
+                                error
+                            }
+                        })?;
+                }
+                // Keep the trusted management people directory (known_person on
+                // save); accounts/channels retain the shared source/scope checks.
             }
             "contact" => {
                 let connections: Vec<Uuid> = if let Some(target) = q.collaboration {
@@ -308,6 +369,10 @@ impl Store {
                 }
             }
             _ => unreachable!(),
+        }
+        if q.position.is_some() {
+            // Revoked configuration rights must fail before accepting a cursor.
+            cursor = decode()?;
         }
         // Gateway directory entries belong to this tenant and the selected scope/its ancestors.
         let gateways: Vec<String> = sqlx::query(&format!("SELECT g.gateway_key,g.scope_id FROM qintopia_identity.person_identity_gateways g WHERE g.tenant_key=$1 AND g.active AND {CONTACT_GATEWAY_OWNERSHIP_SQL}")).bind(&self.tenant).fetch_all(&mut *tx).await?.iter().filter(|r| policy.in_scope(q.scope, r.get("scope_id"), true)).map(|r| r.get("gateway_key")).collect();

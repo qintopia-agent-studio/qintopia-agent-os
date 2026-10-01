@@ -1898,3 +1898,695 @@ pub(crate) async fn linux_production_probe() -> Result<()> {
     println!("idle_broker_shutdown=drained");
     Ok(())
 }
+
+async fn configuration_http(
+    store: &Store,
+    method: &str,
+    path: &str,
+    token: Option<&str>,
+    body: Value,
+) -> Result<(u16, Value)> {
+    let (status, body, _) = super::auth_tests::https_request(
+        store,
+        method,
+        path,
+        token,
+        body,
+        super::auth_tests::HttpsRequestHeaders {
+            host: "admin.example.test",
+            origin: Some("https://admin.example.test"),
+            content_type: "application/json",
+            extra: "",
+        },
+    )
+    .await?;
+    Ok((status, body))
+}
+
+fn candidate_path(query: &Query) -> String {
+    let value = serde_json::to_value(query).unwrap();
+    let mut form = url::form_urlencoded::Serializer::new(String::new());
+    for (key, value) in value.as_object().unwrap() {
+        if !value.is_null() {
+            form.append_pair(
+                key,
+                &value
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| value.to_string()),
+            );
+        }
+    }
+    format!("/api/workspace/candidates?{}", form.finish())
+}
+
+#[tokio::test]
+#[ignore = "explicit disposable PostgreSQL required"]
+async fn administrator_first_configuration_is_read_only_and_scope_bound_over_http() -> Result<()> {
+    let (mut store, owner, state) = fixture().await?;
+    let one = find(&state, "scopes", "一栋");
+    let two = find(&state, "scopes", "二栋");
+    let person = find(&state, "people", "人员甲 · 合成样例 A");
+    let other_person = find(&state, "people", "人员甲 · 合成样例 B");
+    let mut positions = Vec::new();
+    for (scope, role, label) in [
+        (one, "舍长", "模拟一栋岗位"),
+        (one, "社区负责人", "模拟同栋另一岗位"),
+        (two, "舍长", "模拟二栋岗位"),
+    ] {
+        positions.push(id(&command(
+            &store,
+            &owner,
+            Change::SavePosition {
+                id: None,
+                role: find(&state, "roles", role),
+                scope,
+                parent: None,
+                label: label.into(),
+                description: "模拟首次配置".into(),
+                draft: false,
+            },
+        )
+        .await?["change"]["id"]));
+    }
+    let ns = format!("{}/simulated-config-shared", store.tenant);
+    sqlx::query("INSERT INTO qintopia_identity.person_identity_gateways(tenant_key,gateway_key,namespace,subject_type,scope_id,account_kind,active) VALUES($1,'simulated-config-service',$2,'wecom_internal',$3,'shared',true)").bind(&store.tenant).bind(&ns).bind(one).execute(&store.pool).await?;
+    let source: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,adapter_metadata) VALUES($1,'wecom_internal','simulated-service',jsonb_build_object('first_observation_ref',$2::text)) RETURNING id").bind(&ns).bind(Uuid::new_v4().to_string()).fetch_one(&store.pool).await?;
+    let account: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.work_accounts(tenant_key,source_link_id,source_version,gateway_key,gateway_version,label,verified_by,evidence_ref) VALUES($1,$2,1,'simulated-config-service',1,'模拟配置工作账号',$3,$4) RETURNING id").bind(&store.tenant).bind(source).bind(owner.person_ref()).bind(Uuid::new_v4()).fetch_one(&store.pool).await?;
+    // A trusted Person is not inherently owned by one building. Its contact
+    // channels, unlike its canonical management-directory entry, are scoped.
+    let personal_ns: String = sqlx::query_scalar("SELECT namespace FROM qintopia_identity.person_identity_gateways WHERE tenant_key=$1 AND gateway_key='synthetic-qiwe-one'").bind(&store.tenant).fetch_one(&store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,person_id,status,evidence_ref,confirmed_by) VALUES($1,'qiwe_sender','simulated-second-person',$2,'confirmed',$3,$4)").bind(&personal_ns).bind(other_person).bind(Uuid::new_v4()).bind(owner.person_ref()).execute(&store.pool).await?;
+    let canonical = format!("simulated-config-canonical/{}", Uuid::new_v4());
+    sqlx::query(
+        "UPDATE qintopia_identity.source_identity_links SET namespace=$2 WHERE namespace=$1",
+    )
+    .bind(&store.identity_namespace)
+    .bind(&canonical)
+    .execute(&store.pool)
+    .await?;
+    sqlx::query("UPDATE qintopia_agent_os.collaboration_tenants SET identity_namespace=$2,mode='live' WHERE tenant_key=$1").bind(&store.tenant).bind(&canonical).execute(&store.pool).await?;
+    store.identity_namespace = canonical;
+    store.mode = StoreMode::Live;
+    let owner_link: Uuid = sqlx::query_scalar("SELECT id FROM qintopia_identity.source_identity_links WHERE namespace=$1 AND person_id=$2 AND status='confirmed'").bind(&store.identity_namespace).bind(owner.person_ref()).fetch_one(&store.pool).await?;
+    let owner = store.actor(owner_link).await?;
+    store
+        .bootstrap_account(
+            owner.person_ref(),
+            "simulated-config-admin",
+            "simulated-config-password",
+        )
+        .await?;
+    for (p, name) in [
+        (person, "simulated-config-steward"),
+        (other_person, "simulated-config-manager"),
+    ] {
+        store
+            .account_command(
+                &owner,
+                &super::store::AccountCommand::Create {
+                    person: p,
+                    username: name.into(),
+                    password: "simulated-config-password".into(),
+                },
+            )
+            .await?;
+    }
+    let ui = Store {
+        pool: if let Ok(url) = std::env::var("QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL") {
+            sqlx::PgPool::connect(&url).await?
+        } else {
+            store.pool.clone()
+        },
+        tenant: store.tenant.clone(),
+        identity_namespace: store.identity_namespace.clone(),
+        mode: StoreMode::Live,
+    };
+    let admin_token =
+        super::auth_tests::login(&ui, "simulated-config-admin", "simulated-config-password")
+            .await?;
+    let steward_token =
+        super::auth_tests::login(&ui, "simulated-config-steward", "simulated-config-password")
+            .await?;
+    let manager_token =
+        super::auth_tests::login(&ui, "simulated-config-manager", "simulated-config-password")
+            .await?;
+    let mut q = Query {
+        position: Some(positions[0]),
+        ..query(one, "contact")
+    };
+    let before = store.state(&owner).await?;
+    // No appointment/connection exists for the intended worker, nor does the
+    // administrator have a personal Erhua service connection.
+    assert_eq!(sqlx::query_scalar::<_, i64>("SELECT count(*) FROM qintopia_agent_os.collaboration_appointments WHERE tenant_key=$1 AND person_id=$2").bind(&store.tenant).bind(person).fetch_one(&store.pool).await?, 0);
+    assert_eq!(
+        configuration_http(&ui, "GET", &candidate_path(&q), None, Value::Null)
+            .await?
+            .0,
+        401
+    );
+    let (status, people) = configuration_http(
+        &ui,
+        "GET",
+        &candidate_path(&q),
+        Some(&admin_token),
+        Value::Null,
+    )
+    .await?;
+    assert_eq!(status, 200, "{people}");
+    assert!(people["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["ref"] == json!(other_person)));
+    let mut person_channel = None;
+    for (kind, subject_kind, subject_ref) in [
+        ("accounts", None, None),
+        ("channels", Some("person"), Some(person)),
+        ("channels", Some("work_account"), Some(account)),
+    ] {
+        let request = Query {
+            kind: kind.into(),
+            subject_kind: subject_kind.map(str::to_owned),
+            subject_ref,
+            ..Query::from_path(&candidate_path(&q))?
+        };
+        let (status, result) = configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&request),
+            Some(&admin_token),
+            Value::Null,
+        )
+        .await?;
+        assert_eq!(status, 200, "{result}");
+        assert!(!result["items"].as_array().unwrap().is_empty());
+        if subject_kind == Some("person") {
+            person_channel = Some(id(&result["items"][0]["ref"]));
+        }
+    }
+    assert_eq!(
+        store.state(&owner).await?,
+        before,
+        "discovery must not persist a partial configuration"
+    );
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&query(one, "contact")),
+            Some(&admin_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&steward_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    for request in [
+        Query {
+            scope: two,
+            ..Query::from_path(&candidate_path(&q))?
+        },
+        Query {
+            position: Some(Uuid::new_v4()),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+    ] {
+        assert_eq!(
+            configuration_http(
+                &ui,
+                "GET",
+                &candidate_path(&request),
+                Some(&admin_token),
+                Value::Null
+            )
+            .await?
+            .0,
+            403
+        );
+    }
+    let audience = |people: Vec<Uuid>, contacts: Vec<ContactSelection>| Audience {
+        people,
+        contacts,
+        groups: vec![],
+        residents: "none".into(),
+        open_reception: false,
+        reply: PermissionMode::Autonomous,
+        proactive: PermissionMode::Denied,
+        reviewer: None,
+        topics: "模拟配置".into(),
+        visibility: "general".into(),
+    };
+    let contact = ContactSelection {
+        subject_kind: "person".into(),
+        subject_id: person,
+        channel_source_link_id: person_channel.unwrap(),
+    };
+    let mut a = assignment(&state, person, one);
+    a.permissions.push(PermissionSetting {
+        action: "publish".into(),
+        mode: PermissionMode::Autonomous,
+        reviewer: None,
+    });
+    let mut cmd = Command {
+        operation_id: Uuid::new_v4(),
+        expected_version: before["version"].as_i64().unwrap(),
+        change: Change::ConfigureWork {
+            assignment: Box::new(a.clone()),
+            audience: audience(vec![person], vec![contact]),
+        },
+    };
+    let (status, preview) =
+        configuration_http(&ui, "POST", "/api/preview", Some(&admin_token), json!(cmd)).await?;
+    assert_eq!(status, 200, "{preview}");
+    assert_eq!(preview["persisted"], false);
+    assert_eq!(store.state(&owner).await?, before);
+    let (status, saved) =
+        configuration_http(&ui, "POST", "/api/save", Some(&admin_token), json!(cmd)).await?;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(saved["persisted"], true);
+    let relation = id(&saved["change"]["collaboration"]);
+    a.collaboration = Some(relation);
+    q.collaboration = Some(relation);
+    let (status, more) = configuration_http(
+        &ui,
+        "GET",
+        &candidate_path(&q),
+        Some(&admin_token),
+        Value::Null,
+    )
+    .await?;
+    assert_eq!(status, 200, "{more}");
+    assert!(
+        more["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|p| p["ref"] == json!(other_person)),
+        "unsaved expansion must be discoverable"
+    );
+    let (_, ordinary) = configuration_http(
+        &ui,
+        "GET",
+        &candidate_path(&query(one, "contact")),
+        Some(&steward_token),
+        Value::Null,
+    )
+    .await?;
+    assert_eq!(ordinary["items"].as_array().unwrap().len(), 1);
+    assert_eq!(ordinary["items"][0]["ref"], json!(person));
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&steward_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    let unlisted: Uuid = sqlx::query_scalar("INSERT INTO qintopia_identity.persons(display_name,status) VALUES('simulated-unlisted-person','active') RETURNING id").fetch_one(&store.pool).await?;
+    sqlx::query("INSERT INTO qintopia_identity.source_identity_links(namespace,subject_type,source_ref,person_id,status,evidence_ref,confirmed_by) VALUES($1,'qiwe_sender','simulated-unlisted-person',$2,'confirmed',$3,$4)").bind(&personal_ns).bind(unlisted).bind(Uuid::new_v4()).bind(owner.person_ref()).execute(&store.pool).await?;
+    let unlisted_channel = Query {
+        kind: "channels".into(),
+        subject_kind: Some("person".into()),
+        subject_ref: Some(unlisted),
+        ..Query::from_path(&candidate_path(&q))?
+    };
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&unlisted_channel),
+            Some(&admin_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403,
+        "direct channel lookup must retain known_person boundary"
+    );
+    // Expand and then replace the draft via the same complete preview/save, not
+    // by pre-saving an audience. No temporary persistence is needed for search.
+    for selected in [vec![person, other_person], vec![other_person], vec![]] {
+        let state_before = store.state(&owner).await?;
+        cmd = Command {
+            operation_id: Uuid::new_v4(),
+            expected_version: state_before["version"].as_i64().unwrap(),
+            change: Change::ConfigureWork {
+                assignment: Box::new(a.clone()),
+                audience: audience(selected, vec![]),
+            },
+        };
+        let (status, preview) =
+            configuration_http(&ui, "POST", "/api/preview", Some(&admin_token), json!(cmd)).await?;
+        assert_eq!(status, 200, "{preview}");
+        assert_eq!(preview["persisted"], false);
+        assert_eq!(store.state(&owner).await?, state_before);
+        let (status, saved) =
+            configuration_http(&ui, "POST", "/api/save", Some(&admin_token), json!(cmd)).await?;
+        assert_eq!(status, 200, "{saved}");
+        assert_eq!(saved["persisted"], true);
+    }
+    // Also cover an older connection with no audience row at all.
+    sqlx::query("DELETE FROM qintopia_agent_os.collaboration_audiences WHERE tenant_key=$1 AND collaboration_id=$2").bind(&store.tenant).bind(relation).execute(&store.pool).await?;
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&admin_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        200
+    );
+    let mut limited = assignment(&state, other_person, one);
+    limited.role = find(&state, "roles", "社区负责人");
+    limited.duty = Some(find(&state, "duties", "组织管理"));
+    limited.agent = "default".into();
+    limited.domain = "organization".into();
+    limited.permissions = vec![PermissionSetting {
+        action: "manage".into(),
+        mode: PermissionMode::Autonomous,
+        reviewer: None,
+    }];
+    limited.delegation = Some(Delegation {
+        agents: vec!["erhua".into()],
+        domains: vec!["community_service".into()],
+        actions: vec!["publish".into()],
+        depth: 0,
+    });
+    let limited_relation = id(
+        &command(&store, &owner, Change::Assign(Box::new(limited))).await?["change"]
+            ["collaboration"],
+    );
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&manager_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        200
+    );
+    let across = Query {
+        scope: two,
+        position: Some(positions[2]),
+        collaboration: None,
+        ..query(two, "contact")
+    };
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&across),
+            Some(&manager_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    let (_, _, foreign_state) = fixture().await?;
+    let foreign = Query {
+        scope: find(&foreign_state, "scopes", "一栋"),
+        ..Query::from_path(&candidate_path(&q))?
+    };
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&foreign),
+            Some(&admin_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    // Cursors are configuration-context capabilities, not reusable directory
+    // permission. Changes to mode, target, query, person or scope cannot reuse them.
+    q.limit = Some(1);
+    let (status, page) = configuration_http(
+        &ui,
+        "GET",
+        &candidate_path(&q),
+        Some(&manager_token),
+        Value::Null,
+    )
+    .await?;
+    assert_eq!(status, 200, "{page}");
+    q.after = Some(page["next_cursor"].as_str().unwrap().to_string());
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&manager_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        200
+    );
+    for request in [
+        Query {
+            position: Some(positions[1]),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+        Query {
+            collaboration: None,
+            ..Query::from_path(&candidate_path(&q))?
+        },
+        Query {
+            search: "模拟".into(),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+        Query {
+            kind: "accounts".into(),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+        Query {
+            kind: "channels".into(),
+            subject_kind: Some("person".into()),
+            subject_ref: Some(person),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+    ] {
+        assert_eq!(
+            configuration_http(
+                &ui,
+                "GET",
+                &candidate_path(&request),
+                Some(&manager_token),
+                Value::Null
+            )
+            .await?
+            .0,
+            400
+        );
+    }
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&admin_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        400,
+        "actor change invalidates cursor"
+    );
+    sqlx::query(
+        "UPDATE qintopia_agent_os.collaboration_tenants SET version=version+1 WHERE tenant_key=$1",
+    )
+    .bind(&store.tenant)
+    .execute(&store.pool)
+    .await?;
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&manager_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        400
+    );
+    q.after = None;
+    // A captured candidate cannot bypass a source revocation on final preview/save.
+    sqlx::query("UPDATE qintopia_identity.source_identity_links SET status='revoked',version=version+1 WHERE id=$1").bind(person_channel.unwrap()).execute(&store.pool).await?;
+    cmd = Command {
+        operation_id: Uuid::new_v4(),
+        expected_version: store.state(&owner).await?["version"].as_i64().unwrap(),
+        change: Change::ConfigureWork {
+            assignment: Box::new(a.clone()),
+            audience: audience(
+                vec![person],
+                vec![ContactSelection {
+                    subject_kind: "person".into(),
+                    subject_id: person,
+                    channel_source_link_id: person_channel.unwrap(),
+                }],
+            ),
+        },
+    };
+    let source_before = store.state(&owner).await?;
+    let (status, denied_save) =
+        configuration_http(&ui, "POST", "/api/save", Some(&admin_token), json!(cmd)).await?;
+    assert_eq!(status, 409, "{denied_save}");
+    assert_eq!(denied_save["code"], "configuration_not_saved");
+    assert_eq!(
+        store.state(&owner).await?,
+        source_before,
+        "revoked contact source must not persist any assignment changes"
+    );
+    // Manager revocation applies to both the first page and a previously valid cursor.
+    let (_, page) = configuration_http(
+        &ui,
+        "GET",
+        &candidate_path(&q),
+        Some(&manager_token),
+        Value::Null,
+    )
+    .await?;
+    q.after = Some(page["next_cursor"].as_str().unwrap().to_owned());
+    let revoke = Command {
+        operation_id: Uuid::new_v4(),
+        expected_version: store.state(&owner).await?["version"].as_i64().unwrap(),
+        change: Change::SetAudience {
+            collaboration: relation,
+            audience: audience(vec![other_person], vec![]),
+        },
+    };
+    sqlx::query("UPDATE qintopia_agent_os.collaboration_grants SET status='revoked' WHERE tenant_key=$1 AND collaboration_id=$2").bind(&store.tenant).bind(limited_relation).execute(&store.pool).await?;
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&manager_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    q.after = None;
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&manager_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    assert_ne!(
+        configuration_http(
+            &ui,
+            "POST",
+            "/api/save",
+            Some(&manager_token),
+            json!(revoke)
+        )
+        .await?
+        .0,
+        200
+    );
+    for (table, object) in [
+        ("collaboration_positions", positions[0]),
+        ("collaboration_roles", a.role),
+    ] {
+        sqlx::query(&format!(
+            "UPDATE qintopia_agent_os.{table} SET status='retired' WHERE tenant_key=$1 AND id=$2"
+        ))
+        .bind(&store.tenant)
+        .bind(object)
+        .execute(&store.pool)
+        .await?;
+        assert_eq!(
+            configuration_http(
+                &ui,
+                "GET",
+                &candidate_path(&q),
+                Some(&admin_token),
+                Value::Null
+            )
+            .await?
+            .0,
+            403
+        );
+        sqlx::query(&format!(
+            "UPDATE qintopia_agent_os.{table} SET status='active' WHERE tenant_key=$1 AND id=$2"
+        ))
+        .bind(&store.tenant)
+        .bind(object)
+        .execute(&store.pool)
+        .await?;
+    }
+    sqlx::query("UPDATE qintopia_agent_os.agent_collaborations SET status='ended' WHERE tenant_key=$1 AND id=$2").bind(&store.tenant).bind(relation).execute(&store.pool).await?;
+    assert_eq!(
+        configuration_http(
+            &ui,
+            "GET",
+            &candidate_path(&q),
+            Some(&admin_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        403
+    );
+    for request in [
+        Query {
+            purpose: "assign".into(),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+        Query {
+            position: Some(Uuid::nil()),
+            ..Query::from_path(&candidate_path(&q))?
+        },
+    ] {
+        assert_eq!(
+            configuration_http(
+                &ui,
+                "GET",
+                &candidate_path(&request),
+                Some(&admin_token),
+                Value::Null
+            )
+            .await?
+            .0,
+            400
+        );
+    }
+    eprintln!("模拟真实HTTP：首次无ID候选→完整preview/save、空受众/缺失受众、扩大/替换、受限管理员、普通舍长隔离、来源撤销、跨tenant/栋、撤权和游标上下文均通过");
+    Ok(())
+}
