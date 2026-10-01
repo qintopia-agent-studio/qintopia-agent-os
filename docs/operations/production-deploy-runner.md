@@ -19,6 +19,47 @@ returning 503. A restored R is not automatically reactivated. Removing the route
 archiving only its renewal declaration is a separate reviewed decommission step. Chrome
 login, permission, save and rollback checks remain manual production acceptance.
 
+Before first `prepare`, HTTP-site or certificate work, identify an existing reviewed
+request-bound hold that remains valid for the entire maintenance action. The fixed O->T
+launcher creates an unbound hold in `prepare` and automatically finalizes and removes it
+on successful `consume`. The ordinary T->R success path leaves a direction journal but
+no maintenance hold. Neither path currently supplies a supported first-setup window. See
+the dated
+[v0.3.4 preparation and patch record](../reports/2026-09-28-management-ui-deploy-wiring.md#2026-09-29-maintenance-patch-implementation-local-only)
+for the exact source, isolated failure reproduction and implemented `begin`/`finish`
+maintenance entry on this branch. Those modes do not exist in fixed R. Do not race a
+consumer, hand-write a hold or turn a successful deployment into an artificial recovery.
+Keep the UI disabled until a reviewed immutable release supplies the entry and its
+signed T-to-R success is verified. Keep the old v0.3.4 draft unpublished and its tag
+unchanged. After the maintenance patch is reviewed and merged through the protected
+process, use the next valid Release Please version for the first usable UI. Publishing
+the old R first would leave UI setup blocked until a later release.
+
+On a later reviewed immutable release containing these modes, invoke its exact current
+helper with the original successful T-to-R live request ID. `begin` takes FD 8 then FD 9
+itself and requires the processed signed request/result, matching direction journal, R/T
+pointers, no claim, and the private existing signing environment. Only after it returns
+successfully may the separately approved `prepare`, HTTP, certificate and HTTPS steps
+run. Verify the stopped HTTPS 503 route, then run `finish` with the **same** ID; it
+restores the timer's original enabled/disabled state before releasing the hold. If
+either command returns an uncertain result, inspect the durable maintenance record, hold
+and timer, then resume only with the same ID. Do not remove the hold manually or start
+the UI before `finish` succeeds. This is a future command shape, not a production action
+authorized by this document:
+
+```bash
+UI_HELPER="/home/ubuntu/qintopia-agent-os-releases/<reviewed-release-sha>/deploy/runner/management-ui-lifecycle.sh"
+sudo "$UI_HELPER" begin '<original-T-to-R-live-request-id>'
+# Run separately approved account, database, HTTP, certificate and HTTPS checks.
+sudo "$UI_HELPER" finish '<original-T-to-R-live-request-id>'
+```
+
+The runner may leave the processed request and signed result at mode 0644 within its
+root-owned 0700 state directory; `begin` accepts that layout after checking ownership,
+single-link regular files, signature and digest. The direction journal and maintenance
+record must remain mode 0600. A failed record or directory `fsync` must leave the timer
+in its original state; inspect the record before retrying the same ID.
+
 ### Management UI Preflight And Rollback Commands
 
 Run these on the reviewed origin host with the approved immutable R release SHA, after
@@ -331,8 +372,12 @@ Repository variables may keep non-secret COS defaults:
 
 `RELEASE_DEPLOY_DRY_RUN` controls what happens after a Release is published. Keep it
 `true` until the deploy runner is installed and the first dry-run result is inspected.
-After that, setting it to `false` makes publishing a normal GitHub Release generate a
-real production deploy request.
+For a staged O->T->R takeover, verify the effective repository and production
+environment value immediately before publication: a `false` value would emit a live
+full-R request while O is still the active runner. The published Release request is
+separate from the later signed O->T and T->R requests and must not be replayed if the
+old runner rejects its dry-run target set. After that, setting it to `false` makes
+publishing a normal GitHub Release generate a real production deploy request.
 
 Release-triggered deploys derive `restart_targets` from each restart target's latest
 server deploy result status of `succeeded`, not from the global `current` symlink alone.
