@@ -350,3 +350,60 @@ head 的本地集成版本中实际保存、回读、更换、清空和跨栋拒
 本轮 position 实施完成：新建及编辑均采用 position-only 配置查询，不依赖连接 ID。新增
 `.local-workspace/test-steward-position.cjs`
 的 8/8 项通过，包含实际 renderSettings 的首次／空受众查询，以及留存真实 HTTP 候选响应的回放。这些检查仍为本地状态模拟，不是浏览器验收；旧 30 项未重跑，后端新 head 的实际联合验证待交付。
+
+## 最终 position 同版 HTTP 联调（2026-10-01 晚间）
+
+固定后台 `428f392d92e18efcfebe9e46fade5146b1d44e49`，UI 实现
+`48eed78ce5d01aa1cec746e9386f5fb883300bb6`，本地集成
+`b323a6057e7e441be61550de8ff13ae302fce9be`。两次普通合并均无冲突。
+
+相对后台仍只有六份 JS 和三份 UI 记录不同，未人工修改共享 Rust／SQL。六份 UI 源码与指定 UI 提交逐字节相等，实际 HTTP 资源 SHA-256 也全部匹配。
+
+新服务为
+`http://127.0.0.1:19276/`。按总指挥最新指令复用本任务已有模拟租户、渠道、数据库和口令，不建立计划中的新租户，不执行
+`--init-fixture`，不重放渠道 INSERT。构建来自固定 Git 归档，二进制与归档摘要保存在忽略目录 manifest。旧 19274／19275 服务未停止，PID 分别保持 37873／98951。
+
+### 实际 HTTP 结果
+
+- 管理员密码登录 200。首次目标人员在本岗位／范围无任何任职或连接，查询不带 collaboration／appointment；people、accounts 和两类 channels 均为 200。
+
+  查询前后 tenant 版本均为 22，relations 和 audiences 完全相同。
+
+- 一次完整 ConfigureWork 预览／保存，使用同一操作编号；预览未持久化，保存版本增至 23。同一人的两条渠道、工作账号渠道及一条本栋群均保存并回读；账号未写入 people。
+- 已保存受众未包含的新人员仍可搜索，再正常加入具体个人并替换渠道。替换后原权限逐项不变；解除群触达保留联系人；清空 contacts 回读空数组。
+- 另一栋既有连接原本没有受众，仍可查询人员、账号、渠道并完整配置保存；回读工作账号渠道成功，原六项权限不变。
+- 无会话读取为 401。岗位与范围不符、普通舍长请求管理配置、受限管理员越栋查询均为 403。
+
+  非 contact 携带 position、跨岗位／kind／search 游标、版本变化后的旧游标均为 400。同上下文有效下一页及刷新第一页均为 200。
+
+- 跨栋个人渠道和工作账号分别预览／保存被 409 拒绝，配置版本不变。
+- 通过正常账号及任职接口准备独立本栋模拟管理者，查询先为 200；正常 revoke_grant 后，查询为 403／scope_access_denied，预览与保存均为 403／management_denied，版本不变。
+
+  没有撤销根管理员，也没有通过 SQL 修改权限。
+
+- 新建工作正常 end_collaboration，回读 ended；显式带该结束目标的候选查询为 403。管理员和已撤权管理者均退出并重新登录，旧会话 401，撤权后查询仍为 403。
+- 仅对新 19276 执行真实 stop/start。重启后原会话有效、口令不变，版本保持 30，任职和受众与重启前完全相同；有效连接受众仍可读，撤权结果保持拒绝。
+
+共保存 101 条真实 HTTP 回执，包含上述预期拒绝；不能把数量表述为 101 项独立测试。旧 30 项和 position 的 8 项不重复运行。浏览器交互仍未验收。
+
+### 本地启动器失败与修复
+
+首次重启时端口可用性探测报
+`OSError: [Errno 48] Address already in use`。已核实被停止进程退出、无监听者，而设置 SO_REUSEADDR 后绑定成功；判断为旧探针对刚释放地址的误拒绝。只修改 Git 外启动器的端口探测，应用二进制未变，未强杀进程、未换端口；随后同版启动及持久性检查通过。错误与诊断保留在
+`restart-launcher-failure.json`，当前 launch.py 已包含该修复。
+
+### 入口、证据与剩余项
+
+`.local-workspace/steward-final-integration/manifest.json`
+保存双方与集成 SHA、构建和六份 UI 摘要； `served-assets.json`
+是实际资源核对；`http-index.json` 索引 `http/`
+的完整实际回执。每次业务写前保留 operation_id／expected_version，预览和保存共用原请求，未重放不明结果。
+
+`LOCAL-ACCESS.json`
+以 0600 权限保留本机入口、账号和复用口令，仅用于本地模拟验收，不入 Git／PR。
+`launch.py status/start/stop` 管理新服务；禁止重新初始化。旧服务继续作为历史证据。
+
+本任务在新入口就绪后独立调用指定 Codex Chrome，仍收到
+`Codex auth token is unavailable`；原错留在 `chrome-attempt.json`，没有使用替代工具。
+
+本轮未发现新的 UI／后端业务阻断，已知管理员首次查询阻断在该固定版本的 HTTP 路径闭合。真实界面交互、截图、最终独立审阅和整批上线结论仍须另行完成；CI 状态不能由本地结果代替。未合并 PR、发布、部署、外发或修改生产权限。
