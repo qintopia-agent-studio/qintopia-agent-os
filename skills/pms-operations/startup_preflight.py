@@ -93,7 +93,10 @@ def check_static(*, installed, release, expected_sha256, profile_config, managed
     if spec is None or spec.loader is None:
         raise ValueError(ERROR)
     production = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(production)
+    # Load only the reviewed source: importlib's loader can write __pycache__
+    # into the release and make a subsequent fixed-inventory check fail.
+    source = release / "production.py"
+    exec(compile(source.read_bytes(), str(source), "exec"), production.__dict__)
     if managed_check is None:
         managed_check = production.check_managed_files
     managed_check(managed_directory)

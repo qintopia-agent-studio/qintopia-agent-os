@@ -29,6 +29,33 @@ def check_static_with_json_fixtures(**kwargs):
 
 
 class StartupPreflightTests(unittest.TestCase):
+    def test_repeated_preflight_does_not_write_bytecode(self):
+        with tempfile.TemporaryDirectory() as root:
+            release, installed = Path(root) / "release", Path(root) / "installed"
+            for directory in (release, installed):
+                directory.mkdir()
+                for name in preflight.RUNTIME_FILES:
+                    shutil.copy2(SOURCE / name, directory / name)
+            profile = Path(root) / "config.yaml"
+            profile.write_text("{}")
+            managed = Path(root) / "managed"
+            managed.mkdir()
+            (managed / "config.yaml").write_text("{}")
+            digest = preflight.fingerprint(release, required_uid=os.getuid())
+            with patch.object(preflight, "readonly"), patch.object(sys, "dont_write_bytecode", False):
+                for _ in range(2):
+                    check_static_with_json_fixtures(installed=installed, release=release,
+                        expected_sha256=digest, profile_config=profile,
+                        managed_directory=managed, managed_check=lambda _: None,
+                        required_uid=os.getuid())
+                    self.assertFalse(sys.dont_write_bytecode)
+                    for directory in (release, installed):
+                        self.assertEqual({p.name for p in directory.iterdir()}, preflight.RUNTIME_FILES)
+                        self.assertEqual(preflight.fingerprint(directory, required_uid=os.getuid()), digest)
+            (release / "__pycache__").mkdir()
+            with self.assertRaisesRegex(ValueError, preflight.ERROR):
+                preflight.fingerprint(release, required_uid=os.getuid())
+
     def test_fixed_source_digest_and_readonly_inputs(self):
         with tempfile.TemporaryDirectory() as root:
             release = Path(root) / "release"

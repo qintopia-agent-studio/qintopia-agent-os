@@ -435,3 +435,12 @@ tier。格式、Markdown、registry、MCP、技能、Workflow、runtime、部署
 `agents:check` 的既有 `test-agent-runtime-management.mjs` 调用 `check-deploy-runner.mjs`
 时，再次超过固定 600 秒，抛出
 `spawnSync /usr/local/bin/node ETIMEDOUT`，整条命令退出 1；后续检查未执行。未修改检查器、CI 或超时上限，也不把已通过的前段记作整条通过。
+
+### 2026-10-02 重复预检的字节码缓存修复
+
+同步主线后的 `1ae5b1b1` 已通过 CI 和 business，但 reviewer 新发现 `a82c2d36a466`
+指出预检可能污染发布目录。新增重复预检用例显式开启字节码写入后，修复前在首次调用后发现
+`__pycache__`，原固定清单会拒绝后续检查。
+
+修复仅将 `production.py`
+的加载改为编译已校验源码，保留模块元数据，不读取或写入其缓存，不修改全局缓存开关；额外目录仍拒绝。相同目录连续两次检查、摘要不变及外加缓存拒绝由同一回归覆盖。生产安装、真实群发送、CI 与部署机制均未调整。
