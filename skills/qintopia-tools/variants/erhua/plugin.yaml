@@ -9,6 +9,7 @@ description: >
 author: Qintopia
 provides_tools:
   - qintopia_person_workspace
+  - qintopia_person_candidates
   - qintopia_person_change_knowledge
   - qintopia_person_delegate_review
   - qintopia_person_welcome_setting

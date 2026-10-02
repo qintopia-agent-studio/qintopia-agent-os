@@ -370,3 +370,6 @@ pub(crate) mod business_tests;
 mod welcome_review_tests;
 
 pub(crate) use store::welcome_review::assert_operations_review as assert_welcome_operations_review;
+
+#[cfg(all(test, feature = "postgres-integration-tests"))]
+pub(crate) mod steward_production_minimal_tests;

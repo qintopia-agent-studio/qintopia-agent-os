@@ -27,7 +27,7 @@ fn find(s: &Value, key: &str, label: &str) -> Uuid {
 fn password() -> String {
     format!("Synthetic-{}", Uuid::new_v4())
 }
-async fn fixture() -> Result<(Store, Actor, Value, String)> {
+pub(super) async fn fixture() -> Result<(Store, Actor, Value, String)> {
     // Share the HTTP fixtures' once-only gate before taking the baseline snapshot.
     // Account lifecycle assertions still compare the entire authorization state.
     super::foundation_server::enable_test_http();
@@ -46,7 +46,7 @@ async fn fixture() -> Result<(Store, Actor, Value, String)> {
         .await?;
     Ok((store, owner, state, pass))
 }
-async fn login(store: &Store, name: &str, pass: &str) -> Result<String> {
+pub(super) async fn login(store: &Store, name: &str, pass: &str) -> Result<String> {
     store
         .login(&Credentials {
             username: name.into(),
@@ -120,14 +120,14 @@ pub(super) async fn request(
     client
 }
 
-struct HttpsRequestHeaders<'a> {
-    host: &'a str,
-    origin: Option<&'a str>,
-    content_type: &'a str,
-    extra: &'a str,
+pub(super) struct HttpsRequestHeaders<'a> {
+    pub host: &'a str,
+    pub origin: Option<&'a str>,
+    pub content_type: &'a str,
+    pub extra: &'a str,
 }
 
-async fn https_request(
+pub(super) async fn https_request(
     store: &Store,
     method: &str,
     path: &str,
