@@ -2568,6 +2568,9 @@ if (process.argv[2] === "--fixed-takeover-lock") {
         QINTOPIA_UNRELATED_RESULT: unrelated,
         QINTOPIA_RELEASE_ROOT: releaseRoot,
       };
+      // Direct-process cases are outside a service invocation. systemd-run below
+      // supplies its own real identity; never borrow the harness host's identity.
+      delete env.INVOCATION_ID;
       if (phase === "drift") {
         fs.appendFileSync(stagedRunner, "\n# simulated drift\n");
         const rejected = run("bash", [pollerSource], { env });
