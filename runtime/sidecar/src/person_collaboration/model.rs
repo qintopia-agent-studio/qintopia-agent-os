@@ -194,11 +194,21 @@ pub enum Change {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct ContactSelection {
+    pub subject_kind: String,
+    pub subject_id: Uuid,
+    pub channel_source_link_id: Uuid,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Audience {
     #[serde(default)]
     pub open_reception: bool,
     pub groups: Vec<Uuid>,
     pub people: Vec<Uuid>,
+    #[serde(default)]
+    pub contacts: Vec<ContactSelection>,
     /// Within this connection's scope only; actual membership is resolved by PMS in C.
     pub residents: String,
     pub reply: PermissionMode,
@@ -206,6 +216,16 @@ pub struct Audience {
     pub reviewer: Option<Uuid>,
     pub topics: String,
     pub visibility: String,
+}
+
+impl Audience {
+    pub(super) fn from_configuration(mut value: serde_json::Value) -> Result<Self> {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("authority_grant");
+            object.remove("contact_basis");
+        }
+        Ok(serde_json::from_value(value)?)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

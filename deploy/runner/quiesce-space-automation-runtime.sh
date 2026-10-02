@@ -6,6 +6,22 @@ DISPATCHER_TIMER="qintopia-agentos-automation-dispatcher.timer"
 DISPATCHER_SERVICE="qintopia-agentos-automation-dispatcher.service"
 EXECUTION_WORKER="qintopia-agentos-space-automation-execution-worker.service"
 
+verify_no_processes() {
+  local unit="$1" observed="" group="" property=""
+  if [[ "$unit" == *.service ]]; then
+    for property in MainPID ControlPID; do
+      observed="$("$SYSTEMCTL" show --property="$property" --value "$unit" 2>/dev/null)" || return 1
+      [[ "$observed" == 0 ]] || return 1
+    done
+  fi
+  group="$("$SYSTEMCTL" show --property=ControlGroup --value "$unit" 2>/dev/null)" || return 1
+  if [[ -n "$group" ]]; then
+    [[ "$group" == /* && "$group" != *..* ]] || return 1
+    [[ -f "/sys/fs/cgroup${group}/cgroup.events" ]] || return 1
+    [[ "$(sed -n 's/^populated //p' "/sys/fs/cgroup${group}/cgroup.events")" == 0 ]] || return 1
+  fi
+}
+
 shutdown_status=0
 loaded_count=0
 
@@ -19,6 +35,7 @@ for unit in "$DISPATCHER_TIMER" "$DISPATCHER_SERVICE" "$EXECUTION_WORKER"; do
       loaded_count=$((loaded_count + 1))
       ;;
     not-found)
+      verify_no_processes "$unit" || shutdown_status=1
       if ! observed="$("$SYSTEMCTL" show --property=ActiveState --value "$unit" 2>/dev/null)" || [[ "$observed" != "inactive" ]]; then
         shutdown_status=1
       fi
@@ -54,8 +71,15 @@ if ! "$SYSTEMCTL" stop "$EXECUTION_WORKER" >/dev/null 2>&1; then
   shutdown_status=1
 fi
 for unit in "$DISPATCHER_SERVICE" "$EXECUTION_WORKER" "$DISPATCHER_TIMER"; do
-  if ! "$SYSTEMCTL" reset-failed "$unit" >/dev/null 2>&1; then
+  # Inactive units can be garbage-collected by systemd. reset-failed on such
+  # a unit returns "not loaded" even though shutdown succeeded. Only clear a
+  # failed state; the final state/PID/cgroup observations remain authoritative.
+  if ! observed="$("$SYSTEMCTL" show --property=ActiveState --value "$unit" 2>/dev/null)"; then
     shutdown_status=1
+  elif [[ "$observed" == failed ]]; then
+    if ! "$SYSTEMCTL" reset-failed "$unit" >/dev/null 2>&1; then
+      shutdown_status=1
+    fi
   fi
 done
 
@@ -76,6 +100,7 @@ if "$SYSTEMCTL" is-active --quiet "$DISPATCHER_SERVICE" >/dev/null 2>&1; then
 fi
 
 for unit in "$DISPATCHER_TIMER" "$DISPATCHER_SERVICE" "$EXECUTION_WORKER"; do
+  verify_no_processes "$unit" || shutdown_status=1
   if ! observed="$("$SYSTEMCTL" show --property=LoadState --value "$unit" 2>/dev/null)" || [[ "$observed" != "loaded" ]]; then
     shutdown_status=1
   fi

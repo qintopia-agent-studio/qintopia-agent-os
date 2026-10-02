@@ -137,6 +137,7 @@ impl Store {
             gateway: None,
             tenant: self.tenant.clone(),
             session_hash: Some(hash),
+            foundation_turn_scope: None,
         };
         self.verify(&mut tx, &actor).await?;
         Ok(actor)
@@ -371,6 +372,7 @@ impl Store {
             gateway: None,
             tenant: self.tenant.clone(),
             session_hash: None,
+            foundation_turn_scope: None,
         };
         self.verify(&mut tx, &actor).await?;
         ensure!(

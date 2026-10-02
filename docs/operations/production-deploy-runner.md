@@ -1,5 +1,73 @@
 # Production Deploy Runner
 
+## v0.3.7 提升前失败的有限闭合
+
+首次 O→T 接管现在必须执行已验完整 staged
+bundle 内的 runner 及其同版本 helper。launcher 与 poller 都验证 manifest 文件摘要、所有权及安全目录；poller 额外要求 bundle
+commit 等于新签名请求的
+`deploy_bundle_sha`，不再执行 O 中的旧 runner。继承的 deploy 锁仍覆盖 journal、执行、结果上传和归档。普通发布入口不变。已领取接管请求未完成核对前，禁止替换其 staged
+bundle；提升后中断恢复必须验证原执行文件摘要及其与原签名请求绑定的 bundle。
+
+Space automation 停用只对 `failed` unit 执行
+`reset-failed`，避免空闲 unit 被 systemd 卸载造成误报。disable/stop 失败、非 inactive 状态、残留 PID 或非空/未知 cgroup 仍阻止提升。没有放宽业务发送、任务排空或配置保留约束。
+
+对本次已领取的请求，禁止使用
+`retire-unstarted`。保留旧包，将新完整审查产物按原 staging 流程验摘要后放入固定 staged 目录，再执行：
+
+```bash
+sudo /var/lib/qintopia-agent-os-deploy/recovery/staged/payload/deploy/runner/recover-release-lineage.sh \
+  --request-id deploy-20261002T105028Z-16e8d56b9800
+```
+
+该入口仅处理原 O/P、T 不存在、无 claim、请求已归档 failed，并且本地及 COS 签名回执完全一致的
+`quiesce-space-automation-runtime`
+提升前失败。它验证原请求、journal、manifest、hold、消费者退出及调用身份，以 takeover→poller→deploy 顺序持锁。
+
+先持久化包含请求/回执/helper 摘要的闭合审计，再归档消费标记。原 journal、请求、回执和 hold 均保留，不重启业务服务、不回放请求、不变更指针或业务数据。
+
+闭合成功后必须生成新签名请求，不能复用旧 ID；原子审计完成但标记归档中断时，可重复闭合以完成归档。新请求绑定后旧闭合入口失效。缺失回执、未知上传、仍有 claim、已创建 T、后续 journal 或不一致证据全部保持阻断，不能用删除文件解除。
+
+新 bundle 的身份独立记录，不要求等于已失败请求使用的旧 bundle。新 live 接管必须等于它自己的 bundle 身份。接管成功后仍按既有 finalize 和完整六目标发布流程验收，岸岸排空超时暂缓，Hermes 核心升级单独执行。首次成功完整生产路径前不宣称部署修复完成。
+
+## First-Takeover Failure Before Claim
+
+COSCLI writes to its executable directory by default. The poller explicitly selects its
+private temporary log directory, including existence probes that need error output;
+changing cwd or suppressing all logs does not preserve that error contract.
+
+The launcher records `preparing`; the child publishes its durable claim before writing
+`takeover-consumed` and before invoking the runner. A claim or any uncertain execution
+still uses the existing recovery path, never a replay. A launcher lock serializes
+prepare, consume, retirement and finalization; child locking remains poller then deploy.
+
+For a pre-claim failure, use only the reviewed, digest-verified staged launcher:
+
+```bash
+sudo /var/lib/qintopia-agent-os-deploy/recovery/staged/payload/deploy/runner/run-fixed-takeover-request.sh \
+  retire-unstarted '<original-request-id>'
+```
+
+This requires the original signed request to have expired by more than five minutes,
+unchanged O/P pointers, no T tree, no claim/journal/local result, stopped consumers and
+no residual deployment processes. It verifies the exact remote result key is absent
+through authenticated HTTP 404/XML `NoSuchKey` with an exact `Resource` path or `Key`.
+When both identity fields exist, both must match; missing or conflicting identity
+refuses retirement. Unknown or conflicting execution evidence also refuses retirement.
+The private existing COS environment stays on the server.
+
+Retirement durably records the request digest in `takeover.json`, archives a legacy
+pre-claim marker, and preserves partial downloads. It leaves the timer disabled and hold
+in place. Repeat retirement with the same ID to finish an interrupted archive. Then
+issue a **new** signed takeover request and use ordinary `consume`; never reuse the
+retired ID or manually remove the hold. Only verified successful finalization restores
+the original timer state. Cancellation of a GitHub run does not withdraw a COS request.
+
+For the v0.3.5 incident, the staged bundle is still the old immutable artifact. Do not
+hot-edit or overwrite individual staged scripts. A reviewed replacement bundle and its
+published digest must be acquired before using the new mode; retain the original bundle,
+hold and takeover evidence. See the
+[incident record](../reports/2026-10-02-v035-runner-takeover.md).
+
 ## Steward Prelaunch Preparation Boundary (2026-10-01)
 
 The [dated preparation report](../reports/2026-10-01-steward-install-preparation.md)

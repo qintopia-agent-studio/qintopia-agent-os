@@ -56,6 +56,7 @@ fn assignment(state: &Value, person: Uuid, scope: Uuid) -> Assignment {
 }
 fn audience(residents: &str) -> Audience {
     Audience {
+        contacts: vec![],
         open_reception: false,
         groups: vec![],
         people: vec![],

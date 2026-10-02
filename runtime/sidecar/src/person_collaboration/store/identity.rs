@@ -760,7 +760,8 @@ impl Store {
                 identity_version:account.get("link_version"),
                 identity_namespace:account.get("namespace"),
                 gateway:Some((gateway.into(),account.get("gateway_version"),account.get("scope_id"))),
-                session_hash:None,tenant:self.tenant.clone(),
+                session_hash:None,
+            foundation_turn_scope: None,tenant:self.tenant.clone(),
             };
             self.verify(&mut tx,&actor).await?;
             return Ok(actor);
@@ -785,6 +786,7 @@ impl Store {
                 row.get("scope_id"),
             )),
             session_hash: None,
+            foundation_turn_scope: None,
             tenant: self.tenant.clone(),
         };
         self.verify(&mut tx, &actor).await?;

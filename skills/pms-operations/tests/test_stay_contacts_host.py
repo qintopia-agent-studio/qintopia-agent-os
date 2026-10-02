@@ -124,6 +124,26 @@ class StayContactsTests(unittest.TestCase):
         self.assertEqual(opens[1], {"action": "open", "work_item": self.work, "refresh": True, "presentation": self.presentation})
         self.assertEqual(self.http.count("/api/v1/orders/order_0"), 2)
 
+    def test_welcome_callback_injects_only_the_original_context_refresh(self):
+        context = {"gateway_id": "simulated-gateway", "platform": "wecom",
+                   "chat_type": "group", "chat_id": "simulated-group",
+                   "sender_id": "simulated-staff", "message_id": "simulated-confirmation"}
+        used = []
+        class Welcome:
+            def callback(self, *, refresh_contacts):
+                used.append(refresh_contacts(self.work, self.presentation))
+                return {"status": "confirmed"}
+        welcome = Welcome()
+        welcome.work, welcome.presentation = self.work, self.presentation
+        class Contacts:
+            def refresh_contacts(self, work, presentation):
+                return {"work_item": work, "presentation": presentation, "status": "complete"}
+        with patch.object(host, "from_environment", return_value=Contacts()) as factory:
+            self.assertEqual(host.welcome_callback(welcome, context), {"status": "confirmed"})
+        factory.assert_called_once_with(context)
+        self.assertEqual(used, [{"work_item": self.work, "presentation": self.presentation,
+                                 "status": "complete"}])
+
     def test_malformed_orders_never_become_missing_phone(self):
         original = self.add_order()
         variants = []

@@ -107,7 +107,8 @@ set -euo pipefail
 printf '%s\\n' "$*" >>"${systemctlLog}"
 unit="\${@: -1}"
 case "$1" in
-  daemon-reload|enable|disable|stop|reset-failed) exit 0 ;;
+  daemon-reload|enable|disable|stop) exit 0 ;;
+  reset-failed) echo 'Unit not loaded' >&2; exit 1 ;;
   is-enabled) exit 1 ;;
   is-active)
     if [[ "$unit" == "qintopia-agentos-automation-dispatcher.timer" ]]; then
@@ -126,6 +127,8 @@ case "$1" in
     ;;
   show)
     case "$2" in
+      --property=MainPID|--property=ControlPID) echo "\${FAKE_SPACE_PID:-0}" ;;
+      --property=ControlGroup) echo "\${FAKE_SPACE_CGROUP:-}" ;;
       --property=LoadState) printf 'loaded\\n' ;;
       --property=UnitFileState) printf 'disabled\\n' ;;
       --property=ActiveState)
@@ -851,6 +854,41 @@ exec /usr/bin/install "$@"
       throw new Error(`failed release shutdown did not attempt ${attempted}`);
     }
   }
+  for (const extra of [
+    { FAKE_SPACE_PID: "42" },
+    { FAKE_SPACE_CGROUP: "/missing-installer-fixture" },
+  ]) {
+    fs.writeFileSync(systemctlLog, "", "utf8");
+    const rejected = spawnSync(
+      "bash",
+      [
+        path.join(repoRoot, "deploy/runner/install-release-systemd-units.sh"),
+        "--release-root",
+        releaseRoot,
+        "--release-sha",
+        releaseSha,
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${path.join(tmpRoot, "bin")}:${process.env.PATH}`,
+          SYSTEMCTL: systemctl,
+          QINTOPIA_SYSTEMD_UNIT_DIR: unitDir,
+          QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE: envFile,
+          ...extra,
+        },
+      }
+    );
+    if (
+      rejected.status === 0 ||
+      fs.readFileSync(systemctlLog, "utf8").includes("install -m 0644")
+    )
+      throw new Error(
+        "installer must reject a residual PID or unknown cgroup before replacing units"
+      );
+  }
+
   // Plumbing probes; not substitutes for the real Linux broker cases.
   const runBrokerGate = (env = {}) =>
     spawnSync(

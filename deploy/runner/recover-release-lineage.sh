@@ -14,11 +14,21 @@ env_file=/etc/qintopia/cos-artifacts.env
   "$2" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]] || exit 2
 request_id="$2"
 script_path="$(readlink -f "${BASH_SOURCE[0]}")"
-[[ "$script_path" =~ ^/home/ubuntu/qintopia-agent-os-releases/[0-9a-f]{40}/deploy/runner/recover-release-lineage\.sh$ ]] || {
-  echo "recovery helper must run from a fixed immutable release" >&2
+staged_helper=false
+staged="${state}/recovery/staged"
+if [[ "$script_path" == "$staged/payload/deploy/runner/recover-release-lineage.sh" ]]; then
+  "$staged/payload/deploy/runner/run-fixed-takeover-request.sh" verify-staged || exit 75
+  staged_helper=true
+  verified_release="$staged/payload"
+elif [[ "$script_path" =~ ^/home/ubuntu/qintopia-agent-os-releases/[0-9a-f]{40}/deploy/runner/recover-release-lineage\.sh$ ]]; then
+  verified_release="${script_path%/deploy/runner/recover-release-lineage.sh}"
+else
+  echo "recovery helper must run from a fixed immutable release or verified staged bundle" >&2
   exit 2
-}
-verified_release="${script_path%/deploy/runner/recover-release-lineage.sh}"
+fi
+# Match launcher lock order; a closure must not race consume/finalize/retirement.
+exec 6>"${state}/recovery/takeover.lock"
+flock -n 6 || { echo "another takeover lifecycle operation is running" >&2; exit 75; }
 [[ -f "$env_file" ]] || { echo "recovery COS environment is unavailable" >&2; exit 75; }
 # shellcheck disable=SC1090
 source "$env_file"
@@ -93,7 +103,7 @@ for candidate in "${state}/requests/pending/${request_id}.json" \
 done
 [[ -n "$request_file" ]] || { echo "original signed request is unavailable" >&2; exit 75; }
 
-identity="$(python3 - "$journal" "$request_file" "$verified_release" "$release_root" <<'PY'
+identity="$(python3 - "$journal" "$request_file" "$verified_release" "$release_root" "$staged_helper" <<'PY'
 import hashlib
 import hmac
 import json
@@ -103,7 +113,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-journal_path, request_path, verified_release, release_root = sys.argv[1:5]
+journal_path, request_path, verified_release, release_root, staged_helper = sys.argv[1:6]
 with open(journal_path, encoding="utf-8") as fh:
     journal = json.load(fh)
 with open(request_path, "rb") as fh:
@@ -147,7 +157,21 @@ expected_verified = {
     "T→R": current_sha,
     "R→T": previous_sha,
 }[journal["direction"]]
-if Path(verified_release).name != expected_verified:
+if staged_helper == "true":
+    if (journal["direction"] != "O→T" or current_sha != "16e8d56b98001579c6288ba13199b80d6d3dfc74" or
+            previous_sha != "83d694f2c3bc21fd78a73d25da3197379e2a14d5" or
+            request.get("commit_sha") != current_sha or request.get("runtime_sha") != previous_sha or
+            request.get("release_sha") != "70e7984fab92ddab956009585212d0e9729767b5" or
+            request.get("release_rollback") is not None):
+        raise SystemExit("staged recovery is restricted to the original O/P takeover")
+    for name, sha in (("current", current_sha), ("previous", previous_sha)):
+        link = root / name
+        if not link.is_symlink() or link.resolve(strict=True) != root / sha:
+            raise SystemExit("staged recovery pointers differ from original O/P")
+    target = root / request["release_sha"]
+    if target.exists() or target.is_symlink():
+        raise SystemExit("staged recovery target already exists")
+elif Path(verified_release).name != expected_verified:
     raise SystemExit("recovery helper release does not match direction-bound journal")
 for key, sha in (("current", current_sha), ("previous", previous_sha)):
     manifest_path = root / sha / "manifest.json"
@@ -185,6 +209,35 @@ PY
 IFS=$'\t' read -r direction original_current original_previous request_release restart_targets <<<"$identity"
 
 claim_file="${state}/requests/claimed/${request_id}.json"
+if [[ "$staged_helper" == true ]]; then
+  [[ ! -e "$claim_file" && ! -L "$claim_file" &&
+    "$request_file" == "${state}/requests/failed/${request_id}.json" ]] || {
+    echo "staged closure requires a completed failed request archive without a claim" >&2
+    exit 75
+  }
+fi
+# A post-promotion O→T interruption may have executed the staged runner rather
+# than O's runner. Preserve that bundle until this transaction is reconciled.
+if [[ "$direction" == 'O→T' && -f "$claim_file" ]]; then
+  execution_path="$(python3 - "$claim_file" <<'PYEXEC'
+import json
+import sys
+from pathlib import Path
+print(json.loads(Path(sys.argv[1]).read_bytes()).get("execution", {}).get("path", ""))
+PYEXEC
+)" || exit 75
+  if [[ "$execution_path" == "$staged/payload/deploy/runner/qintopia-agent-os-deploy-runner" ]]; then
+    "$staged/payload/deploy/runner/run-fixed-takeover-request.sh" verify-staged || exit 75
+    python3 - "$request_file" "$staged/artifact-manifest.json" <<'PYEXEC' || exit 75
+import json
+import sys
+from pathlib import Path
+request, manifest = (json.loads(Path(path).read_bytes()) for path in sys.argv[1:])
+if request.get("deploy_bundle_sha") != manifest.get("commit_sha"):
+    raise SystemExit("recovery execution bundle differs from original signed request")
+PYEXEC
+  fi
+fi
 claim_state="$(python3 - "$journal" "$claim_file" "$request_file" "$release_root" \
   "$direction" "$original_current" "$request_id" "$hold" "${state}/recovery/takeover.json" <<'PY'
 import hashlib
@@ -239,6 +292,9 @@ execution = claim.get("execution")
 if not isinstance(execution, dict):
     raise SystemExit("recovery execution identity is absent")
 expected_path = Path(release_root) / current / "deploy/runner/qintopia-agent-os-deploy-runner"
+staged_execution = Path(journal_path).parent / "staged/payload/deploy/runner/qintopia-agent-os-deploy-runner"
+if direction == "O→T" and execution.get("path") == str(staged_execution):
+    expected_path = staged_execution
 actual_path = Path(execution.get("path", ""))
 if actual_path != expected_path or not expected_path.is_file() or expected_path.is_symlink():
     raise SystemExit("recovery execution release path is invalid")
@@ -323,22 +379,22 @@ fetch_remote_evidence() {
     if [[ "${TENCENT_COS_AUTH_MODE:-SecretKey}" == CvmRole ]]; then
       [[ -n "${TENCENT_COS_CVM_ROLE_NAME:-}" ]] || exit 1
       "$coscli" config set --mode CvmRole --cvm_role_name "$TENCENT_COS_CVM_ROLE_NAME" \
-        -c "$config" --init-skip --disable-log >/dev/null 2>&1 || exit 1
+        -c "$config" --init-skip --disable-log --log-path "$remote_dir" >/dev/null 2>&1 || exit 1
     else
       [[ -n "${TENCENT_COS_SECRET_ID:-}" && -n "${TENCENT_COS_SECRET_KEY:-}" ]] || exit 1
       local auth_args=(--mode SecretKey --secret_id "$TENCENT_COS_SECRET_ID" --secret_key "$TENCENT_COS_SECRET_KEY")
       if [[ -n "${TENCENT_COS_SESSION_TOKEN:-}" ]]; then
         auth_args+=(--session_token "$TENCENT_COS_SESSION_TOKEN")
       fi
-      "$coscli" config set -c "$config" "${auth_args[@]}" --init-skip --disable-log >/dev/null 2>&1 || exit 1
+      "$coscli" config set -c "$config" "${auth_args[@]}" --init-skip --disable-log --log-path "$remote_dir" >/dev/null 2>&1 || exit 1
     fi
     local bucket_args=(-b "$TENCENT_COS_BUCKET" -r "$TENCENT_COS_REGION" -a "$alias" -c "$config" --init-skip --disable-log)
     if [[ -n "${TENCENT_COS_ENDPOINT:-}" ]]; then
       bucket_args+=(-e "$TENCENT_COS_ENDPOINT")
     fi
-    "$coscli" config add "${bucket_args[@]}" >/dev/null 2>&1 || exit 1
+    "$coscli" config add "${bucket_args[@]}" --log-path "$remote_dir" >/dev/null 2>&1 || exit 1
     "$coscli" cp "cos://${alias}/qintopia-agent-os/deploy-requests/production/requests/${request_id}.json" \
-      "$remote_dir/request.json" -c "$config" --disable-log >/dev/null 2>&1 || exit 1
+      "$remote_dir/request.json" -c "$config" --disable-log --log-path "$remote_dir" >/dev/null 2>&1 || exit 1
     cmp -s "$request_file" "$remote_dir/request.json" || exit 1
   ) || status=$?
   return "$status"
@@ -438,7 +494,9 @@ except urllib.error.HTTPError as error:
     except ET.ParseError:
         raise SystemExit("COS error response is invalid") from None
     if (root.tag.rsplit("}", 1)[-1] != "Error" or fields.get("Code") != "NoSuchKey" or
-            fields.get("Key") != key):
+            not ("Resource" in fields or "Key" in fields) or
+            ("Resource" in fields and fields["Resource"] != "/" + key) or
+            ("Key" in fields and fields["Key"] != key)):
         raise SystemExit("COS result did not return fixed-key NoSuchKey")
     state = "absent"
 Path(state_path).write_text(state + "\n", encoding="ascii")
@@ -492,6 +550,117 @@ elif [[ "$local_status" != "$remote_status" ||
         ( "$remote_status" != failed && "$remote_status" != rolled_back ) ]]; then
   echo "signed remote failure lacks matching local evidence" >&2
   exit 75
+fi
+
+if [[ "$staged_helper" == true ]]; then
+  [[ "$remote_state" == present && "$local_status" == failed && "$remote_status" == failed ]] || {
+    echo "staged closure requires matching local and COS signed definite failure" >&2
+    exit 75
+  }
+  unit_stopped "$timer" && unit_stopped "$unit" && unit_stopped "$fixed_unit" true &&
+    unit_stopped "$anan_unit" true || exit 75
+  shown_invocation="$(systemctl show "$fixed_unit" --property=InvocationID --value)" || exit 75
+  python3 - "$state" "$release_root" "$request_id" "$staged" "$shown_invocation" <<'PYCLOSE' || exit 75
+import hashlib
+import json
+import os
+import stat
+import re
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+state, root, request_id, staged, shown_invocation = sys.argv[1:6]
+state, root, staged = map(Path, (state, root, staged))
+recovery = state / "recovery"
+def read(path):
+    metadata = path.lstat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+        raise SystemExit("closure evidence file is unsafe")
+    return path.read_bytes()
+request_bytes = read(state / "requests/failed" / (request_id + ".json"))
+request = json.loads(request_bytes)
+result_bytes = read(state / "results" / (request_id + ".json"))
+result = json.loads(result_bytes)
+journal = json.loads(read(recovery / (request_id + ".json")))
+execution = journal.get("execution", {})
+invocation = execution.get("invocation_id", "")
+if (execution.get("unit") != "qintopia-agent-os-fixed-takeover.service" or
+        not re.fullmatch(r"[0-9a-f]{32}", invocation) or execution.get("unit_invocation_verified") is not True or
+        shown_invocation not in ("", invocation)):
+    raise SystemExit("closure original consumer invocation is not proven")
+record_path = recovery / "takeover.json"
+record = json.loads(read(record_path))
+request_digest = hashlib.sha256(request_bytes).hexdigest()
+result_digest = hashlib.sha256(result_bytes).hexdigest()
+checks = [item for item in result.get("checks", []) if item.get("name") == "deploy-runner"]
+if len(checks) != 1 or checks[0].get("status") != "failed":
+    raise SystemExit("closure has no unambiguous runner failure")
+detail = json.loads(checks[0].get("detail", ""))
+if (detail.get("failure_stage") != "quiesce-space-automation-runtime" or
+        detail.get("promoted_current") is not False or detail.get("profile_activation_attempted") is not False or
+        type(detail.get("exit_status")) is not int or detail["exit_status"] == 0 or
+        result.get("rollback", {}).get("attempted") is not False or
+        journal.get("phase") != "intent" or journal.get("request_sha256") != request_digest or
+        journal.get("result_upload", {}).get("payload_sha256") != result_digest):
+    raise SystemExit("closure failure stage, effects or upload digest is not proven")
+if (record.get("request_id") != request_id or record.get("phase") not in ("preparing", "retired") or
+        record.get("hold_token") != journal.get("hold_token") or
+        read(recovery / "hold") != (record["hold_token"] + "\n").encode()):
+    raise SystemExit("closure hold or takeover binding changed")
+if any((state / "requests/claimed").glob("*.json")):
+    raise SystemExit("closure has an unfinished claim")
+if any(path.name > request_id + ".json" for path in recovery.glob("deploy-*.json")):
+    raise SystemExit("later recovery journal prevents closure")
+for name, sha in (("current", journal["original_current_sha"]), ("previous", journal["original_previous_sha"])):
+    pointer = root / name
+    if (not pointer.is_symlink() or pointer.resolve(strict=True) != root / sha or
+            hashlib.sha256(read(root / sha / "manifest.json")).hexdigest() != journal["manifest_sha256"][name]):
+        raise SystemExit("closure pointer or manifest CAS failed")
+target = root / request["release_sha"]
+if target.exists() or target.is_symlink():
+    raise SystemExit("closure target unexpectedly exists")
+marker = recovery / "takeover-consumed"
+archive = recovery / ("closed-" + request_id + ".consumed")
+expected_marker = (request_id + "\n").encode()
+if marker.exists() or marker.is_symlink():
+    if read(marker) != expected_marker or archive.exists() or archive.is_symlink():
+        raise SystemExit("closure marker archive conflicts")
+elif not archive.is_file() or read(archive) != expected_marker:
+    raise SystemExit("closure consumed evidence is missing")
+helper_manifest = read(staged / "artifact-manifest.json")
+evidence = {"request_sha256": request_digest, "result_sha256": result_digest,
+            "reason": "signed_pre_promotion_failure", "failure_stage": detail["failure_stage"],
+            "helper_bundle_sha": json.loads(helper_manifest)["commit_sha"],
+            "helper_manifest_sha256": hashlib.sha256(helper_manifest).hexdigest()}
+retired = record.setdefault("retired_requests", {})
+if request_id in retired and any(retired[request_id].get(k) != v for k, v in evidence.items()):
+    raise SystemExit("closure audit conflicts")
+retired.setdefault(request_id, {**evidence, "recorded_at": datetime.now(timezone.utc).isoformat()})
+record["phase"] = "retired"
+fd, temporary = tempfile.mkstemp(prefix=".closure-", dir=recovery)
+try:
+    with os.fdopen(fd, "w") as fh:
+        json.dump(record, fh, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(temporary, record_path)
+    directory = os.open(recovery, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+        if marker.exists():
+            os.rename(marker, archive)
+            os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+print("signed pre-promotion failure closed; evidence and hold retained; new signed request required")
+PYCLOSE
+  exit 0
 fi
 
 verify_execution_ended() {

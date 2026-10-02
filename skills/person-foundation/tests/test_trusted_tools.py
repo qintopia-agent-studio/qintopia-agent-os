@@ -41,6 +41,43 @@ class TrustedToolsTests(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
+    def test_production_exposes_only_minimal_tools_and_rejects_mixed_modes(self):
+        with patch.dict(os.environ, {"QINTOPIA_FOUNDATION_LOCAL_ENABLE": "0",
+                "QINTOPIA_FOUNDATION_PRODUCTION_ENABLE": "1", "QINTOPIA_FOUNDATION_PROFILE": "erhua"}):
+            context = Context()
+            self.module.register(context)
+            self.assertTrue(self.module.enabled())
+            self.assertEqual(set(context.tools), {self.module.PREFIX + t for t in self.module.PRODUCTION_ERHUA_TOOLS})
+            self.assertNotIn("qintopia_person_welcome_approve", context.tools)
+            with self.assertRaises(ValueError):
+                self.module.register(Context(), agent_id="anan")
+            with patch.dict(os.environ, {"QINTOPIA_FOUNDATION_LOCAL_ENABLE": "1"}):
+                context = Context()
+                self.module.register(context)
+                self.assertFalse(self.module.enabled())
+                self.assertEqual(context.tools, {})
+
+    def test_candidate_bounds_and_no_identity_or_scope_injection(self):
+        self.module.validate_arguments("candidates", {"kind":"people", "purpose":"delegate_review", "limit":50})
+        for args in [{"kind":"people", "purpose":"assign", "limit":51},
+                     {"kind":"people", "purpose":"assign", "scope":"forged"},
+                     {"kind":"people", "purpose":"assign", "actor":"forged"}]:
+            with self.assertRaises(ValueError):
+                self.module.validate_arguments("candidates", args)
+
+    def test_production_socket_rejects_same_uid_before_send(self):
+        with tempfile.TemporaryDirectory() as directory:
+            endpoint = str(Path(directory) / "broker.sock")
+            server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.addCleanup(server.close)
+            server.bind(endpoint)
+            with patch.dict(os.environ, {"QINTOPIA_FOUNDATION_LOCAL_ENABLE":"0",
+                    "QINTOPIA_FOUNDATION_PRODUCTION_ENABLE":"1", "QINTOPIA_FOUNDATION_PROFILE":"erhua",
+                    "QINTOPIA_FOUNDATION_SOCKET":endpoint, "QINTOPIA_FOUNDATION_BROKER_UID":str(os.getuid()),
+                    "QINTOPIA_FOUNDATION_TOKEN":"simulated-token-xxxxxxxxxxxxxxxxxxxxxxxx"}):
+                with self.assertRaisesRegex(ValueError, "foundation_unavailable"):
+                    self.module.socket_call({"tool":"context"})
+
     def test_erhua_real_registration_binds_host_session_and_fixed_agent(self):
         erhua = load("skills/qintopia-tools/variants/erhua/__init__.py", "erhua_test")
         captured = []
