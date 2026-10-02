@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-10-02 v0.3.5 部署与首次接管阻断](2026-10-02-v035-runner-takeover.md)
+
 - [2026-10-01 舍长与二花上线前差分验证](2026-10-01-steward-prelaunch-completion.md)
 
 - [2026-09-30 舍长与二花共享服务最小接入](2026-09-30-steward-production-minimal.md)

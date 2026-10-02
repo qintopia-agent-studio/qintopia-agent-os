@@ -1,5 +1,42 @@
 # Production Deploy Runner
 
+## First-Takeover Failure Before Claim
+
+COSCLI writes to its executable directory by default. The poller explicitly selects its
+private temporary log directory, including existence probes that need error output;
+changing cwd or suppressing all logs does not preserve that error contract.
+
+The launcher records `preparing`; the child publishes its durable claim before writing
+`takeover-consumed` and before invoking the runner. A claim or any uncertain execution
+still uses the existing recovery path, never a replay. A launcher lock serializes
+prepare, consume, retirement and finalization; child locking remains poller then deploy.
+
+For a pre-claim failure, use only the reviewed, digest-verified staged launcher:
+
+```bash
+sudo /var/lib/qintopia-agent-os-deploy/recovery/staged/payload/deploy/runner/run-fixed-takeover-request.sh \
+  retire-unstarted '<original-request-id>'
+```
+
+This requires the original signed request to have expired by more than five minutes,
+unchanged O/P pointers, no T tree, no claim/journal/local result, stopped consumers and
+no residual deployment processes. It verifies the exact remote result key is absent
+through authenticated HTTP 404/XML `NoSuchKey`; unknown or conflicting evidence refuses
+retirement. The private existing COS environment stays on the server.
+
+Retirement durably records the request digest in `takeover.json`, archives a legacy
+pre-claim marker, and preserves partial downloads. It leaves the timer disabled and hold
+in place. Repeat retirement with the same ID to finish an interrupted archive. Then
+issue a **new** signed takeover request and use ordinary `consume`; never reuse the
+retired ID or manually remove the hold. Only verified successful finalization restores
+the original timer state. Cancellation of a GitHub run does not withdraw a COS request.
+
+For the v0.3.5 incident, the staged bundle is still the old immutable artifact. Do not
+hot-edit or overwrite individual staged scripts. A reviewed replacement bundle and its
+published digest must be acquired before using the new mode; retain the original bundle,
+hold and takeover evidence. See the
+[incident record](../reports/2026-10-02-v035-runner-takeover.md).
+
 ## Management UI Preparation And Stop
 
 `agentos.qintopia.cn` resolves to the origin, but DNS is only the first external
