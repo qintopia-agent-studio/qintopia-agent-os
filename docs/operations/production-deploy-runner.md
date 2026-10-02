@@ -21,8 +21,10 @@ sudo /var/lib/qintopia-agent-os-deploy/recovery/staged/payload/deploy/runner/run
 This requires the original signed request to have expired by more than five minutes,
 unchanged O/P pointers, no T tree, no claim/journal/local result, stopped consumers and
 no residual deployment processes. It verifies the exact remote result key is absent
-through authenticated HTTP 404/XML `NoSuchKey`; unknown or conflicting evidence refuses
-retirement. The private existing COS environment stays on the server.
+through authenticated HTTP 404/XML `NoSuchKey` with an exact `Resource` path or `Key`.
+When both identity fields exist, both must match; missing or conflicting identity
+refuses retirement. Unknown or conflicting execution evidence also refuses retirement.
+The private existing COS environment stays on the server.
 
 Retirement durably records the request digest in `takeover.json`, archives a legacy
 pre-claim marker, and preserves partial downloads. It leaves the timer disabled and hold

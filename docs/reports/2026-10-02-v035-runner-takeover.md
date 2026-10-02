@@ -86,3 +86,22 @@ journal；finalize 要求已成功消费。两者均不覆盖这个更早的失�
 对本次日志故障另做了服务器只读探测：复用已安装 COSCLI，在临时 systemd unit 的
 `ProtectSystem=strict`、`ProtectHome=read-only`、`PrivateTmp=yes`
 下读取原结果键。显式临时日志路径后正常返回对象不存在，没有只读日志错误；unit 和临时文件随探测清理。没有执行部署请求、改变 hold 或发送业务消息。这证明实际 COSCLI 日志修复，不替代完整接管验收。
+
+## v0.3.6 实际响应复核
+
+v0.3.6=`5632f9f58dd8eaa1c2df0d7fa3eafe3aeb704641` 的
+[构建运行](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/36990114220)
+已完成主程序、QiWe companion、控制台资源及部署包构建和 COS 上传。bundle tar SHA-256 为
+`e5e13cf8f85fe0edc1fb762be863cf8720560f8fc3f44c84b2509cc17267ed8f`，GitHub 构建包与服务器独立 COS 下载一致。新版完整包暂存，v0.3.5 原包保留。
+
+使用新版受审 launcher 退役旧请求时退出 75，未修改 takeover、hold 或发布指针。只读认证 GET 确认 COS 返回 HTTP
+404、`Code=NoSuchKey`，字段为 `Code/Message/Resource/RequestId/TraceId`；`Resource`
+精确等于请求对象路径，没有 `Key`。先前测试仅模拟
+`Key`，遗漏真实服务响应。回退恢复 helper 存在同一假设。
+
+本次最小修复限定两个 helper 的对象身份判断：接受精确匹配的 `Resource` 或旧格式
+`Key`；若同时存在则两者必须一致，缺少身份、错误路径、其他错误码仍拒绝。
+
+不修改 workflow、签名、锁、hold、回退状态机或发布权限。测试复用现有本地 HTTP 边界，并执行回退 helper 中原始 Python 响应处理代码，不重建测试环境。
+
+修复继续通过 PR 和完整版本包交付；本次未退役旧请求，也未进行 live 接管。

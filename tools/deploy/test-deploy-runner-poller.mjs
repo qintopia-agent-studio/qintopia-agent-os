@@ -712,7 +712,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
   elif c['mode']=='unreadable': code,body=403,b'AccessDenied'
   elif c['mode']=='other-404': code,body=404,b'<Error><Code>NoSuchBucket</Code></Error>'
   elif c['mode']=='wrong-key': code,body=404,b'<Error><Code>NoSuchKey</Code><Key>wrong</Key></Error>'
-  else: code,body=404,('<Error><Code>NoSuchKey</Code><Key>'+c['result_key']+'</Key></Error>').encode()
+  elif c['mode']=='missing-identity': code,body=404,b'<Error><Code>NoSuchKey</Code></Error>'
+  elif c['mode']=='wrong-resource': code,body=404,b'<Error><Code>NoSuchKey</Code><Resource>/wrong</Resource></Error>'
+  elif c['mode']=='conflicting-identity': code,body=404,('<Error><Code>NoSuchKey</Code><Key>wrong</Key><Resource>/'+c['result_key']+'</Resource></Error>').encode()
+  elif c['mode']=='legacy-key': code,body=404,('<Error><Code>NoSuchKey</Code><Key>'+c['result_key']+'</Key></Error>').encode()
+  else: code,body=404,('<Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message><Resource>/'+c['result_key']+'</Resource><RequestId>simulated</RequestId><TraceId>simulated</TraceId></Error>').encode()
   self.send_response(code); self.end_headers(); self.wfile.write(body)
  def log_message(self,*args): pass
 server=http.server.HTTPServer(('127.0.0.1',0),Handler)
@@ -885,7 +889,15 @@ esac
       assert.equal(fs.readFileSync(path.join(recovery, "hold"), "utf8"), token + "\n");
       undo();
     };
-    for (const mode of ["present", "unreadable", "other-404", "wrong-key"])
+    for (const mode of [
+      "present",
+      "unreadable",
+      "other-404",
+      "wrong-key",
+      "wrong-resource",
+      "missing-identity",
+      "conflicting-identity",
+    ])
       rejected(mode, () => {
         const value = JSON.parse(fs.readFileSync(config));
         value.mode = mode;
@@ -966,8 +978,67 @@ esac
         await new Promise((resolve) => holder.once("exit", resolve));
       }
     }
+    // Execute the recovery helper's actual COS reader, not a duplicate validator.
+    const recoverySource = fs.readFileSync(
+      path.join(repoRoot, "deploy/runner/recover-release-lineage.sh"),
+      "utf8"
+    );
+    const reader = recoverySource
+      .split(
+        `if ! python3 - "$request_id" "$remote_result" "$remote_state_file" <<'PY'\n`
+      )[1]
+      ?.split("\nPY\nthen")[0];
+    assert.ok(reader, "recovery COS reader must be found");
+    for (const mode of [
+      "absent",
+      "legacy-key",
+      "present",
+      "unreadable",
+      "other-404",
+      "wrong-key",
+      "wrong-resource",
+      "missing-identity",
+      "conflicting-identity",
+    ]) {
+      reset();
+      const value = JSON.parse(fs.readFileSync(config));
+      value.mode = mode;
+      write(config, JSON.stringify(value));
+      const stateFile = path.join(launchRoot, "readback.state");
+      fs.rmSync(stateFile, { force: true });
+      const response = spawnSync(
+        "python3",
+        ["-c", reader, rid, path.join(launchRoot, "readback.json"), stateFile],
+        {
+          encoding: "utf8",
+          env: {
+            ...env,
+            TENCENT_COS_BUCKET: "simulated",
+            TENCENT_COS_REGION: "simulated",
+            TENCENT_COS_SECRET_ID: "simulated",
+            TENCENT_COS_SECRET_KEY: "simulated",
+            TENCENT_COS_AUTH_MODE: "SecretKey",
+            TENCENT_COS_SESSION_TOKEN: "",
+            TENCENT_COS_ENDPOINT: `http://127.0.0.1:${port}`,
+          },
+        }
+      );
+      const accepted = ["absent", "legacy-key", "present"].includes(mode);
+      assert.equal(response.status === 0, accepted, `${mode}: ${response.stderr}`);
+      if (accepted)
+        assert.equal(
+          fs.readFileSync(stateFile, "utf8"),
+          mode === "present" ? "present\n" : "absent\n"
+        );
+      else assert.equal(fs.existsSync(stateFile), false);
+    }
     for (const legacy of [false, true]) {
       reset(legacy);
+      if (legacy) {
+        const value = JSON.parse(fs.readFileSync(config));
+        value.mode = "legacy-key";
+        write(config, JSON.stringify(value));
+      }
       const result = invoke("retire-unstarted");
       assert.equal(result.status, 0, result.stderr);
       assert.equal(fs.existsSync(path.join(recovery, "takeover-consumed")), false);

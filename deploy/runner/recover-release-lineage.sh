@@ -438,7 +438,9 @@ except urllib.error.HTTPError as error:
     except ET.ParseError:
         raise SystemExit("COS error response is invalid") from None
     if (root.tag.rsplit("}", 1)[-1] != "Error" or fields.get("Code") != "NoSuchKey" or
-            fields.get("Key") != key):
+            not ("Resource" in fields or "Key" in fields) or
+            ("Resource" in fields and fields["Resource"] != "/" + key) or
+            ("Key" in fields and fields["Key"] != key)):
         raise SystemExit("COS result did not return fixed-key NoSuchKey")
     state = "absent"
 Path(state_path).write_text(state + "\n", encoding="ascii")
