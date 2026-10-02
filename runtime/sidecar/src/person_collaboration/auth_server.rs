@@ -236,7 +236,19 @@ pub(super) async fn handle_with_origin_tracked(
     };
     let actor = match actor {
         Ok(a) => a,
-        Err(_) => {
+        Err(error) => {
+            if r.path.starts_with("/api/workspace/candidates")
+                && error.chain().any(|cause| cause.is::<sqlx::Error>())
+            {
+                return respond(
+                    stream,
+                    503,
+                    "application/json",
+                    br#"{"code":"candidate_source_unavailable"}"#,
+                    None,
+                )
+                .await;
+            }
             if r.method == "GET" && matches!(r.path.as_str(), "/" | "/foundation") {
                 return respond(
                     stream,
@@ -261,7 +273,8 @@ pub(super) async fn handle_with_origin_tracked(
         && (matches!(
             r.path.as_str(),
             "/foundation" | "/foundation.js" | "/foundation.css"
-        ) || r.path.starts_with("/api/foundation/"))
+        ) || (r.path.starts_with("/api/foundation/")
+            && !super::foundation_server::formal_route(&r.path)))
     {
         return respond(
             stream,
@@ -318,9 +331,48 @@ pub(super) async fn handle_with_origin_tracked(
             }
         };
     }
+    if r.method == "GET"
+        && (r.path == "/api/workspace/candidates"
+            || r.path.starts_with("/api/workspace/candidates?"))
+    {
+        let result = async {
+            let query = super::store::workspace_candidates::Query::from_path(&r.path)?;
+            store.workspace_candidates(&actor, &query).await
+        }
+        .await;
+        let (status, body) = match result {
+            Ok(value) => (200, value),
+            Err(error) => {
+                let (status, code) = super::store::workspace_candidates::http_error(&error);
+                (status, json!({"code":code}))
+            }
+        };
+        return respond(
+            stream,
+            status,
+            "application/json",
+            &serde_json::to_vec(&body)?,
+            None,
+        )
+        .await;
+    }
     if r.path.starts_with("/api/foundation/")
         && (r.method == "POST" || (r.method == "GET" && r.path == "/api/foundation/state"))
     {
+        if super::foundation_server::formal_route(&r.path)
+            && (r.path.ends_with("/change") || r.path.ends_with("/decision"))
+        {
+            let body: Option<serde_json::Value> = serde_json::from_slice(&r.body).ok();
+            let operation = body
+                .as_ref()
+                .and_then(|v| v["operation_id"].as_str())
+                .and_then(|id| Uuid::parse_str(id).ok());
+            configuration_write_started.start(Some(
+                operation
+                    .map(|id| ("operation_id", id))
+                    .unwrap_or(("actor_ref", actor.person_ref())),
+            ));
+        }
         let result = super::foundation_server::dispatch(store, &actor, &r.path, &r.body).await;
         let (status, body) = match result {
             Ok(v) => (200, v),

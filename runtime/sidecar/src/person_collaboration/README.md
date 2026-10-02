@@ -411,3 +411,49 @@ Unix客户端可能在connect成功后、服务读取OS凭据前断开。无法�
 默认测试 `foundation_broker_early_disconnect_preserves_listener_and_authentication`
 使用隔离子进程、真实Unix socket与惰性连接池，不访问数据库。复现、错误码与验证边界见
 [本轮报告](../../../../docs/reports/2026-09-25-foundation-broker-disconnect.md)。
+
+## 舍长与二花共享候选和正式约定接口
+
+2026-09-30 最小接入沿用现有登录、Origin、当前权限、租户锁及版本收据。
+
+正式规则、知识和临时确认入口与固定网页例句分别管理。生产仍拒绝 `/foundation`
+演示资源、talk、welcome 和卡片路线。
+
+`/api/state` 分别返回 `foundation_available` 与 `dialogue_available`。
+`runtime_connected=false` 表示尚无实际 Hermes 接通证据。
+
+新增只读 `/api/workspace/candidates`，人员、工作账号、渠道和群分别查询。用途为
+`assign`、`delegate_review`、`contact`、`set_groups`，每页最多 50 条。
+
+管理员首次配置或编辑联系人时，`purpose=contact` 的 people/accounts/channels 查询携带
+`position=<已登记岗位 UUID>` 及岗位当前 `scope`，无需 appointment 或 collaboration
+ID，也无需预保存空壳受众。沿用 SetAudience 的当前组织管理配置权，不要求管理员自己担任舍长。people 复用既有可信管理目录，不新增 Person 必属一栋的约束；账号和渠道继续核验来源归属与网关范围。
+
+可选 `collaboration=<目标连接 UUID>` 与 position 不互斥；
+
+若提供，要求同租户、同范围的有效目标，但 position 模式不受其已保存受众限制。
+
+普通舍长不带 position 的路径保持已生效工作与受众边界；
+
+单独带 collaboration 的旧路径仍只读已保存受众。
+
+其他用途不得携带 position 或 collaboration。
+
+配置游标绑定岗位、目标、查询上下文与配置版本，每页重验权限；
+
+上下文或版本变更须重新第一页。
+
+完整 ConfigureWork 一次 preview/save，最终保存重验所有权限与引用。
+
+当前在住仅约束 `delegate_review`，沿用现有 PMS 受众投影。来源未连接、失效或待刷新时返回
+`candidate_source_unavailable`。本批未完成真实入住同步。
+
+共享工作账号不伪装成 Person。引用只供内部办理，界面展示姓名、昵称和渠道说明。
+
+没有新增数据表、任职体系、权限授予或同步服务。保存和执行再次校验当前任职及权限；群配置继续要求原有社区根管理授权。
+
+完整字段、来源与验证见[共享接口 v1](../../../../docs/plans/active/steward-workspace-completion.md)。
+
+二花可信范围与进程门禁见[Person Foundation](../../../../skills/person-foundation/README.md)。本批未连接生产库、修改部署、启用工具或发出实际消息。
+
+实现、检查结果与后续验收边界见[交付记录](../../../../docs/reports/2026-09-30-steward-production-minimal.md)。

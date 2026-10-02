@@ -103,6 +103,21 @@ pnpm test:report
 在 macOS 运行前核对 Rust 1.96、项目指定 pnpm、Python 3.12 与 Allure 所需的 Java
 17 路径；系统 Python 3.9 不能替代 QiWe 测试所需的新版解释器。
 
+设置 `QINTOPIA_MANAGEMENT_UI_TEST_DATABASE_URL`
+后，既有完整管理 HTTP 场景也会使用该角色，不只是联系人查询。
+
+仅准备联系人权限的角色不能代替完整场景准备：现有 SaveLedger 新登记人员需要
+`persons(id, display_name, preferred_name)` 三列 INSERT 权限。
+
+若保存返回
+`configuration_not_saved`，先用同一受限角色复现并核对 SQLSTATE，仅修正自有模拟环境缺失的既有能力所需权限，保留原断言，不改生产权限或换 owner 连接通过。
+
+保留同一 handler 连接池的 current_user/current_role、超级用户与角色继承等非敏感凭证；
+
+表级 INSERT 与列级 INSERT 须分开报告。
+
+见[首次配置收口记录](../reports/2026-10-01-steward-prelaunch-completion.md#postgresql-受限角色准备缺口与修复)。
+
 本机 `check:pr:auto` 的 Light 阶段若在 NATS
 ACL 用例处被调用方的 20 秒等待上限截断，先保留总门禁失败结果，并单独执行原用例，区分测试断言失败与调用超时。独立用例通过不能补记为总门禁通过；调整共享检查入口或超时属于
 [CI 变更审批规则](../engineering/programming-agent-guardrails.md#ci-change-approval-rule)，须先提交实际耗时和影响供负责人评审。见
