@@ -282,7 +282,7 @@ def check_host_files(profile_home):
     malformed overlay is an error here even though the core tolerates it.
     """
     from hermes_cli.managed_scope import get_managed_dir, load_managed_config
-    from hermes_cli.config import load_config_readonly
+    from hermes_cli.config import load_config_readonly, read_raw_config
     from hermes_cli.plugins import get_plugin_manager
     from tools.registry import registry
     directory = get_managed_dir()
@@ -291,6 +291,9 @@ def check_host_files(profile_home):
     check_managed_files(directory)
     managed = load_managed_config()
     effective = load_config_readonly()
+    for config in (managed, read_raw_config(), effective):
+        check_shell_hooks(config)
+    check_active_shell_hooks(get_plugin_manager())
     # MCP stdio does not use the terminal backend. Do not discover/connect MCP
     # here: inspect configuration plus the already-loaded plugin/registry state.
     check_mcp_boundary(effective.get("mcp_servers"),
@@ -315,6 +318,39 @@ def check_host_files(profile_home):
                 or job.get("no_agent") for job in entries):
             raise ValueError(ERROR)
     return managed
+
+
+def check_shell_hooks(config):
+    """Reject host shell events even when an allowlist or future reload may enable them."""
+    if not isinstance(config, dict):
+        raise ValueError(ERROR)
+    hooks = config.get("hooks")
+    if hooks is None:
+        return
+    if not isinstance(hooks, dict):
+        raise ValueError(ERROR)
+    for name, entries in hooks.items():
+        if name in {"output_spill", "outbound"}:
+            continue
+        if not isinstance(name, str) or entries not in (None, []):
+            raise ValueError(ERROR)
+
+
+def check_active_shell_hooks(manager):
+    """A removed config entry may leave an already registered host callback."""
+    hooks = getattr(manager, "_hooks", None)
+    if not isinstance(hooks, dict):
+        raise ValueError(ERROR)
+    for callbacks in hooks.values():
+        if not isinstance(callbacks, list):
+            raise ValueError(ERROR)
+        for callback in callbacks:
+            source = getattr(getattr(callback, "__code__", None), "co_filename", "")
+            if (getattr(callback, "__module__", "") == "agent.shell_hooks"
+                    or getattr(callback, "__name__", "").startswith("shell_hook[")
+                    or isinstance(source, str) and source.replace("\\", "/").endswith(
+                        "/agent/shell_hooks.py")):
+                raise ValueError(ERROR)
 
 
 def check_mcp_boundary(configured, portable, registered_toolsets):

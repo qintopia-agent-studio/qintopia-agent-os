@@ -101,6 +101,11 @@ try:
     assert "pms-operations" in manager._plugins, "plugin_discovery_failed"
     loaded = manager._plugins["pms-operations"]
     assert not getattr(loaded, "error", None), "plugin_load_failed: " + str(getattr(loaded, "error", ""))
+    preflight_spec = importlib.util.spec_from_file_location(
+        "pms_startup_preflight_journey", plugin_dir / "startup_preflight.py")
+    preflight = importlib.util.module_from_spec(preflight_spec)
+    preflight_spec.loader.exec_module(preflight)
+    preflight.check_loaded_plugin(manager, registry, installed)
     assert registry.get_entry("qintopia_pms_context", scope=manager.scope_key) is not None
     assert manager._hooks.get("pre_tool_call") and manager._hooks.get("pre_gateway_dispatch")
     handler = registry.get_entry("qintopia_pms_context", scope=manager.scope_key).handler

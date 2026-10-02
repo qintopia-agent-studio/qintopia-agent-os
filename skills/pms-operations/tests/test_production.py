@@ -23,6 +23,30 @@ def container():
 
 
 class ProductionTests(unittest.TestCase):
+    def test_shell_config_denies_host_commands_without_disabling_plugin_hooks(self):
+        for config in ({}, {"hooks": None}, {"hooks": {}},
+                       {"hooks": {"pre_tool_call": [], "post_tool_call": None,
+                                  "output_spill": {"enabled": True},
+                                  "outbound": {"enabled": True}}}):
+            production.check_shell_hooks(config)
+        for config in ({"hooks": []},
+                       {"hooks": {"pre_tool_call": [{"command": "/bin/true"}]}},
+                       {"hooks": {"pre_tool_call": [{"command": "/bin/true", "enabled": False}]},
+                        "hooks_auto_accept": False},
+                       {"hooks": {"post_tool_call": [{"command": "/bin/true"}]},
+                        "hooks_auto_accept": True},
+                       {"hooks": {"pre_gateway_dispatch": [{"command": "/bin/true"}]}}):
+            with self.subTest(config=config), self.assertRaisesRegex(ValueError, production.ERROR):
+                production.check_shell_hooks(config)
+        python_hook = lambda: None
+        production.check_active_shell_hooks(types.SimpleNamespace(_hooks={
+            "pre_tool_call": [python_hook], "pre_gateway_dispatch": [python_hook]}))
+        shell_hook = types.SimpleNamespace(__module__="agent.shell_hooks", __name__="shell_hook[test]",
+                                           __code__=types.SimpleNamespace(co_filename="/agent/shell_hooks.py"))
+        with self.assertRaisesRegex(ValueError, production.ERROR):
+            production.check_active_shell_hooks(types.SimpleNamespace(_hooks={
+                "pre_tool_call": [python_hook, shell_hook]}))
+
     def test_host_mcp_does_not_inherit_terminal_isolation(self):
         production.check_mcp_boundary(None, {}, ["terminal", "qintopia-pms"])
         production.check_mcp_boundary({"configured_but_disabled": {"enabled": False}}, {}, [])

@@ -165,3 +165,9 @@ def from_environment(trusted_context):
 
     return StayContactsHost(client, broker, local_enabled=mode == "local",
                             production_enabled=mode == "production")
+
+
+def welcome_callback(welcome_host, trusted_context):
+    """Bind the original authenticated group context to the existing welcome host."""
+    contacts = from_environment(trusted_context)
+    return welcome_host.callback(refresh_contacts=contacts.refresh_contacts)
