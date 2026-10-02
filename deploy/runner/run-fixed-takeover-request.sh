@@ -23,6 +23,7 @@ verify_staged_bundle() {
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -32,12 +33,24 @@ with open(root / "artifact-manifest.json", encoding="utf-8") as fh:
     manifest = json.load(fh)
 if manifest.get("schema_version") != 1 or manifest.get("target") != "server-operator-files":
     raise SystemExit("staged recovery bundle manifest is invalid")
+if not re.fullmatch(r"[0-9a-f]{40}", manifest.get("commit_sha", "")):
+    raise SystemExit("staged recovery bundle commit is invalid")
+for directory in (root, *root.parents):
+    metadata = directory.lstat()
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+        raise SystemExit("staged recovery bundle parent is unsafe")
 expected = set()
 for item in manifest.get("files", []):
     relative = Path(item["path"])
     if relative.is_absolute() or ".." in relative.parts:
         raise SystemExit("staged recovery bundle path escaped root")
     target = root / relative
+    for directory in target.parents:
+        if directory == root:
+            break
+        metadata = directory.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
+            raise SystemExit("staged recovery bundle directory is unsafe")
     metadata = target.lstat()
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or metadata.st_mode & 0o022:
         raise SystemExit("staged recovery bundle owner, type or mode is invalid")
@@ -45,7 +58,11 @@ for item in manifest.get("files", []):
     if digest != item["sha256"] or metadata.st_size != item["size_bytes"]:
         raise SystemExit("staged recovery bundle content mismatch")
     expected.add(str(relative))
-for relative in ("payload/deploy/runner/poll-deploy-requests.sh",
+for relative in ("payload/deploy/runner/run-fixed-takeover-request.sh",
+                 "payload/deploy/runner/qintopia-agent-os-deploy-runner",
+                 "payload/deploy/runner/quiesce-space-automation-runtime.sh",
+                 "payload/deploy/runner/wait-deploy-result.sh",
+                 "payload/deploy/runner/poll-deploy-requests.sh",
                  "payload/deploy/runner/recover-release-lineage.sh",
                  "payload/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"):
     if relative not in expected:
@@ -400,6 +417,14 @@ print("unstarted request retired; hold retained; a new signed request is require
 PY
 }
 
+# Read-only verification is shared by the fixed poller and staged recovery helper.
+# Do not acquire lifecycle locks here: callers already own their required locks.
+if [[ "$mode" == verify-staged ]]; then
+  [[ $# -eq 0 ]] || exit 2
+  verify_staged_bundle
+  exit 0
+fi
+
 # This lock serialises prepare/bind/retire/finalize, including the wait for the child.
 # The child alone owns poller.lock -> deploy.lock until it exits.
 mkdir -p -m 0700 "$recovery"
@@ -461,15 +486,23 @@ PY
     [[ $# -eq 1 && "$1" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]] || exit 2
     request_id="$1"
     verify_staged_bundle
+    # Finalization must verify receipts without relying on the operator shell
+    # having exported the production signing environment.
+    source /etc/qintopia/cos-artifacts.env
+    export DEPLOY_REQUEST_SIGNING_KEY DEPLOY_REQUEST_SIGNING_KEY_ID
     old_sha=16e8d56b98001579c6288ba13199b80d6d3dfc74
     if [[ "$mode" == consume ]]; then
       verify_hold
       [[ ! -e "${recovery}/takeover-consumed" ]] || { echo "takeover already claimed" >&2; exit 75; }
+      unit_stopped qintopia-agent-os-fixed-takeover.service true || exit 75
+      fixed_state="$(systemctl show qintopia-agent-os-fixed-takeover.service --property=ActiveState --value)" || exit 75
+      if [[ "$fixed_state" == failed ]]; then
+        systemctl reset-failed qintopia-agent-os-fixed-takeover.service || exit 75
+      fi
       [[ "$(readlink -f "$release_root/current")" == "$release_root/$old_sha" &&
-        -x "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" &&
-        "$(sha256sum "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" | awk '{print $1}')" == \
-          04b27ea6900dec7078b3dfb56a28e0f5af3f9b58413b2df85ecaac54784b4dcf ]] || {
-        echo "fixed takeover old runner identity mismatch" >&2
+        "$(readlink -f "$release_root/previous")" == "$release_root/83d694f2c3bc21fd78a73d25da3197379e2a14d5" &&
+        -x "$staged/payload/deploy/runner/qintopia-agent-os-deploy-runner" ]] || {
+        echo "fixed takeover lineage or staged runner mismatch" >&2
         exit 75
       }
       python3 - "$recovery" "$request_id" <<'PY'
@@ -518,7 +551,7 @@ PY
       --property=Environment=QINTOPIA_COS_ENV_FILE=/etc/qintopia/cos-artifacts.env \
       --property=Environment=QINTOPIA_DEPLOY_RUNNER_STATE_DIR=/var/lib/qintopia-agent-os-deploy \
       --property="Environment=QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID=${request_id}" \
-      --property="Environment=QINTOPIA_DEPLOY_RUNNER_BIN=${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" \
+      --property="Environment=QINTOPIA_DEPLOY_RUNNER_BIN=${staged}/payload/deploy/runner/qintopia-agent-os-deploy-runner" \
       "$staged/payload/deploy/runner/poll-deploy-requests.sh" >"$run_output" 2>&1; then
         rm -f "$run_output"
         echo "fixed takeover result is uncertain; hold retained" >&2

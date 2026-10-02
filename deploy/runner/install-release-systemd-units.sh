@@ -96,6 +96,22 @@ if [[ -n "${QINTOPIA_RELEASE_SYSTEMD_INSTALL_TEST_ENV_FILE:-}" ]]; then
   esac
 fi
 
+space_runtime_has_no_processes() {
+  local unit="$1" observed="" group="" property=""
+  if [[ "$unit" == *.service ]]; then
+    for property in MainPID ControlPID; do
+      observed="$("$systemctl_bin" show --property="$property" --value "$unit" 2>/dev/null)" || return 1
+      [[ "$observed" == 0 ]] || return 1
+    done
+  fi
+  group="$("$systemctl_bin" show --property=ControlGroup --value "$unit" 2>/dev/null)" || return 1
+  if [[ -n "$group" ]]; then
+    [[ "$group" == /* && "$group" != *..* ]] || return 1
+    [[ -f "/sys/fs/cgroup${group}/cgroup.events" ]] || return 1
+    [[ "$(sed -n 's/^populated //p' "/sys/fs/cgroup${group}/cgroup.events")" == 0 ]] || return 1
+  fi
+}
+
 quiesce_space_automation_runtime() {
   local dispatcher_timer="qintopia-agentos-automation-dispatcher.timer"
   local dispatcher_service="qintopia-agentos-automation-dispatcher.service"
@@ -115,6 +131,7 @@ quiesce_space_automation_runtime() {
         loaded_count=$((loaded_count + 1))
         ;;
       not-found)
+        space_runtime_has_no_processes "$unit" || shutdown_status=1
         if ! observed="$("$systemctl_bin" show --property=ActiveState --value "$unit" 2>/dev/null)" || [[ "$observed" != "inactive" ]]; then
           shutdown_status=1
         fi
@@ -144,15 +161,17 @@ quiesce_space_automation_runtime() {
   if ! "$systemctl_bin" stop "$execution_worker" >/dev/null 2>&1; then
     shutdown_status=1
   fi
-  if ! "$systemctl_bin" reset-failed "$dispatcher_service" >/dev/null 2>&1; then
-    shutdown_status=1
-  fi
-  if ! "$systemctl_bin" reset-failed "$execution_worker" >/dev/null 2>&1; then
-    shutdown_status=1
-  fi
-  if ! "$systemctl_bin" reset-failed "$dispatcher_timer" >/dev/null 2>&1; then
-    shutdown_status=1
-  fi
+  # Inactive units may already be unloaded by systemd; only failed units
+  # require reset-failed. Final state checks below still fail closed.
+  for unit in "$dispatcher_service" "$execution_worker" "$dispatcher_timer"; do
+    if ! observed="$("$systemctl_bin" show --property=ActiveState --value "$unit" 2>/dev/null)"; then
+      shutdown_status=1
+    elif [[ "$observed" == failed ]]; then
+      if ! "$systemctl_bin" reset-failed "$unit" >/dev/null 2>&1; then
+        shutdown_status=1
+      fi
+    fi
+  done
 
   if "$systemctl_bin" is-enabled --quiet "$dispatcher_timer" >/dev/null 2>&1; then
     shutdown_status=1
@@ -181,6 +200,7 @@ quiesce_space_automation_runtime() {
     fi
   done
   for unit in "$dispatcher_timer" "$dispatcher_service" "$execution_worker"; do
+    space_runtime_has_no_processes "$unit" || shutdown_status=1
     if ! observed="$("$systemctl_bin" show --property=ActiveState --value "$unit" 2>/dev/null)" || [[ "$observed" != "inactive" ]]; then
       shutdown_status=1
     fi

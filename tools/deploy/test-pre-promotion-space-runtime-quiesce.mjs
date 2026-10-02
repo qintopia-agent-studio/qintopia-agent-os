@@ -105,7 +105,15 @@ case "${"${1:-}"}" in
       --property=LoadState)
         if [[ -f "$loaded_path" ]]; then printf 'loaded\\n'; else printf 'not-found\\n'; fi
         ;;
+      --property=MainPID|--property=ControlPID)
+        if [[ "$scenario" == "lingering-pid" ]]; then echo 42; else echo 0; fi
+        ;;
+      --property=ControlGroup)
+        if [[ "$scenario" == "unknown-cgroup" ]]; then echo /missing-quiesce-fixture; fi
+        ;;
       --property=ActiveState)
+        if [[ "$scenario" == "unknown-state" ]]; then exit 1; fi
+        if [[ ( "$scenario" == "failed-unit" || "$scenario" == "failed-reset" ) && ! -f "$state_dir/$unit.reset" ]]; then echo failed; exit 0; fi
         if [[ -f "$active_path" ]]; then printf 'active\\n'; else printf 'inactive\\n'; fi
         ;;
       --property=UnitFileState)
@@ -126,7 +134,10 @@ case "${"${1:-}"}" in
     fi
     rm -f "$active_path"
     ;;
-  reset-failed) ;;
+  reset-failed)
+    if [[ "$scenario" == "gc-unloaded" || "$scenario" == "failed-reset" ]]; then echo "Unit not loaded" >&2; exit 1; fi
+    touch "$state_dir/$unit.reset"
+    ;;
   is-enabled) [[ -f "$enabled_path" ]] ;;
   is-active) [[ -f "$active_path" ]] ;;
   *) exit 64 ;;
@@ -165,6 +176,24 @@ esac
     `show --property=ActiveState --value ${units.worker}`,
   ]);
 
+  const collected = runScenario("gc-unloaded");
+  if (collected.status !== 0 || collected.log.includes("reset-failed ")) {
+    throw new Error("inactive garbage-collected units must not require reset-failed");
+  }
+  const failedUnit = runScenario("failed-unit");
+  if (failedUnit.status !== 0 || !failedUnit.log.includes("reset-failed ")) {
+    throw new Error(`failed units must be reset then verified: ${failedUnit.stderr}`);
+  }
+  for (const scenario of [
+    "lingering-pid",
+    "unknown-cgroup",
+    "unknown-state",
+    "failed-reset",
+  ]) {
+    if (runScenario(scenario).status === 0)
+      throw new Error(`${scenario} must fail closed`);
+  }
+
   const partialUnits = runScenario("partial-units");
   if (partialUnits.status === 0) {
     throw new Error("a partially installed Space runtime must fail closed");
@@ -187,9 +216,6 @@ esac
       `disable --now ${units.worker}`,
       `stop ${units.dispatcher}`,
       `stop ${units.worker}`,
-      `reset-failed ${units.dispatcher}`,
-      `reset-failed ${units.worker}`,
-      `reset-failed ${units.timer}`,
       `show --property=ActiveState --value ${units.worker}`,
       `show --property=UnitFileState --value ${units.worker}`,
     ]);
