@@ -105,3 +105,87 @@ v0.3.6=`5632f9f58dd8eaa1c2df0d7fa3eafe3aeb704641` 的
 不修改 workflow、签名、锁、hold、回退状态机或发布权限。测试复用现有本地 HTTP 边界，并执行回退 helper 中原始 Python 响应处理代码，不重建测试环境。
 
 修复继续通过 PR 和完整版本包交付；本次未退役旧请求，也未进行 live 接管。
+
+## v0.3.7 接管实测与下一步范围
+
+Release `5767e9c5b55f0b273bb045896b6b056a1146ff3a` 的构建和 COS 上传成功。部署包摘要
+`37f83ed938c7ef1a63bbf40ddd1f77454b6c901f15432ff02cff0d2926086d6c`
+在 GitHub 构建包与服务器独立下载之间一致，关键脚本与该 tag 源码一致。
+[发布作业](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/36993412196)
+最终因 hold 下没有消费者而等待回执超时；不是构建或上传失败。
+
+新版 `retire-unstarted` 已成功退役原
+`deploy-20261002T083059Z-16e8d56b9800`，保留审计、旧标记归档和 hold。真实 COS `Resource`
+响应兼容已得到验证。
+
+[接管 dry-run](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/36996466270)
+使用新请求 `deploy-20261002T104009Z-16e8d56b9800`，旧 O
+runner 在真实 systemd 沙箱中通过。回执验签、上传和 GitHub 等待成功；O/P 未变，T 不存在。旧回执没有顶层
+`promoted_current`，应结合签名状态、请求和实际指针验证，不伪造该字段。
+
+[新 live 请求](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/36997427852)
+`deploy-20261002T105028Z-16e8d56b9800`
+已领取、产生 journal，并上传明确失败回执。失败阶段为
+`quiesce-space-automation-runtime`，`promoted_current=false`，没有 Profile
+activation 或 rollback。O/P 不变，T 未创建，hold 和消费标记保留。不能重放该请求，也不能使用 pre-claim 退役入口。
+
+三个 Space automation
+unit 均为 inactive；timer 和 worker 为 disabled。同等沙箱的真实脚本 trace 确认 disable/stop 通过，仅三个无条件
+`reset-failed` 失败。单独复核得到
+`Unit ... not loaded`：systemd 卸载空闲 unit 后，脚本误把非必需的失败状态清理当作停用失败。当前源码仍存在同一逻辑。复核只操作已证明 inactive 的这三个 unit，没有重放部署请求。
+
+恢复边界仍不完整：现有 helper 只能从 T 不可变树执行，但该失败发生在 T 创建前；launcher 也不能闭合已领取、明确失败的首次请求。不得借目录伪造、删除标记、重新绑定原请求或给旧 runner 注入命令替身绕过。
+
+负责人已确认继续修复以下四个机制文件及既有测试、runbook；不扩大 CI 或测试环境范围：
+
+- `quiesce-space-automation-runtime.sh`：以实际停用状态为准，只对 failed
+  unit 清理失败状态；保持活进程、未知状态拒绝和 PID/cgroup 验证。
+- `run-fixed-takeover-request.sh` 与
+  `poll-deploy-requests.sh`：固定接管使用完整、已验摘要的新 bundle 内 runner；保留原 O/P 验证、精确请求绑定、签名、锁和 journal。修正新源码却继续执行有缺陷的旧 O
+  runner 无法解除阻断。
+- `recover-release-lineage.sh`：允许经完整产物校验的暂存入口，窄化处理本地及远端签名回执均明确失败、失败阶段确定、O/P 未变且 T 不存在的首次请求。
+
+  审计闭合后仅允许新签名请求。未知结果及其他 lineage 继续拒绝，hold 不手工解除。
+
+这是四个机制文件及既有测试、runbook 的调整；不新增 workflow、job、依赖或测试环境，不改业务权限、不升级 Hermes 核心、不回退业务数据。
+
+验收须覆盖 systemd 卸载 unit、失败回执闭合、未知结果拒绝、并发锁和实际新 runner 启动链。实施中；生产完整接管及后续发布仍待验证。
+
+完整调用链复核发现 `install-release-systemd-units.sh` 在 unit 安装前后也重复无条件
+`reset-failed`，会使第一阶段修复后在安装阶段再次失败。负责人已明确同意将此第五个部署机制文件及既有安装器测试纳入同根因修复；不新增 workflow、job、依赖或环境。
+
+接管集成测试还要求从干净环境加载签名配置，避免依赖操作者 shell 的 export 状态。新版 poller 显式向验证子进程传递所需签名/COS 变量，launcher 从固定私有配置读取回执验证密钥，不改变签名协议。
+
+### 本轮验证与剩余边界
+
+服务器只读复核仍为 O/P、T 不存在、无 claim；failed 请求归档、原 invocation、hold 和本地回执上传摘要一致。
+
+三个 Space automation
+unit 均 inactive，两个 service 的 MainPID/ControlPID 为零且 ControlGroup 为空。
+
+本轮没有切换线上代码或服务。
+
+本地已通过：提升前停用、真实安装器、真实 poller/launcher/recovery、提升失败和回退测试。
+
+回归覆盖空闲 unit 的 reset-failed 拒绝、failed 状态清理、残留 PID、未知 cgroup、无回执、错误签名、有效签名但失败阶段不符、已提升、后续 journal、证据漂移及旧请求禁重放。
+
+失败闭合可在审计已落盘、消费标记未归档的中断点继续，不能覆盖新的请求绑定。
+
+链路回归实际执行当前 runner 的验证、锁、journal、签名回执、上传核对及 finalize，然后执行完整六目标请求，得到 T/O→R/T 和成功回执。
+
+systemd、COSCLI、制品提升、installer/smoke 的外部边界使用本地模拟；安装器与回退脚本另有真实脚本专项回归。
+
+这不证明生产服务或岸岸业务闭环已通过。
+
+既有 Linux PID1 fixture 已改为使用新 staged
+runner 与完整校验入口，语法检查通过；本轮没有运行原生 PID1 故障矩阵，没有安装或下载 Ubuntu，也没有新增 CI 或测试环境。
+
+上线必须使用审查后的完整版本包。
+
+依次闭合本次明确失败请求、生成新签名接管请求、验证接管签名回执、再验证完整发布和 Profile 配置保留；未知状态保持 hold，不补跑。
+
+生产完整路径成功前，本事故仍未关闭。
+
+`pnpm check:pr:auto` 已通过 quick 与 heavy Rust：默认 860 项、all-features
+875 项通过。本地专用 `qintopia_test` 不可用，PostgreSQL
+tier 按现有规则跳过，交由 CI 验证。初轮文档格式/行长检查失败已修正，最终格式、Markdown、协作及部署契约检查通过。

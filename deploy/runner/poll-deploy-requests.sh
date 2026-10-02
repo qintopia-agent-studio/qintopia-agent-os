@@ -37,6 +37,11 @@ require_env TENCENT_COS_BUCKET
 require_env TENCENT_COS_REGION
 require_env DEPLOY_REQUEST_SIGNING_KEY
 require_env DEPLOY_REQUEST_SIGNING_KEY_ID
+# The fixed transient service sources this file itself; ordinary EnvironmentFile
+# inheritance is not guaranteed. Python verification and the runner need these.
+export TENCENT_COS_BUCKET TENCENT_COS_REGION DEPLOY_REQUEST_SIGNING_KEY DEPLOY_REQUEST_SIGNING_KEY_ID
+export TENCENT_COS_AUTH_MODE TENCENT_COS_SECRET_ID TENCENT_COS_SECRET_KEY TENCENT_COS_SESSION_TOKEN
+export TENCENT_COS_CVM_ROLE_NAME TENCENT_COS_ENDPOINT
 
 auth_mode="${TENCENT_COS_AUTH_MODE:-SecretKey}"
 if [[ "$auth_mode" == "CvmRole" ]]; then
@@ -357,16 +362,24 @@ if expected_id:
 PY
 
 if [[ -n "$expected_request_id" && -n "$parsed_identity" ]]; then
-  # The fixed takeover runs an old runner. Hold its deploy lock across the
-  # journal snapshot, execution, result upload, and archive finalization.
-  fixed_runner="/home/ubuntu/qintopia-agent-os-releases/16e8d56b98001579c6288ba13199b80d6d3dfc74/deploy/runner/qintopia-agent-os-deploy-runner"
-  fixed_runner_sha256="04b27ea6900dec7078b3dfb56a28e0f5af3f9b58413b2df85ecaac54784b4dcf"
+  # Execute the reviewed complete staged bundle, including its repaired helpers.
+  # Keep the deploy lock across journal, execution, result upload and archive.
+  fixed_runner="/var/lib/qintopia-agent-os-deploy/recovery/staged/payload/deploy/runner/qintopia-agent-os-deploy-runner"
   [[ "$RUNNER" == "$fixed_runner" && ! -L "$RUNNER" &&
-    "$(readlink -f "$RUNNER")" == "$fixed_runner" &&
-    "$(sha256sum "$RUNNER" | awk '{print $1}')" == "$fixed_runner_sha256" ]] || {
-    echo "fixed takeover old runner identity mismatch" >&2
+    "$(readlink -f "$RUNNER")" == "$fixed_runner" ]] || {
+    echo "fixed takeover staged runner identity mismatch" >&2
     exit 75
   }
+  "${fixed_runner%/*}/run-fixed-takeover-request.sh" verify-staged || exit 75
+  fixed_runner_sha256="$(sha256sum "$RUNNER" | awk '{print $1}')" || exit 75
+  python3 - "$request_file" "${fixed_runner%/payload/*}/artifact-manifest.json" <<'PYVERIFY'
+import json
+import sys
+from pathlib import Path
+request, manifest = (json.loads(Path(path).read_bytes()) for path in sys.argv[1:])
+if request.get("deploy_bundle_sha") != manifest.get("commit_sha"):
+    raise SystemExit("fixed takeover runner bundle differs from signed request")
+PYVERIFY
   exec 7>"${STATE_DIR}/deploy.lock"
   flock -n 7 || { echo "deploy lock is held before fixed takeover" >&2; exit 75; }
   fixed_fd_inode="$(stat -Lc '%d:%i' /proc/self/fd/7)" || exit 75

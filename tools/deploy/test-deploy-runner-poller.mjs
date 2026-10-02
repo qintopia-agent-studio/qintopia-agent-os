@@ -401,7 +401,7 @@ try {
   });
   // The fixture runner has a deliberately wrong immutable identity: stop before
   // any execution, but verify the real claim/marker publication ordering.
-  assert.match(claimedFixed.output, /fixed takeover old runner identity mismatch/);
+  assert.match(claimedFixed.output, /fixed takeover staged runner identity mismatch/);
   assert.ok(
     fs.existsSync(path.join(claimedFixed.stateDir, "requests/claimed", requestName))
   );
@@ -639,6 +639,7 @@ try {
   const key = "simulated-retirement-key";
   const write = (name, text, mode = 0o600) => {
     fs.mkdirSync(path.dirname(name), { recursive: true });
+    if (fs.existsSync(name)) fs.chmodSync(name, 0o600);
     fs.writeFileSync(name, text, { mode });
     fs.chmodSync(name, mode);
   };
@@ -708,7 +709,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
   expected=hmac.new(secret.encode(),sign.encode(),hashlib.sha1).hexdigest()
   if auth.get('q-signature') != [expected]: code,body=403,b'bad auth'
   elif self.path == '/'+c['request_key']: code,body=200,json.dumps(c['request']).encode()
-  elif c['mode']=='present': code,body=200,b'{}'
+  elif c['mode']=='present': code,body=200,json.dumps(c.get('result',{}),separators=(',',':')).encode()
   elif c['mode']=='unreadable': code,body=403,b'AccessDenied'
   elif c['mode']=='other-404': code,body=404,b'<Error><Code>NoSuchBucket</Code></Error>'
   elif c['mode']=='wrong-key': code,body=404,b'<Error><Code>NoSuchKey</Code><Key>wrong</Key></Error>'
@@ -758,6 +759,9 @@ except BlockingIOError: sys.exit(1)
       `#!/bin/sh
 case "$*" in
  *UnitFileState*--value*) echo disabled ;;
+ *InvocationID*--value*) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+ *ActiveState*--value*) echo inactive ;;
+ disable*|daemon-reload) exit 0 ;;
  show*)
   echo LoadState=loaded
   echo ActiveState=inactive
@@ -807,20 +811,29 @@ esac
       .replaceAll("/etc/qintopia/cos-artifacts.env", privateEnv)
       .replaceAll('Path("/proc")', `Path(${JSON.stringify(proc)})`)
       .replaceAll("/sys/fs/cgroup", cgroups)
-      .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()");
+      .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()")
+      .replaceAll("(root, *root.parents)", "(root,)");
     const launcher = path.join(
       staged,
       "payload/deploy/runner/run-fixed-takeover-request.sh"
     );
     const files = [
+      "qintopia-agent-os-deploy-runner",
+      "quiesce-space-automation-runtime.sh",
+      "wait-deploy-result.sh",
       "poll-deploy-requests.sh",
       "recover-release-lineage.sh",
       "qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf",
     ];
-    const manifest = { schema_version: 1, target: "server-operator-files", files: [] };
+    const manifest = {
+      schema_version: 1,
+      commit_sha: "4".repeat(40),
+      target: "server-operator-files",
+      files: [],
+    };
     for (const file of files) {
       const relative = `payload/deploy/runner/${file}`;
-      write(path.join(staged, relative), "simulated immutable bytes\n");
+      write(path.join(staged, relative), "simulated immutable bytes\n", 0o755);
       const bytes = fs.readFileSync(path.join(staged, relative));
       manifest.files.push({
         path: relative,
@@ -829,6 +842,11 @@ esac
       });
     }
     write(launcher, source, 0o755);
+    manifest.files.push({
+      path: "payload/deploy/runner/run-fixed-takeover-request.sh",
+      sha256: digest(fs.readFileSync(launcher)),
+      size_bytes: fs.statSync(launcher).size,
+    });
     write(path.join(staged, "artifact-manifest.json"), JSON.stringify(manifest));
     write(
       path.join(staged, "SHA256SUMS"),
@@ -1088,6 +1106,561 @@ esac
         .retired_requests[rid].pending_sha256,
       /^[0-9a-f]{64}$/
     );
+
+    // Exercise the complete staged recovery script, including real request/result
+    // HMAC verification. Only OS paths, ownership and remote transports are mocked.
+    const helper = path.join(
+      staged,
+      "payload/deploy/runner/recover-release-lineage.sh"
+    );
+    const remap = (text) =>
+      text
+        .replaceAll("/var/lib/qintopia-agent-os-deploy", state)
+        .replaceAll("/home/ubuntu/qintopia-agent-os-releases", releases)
+        .replaceAll("/etc/systemd/system", units)
+        .replaceAll("/etc/qintopia/cos-artifacts.env", privateEnv)
+        .replaceAll("/sys/fs/cgroup", cgroups)
+        .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()")
+        .replaceAll("i<120", "i<1");
+    write(helper, remap(recoverySource), 0o755);
+    write(
+      path.join(staged, "payload/deploy/runner/wait-deploy-result.sh"),
+      fs.readFileSync(path.join(repoRoot, "deploy/runner/wait-deploy-result.sh")),
+      0o755
+    );
+    const refreshBundle = () => {
+      for (const item of manifest.files) {
+        const bytes = fs.readFileSync(path.join(staged, item.path));
+        item.sha256 = digest(bytes);
+        item.size_bytes = bytes.length;
+      }
+      write(path.join(staged, "artifact-manifest.json"), JSON.stringify(manifest));
+      write(
+        path.join(staged, "SHA256SUMS"),
+        `${digest(fs.readFileSync(path.join(staged, "artifact-manifest.json")))}  artifact-manifest.json\n`
+      );
+    };
+    refreshBundle();
+    write(
+      path.join(fixtureBin, "coscli"),
+      `#!/usr/bin/env python3
+import json,pathlib,sys
+args=sys.argv[1:]
+if '--log-path' not in args: sys.exit(73)
+if args[0]=='config': sys.exit(0)
+c=json.loads(pathlib.Path(${JSON.stringify(config)}).read_text())
+if args[0]!='cp' or not args[1].endswith(c['request_key']): sys.exit(74)
+pathlib.Path(args[2]).write_text(json.dumps(c['request'],separators=(',',':')))
+`,
+      0o755
+    );
+    const resultPath = path.join(state, `results/${rid}.json`);
+    const requestPath = path.join(state, `requests/failed/${rid}.json`);
+    const journalPath = path.join(recovery, `${rid}.json`);
+    const closeMarker = path.join(recovery, `closed-${rid}.consumed`);
+    const signObject = (unsigned, kind, issuer) => {
+      const signature = {
+        algorithm: "hmac-sha256",
+        issuer,
+        key_id: "simulated",
+        signed_at: kind === "result" ? unsigned.finished_at : unsigned.created_at,
+      };
+      return {
+        ...unsigned,
+        signature: {
+          ...signature,
+          value: crypto
+            .createHmac("sha256", key)
+            .update(canonical({ [kind]: unsigned, signature }))
+            .digest("hex"),
+        },
+      };
+    };
+    const resetClosure = () => {
+      reset();
+      for (const name of ["pending", "processed", "failed", "claimed"]) {
+        fs.rmSync(path.join(state, "requests", name), { recursive: true, force: true });
+        fs.mkdirSync(path.join(state, "requests", name), { recursive: true });
+      }
+      for (const name of fs.readdirSync(recovery)) {
+        if (name.startsWith("deploy-") || name.startsWith("closed-"))
+          fs.rmSync(path.join(recovery, name), { force: true });
+      }
+      fs.rmSync(path.join(releases, t), { recursive: true, force: true });
+      for (const [name, sha] of [
+        ["current", o],
+        ["previous", p],
+      ]) {
+        fs.unlinkSync(path.join(releases, name));
+        fs.symlinkSync(path.join(releases, sha), path.join(releases, name));
+        write(
+          path.join(releases, sha, "manifest.json"),
+          JSON.stringify({ release_sha: sha }),
+          0o444
+        );
+      }
+      const { signature: _ignored, ...unsigned } = signedRequest();
+      unsigned.runtime_artifact_profile = "huabaosi-production";
+      unsigned.cos = {
+        ...unsigned.cos,
+        bucket: "simulated",
+        region: "simulated",
+        prefix: "qintopia-agent-os",
+      };
+      const request = signObject(unsigned, "request", "github-actions");
+      write(requestPath, JSON.stringify(request));
+      const result = signObject(
+        {
+          schema_version: 1,
+          environment: "production",
+          request_id: rid,
+          release_sha: t,
+          commit_sha: o,
+          runtime_sha: p,
+          deploy_bundle_sha: unsigned.deploy_bundle_sha,
+          runtime_artifact_profile: unsigned.runtime_artifact_profile,
+          release_scope: unsigned.release_scope,
+          restart_targets: unsigned.restart_targets,
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          rollback: { attempted: false, status: "not_needed" },
+          checks: [
+            {
+              name: "deploy-runner",
+              status: "failed",
+              detail: JSON.stringify({
+                failure_stage: "quiesce-space-automation-runtime",
+                exit_status: 1,
+                promoted_current: false,
+                profile_activation_attempted: false,
+              }),
+            },
+          ],
+        },
+        "result",
+        "qintopia-deploy-runner"
+      );
+      write(resultPath, JSON.stringify(result));
+      write(
+        journalPath,
+        JSON.stringify({
+          schema_version: 1,
+          request_id: rid,
+          request_sha256: digest(fs.readFileSync(requestPath)),
+          direction: "O→T",
+          phase: "intent",
+          original_current_sha: o,
+          original_previous_sha: p,
+          hold_token: token,
+          execution: {
+            unit: "qintopia-agent-os-fixed-takeover.service",
+            invocation_id: token,
+            unit_invocation_verified: true,
+          },
+          result_upload: {
+            phase: "upload_intent",
+            payload_sha256: digest(fs.readFileSync(resultPath)),
+          },
+          manifest_sha256: {
+            current: digest(fs.readFileSync(path.join(releases, o, "manifest.json"))),
+            previous: digest(fs.readFileSync(path.join(releases, p, "manifest.json"))),
+          },
+        })
+      );
+      write(path.join(recovery, "takeover-consumed"), rid + "\n");
+      write(
+        config,
+        JSON.stringify({
+          mode: "present",
+          request_key: requestKey,
+          result_key: resultKey,
+          request,
+          result,
+        })
+      );
+    };
+    const close = (extra = {}) =>
+      spawnSync("bash", [helper, "--request-id", rid], {
+        encoding: "utf8",
+        env: { ...env, ...extra },
+      });
+    const changeJSON = (file, change) => {
+      const data = JSON.parse(fs.readFileSync(file));
+      change(data);
+      write(file, JSON.stringify(data));
+    };
+    const replaceSignedResult = (change) => {
+      const unsigned = JSON.parse(fs.readFileSync(resultPath));
+      delete unsigned.signature;
+      change(unsigned);
+      const signed = signObject(unsigned, "result", "qintopia-deploy-runner");
+      write(resultPath, JSON.stringify(signed));
+      changeJSON(config, (c) => {
+        c.result = signed;
+      });
+      changeJSON(journalPath, (j) => {
+        j.result_upload.payload_sha256 = digest(fs.readFileSync(resultPath));
+      });
+    };
+    for (const [label, change, extra] of [
+      [
+        "remote absent",
+        () =>
+          changeJSON(config, (c) => {
+            c.mode = "absent";
+          }),
+      ],
+      [
+        "remote unreadable",
+        () =>
+          changeJSON(config, (c) => {
+            c.mode = "unreadable";
+          }),
+      ],
+      [
+        "different remote bytes",
+        () =>
+          changeJSON(config, (c) => {
+            c.result.status = "succeeded";
+          }),
+      ],
+      [
+        "claim remains",
+        () => write(path.join(state, `requests/claimed/${rid}.json`), "{}"),
+      ],
+      ["T exists", () => fs.mkdirSync(path.join(releases, t))],
+      [
+        "manifest drift",
+        () => write(path.join(releases, o, "manifest.json"), "{}", 0o444),
+      ],
+      ["later journal", () => write(path.join(recovery, `${nextId}.json`), "{}")],
+      ["hold changed", () => write(path.join(recovery, "hold"), "b".repeat(32) + "\n")],
+      [
+        "upload digest changed",
+        () =>
+          changeJSON(journalPath, (j) => {
+            j.result_upload.payload_sha256 = "0".repeat(64);
+          }),
+      ],
+      [
+        "missing invocation",
+        () =>
+          changeJSON(journalPath, (j) => {
+            delete j.execution.invocation_id;
+          }),
+      ],
+      ["live consumer", () => {}, { FIXTURE_MAIN_PID: "42" }],
+      [
+        "signed success",
+        () =>
+          replaceSignedResult((r) => {
+            r.status = "succeeded";
+          }),
+      ],
+      [
+        "signed later failure",
+        () =>
+          replaceSignedResult((r) => {
+            const detail = JSON.parse(r.checks[0].detail);
+            detail.failure_stage = "install-release-systemd-units";
+            r.checks[0].detail = JSON.stringify(detail);
+          }),
+      ],
+      [
+        "signed promoted failure",
+        () =>
+          replaceSignedResult((r) => {
+            const detail = JSON.parse(r.checks[0].detail);
+            detail.promoted_current = true;
+            r.checks[0].detail = JSON.stringify(detail);
+          }),
+      ],
+    ]) {
+      resetClosure();
+      change();
+      const before = fs.readFileSync(path.join(recovery, "takeover.json"));
+      const response = close(extra);
+      assert.notEqual(response.status, 0, `${label} must refuse`);
+      assert.deepEqual(
+        fs.readFileSync(path.join(recovery, "takeover.json")),
+        before,
+        label
+      );
+      assert.ok(fs.existsSync(path.join(recovery, "takeover-consumed")), label);
+    }
+    resetClosure();
+    const closed = close();
+    assert.equal(closed.status, 0, closed.stderr);
+    assert.ok(fs.existsSync(closeMarker));
+    assert.equal(fs.readFileSync(path.join(recovery, "hold"), "utf8"), token + "\n");
+    assert.equal(close().status, 0, "repeat closure must not replay");
+    fs.renameSync(closeMarker, path.join(recovery, "takeover-consumed"));
+    assert.equal(close().status, 0, "resume interrupted marker archive");
+    assert.notEqual(invoke("consume").status, 0, "closed request cannot be replayed");
+    const fresh = invoke("consume", nextId);
+    assert.equal(fresh.status, 75, fresh.stderr);
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(recovery, "takeover.json"))).request_id,
+      nextId
+    );
+    assert.notEqual(close().status, 0, "old closure cannot alter a new binding");
+
+    // Launcher -> poller -> current real runner -> signed result -> finalize.
+    // Promotion/install/smoke are OS boundaries; no production artifact is built here.
+    resetClosure();
+    assert.equal(close().status, 0);
+    changeJSON(path.join(recovery, "takeover.json"), (r) => {
+      r.timer_was_enabled = false;
+    });
+    write(
+      path.join(releases, o, "manifest.json"),
+      JSON.stringify({ release_sha: o, previous_sha: p }),
+      0o444
+    );
+    const runnerDir = path.join(staged, "payload/deploy/runner");
+    for (const name of ["qintopia-agent-os-deploy-runner", "poll-deploy-requests.sh"])
+      write(
+        path.join(runnerDir, name),
+        remap(fs.readFileSync(path.join(repoRoot, "deploy/runner", name), "utf8")),
+        0o755
+      );
+    write(
+      path.join(fixtureBin, "stat"),
+      `#!/usr/bin/env python3
+import os,sys
+p=sys.argv[-1]
+s=os.fstat(int(p.rsplit('/',1)[1])) if p.startswith('/proc/self/fd/') else os.stat(p)
+print(str(s.st_dev)+':'+str(s.st_ino))
+`,
+      0o755
+    );
+    const executionLog = path.join(launchRoot, "execution.log");
+    write(
+      path.join(runnerDir, "quiesce-space-automation-runtime.sh"),
+      `#!/bin/sh\necho new-quiesce >> '${executionLog}'\n`,
+      0o755
+    );
+    write(
+      path.join(runnerDir, "management-ui-lifecycle.sh"),
+      "#!/bin/sh\nexit 0\n",
+      0o755
+    );
+    write(
+      path.join(runnerDir, "promote-release.sh"),
+      `#!/usr/bin/env python3
+import json,os,pathlib,sys
+args=sys.argv[1:];request=json.loads(pathlib.Path(args[args.index('--request-file')+1]).read_text())
+root=pathlib.Path(args[args.index('--release-root')+1]);target=root/request['release_sha']
+assert not target.exists()
+old=(root/'current').resolve(); target.mkdir()
+manifest={**request,'previous_sha':old.name}
+(target/'manifest.json').write_text(json.dumps(manifest))
+runner=target/'deploy/runner';runner.mkdir(parents=True)
+for name in ('install-release-systemd-units.sh','smoke-release.sh'):
+ p=runner/name;p.write_text('#!/bin/sh'+chr(10)+'exit 0'+chr(10));p.chmod(0o755)
+(root/'previous').unlink();(root/'previous').symlink_to(old)
+(root/'current').unlink();(root/'current').symlink_to(target)
+`,
+      0o755
+    );
+    for (const name of ["management-ui-lifecycle.sh", "promote-release.sh"])
+      manifest.files.push({ path: `payload/deploy/runner/${name}` });
+    refreshBundle();
+    const freshUnsigned = { ...JSON.parse(fs.readFileSync(requestPath)) };
+    delete freshUnsigned.signature;
+    freshUnsigned.request_id = nextId;
+    freshUnsigned.created_at = new Date().toISOString();
+    freshUnsigned.expires_at = new Date(Date.now() + 1800000).toISOString();
+    freshUnsigned.requested_by = "fixture";
+    freshUnsigned.rollback_on_smoke_failure = true;
+    freshUnsigned.cos = {
+      ...freshUnsigned.cos,
+      request_key: `qintopia-agent-os/deploy-requests/production/requests/${nextId}.json`,
+      result_key: `qintopia-agent-os/deploy-results/production/${nextId}.json`,
+    };
+    const freshRequest = signObject(freshUnsigned, "request", "github-actions");
+    write(config, JSON.stringify({ request: freshRequest }));
+    const remoteBytes = path.join(launchRoot, "uploaded.json");
+    write(
+      path.join(fixtureBin, "coscli"),
+      `#!/usr/bin/env python3
+import json,pathlib,sys
+args=sys.argv[1:]
+if '--log-path' not in args: sys.exit(73)
+if args[0]=='config': sys.exit(0)
+r=json.loads(pathlib.Path(${JSON.stringify(config)}).read_text())['request']
+source,target=args[1:3];remote=pathlib.Path(${JSON.stringify(remoteBytes)})
+if not source.startswith('cos://'): remote.write_bytes(pathlib.Path(source).read_bytes());sys.exit(0)
+if source.endswith('/current.json'):
+ data={'schema_version':1,'environment':'production','repository':r['repository'],'request_id':r['request_id'],
+       'request_key':r['cos']['request_key'],'result_key':r['cos']['result_key']}
+elif source.endswith(r['cos']['request_key']): data=r
+elif source.endswith(r['cos']['result_key']):
+ if not remote.exists(): print('NoSuchKey',file=sys.stderr);sys.exit(1)
+ pathlib.Path(target).write_bytes(remote.read_bytes());sys.exit(0)
+else: sys.exit(64)
+pathlib.Path(target).write_text(json.dumps(data,separators=(',',':')))
+`,
+      0o755
+    );
+    const consumerLog = path.join(launchRoot, "consumer.log");
+    write(
+      path.join(fixtureBin, "systemd-run"),
+      `#!/usr/bin/env python3
+import os,sys
+for arg in sys.argv[1:]:
+ if arg.startswith('--property=Environment='):
+  k,v=arg.split('Environment=',1)[1].split('=',1);os.environ[k]=v
+os.environ['INVOCATION_ID']='${token}'
+fd=os.open(${JSON.stringify(consumerLog)},os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600)
+os.dup2(fd,1);os.dup2(fd,2)
+os.execv('/bin/bash',['bash',sys.argv[-1]])
+`,
+      0o755
+    );
+    const taken = invoke("consume", nextId);
+    assert.equal(
+      taken.status,
+      0,
+      `${taken.stderr}\n${fs.readFileSync(consumerLog, "utf8")}`
+    );
+    assert.equal(fs.readFileSync(executionLog, "utf8"), "new-quiesce\n");
+    assert.equal(
+      fs.realpathSync(path.join(releases, "current")),
+      path.join(releases, t)
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releases, "previous")),
+      path.join(releases, o)
+    );
+    assert.equal(fs.existsSync(path.join(recovery, "hold")), false);
+    assert.equal(JSON.parse(fs.readFileSync(remoteBytes)).status, "succeeded");
+    assert.notEqual(
+      invoke("consume", nextId).status,
+      0,
+      "successful request cannot replay"
+    );
+    // The existing post-promotion recovery validator must accept the recorded
+    // staged execution identity, while rejecting altered executable bytes.
+    const claimValidator = recoverySource
+      .split(
+        '"$direction" "$original_current" "$request_id" "$hold" "${state}/recovery/takeover.json" <<\'PY\'\n'
+      )[1]
+      ?.split("\nPY\n")[0];
+    assert.ok(claimValidator, "recovery claim validator must be found");
+    const takeoverJournal = JSON.parse(
+      fs.readFileSync(path.join(recovery, `${nextId}.json`))
+    );
+    const recoveredClaim = {
+      ...takeoverJournal,
+      phase: "possibly_executing",
+      recovery_eligible: true,
+    };
+    const recoveryClaim = path.join(state, `requests/claimed/${nextId}.json`);
+    write(recoveryClaim, JSON.stringify(recoveredClaim));
+    write(path.join(recovery, "hold"), token + "\n");
+    const validateClaim = () =>
+      spawnSync(
+        "python3",
+        [
+          "-c",
+          claimValidator.replaceAll(
+            "metadata.st_uid != 0",
+            "metadata.st_uid != os.geteuid()"
+          ),
+          path.join(recovery, `${nextId}.json`),
+          recoveryClaim,
+          path.join(state, `requests/processed/${nextId}.json`),
+          releases,
+          "O→T",
+          o,
+          nextId,
+          path.join(recovery, "hold"),
+          path.join(recovery, "takeover.json"),
+        ],
+        { encoding: "utf8" }
+      );
+    const validClaim = validateClaim();
+    assert.equal(validClaim.status, 0, validClaim.stderr);
+    const runnerFile = path.join(runnerDir, "qintopia-agent-os-deploy-runner");
+    const originalRunner = fs.readFileSync(runnerFile);
+    fs.appendFileSync(runnerFile, "\n# simulated drift\n");
+    assert.notEqual(
+      validateClaim().status,
+      0,
+      "changed execution bytes cannot authorize recovery"
+    );
+    write(runnerFile, originalRunner, 0o755);
+    fs.unlinkSync(recoveryClaim);
+    fs.unlinkSync(path.join(recovery, "hold"));
+    // Continue with the ordinary full six-target request through T's runner.
+    fs.cpSync(runnerDir, path.join(releases, t, "deploy/runner"), { recursive: true });
+    const fullId = "deploy-20261002T113059Z-444444444444";
+    const fullUnsigned = {
+      ...freshUnsigned,
+      request_id: fullId,
+      commit_sha: "4".repeat(40),
+      runtime_sha: "4".repeat(40),
+      release_sha: "4".repeat(40),
+      release_scope: ["sidecar-runtime", "deploy-bundle", "hermes-plugins"],
+      restart_targets: [
+        "qintopia-system-services",
+        "hermes-erhua",
+        "hermes-xiaoman",
+        "hermes-silaoshi",
+        "hermes-huabaosi",
+        "hermes-anan",
+      ],
+      cos: {
+        ...freshUnsigned.cos,
+        request_key: `qintopia-agent-os/deploy-requests/production/requests/${fullId}.json`,
+        result_key: `qintopia-agent-os/deploy-results/production/${fullId}.json`,
+      },
+    };
+    write(
+      config,
+      JSON.stringify({ request: signObject(fullUnsigned, "request", "github-actions") })
+    );
+    fs.unlinkSync(remoteBytes);
+    const full = spawnSync(
+      "bash",
+      [path.join(releases, t, "deploy/runner/poll-deploy-requests.sh")],
+      {
+        encoding: "utf8",
+        env: {
+          ...env,
+          QINTOPIA_COS_ENV_FILE: privateEnv,
+          QINTOPIA_DEPLOY_RUNNER_STATE_DIR: state,
+          QINTOPIA_DEPLOY_RUNNER_BIN: path.join(
+            releases,
+            t,
+            "deploy/runner/qintopia-agent-os-deploy-runner"
+          ),
+          QINTOPIA_RELEASE_ROOT: releases,
+        },
+      }
+    );
+    assert.equal(full.status, 0, full.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(remoteBytes)).status, "succeeded");
+    assert.equal(
+      fs.realpathSync(path.join(releases, "current")),
+      path.join(releases, "4".repeat(40))
+    );
+    assert.equal(
+      fs.realpathSync(path.join(releases, "previous")),
+      path.join(releases, t)
+    );
+    assert.equal(
+      JSON.parse(fs.readFileSync(path.join(recovery, `${fullId}.json`))).phase,
+      "smoke-passed"
+    );
+    console.log(
+      "Normal six-target full release after takeover passed (OS boundaries mocked)."
+    );
+    console.log(
+      "Launcher through real staged runner, signed upload and finalize passed (OS boundaries mocked)."
+    );
+    console.log("Whole staged recovery signature, CAS and refusal matrix passed.");
     console.log(
       "Takeover unstarted retirement and refusal matrix passed (local boundary mocks)."
     );
