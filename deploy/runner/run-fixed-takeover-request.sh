@@ -309,7 +309,9 @@ def cos_get(key, allow_missing=False):
         except ET.ParseError:
             raise SystemExit("COS error response is invalid") from None
         if (root.tag.rsplit("}", 1)[-1] != "Error" or fields.get("Code") != "NoSuchKey" or
-                fields.get("Key") != key):
+                not ("Resource" in fields or "Key" in fields) or
+                ("Resource" in fields and fields["Resource"] != "/" + key) or
+                ("Key" in fields and fields["Key"] != key)):
             raise SystemExit("COS result did not return fixed-key NoSuchKey")
         if not allow_missing:
             raise SystemExit("required COS evidence is absent")
