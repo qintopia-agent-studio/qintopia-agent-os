@@ -189,3 +189,17 @@ runner 与完整校验入口，语法检查通过；本轮没有运行原生 PID
 `pnpm check:pr:auto` 已通过 quick 与 heavy Rust：默认 860 项、all-features
 875 项通过。本地专用 `qintopia_test` 不可用，PostgreSQL
 tier 按现有规则跳过，交由 CI 验证。初轮文档格式/行长检查失败已修正，最终格式、Markdown、协作及部署契约检查通过。
+
+### PR #740 Linux CI 的测试隔离遗漏
+
+[Light check](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/37003512760/job/110826406409)
+在六目标发布的本地模拟中报
+`consumer systemd invocation identity is not verified`。GitHub Linux runner 的宿主
+`INVOCATION_ID`
+被新增 fixture 继承，与模拟 systemctl 返回的固定调用身份不符。本地显式注入不同的
+`INVOCATION_ID` 已复现同一断言失败。
+
+修复仅限定既有测试环境：本地模拟固定自身 invocation，原生 Linux
+fixture 的直接进程路径清除宿主 invocation；真正 systemd-run 路径仍使用 PID1 注入的身份。补充身份不一致必须拒绝的回归，不改生产签名/身份校验、workflow、检查入口或门禁。
+
+该 PR 的 reviewer 未发现重大问题，但不能用该结论代替失败的 CI。v0.3.8 发布 PR 应等待此测试修复合并及最新检查通过，再由负责人合并并发布。

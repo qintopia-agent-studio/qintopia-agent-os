@@ -859,7 +859,12 @@ esac
       ),
       "simulated immutable bytes\n"
     );
-    const env = { ...process.env, PATH: `${fixtureBin}:${process.env.PATH}` };
+    const env = {
+      ...process.env,
+      PATH: `${fixtureBin}:${process.env.PATH}`,
+      // Host systemd identity must not leak into this simulated consumer.
+      INVOCATION_ID: token,
+    };
     const reset = (legacy = false) => {
       write(
         path.join(recovery, "takeover.json"),
@@ -1622,6 +1627,34 @@ os.execv('/bin/bash',['bash',sys.argv[-1]])
       JSON.stringify({ request: signObject(fullUnsigned, "request", "github-actions") })
     );
     fs.unlinkSync(remoteBytes);
+    const wrongInvocation = spawnSync(
+      "bash",
+      [path.join(releases, t, "deploy/runner/poll-deploy-requests.sh")],
+      {
+        encoding: "utf8",
+        env: {
+          ...env,
+          INVOCATION_ID: "b".repeat(32),
+          QINTOPIA_COS_ENV_FILE: privateEnv,
+          QINTOPIA_DEPLOY_RUNNER_STATE_DIR: state,
+          QINTOPIA_DEPLOY_RUNNER_BIN: path.join(
+            releases,
+            t,
+            "deploy/runner/qintopia-agent-os-deploy-runner"
+          ),
+          QINTOPIA_RELEASE_ROOT: releases,
+        },
+      }
+    );
+    assert.notEqual(wrongInvocation.status, 0, "unmatched invocation must be rejected");
+    assert.match(
+      wrongInvocation.stderr,
+      /consumer systemd invocation identity is not verified/
+    );
+    assert.equal(
+      fs.existsSync(path.join(state, `requests/claimed/${fullId}.json`)),
+      false
+    );
     const full = spawnSync(
       "bash",
       [path.join(releases, t, "deploy/runner/poll-deploy-requests.sh")],
