@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.8](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.7...v0.3.8) (2026-10-02)
+
+
+### Bug Fixes
+
+* **deploy:** repair staged takeover and inactive unit shutdown ([#740](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/740)) ([54d52b9](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/54d52b9d262782b8e0600a22ea7ae33e762fa786))
+
 ## [0.3.7](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.6...v0.3.7) (2026-10-02)
 
 
