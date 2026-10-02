@@ -11,10 +11,12 @@ enabled=/etc/nginx/sites-enabled/qintopia-management-ui.conf
 renewal=/etc/letsencrypt/renewal/qintopia-management-ui.conf
 certificate=/etc/letsencrypt/live/qintopia-management-ui/fullchain.pem
 
-[[ $# -eq 1 ]] || exit 2
+[[ $# -ge 1 && $# -le 2 ]] || exit 2
 mode="$1"
 case "$mode" in
-  prepare|install-http|issue-cert|install-https|activate|quiesce|verify-closed|retire-site) ;;
+  begin|finish) [[ $# -eq 2 && "$2" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]] || exit 2 ;;
+  prepare|install-http|issue-cert|install-https|activate|quiesce|verify-closed|retire-site)
+    [[ $# -eq 1 ]] || exit 2 ;;
   *) exit 2 ;;
 esac
 [[ "$(id -u)" -eq 0 ]] || { echo "management UI lifecycle requires root" >&2; exit 75; }
@@ -148,6 +150,8 @@ PY
   if [[ "$mode" == activate ]]; then
     [[ ! -e "$state/recovery/hold" && ! -L "$state/recovery/hold" ]] || exit 75
     if compgen -G "$state/requests/claimed/*.json" >/dev/null; then exit 75; fi
+  elif [[ "$mode" == begin || "$mode" == finish ]]; then
+    :
   else
     check_maintenance_hold
   fi
@@ -228,6 +232,17 @@ print(json.dumps(data, separators=(",", ":")))
 PY
 }
 
+expect_route_code() {
+  local expected="$1" route="$2" resolution="$3" observed
+  for _ in 1 2 3 4 5 6 7 8; do
+    observed="$(curl --noproxy '*' --silent --show-error --output /dev/null \
+      --write-out '%{http_code}' --resolve "$resolution" --max-time 2 "$route")" || observed=""
+    [[ "$observed" == "$expected" ]] && return 0
+    sleep 0.25
+  done
+  return 75
+}
+
 check_closed() {
   python3 - "$1" "${2:-}" "$release_root" <<'PY'
 import json
@@ -287,16 +302,12 @@ PY
       return 75
     }
     if cmp -s "$site" "$release/runtime/nginx/templates/management-ui-https.conf.template"; then
-      [[ "$(curl --noproxy '*' --silent --show-error --output /dev/null --write-out '%{http_code}' \
-        --resolve agentos.qintopia.cn:443:127.0.0.1 --max-time 5 \
-        https://agentos.qintopia.cn/)" == 503 ]] || {
+      expect_route_code 503 https://agentos.qintopia.cn/ agentos.qintopia.cn:443:127.0.0.1 || {
         echo "management UI HTTPS route did not return 503" >&2
         return 75
       }
     elif cmp -s "$site" "$release/runtime/nginx/templates/management-ui-http.conf.template"; then
-      [[ "$(curl --noproxy '*' --silent --show-error --output /dev/null --write-out '%{http_code}' \
-        --resolve agentos.qintopia.cn:80:127.0.0.1 --max-time 5 \
-        http://agentos.qintopia.cn/)" == 404 ]] || {
+      expect_route_code 404 http://agentos.qintopia.cn/ agentos.qintopia.cn:80:127.0.0.1 || {
         echo "management UI HTTP bootstrap route did not return 404" >&2
         return 75
       }
@@ -386,7 +397,370 @@ check_https_site() {
   check_certificate
 }
 
+maintenance_record="$state/recovery/management-ui-maintenance.json"
+maintenance_timer=qintopia-agent-os-deploy-runner.timer
+maintenance_dropin=/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf
+maintenance_source="$release/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+
+maintenance_timer_state() {
+  local file_state active_state
+  file_state="$(/usr/bin/systemctl show "$maintenance_timer" --property=UnitFileState --value)"
+  active_state="$(/usr/bin/systemctl show "$maintenance_timer" --property=ActiveState --value)"
+  [[ "$file_state" == enabled || "$file_state" == disabled ]] || return 75
+  if [[ "${1:-}" == stopped ]]; then
+    [[ "$file_state" == disabled && "$active_state" == inactive ]] || return 75
+  fi
+  printf '%s\n' "$file_state"
+}
+
+maintenance_service_stopped() {
+  python3 - "$1" "${2:-false}" <<'PY'
+import subprocess
+import sys
+
+unit, allow_missing = sys.argv[1:3]
+result = subprocess.run(["/usr/bin/systemctl", "show", unit,
+                         "--property=LoadState,ActiveState,MainPID,ControlPID,ControlGroup"],
+                        capture_output=True, text=True, check=True)
+data = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+if (data.get("LoadState") not in (("loaded", "not-found") if allow_missing == "true" else ("loaded",)) or
+        data.get("ActiveState") != "inactive" or data.get("MainPID") != "0" or
+        data.get("ControlPID") != "0"):
+    raise SystemExit("management UI maintenance consumer is active or unknown")
+group = data.get("ControlGroup", "")
+if group:
+    from pathlib import Path
+    if (not group.startswith("/") or ".." in group or
+            "populated 0" not in Path("/sys/fs/cgroup" + group + "/cgroup.events").read_text().splitlines()):
+        raise SystemExit("management UI maintenance consumer cgroup is populated")
+PY
+}
+
+maintenance_evidence() {
+  local request_id="$1" request_file result_file journal_file signing_env
+  request_file="$state/requests/processed/$request_id.json"
+  result_file="$state/results/$request_id.json"
+  journal_file="$state/recovery/$request_id.json"
+  signing_env=/etc/qintopia/cos-artifacts.env
+  [[ -f "$request_file" && ! -L "$request_file" && -f "$result_file" && ! -L "$result_file" &&
+    -f "$journal_file" && ! -L "$journal_file" && -f "$signing_env" && ! -L "$signing_env" &&
+    "$(stat -c '%u:%g:%a:%h' "$signing_env")" == 0:0:600:1 ]] || return 75
+  (
+    set -a
+    # The existing result verifier needs the same private signing environment as recovery.
+    # shellcheck disable=SC1090
+    source "$signing_env"
+    set +a
+    "$release/deploy/runner/wait-deploy-result.sh" --request-file "$request_file" \
+      --result-file "$result_file" --verify-archived-request >/dev/null
+  ) || return 75
+  python3 - "$state" "$release_root" "$release_sha" "$request_id" <<'PY'
+import hashlib
+import json
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+state, root, sha, request_id = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+state_info = state.lstat()
+if (not stat.S_ISDIR(state_info.st_mode) or state_info.st_uid != 0 or
+        stat.S_IMODE(state_info.st_mode) != 0o700):
+    raise SystemExit("management UI maintenance state directory is not private")
+request_path = state / "requests/processed" / (request_id + ".json")
+result_path = state / "results" / (request_id + ".json")
+journal_path = state / "recovery" / (request_id + ".json")
+for path, allowed_modes in ((request_path, (0o600, 0o644)),
+                            (result_path, (0o600, 0o644)),
+                            (journal_path, (0o600,))):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or
+            stat.S_IMODE(info.st_mode) not in allowed_modes):
+        raise SystemExit("management UI maintenance evidence metadata is invalid")
+request_bytes, result_bytes = request_path.read_bytes(), result_path.read_bytes()
+request, result = json.loads(request_bytes), json.loads(result_bytes)
+journal = json.loads(journal_path.read_bytes())
+target = root / sha
+if (not (root / "current").is_symlink() or (root / "current").resolve(strict=True) != target or
+        not (root / "previous").is_symlink()):
+    raise SystemExit("management UI maintenance pointers are invalid")
+previous = (root / "previous").resolve(strict=True)
+if previous.parent != root or not re.fullmatch(r"[0-9a-f]{40}", previous.name):
+    raise SystemExit("management UI maintenance previous pointer is invalid")
+for path in (target / "manifest.json", previous / "manifest.json"):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or
+            stat.S_IMODE(info.st_mode) != 0o444):
+        raise SystemExit("management UI maintenance manifest metadata is invalid")
+with (target / "manifest.json").open() as file:
+    manifest = json.load(file)
+with (previous / "manifest.json").open() as file:
+    previous_manifest = json.load(file)
+ancestor = previous_manifest.get("previous_sha", "")
+if not re.fullmatch(r"[0-9a-f]{40}", ancestor):
+    raise SystemExit("management UI maintenance ancestor is invalid")
+ancestor_manifest = root / ancestor / "manifest.json"
+info = ancestor_manifest.lstat()
+if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or
+        stat.S_IMODE(info.st_mode) != 0o444):
+    raise SystemExit("management UI maintenance ancestor metadata is invalid")
+targets = {"qintopia-system-services", "hermes-erhua", "hermes-xiaoman",
+           "hermes-silaoshi", "hermes-huabaosi", "hermes-anan"}
+scope = ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
+if (request.get("request_id") != request_id or request.get("environment") != "production" or
+        request.get("dry_run") is not False or request.get("release_sha") != sha or
+        request.get("release_scope") != scope or
+        set(request.get("restart_targets", [])) != targets or
+        len(request.get("restart_targets", [])) != len(targets) or
+        any(request.get(key) != sha for key in ("commit_sha", "runtime_sha", "deploy_bundle_sha")) or
+        manifest.get("release_sha") != sha or manifest.get("previous_sha") != previous.name or
+        previous_manifest.get("release_sha") != previous.name or
+        manifest.get("release_scope") != scope or
+        manifest.get("restart_targets") != request.get("restart_targets") or
+        any(manifest.get(key) != request.get(key) for key in
+            ("commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile"))):
+    raise SystemExit("management UI maintenance release identity is invalid")
+if (result.get("request_id") != request_id or result.get("status") != "succeeded" or
+        result.get("previous_sha") != previous.name or result.get("current_target") != str(target) or
+        result.get("rollback", {}).get("attempted") is not False or
+        any(result.get(key) != request.get(key) for key in
+            ("commit_sha", "runtime_sha", "deploy_bundle_sha", "runtime_artifact_profile",
+             "release_scope", "restart_targets")) or
+        not any(check.get("name") == "deploy-runner" and check.get("status") == "passed"
+                for check in result.get("checks", []))):
+    raise SystemExit("management UI maintenance signed success is invalid")
+upload = journal.get("result_upload", {})
+if (journal.get("schema_version") != 1 or journal.get("request_id") != request_id or
+        journal.get("request_sha256") != hashlib.sha256(request_bytes).hexdigest() or
+        journal.get("direction") != "T→R" or journal.get("phase") != "smoke-passed" or
+        journal.get("hold_token") != request_id or
+        journal.get("original_current_sha") != previous.name or
+        journal.get("original_previous_sha") != ancestor or
+        journal.get("manifest_sha256", {}).get("current") !=
+            hashlib.sha256((previous / "manifest.json").read_bytes()).hexdigest() or
+        journal.get("manifest_sha256", {}).get("previous") !=
+            hashlib.sha256(ancestor_manifest.read_bytes()).hexdigest() or
+        upload.get("phase") != "upload_intent" or
+        upload.get("payload_sha256") != hashlib.sha256(result_bytes).hexdigest()):
+    raise SystemExit("management UI maintenance journal is invalid")
+if any((state / "requests/claimed").glob("*.json")):
+    raise SystemExit("management UI maintenance has an unfinished claim")
+for path in (state / "recovery").glob("deploy-*.json"):
+    if path.name > journal_path.name:
+        raise SystemExit("a later recovery journal owns the maintenance state")
+artifact = json.loads((target / "deploy-bundle/artifact-manifest.json").read_bytes())
+for name, expected_mode in (("deploy/runner/wait-deploy-result.sh", 0o755),
+                            ("deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf", 0o644)):
+    path = target / name
+    info = path.lstat()
+    matches = [item for item in artifact.get("files", []) if item.get("path") == "payload/" + name]
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or
+            stat.S_IMODE(info.st_mode) != expected_mode or len(matches) != 1 or
+            hashlib.sha256(path.read_bytes()).hexdigest() != matches[0].get("sha256")):
+        raise SystemExit("management UI maintenance helper identity drifted")
+PY
+}
+
+maintenance_state() {
+  python3 - "$maintenance_record" "$state" "$release_sha" "$1" "$2" "${3:-}" <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+import tempfile
+from pathlib import Path
+
+path, state, sha, action, request_id, timer_state = Path(sys.argv[1]), Path(sys.argv[2]), *sys.argv[3:]
+request = state / "requests/processed" / (request_id + ".json")
+result = state / "results" / (request_id + ".json")
+def digest(file):
+    return hashlib.sha256(file.read_bytes()).hexdigest()
+if action == "create" and not path.exists() and not path.is_symlink():
+    if timer_state not in ("enabled", "disabled"):
+        raise SystemExit("maintenance timer state is invalid")
+    record = {"schema_version": 1, "request_id": request_id, "release_sha": sha,
+              "timer_was_enabled": timer_state == "enabled", "phase": "preparing",
+              "request_sha256": digest(request), "result_sha256": digest(result)}
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w", encoding="ascii") as file:
+        json.dump(record, file, sort_keys=True)
+        file.write("\n")
+        file.flush()
+        os.fsync(file.fileno())
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    os.fsync(directory)
+    os.close(directory)
+info = path.lstat()
+if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or
+        stat.S_IMODE(info.st_mode) != 0o600):
+    raise SystemExit("maintenance record metadata is invalid")
+record = json.loads(path.read_bytes())
+if (record.get("schema_version") != 1 or record.get("request_id") != request_id or
+        record.get("release_sha") != sha or type(record.get("timer_was_enabled")) is not bool or
+        record.get("phase") not in ("preparing", "isolated", "finishing") or
+        record.get("request_sha256") != digest(request) or
+        record.get("result_sha256") != digest(result)):
+    raise SystemExit("maintenance record identity changed")
+if action == "create" and timer_state and record["timer_was_enabled"] != (timer_state == "enabled"):
+    raise SystemExit("maintenance timer history conflicts")
+if action == "isolated" and record["phase"] == "preparing":
+    record["phase"] = "isolated"
+elif action == "finishing" and record["phase"] == "isolated":
+    record["phase"] = "finishing"
+elif action not in ("create", "read", record["phase"]):
+    raise SystemExit("maintenance phase transition is invalid")
+if action in ("isolated", "finishing"):
+    descriptor, temporary = tempfile.mkstemp(prefix=".management-ui-maintenance-", dir=path.parent)
+    try:
+        with os.fdopen(descriptor, "w", encoding="ascii") as file:
+            json.dump(record, file, sort_keys=True)
+            file.write("\n")
+            file.flush()
+            os.fsync(file.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        os.fsync(directory)
+        os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+elif action == "read":
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+print(record["phase"] + "\t" + ("enabled" if record["timer_was_enabled"] else "disabled"))
+PY
+}
+
+maintenance_hold() {
+  python3 - "$state/recovery" "$1" "$2" <<'PY'
+import os
+import stat
+import sys
+
+root, request_id, action = sys.argv[1:4]
+if action not in ("create", "verify", "remove", "finalize"):
+    raise SystemExit("maintenance hold action is invalid")
+directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+try:
+    if action == "finalize":
+        if os.path.lexists(os.path.join(root, "hold")):
+            raise SystemExit("maintenance hold still exists")
+        os.fsync(directory)
+        raise SystemExit(0)
+    if action == "create":
+        try:
+            descriptor = os.open("hold", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                                 0o600, dir_fd=directory)
+        except FileExistsError:
+            descriptor = None
+        if descriptor is not None:
+            with os.fdopen(descriptor, "w", encoding="ascii") as file:
+                file.write(request_id + "\n")
+                file.flush()
+                os.fsync(file.fileno())
+            os.fsync(directory)
+    descriptor = os.open("hold", os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or
+                stat.S_IMODE(info.st_mode) != 0o600 or
+                os.read(descriptor, 256) != (request_id + "\n").encode("ascii")):
+            raise SystemExit("maintenance hold belongs to another request")
+        if action == "create":
+            os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    if action == "create":
+        os.fsync(directory)
+    if action == "remove":
+        os.unlink("hold", dir_fd=directory)
+        os.fsync(directory)
+finally:
+    os.close(directory)
+PY
+}
+
 case "$mode" in
+  begin)
+    request_id="$2"
+    check_closed "$(snapshot)"
+    maintenance_evidence "$request_id"
+    if [[ -e "$maintenance_record" || -L "$maintenance_record" ]]; then
+      maintenance_status="$(maintenance_state read "$request_id")" || exit 75
+      IFS=$'\t' read -r phase timer_original <<<"$maintenance_status"
+      [[ "$phase" == preparing || "$phase" == isolated ]] || exit 75
+    else
+      [[ ! -e "$state/recovery/hold" && ! -L "$state/recovery/hold" ]] || exit 75
+      timer_original="$(maintenance_timer_state)"
+      maintenance_status="$(maintenance_state create "$request_id" "$timer_original")" || exit 75
+      IFS=$'\t' read -r phase timer_original <<<"$maintenance_status"
+    fi
+    /usr/bin/systemctl disable --now "$maintenance_timer"
+    maintenance_timer_state stopped >/dev/null
+    maintenance_service_stopped qintopia-agent-os-deploy-runner.service
+    maintenance_service_stopped qintopia-agent-os-fixed-takeover.service true
+    maintenance_service_stopped qintopia-agent-os-anan-drain-restart.service true
+    maintenance_evidence "$request_id"
+    check_closed "$(snapshot)"
+    maintenance_hold "$request_id" create
+    [[ -f "$maintenance_source" && ! -L "$maintenance_source" ]] || exit 75
+    if [[ -e "$maintenance_dropin" || -L "$maintenance_dropin" ]]; then
+      [[ -f "$maintenance_dropin" && ! -L "$maintenance_dropin" ]] || exit 75
+      cmp -s "$maintenance_source" "$maintenance_dropin" || exit 75
+    else
+      install -d -m 0755 "$(dirname "$maintenance_dropin")"
+      install -m 0644 "$maintenance_source" "$maintenance_dropin"
+    fi
+    /usr/bin/systemctl daemon-reload
+    cmp -s "$maintenance_source" "$maintenance_dropin"
+    maintenance_timer_state stopped >/dev/null
+    maintenance_service_stopped qintopia-agent-os-deploy-runner.service
+    check_maintenance_hold
+    maintenance_state isolated "$request_id" >/dev/null
+    ;;
+  finish)
+    request_id="$2"
+    maintenance_evidence "$request_id"
+    maintenance_status="$(maintenance_state read "$request_id")" || exit 75
+    IFS=$'\t' read -r phase timer_original <<<"$maintenance_status"
+    [[ "$phase" == isolated || "$phase" == finishing ]] || exit 75
+    [[ -f "$maintenance_dropin" && ! -L "$maintenance_dropin" ]] || exit 75
+    cmp -s "$maintenance_source" "$maintenance_dropin" || exit 75
+    check_https_site
+    check_closed "$(snapshot)"
+    if [[ ! -e "$state/recovery/hold" && ! -L "$state/recovery/hold" ]]; then
+      [[ "$phase" == finishing ]] || exit 75
+      if [[ "$timer_original" == enabled ]]; then
+        [[ "$(maintenance_timer_state)" == enabled ]]
+        /usr/bin/systemctl is-active --quiet "$maintenance_timer"
+      else
+        maintenance_timer_state stopped >/dev/null
+      fi
+      maintenance_hold "$request_id" finalize
+    else
+      maintenance_hold "$request_id" verify
+      maintenance_state finishing "$request_id" >/dev/null
+      if [[ "$timer_original" == enabled ]]; then
+        /usr/bin/systemctl enable --now "$maintenance_timer"
+        [[ "$(maintenance_timer_state)" == enabled ]]
+        /usr/bin/systemctl is-active --quiet "$maintenance_timer"
+      else
+        maintenance_timer_state stopped >/dev/null
+      fi
+      maintenance_hold "$request_id" remove
+    fi
+    ;;
   prepare)
     if ! getent passwd qintopia-management-ui >/dev/null; then
       /usr/sbin/useradd --system --user-group --no-create-home \

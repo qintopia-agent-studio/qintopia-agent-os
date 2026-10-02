@@ -52,6 +52,699 @@ fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
 PY
 `;
 
+if (
+  process.argv[2] === "--management-ui-maintenance" ||
+  process.argv[2] === "--management-ui-maintenance-systemd" ||
+  process.argv[2] === "--management-ui-maintenance-systemd-producer"
+) {
+  const realProducer =
+    process.argv[2] === "--management-ui-maintenance-systemd-producer";
+  const realSystemd =
+    realProducer || process.argv[2] === "--management-ui-maintenance-systemd";
+  const repoRoot = process.env.QINTOPIA_FIXTURE_REPO ?? process.cwd();
+  const fixture = fs.mkdtempSync(
+    realSystemd
+      ? path.join(os.tmpdir(), "qintopia-management-ui-maintenance-")
+      : path.join(repoRoot, ".local-workspace/management-ui-maintenance-")
+  );
+  try {
+    fs.writeFileSync(
+      path.join(fixture, "run.sh"),
+      String.raw`#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$REAL_PRODUCER" == true ]]; then
+  trap 'echo "fixture failure at line $LINENO: $BASH_COMMAND" >&2' ERR
+fi
+R=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+T=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+O=cccccccccccccccccccccccccccccccccccccccc
+REQUEST_ID=deploy-20260929T120000Z-abcdef0
+ROOT=/home/ubuntu/qintopia-agent-os-releases
+STATE=/var/lib/qintopia-agent-os-deploy
+RELEASE="$ROOT/$R"
+SOURCE_ROOT="$QINTOPIA_FIXTURE_REPO"
+if [[ "$REAL_SYSTEMD" == true ]]; then
+  existing_dropin=/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf
+  dropin_existed=false
+  if [[ -e "$existing_dropin" || -L "$existing_dropin" ]]; then
+    [[ -f "$existing_dropin" && ! -L "$existing_dropin" ]] || exit 75
+    cmp -s "$existing_dropin" \
+      "$SOURCE_ROOT/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" || exit 75
+    dropin_existed=true
+  fi
+  [[ "$(id -u)" == 0 && -d /run/systemd/system && ! -e "$ROOT" &&
+    ! -e /etc/qintopia/cos-artifacts.env &&
+    ! -e /etc/nginx/sites-available/qintopia-management-ui.conf &&
+    ! -e "$STATE/requests/current.json" &&
+    ! -e "$STATE/recovery/hold" &&
+    ! -e /usr/bin/certbot ]] || exit 75
+  if getent passwd qintopia-management-ui >/dev/null; then exit 75; fi
+  cleanup() {
+    /usr/bin/systemctl disable --now qintopia-agent-os-deploy-runner.timer >/dev/null 2>&1 || true
+    /usr/bin/systemctl stop qintopia-agentos-management-ui.service >/dev/null 2>&1 || true
+    rm -f /run/systemd/system/qintopia-agent-os-deploy-runner.timer \
+      /run/systemd/system/qintopia-agent-os-deploy-runner.service \
+      /run/systemd/system/qintopia-agentos-management-ui.service \
+      /etc/nginx/sites-enabled/qintopia-management-ui.conf \
+      /etc/nginx/sites-available/qintopia-management-ui.conf \
+      /etc/qintopia/cos-artifacts.env /etc/qintopia/collaboration-management-ui.env \
+      /etc/letsencrypt/renewal/qintopia-management-ui.conf \
+      /usr/bin/certbot /usr/local/share/ca-certificates/qintopia-maintenance-test.crt
+    if [[ "$dropin_existed" != true ]]; then rm -f "$existing_dropin"; fi
+    rm -rf "$ROOT" /etc/letsencrypt/live/qintopia-management-ui \
+      /tmp/qintopia-maintenance-injection /tmp/qintopia-maintenance-cos
+    rm -f "$STATE/requests/processed/$REQUEST_ID.json" \
+      "$STATE/results/$REQUEST_ID.json" "$STATE/recovery/$REQUEST_ID.json" \
+      "$STATE/recovery/management-ui-maintenance.json" "$STATE/recovery/hold" \
+      "$STATE/requests/current.json"
+    /usr/sbin/userdel qintopia-management-ui >/dev/null 2>&1 || true
+    /usr/bin/systemctl daemon-reload
+    /usr/sbin/nginx -t >/dev/null 2>&1 && /usr/bin/systemctl reload nginx || true
+    /usr/sbin/update-ca-certificates >/dev/null 2>&1 || true
+  }
+  trap cleanup EXIT
+fi
+mkdir -p "$RELEASE/deploy/runner/qintopia-agent-os-deploy-runner.service.d" \
+  "$RELEASE/runtime/nginx/templates" "$RELEASE/deploy-bundle" \
+  "$ROOT/$T" "$ROOT/$O" "$STATE/requests/processed" \
+  "$STATE/requests/claimed" "$STATE/results" "$STATE/recovery" \
+  /etc/qintopia /etc/nginx/sites-available /etc/nginx/sites-enabled \
+  /etc/letsencrypt/live/qintopia-management-ui /etc/letsencrypt/renewal
+chmod 0700 "$STATE"
+cp "$SOURCE_ROOT/deploy/runner/management-ui-lifecycle.sh" \
+  "$SOURCE_ROOT/deploy/runner/wait-deploy-result.sh" "$RELEASE/deploy/runner/"
+cp "$SOURCE_ROOT/deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf" \
+  "$RELEASE/deploy/runner/qintopia-agent-os-deploy-runner.service.d/"
+cp "$SOURCE_ROOT"/runtime/nginx/templates/management-ui-*.conf.template \
+  "$RELEASE/runtime/nginx/templates/"
+chmod 0755 "$RELEASE/deploy/runner/"*.sh
+chmod 0644 "$RELEASE/deploy/runner/qintopia-agent-os-deploy-runner.service.d/"*.conf
+ln -s "$RELEASE" "$ROOT/current"
+ln -s "$ROOT/$T" "$ROOT/previous"
+if [[ "$REAL_SYSTEMD" != true ]]; then
+  cp "$RELEASE/runtime/nginx/templates/management-ui-https.conf.template" \
+    /etc/nginx/sites-available/qintopia-management-ui.conf
+  ln -s /etc/nginx/sites-available/qintopia-management-ui.conf \
+    /etc/nginx/sites-enabled/qintopia-management-ui.conf
+  openssl req -x509 -nodes -newkey rsa:2048 -days 9 \
+    -subj /CN=agentos.qintopia.cn -addext subjectAltName=DNS:agentos.qintopia.cn \
+    -keyout /tmp/management-ui-key.pem \
+    -out /etc/letsencrypt/live/qintopia-management-ui/fullchain.pem \
+    >/dev/null 2>&1
+  : >/etc/letsencrypt/renewal/qintopia-management-ui.conf
+fi
+printf '%s\n' 'export TENCENT_COS_BUCKET=simulated' \
+  'export TENCENT_COS_REGION=simulated' \
+  'export TENCENT_COS_SECRET_ID=simulated' \
+  'export TENCENT_COS_SECRET_KEY=simulated' \
+  'export DEPLOY_REQUEST_SIGNING_KEY=simulated-key' \
+  'export DEPLOY_REQUEST_SIGNING_KEY_ID=simulated' \
+  >/etc/qintopia/cos-artifacts.env
+chmod 0600 /etc/qintopia/cos-artifacts.env
+
+python3 - "$RELEASE" "$ROOT" "$STATE" "$R" "$T" "$O" "$REQUEST_ID" <<'PY'
+import hashlib, hmac, json, sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+release, root, state = map(Path, sys.argv[1:4])
+r, t, o, request_id = sys.argv[4:8]
+def write(path, data, mode):
+    path.write_text(json.dumps(data, sort_keys=True) + "\n")
+    path.chmod(mode)
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+def canonical(value):
+    if isinstance(value, list):
+        return "[" + ",".join(map(canonical, value)) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(json.dumps(k, separators=(",", ":")) + ":" + canonical(value[k])
+                              for k in sorted(value)) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+def sign(value, field, issuer, timestamp):
+    metadata = {"algorithm": "hmac-sha256", "issuer": issuer,
+                "key_id": "simulated", "signed_at": timestamp}
+    signature = hmac.new(b"simulated-key", canonical({field: value, "signature": metadata}).encode(),
+                         hashlib.sha256).hexdigest()
+    return {**value, "signature": {**metadata, "value": signature}}
+scope = ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
+targets = ["qintopia-system-services", "hermes-erhua", "hermes-xiaoman",
+           "hermes-silaoshi", "hermes-huabaosi", "hermes-anan"]
+now = datetime.now(timezone.utc)
+stamp = now.isoformat()
+request = sign({"schema_version": 1, "request_id": request_id, "environment": "production",
+                "created_at": stamp, "expires_at": (now + timedelta(hours=1)).isoformat(),
+                "release_sha": r, "commit_sha": r, "runtime_sha": r,
+                "runtime_artifact_profile": "huabaosi-production", "deploy_bundle_sha": r,
+                "release_scope": scope, "restart_targets": targets, "dry_run": False,
+                "cos": {"bucket": "simulated", "region": "simulated",
+                        "prefix": "qintopia-agent-os",
+                        "request_key": f"qintopia-agent-os/deploy-requests/production/requests/{request_id}.json",
+                        "result_key": f"qintopia-agent-os/deploy-results/production/{request_id}.json"}},
+               "request", "github-actions", stamp)
+request_path = state / "requests/processed" / (request_id + ".json")
+write(request_path, request, 0o644)
+result = sign({"schema_version": 1, "request_id": request_id, "environment": "production",
+               "status": "succeeded", "started_at": stamp, "finished_at": stamp,
+               "release_sha": r, "commit_sha": r, "runtime_sha": r,
+               "runtime_artifact_profile": "huabaosi-production", "deploy_bundle_sha": r,
+               "release_scope": scope, "restart_targets": targets,
+               "previous_sha": t, "current_target": str(release),
+               "checks": [{"name": "deploy-runner", "status": "passed"}],
+               "rollback": {"attempted": False, "status": "not_needed"}},
+              "result", "qintopia-deploy-runner", stamp)
+result_path = state / "results" / (request_id + ".json")
+write(result_path, result, 0o644)
+write(root / o / "manifest.json", {"release_sha": o}, 0o444)
+write(root / t / "manifest.json", {"release_sha": t, "previous_sha": o,
+                                    "commit_sha": t, "runtime_sha": o, "deploy_bundle_sha": r,
+                                    "release_scope": ["deploy-bundle"],
+                                    "restart_targets": ["qintopia-system-services"]}, 0o444)
+write(release / "manifest.json", {"release_sha": r, "previous_sha": t,
+                                    "commit_sha": r, "runtime_sha": r, "deploy_bundle_sha": r,
+                                    "runtime_artifact_profile": "huabaosi-production",
+                                    "release_scope": scope, "restart_targets": targets}, 0o444)
+names = ["deploy/runner/management-ui-lifecycle.sh", "deploy/runner/wait-deploy-result.sh",
+         "deploy/runner/qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf",
+         "runtime/nginx/templates/management-ui-http.conf.template",
+         "runtime/nginx/templates/management-ui-https.conf.template"]
+write(release / "deploy-bundle/artifact-manifest.json",
+      {"commit_sha": r, "files": [{"path": "payload/" + name,
+                                     "sha256": digest((release / name).read_bytes())}
+                                    for name in names]}, 0o444)
+write(state / "recovery" / (request_id + ".json"),
+      {"schema_version": 1, "request_id": request_id,
+       "request_sha256": digest(request_path.read_bytes()), "direction": "T→R",
+       "phase": "smoke-passed", "hold_token": request_id,
+       "original_current_sha": t, "original_previous_sha": o,
+       "manifest_sha256": {"current": digest((root / t / "manifest.json").read_bytes()),
+                           "previous": digest((root / o / "manifest.json").read_bytes())},
+       "result_upload": {"phase": "upload_intent",
+                         "payload_sha256": digest(result_path.read_bytes())}}, 0o600)
+PY
+
+if [[ "$REAL_SYSTEMD" == true ]]; then
+  printf '[Unit]\nDescription=Simulated runner\n[Service]\nType=oneshot\nExecStart=/bin/true\n' \
+    >/run/systemd/system/qintopia-agent-os-deploy-runner.service
+  printf '[Unit]\nDescription=Simulated timer\n[Timer]\nOnCalendar=hourly\n[Install]\nWantedBy=timers.target\n' \
+    >/run/systemd/system/qintopia-agent-os-deploy-runner.timer
+  printf '[Unit]\nDescription=Simulated management UI\n[Service]\nType=simple\nExecStart=/usr/bin/sleep infinity\n[Install]\nWantedBy=multi-user.target\n' \
+    >/run/systemd/system/qintopia-agentos-management-ui.service
+  /usr/bin/systemctl daemon-reload
+  if [[ "$SIMULATED_TIMER_INITIAL" == enabled ]]; then
+    /usr/bin/systemctl enable --now qintopia-agent-os-deploy-runner.timer
+  fi
+  /usr/bin/systemctl start qintopia-agentos-management-ui.service
+  /usr/bin/systemctl stop qintopia-agentos-management-ui.service
+else
+cat >/usr/bin/systemctl <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+timer=/tmp/management-ui-timer-state
+case "$1" in
+  show)
+    if [[ "$2" == qintopia-agent-os-deploy-runner.timer ]]; then
+      if [[ "$3" == --property=UnitFileState ]]; then sed -n '1p' "$timer"; exit; fi
+      if [[ "$3" == --property=ActiveState ]]; then sed -n '2p' "$timer"; exit; fi
+    elif [[ "$2" == qintopia-agentos-management-ui.service ]]; then
+      if [[ -e /tmp/management-ui-active ]]; then
+        printf '%s\n' 'LoadState=loaded' 'ActiveState=active' 'SubState=running' \
+          'UnitFileState=enabled' 'InvocationID=11111111111111111111111111111111' \
+          'Result=success' 'ExecMainCode=0' 'ExecMainStatus=0' \
+          'MainPID=1' 'ControlPID=0' 'ControlGroup=' 'NRestarts=0'
+        exit
+      fi
+      printf '%s\n' 'LoadState=loaded' 'ActiveState=inactive' 'SubState=dead' \
+        'UnitFileState=disabled' 'InvocationID=' 'Result=success' 'ExecMainCode=0' \
+        'ExecMainStatus=0' 'MainPID=0' 'ControlPID=0' 'ControlGroup=' 'NRestarts=0'
+      exit
+    else
+      printf '%s\n' 'LoadState=loaded' 'ActiveState=inactive' \
+        'MainPID=0' 'ControlPID=0' 'ControlGroup='
+      exit
+    fi ;;
+  disable) printf '%s\n' disabled inactive >"$timer"; exit ;;
+  enable)
+    [[ ! -e /tmp/management-ui-fail-enable ]] || exit 75
+    printf '%s\n' enabled active >"$timer"; exit ;;
+  is-active) [[ "$(sed -n '2p' "$timer")" == active ]]; exit ;;
+  daemon-reload) exit ;;
+esac
+exit 75
+SH
+chmod 0755 /usr/bin/systemctl
+cat >/usr/bin/journalctl <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+chmod 0755 /usr/bin/journalctl
+cat >/usr/bin/curl <<'SH'
+#!/usr/bin/env bash
+if [[ -e /tmp/management-ui-fail-https ]]; then printf '500'; else printf '503'; fi
+SH
+chmod 0755 /usr/bin/curl
+printf '%s\n' "$SIMULATED_TIMER_INITIAL" \
+  "$([[ "$SIMULATED_TIMER_INITIAL" == enabled ]] && echo active || echo inactive)" \
+  >/tmp/management-ui-timer-state
+fi
+: >"$STATE/deploy.lock"
+: >"$STATE/poller.lock"
+if [[ "$REAL_PRODUCER" == true ]]; then
+  generated_request="$SOURCE_ROOT/management-ui-producer-request.json"
+  [[ -f "$generated_request" ]] || { echo 'generated request is missing' >&2; exit 75; }
+  rm -f "$STATE/requests/processed/$REQUEST_ID.json" \
+    "$STATE/results/$REQUEST_ID.json" "$STATE/recovery/$REQUEST_ID.json"
+  REQUEST_ID="$(python3 - "$generated_request" "$R" <<'PY'
+import json, sys
+request = json.load(open(sys.argv[1]))
+assert request["release_sha"] == request["commit_sha"] == request["runtime_sha"] == request["deploy_bundle_sha"] == sys.argv[2]
+assert request["release_scope"] == ["sidecar-runtime", "deploy-bundle", "hermes-plugins"]
+assert request["restart_targets"] == ["qintopia-system-services", "hermes-erhua", "hermes-xiaoman", "hermes-silaoshi", "hermes-huabaosi", "hermes-anan"]
+assert request["dry_run"] is False
+print(request["request_id"])
+PY
+)"
+  ln -sfn "$ROOT/$T" "$ROOT/current"
+  ln -sfn "$ROOT/$O" "$ROOT/previous"
+  mkdir -p "$ROOT/$T/deploy/runner"
+  cp "$SOURCE_ROOT/deploy/runner/qintopia-agent-os-deploy-runner" \
+    "$SOURCE_ROOT/deploy/runner/wait-deploy-result.sh" "$ROOT/$T/deploy/runner/"
+  cat >"$ROOT/$T/deploy/runner/quiesce-space-automation-runtime.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  cat >"$ROOT/$T/deploy/runner/management-ui-lifecycle.sh" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  cat >"$ROOT/$T/deploy/runner/promote-release.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+ln -sfn /home/ubuntu/qintopia-agent-os-releases/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+  /home/ubuntu/qintopia-agent-os-releases/previous
+ln -sfn /home/ubuntu/qintopia-agent-os-releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  /home/ubuntu/qintopia-agent-os-releases/current
+SH
+  for script in install-release-systemd-units.sh smoke-release.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$RELEASE/deploy/runner/$script"
+    chmod 0755 "$RELEASE/deploy/runner/$script"
+  done
+  chmod 0755 "$ROOT/$T/deploy/runner/"*.sh \
+    "$ROOT/$T/deploy/runner/qintopia-agent-os-deploy-runner"
+  cos_root=/tmp/qintopia-maintenance-cos
+  mkdir -m 0700 -p "$cos_root/qintopia-agent-os/deploy-requests/production/requests"
+  cp "$generated_request" \
+    "$cos_root/qintopia-agent-os/deploy-requests/production/requests/$REQUEST_ID.json"
+  python3 - "$generated_request" "$cos_root/qintopia-agent-os/deploy-requests/production/current.json" <<'PY'
+import json, sys
+request = json.load(open(sys.argv[1]))
+pointer = {key: request[key] for key in ("schema_version", "environment", "repository", "request_id")}
+pointer.update({"request_key": request["cos"]["request_key"],
+                "result_key": request["cos"]["result_key"]})
+with open(sys.argv[2], "w") as file:
+    json.dump(pointer, file)
+    file.write("\n")
+PY
+  cat >"$cos_root/coscli" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == config ]]; then exit 0; fi
+[[ "$1" == cp ]] || exit 75
+source="$2"; destination="$3"
+if [[ "$source" == cos://* ]]; then
+  source="/tmp/qintopia-maintenance-cos/$(printf '%s' "$source" | cut -d/ -f4-)"
+  [[ -f "$source" ]] || { echo NoSuchKey >&2; exit 1; }
+else
+  destination="/tmp/qintopia-maintenance-cos/$(printf '%s' "$destination" | cut -d/ -f4-)"
+  mkdir -p "$(dirname "$destination")"
+fi
+cp "$source" "$destination"
+SH
+  chmod 0755 "$cos_root/coscli"
+  COSCLI_PATH="$cos_root/coscli" \
+    QINTOPIA_DEPLOY_RUNNER_BIN="$ROOT/$T/deploy/runner/qintopia-agent-os-deploy-runner" \
+    "$SOURCE_ROOT/deploy/runner/poll-deploy-requests.sh"
+  test ! -e "$STATE/requests/claimed/$REQUEST_ID.json"
+  test -f "$STATE/requests/processed/$REQUEST_ID.json"
+  test "$(stat -c '%a' "$STATE/requests/processed/$REQUEST_ID.json")" = 644
+  test "$(stat -c '%a' "$STATE/results/$REQUEST_ID.json")" = 644
+  test "$(stat -c '%a' "$STATE/recovery/$REQUEST_ID.json")" = 600
+  cmp "$STATE/results/$REQUEST_ID.json" \
+    "$cos_root/qintopia-agent-os/deploy-results/production/$REQUEST_ID.json"
+  printf 'real_runner_poller_producer=%s passed\n' "$SIMULATED_TIMER_INITIAL"
+fi
+helper="$RELEASE/deploy/runner/management-ui-lifecycle.sh"
+mkdir -p /tmp/qintopia-maintenance-injection
+cat >/tmp/qintopia-maintenance-injection/sitecustomize.py <<'PY'
+import errno
+import os
+import signal
+import sys
+
+mode = os.environ.get("SIMULATED_MAINTENANCE_FAILURE", "")
+record = (len(sys.argv) > 4 and
+          sys.argv[1].endswith("/management-ui-maintenance.json"))
+hold = (len(sys.argv) > 3 and
+        sys.argv[1].endswith("/recovery") and
+        sys.argv[2].startswith("deploy-"))
+action = sys.argv[4] if record else sys.argv[3] if hold else ""
+
+if record and action == "create" and mode == "write":
+    original_open = os.open
+    def fail_open(path, flags, *args, **kwargs):
+        if os.fspath(path) == sys.argv[1] and flags & os.O_EXCL:
+            raise OSError(errno.EIO, "simulated maintenance record write failure")
+        return original_open(path, flags, *args, **kwargs)
+    os.open = fail_open
+elif record and action == "create" and mode == "fsync":
+    def fail_fsync(_descriptor):
+        raise OSError(errno.EIO, "simulated maintenance record fsync failure")
+    os.fsync = fail_fsync
+elif record and action == "create" and mode == "directory-fsync":
+    original_fsync = os.fsync
+    count = [0]
+    def fail_directory_fsync(descriptor):
+        count[0] += 1
+        if count[0] == 2:
+            raise OSError(errno.EIO, "simulated maintenance directory fsync failure")
+        return original_fsync(descriptor)
+    os.fsync = fail_directory_fsync
+
+kill_at_start = ((mode == "kill:before-hold" and hold and action == "create") or
+                 (mode == "kill:before-isolated" and record and action == "isolated") or
+                 (mode == "kill:before-hold-remove" and hold and action == "remove"))
+if kill_at_start:
+    os.kill(os.getppid(), signal.SIGKILL)
+    os._exit(137)
+
+kill_on_fsync = ((mode == "kill:record-created" and record and action == "create") or
+                 (mode == "kill:hold-created" and hold and action == "create") or
+                 (mode == "kill:isolated" and record and action == "isolated") or
+                 (mode == "kill:finishing" and record and action == "finishing") or
+                 (mode == "kill:hold-removed" and hold and action == "remove"))
+if kill_on_fsync:
+    original_fsync = os.fsync
+    count = [0]
+    target = 1 if mode == "kill:hold-removed" else 2
+    def kill_after_fsync(descriptor):
+        result = original_fsync(descriptor)
+        count[0] += 1
+        if count[0] == target:
+            os.kill(os.getppid(), signal.SIGKILL)
+            os._exit(137)
+        return result
+    os.fsync = kill_after_fsync
+PY
+
+if [[ "$REAL_SYSTEMD" == true ]]; then
+  for failure in write fsync directory-fsync; do
+    if SIMULATED_MAINTENANCE_FAILURE="$failure" \
+        PYTHONPATH=/tmp/qintopia-maintenance-injection \
+        "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+      echo "record $failure failure changed maintenance state" >&2; exit 1
+    fi
+    test "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" = "$SIMULATED_TIMER_INITIAL"
+    test ! -e "$STATE/recovery/hold"
+    rm -f "$STATE/recovery/management-ui-maintenance.json"
+  done
+  if "$helper" begin deploy-20260929T120001Z-abcdef1 >/dev/null 2>&1; then
+    echo 'unknown maintenance request was accepted' >&2; exit 1
+  fi
+  cp "$STATE/results/$REQUEST_ID.json" /tmp/qintopia-maintenance-signed-result.json
+  python3 - "$STATE/results/$REQUEST_ID.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+result = json.load(open(path))
+result["signature"]["value"] = "0" * 64
+open(path, "w").write(json.dumps(result) + "\n")
+PY
+  if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+    echo 'unknown signed result was accepted' >&2; exit 1
+  fi
+  cp /tmp/qintopia-maintenance-signed-result.json "$STATE/results/$REQUEST_ID.json"
+  "$helper" begin "$REQUEST_ID"
+  test "$(cat "$STATE/recovery/hold")" = "$REQUEST_ID"
+  test "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" = disabled
+  printf '%s\n' \
+    'QINTOPIA_FOUNDATION_PRODUCTION_ENABLE=1' \
+    'QINTOPIA_FOUNDATION_TENANT=simulated' \
+    'QINTOPIA_FOUNDATION_IDENTITY_NAMESPACE=simulated' \
+    'QINTOPIA_FOUNDATION_DATABASE_URL=postgres://qintopia_management_ui:simulated@127.0.0.1:65535/qintopia' \
+    'QINTOPIA_COLLABORATION_PUBLIC_ORIGIN=https://agentos.qintopia.cn' \
+    | "$helper" prepare
+  "$helper" install-http
+  mkdir -p /etc/letsencrypt/accounts
+  cat >/usr/bin/certbot <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$1" == certonly ]]; then
+  openssl req -x509 -nodes -newkey rsa:2048 -days 9 \
+    -subj /CN=agentos.qintopia.cn -addext subjectAltName=DNS:agentos.qintopia.cn \
+    -keyout /etc/letsencrypt/live/qintopia-management-ui/privkey.pem \
+    -out /etc/letsencrypt/live/qintopia-management-ui/fullchain.pem \
+    >/dev/null 2>&1
+  : >/etc/letsencrypt/renewal/qintopia-management-ui.conf
+elif [[ "$1" != renew || "$2" != --cert-name || "$4" != --dry-run ]]; then
+  exit 75
+fi
+SH
+  chmod 0755 /usr/bin/certbot
+  "$helper" issue-cert
+  cp /etc/letsencrypt/live/qintopia-management-ui/fullchain.pem \
+    /usr/local/share/ca-certificates/qintopia-maintenance-test.crt
+  /usr/sbin/update-ca-certificates >/dev/null
+  "$helper" install-https
+  test "$(curl --noproxy '*' --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    --resolve agentos.qintopia.cn:443:127.0.0.1 \
+    https://agentos.qintopia.cn/)" = 503
+  "$helper" finish "$REQUEST_ID"
+  test ! -e "$STATE/recovery/hold"
+  test "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" = "$SIMULATED_TIMER_INITIAL"
+  "$helper" finish "$REQUEST_ID"
+  printf 'real_systemd_first_setup=%s passed\n' "$SIMULATED_TIMER_INITIAL"
+
+  record="$STATE/recovery/management-ui-maintenance.json"
+  for boundary in record-created before-hold hold-created before-isolated isolated \
+      finishing before-hold-remove hold-removed; do
+    printf 'real_systemd_boundary_start=%s:%s\n' "$SIMULATED_TIMER_INITIAL" "$boundary" >&2
+    rm "$record"
+    if [[ "$boundary" == record-created || "$boundary" == before-hold ||
+          "$boundary" == hold-created || "$boundary" == before-isolated ||
+          "$boundary" == isolated ]]; then
+      if SIMULATED_MAINTENANCE_FAILURE="kill:$boundary" \
+          PYTHONPATH=/tmp/qintopia-maintenance-injection \
+          "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+        echo "begin unexpectedly survived $boundary" >&2; exit 1
+      fi
+    else
+      "$helper" begin "$REQUEST_ID"
+      if SIMULATED_MAINTENANCE_FAILURE="kill:$boundary" \
+          PYTHONPATH=/tmp/qintopia-maintenance-injection \
+          "$helper" finish "$REQUEST_ID" >/dev/null 2>&1; then
+        echo "finish unexpectedly survived $boundary" >&2; exit 1
+      fi
+    fi
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+      if flock -n "$STATE/poller.lock" true && flock -n "$STATE/deploy.lock" true; then
+        break
+      fi
+      sleep 0.1
+    done
+    printf 'real_systemd_boundary_state=%s:%s phase=%s timer=%s hold=%s\n' \
+      "$SIMULATED_TIMER_INITIAL" "$boundary" \
+      "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["phase"])' "$record" 2>/dev/null || echo missing)" \
+      "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" \
+      "$([[ -e "$STATE/recovery/hold" ]] && echo present || echo absent)" >&2
+    test "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["phase"])' "$record")" = \
+      "$(case "$boundary" in isolated) echo isolated ;; finishing|before-hold-remove|hold-removed) echo finishing ;; *) echo preparing ;; esac)"
+    if [[ "$boundary" == record-created ]]; then
+      test "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" = "$SIMULATED_TIMER_INITIAL"
+      test ! -e "$STATE/recovery/hold"
+    elif [[ "$boundary" == before-hold ]]; then
+      test "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" = disabled
+      test ! -e "$STATE/recovery/hold"
+    elif [[ "$boundary" == hold-removed ]]; then
+      test ! -e "$STATE/recovery/hold"
+    else
+      test "$(cat "$STATE/recovery/hold")" = "$REQUEST_ID"
+    fi
+    if [[ "$boundary" == record-created || "$boundary" == before-hold ||
+          "$boundary" == hold-created || "$boundary" == before-isolated ||
+          "$boundary" == isolated ]]; then
+      "$helper" begin "$REQUEST_ID"
+    fi
+    "$helper" finish "$REQUEST_ID"
+    test ! -e "$STATE/recovery/hold"
+    test "$(/usr/bin/systemctl show qintopia-agent-os-deploy-runner.timer --property=UnitFileState --value)" = "$SIMULATED_TIMER_INITIAL"
+    printf 'real_systemd_recovery=%s:%s passed\n' "$SIMULATED_TIMER_INITIAL" "$boundary"
+  done
+  exit 0
+fi
+
+chmod 0644 /etc/qintopia/cos-artifacts.env
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'readable signing environment was accepted' >&2; exit 1
+fi
+chmod 0600 /etc/qintopia/cos-artifacts.env
+python3 - "$STATE/recovery/$REQUEST_ID.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+data = json.load(open(path))
+data["result_upload"]["payload_sha256"] = "0" * 64
+open(path, "w").write(json.dumps(data) + "\n")
+PY
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'conflicting result digest was accepted' >&2; exit 1
+fi
+python3 - "$STATE/recovery/$REQUEST_ID.json" "$STATE/results/$REQUEST_ID.json" <<'PY'
+import hashlib, json, sys
+path, result = sys.argv[1:]
+data = json.load(open(path))
+data["result_upload"]["payload_sha256"] = hashlib.sha256(open(result, "rb").read()).hexdigest()
+open(path, "w").write(json.dumps(data) + "\n")
+PY
+printf '%s\n' '{}' >"$STATE/requests/claimed/deploy-20260929T120001Z-bbbbbbb.json"
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'unfinished claim was accepted' >&2; exit 1
+fi
+rm "$STATE/requests/claimed/deploy-20260929T120001Z-bbbbbbb.json"
+touch /tmp/management-ui-active
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'active management UI was accepted' >&2; exit 1
+fi
+rm /tmp/management-ui-active
+printf 'foreign-request\n' >"$STATE/recovery/hold"
+chmod 0600 "$STATE/recovery/hold"
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'foreign hold was accepted' >&2; exit 1
+fi
+rm "$STATE/recovery/hold"
+printf '{}\n' >"$STATE/recovery/deploy-20260929T120001Z-abcdef1.json"
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'later journal was accepted' >&2; exit 1
+fi
+rm "$STATE/recovery/deploy-20260929T120001Z-abcdef1.json"
+cp "$STATE/results/$REQUEST_ID.json" /tmp/management-ui-original-result.json
+python3 - "$STATE/results/$REQUEST_ID.json" "$STATE/recovery/$REQUEST_ID.json" <<'PY'
+import hashlib, json, sys
+result_path, journal_path = sys.argv[1:]
+result = json.load(open(result_path))
+result["signature"]["value"] = "0" * 64
+open(result_path, "w").write(json.dumps(result) + "\n")
+journal = json.load(open(journal_path))
+journal["result_upload"]["payload_sha256"] = hashlib.sha256(open(result_path, "rb").read()).hexdigest()
+open(journal_path, "w").write(json.dumps(journal) + "\n")
+PY
+if "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'invalid signed result was accepted' >&2; exit 1
+fi
+cp /tmp/management-ui-original-result.json "$STATE/results/$REQUEST_ID.json"
+python3 - "$STATE/results/$REQUEST_ID.json" "$STATE/recovery/$REQUEST_ID.json" <<'PY'
+import hashlib, json, sys
+result_path, journal_path = sys.argv[1:]
+journal = json.load(open(journal_path))
+journal["result_upload"]["payload_sha256"] = hashlib.sha256(open(result_path, "rb").read()).hexdigest()
+open(journal_path, "w").write(json.dumps(journal) + "\n")
+PY
+for failure in write fsync; do
+  if SIMULATED_MAINTENANCE_FAILURE="$failure" \
+      PYTHONPATH=/tmp/qintopia-maintenance-injection \
+      "$helper" begin "$REQUEST_ID" >/dev/null 2>&1; then
+    echo "maintenance record $failure failure was accepted" >&2; exit 1
+  fi
+  test "$(sed -n '1p' /tmp/management-ui-timer-state)" = "$SIMULATED_TIMER_INITIAL"
+  test ! -e "$STATE/recovery/hold"
+  rm -f "$STATE/recovery/management-ui-maintenance.json"
+done
+"$helper" begin "$REQUEST_ID"
+test "$(cat "$STATE/recovery/hold")" = "$REQUEST_ID"
+test "$(sed -n '1p' /tmp/management-ui-timer-state)" = disabled
+python3 - "$STATE/recovery/management-ui-maintenance.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+record = json.load(open(path))
+record["phase"] = "preparing"
+open(path, "w").write(json.dumps(record) + "\n")
+PY
+rm "$STATE/recovery/hold"
+"$helper" begin "$REQUEST_ID"
+test "$(cat "$STATE/recovery/hold")" = "$REQUEST_ID"
+"$helper" begin "$REQUEST_ID"
+rm "$ROOT/current"
+ln -s "$ROOT/$T" "$ROOT/current"
+if "$helper" finish "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'pointer conflict was accepted' >&2; exit 1
+fi
+test -f "$STATE/recovery/hold"
+rm "$ROOT/current"
+ln -s "$RELEASE" "$ROOT/current"
+touch /tmp/management-ui-fail-https
+if "$helper" finish "$REQUEST_ID" >/dev/null 2>&1; then
+  echo 'failed HTTPS 503 check cleared hold' >&2; exit 1
+fi
+test -f "$STATE/recovery/hold"
+rm /tmp/management-ui-fail-https
+if [[ "$SIMULATED_TIMER_INITIAL" == enabled ]]; then
+  touch /tmp/management-ui-fail-enable
+  if "$helper" finish "$REQUEST_ID" >/dev/null 2>&1; then
+    echo 'timer restore failure cleared hold' >&2; exit 1
+  fi
+  test -f "$STATE/recovery/hold"
+  rm /tmp/management-ui-fail-enable
+fi
+"$helper" finish "$REQUEST_ID"
+test ! -e "$STATE/recovery/hold"
+test "$(sed -n '1p' /tmp/management-ui-timer-state)" = "$SIMULATED_TIMER_INITIAL"
+"$helper" finish "$REQUEST_ID"
+printf 'maintenance_window=%s passed\n' "$SIMULATED_TIMER_INITIAL"
+`,
+      { mode: 0o755 }
+    );
+    for (const initial of ["enabled", "disabled"]) {
+      const result = realSystemd
+        ? spawnSync("bash", [path.join(fixture, "run.sh")], {
+            encoding: "utf8",
+            timeout: 600000,
+            env: {
+              ...process.env,
+              REAL_SYSTEMD: "true",
+              REAL_PRODUCER: String(realProducer),
+              QINTOPIA_FIXTURE_REPO: repoRoot,
+              SIMULATED_TIMER_INITIAL: initial,
+            },
+          })
+        : spawnSync(
+            "docker",
+            [
+              "run",
+              "--rm",
+              "-v",
+              `${repoRoot}:/repo:ro`,
+              "-v",
+              `${fixture}:/fixture:ro`,
+              "-e",
+              `SIMULATED_TIMER_INITIAL=${initial}`,
+              "-e",
+              "REAL_SYSTEMD=false",
+              "-e",
+              "REAL_PRODUCER=false",
+              "-e",
+              "QINTOPIA_FIXTURE_REPO=/repo",
+              "python:3.12-slim",
+              "bash",
+              "/fixture/run.sh",
+            ],
+            { encoding: "utf8", timeout: 120000 }
+          );
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+      console.log(result.stdout.trim());
+    }
+  } finally {
+    fs.rmSync(fixture, { recursive: true, force: true });
+  }
+  process.exit(0);
+}
+
 if (process.argv[2] === "--management-ui-mock") {
   const repoRoot = process.cwd();
   const fixtureBase = path.join(repoRoot, ".local-workspace");

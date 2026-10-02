@@ -3397,6 +3397,27 @@
           }
         },
         {
+          "id": "anan-pms/business-state-bounds-large-account-lists",
+          "name": "工作账号与待登记观测超过256条仍可读取管理页",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/business_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::business_state_keeps_bounded_account_summaries_above_256",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务管理范围与账号摘要查询、PostgreSQL事务"],
+            "simulated": ["257个已登记账号及257个可信观测；无真实企微或PMS操作"]
+          }
+        },
+        {
           "id": "anan-pms/two-valid-scopes-isolate-identical-external-ids",
           "name": "两个合法作用域同标识同额正向接收与交叉权限隔离",
           "aliases": [],
@@ -3525,6 +3546,69 @@
           "boundary": {
             "real": ["共同服务规则、权限、事项元数据、尝试及PG事务"],
             "simulated": ["PMS当前事实与本地记录渠道；无真实人员、外发或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/scope-communication-current-route",
+          "name": "范围工作群候选与撤销后目标失效",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/scope_communication_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::scope_communication_tests::scope_communication_candidates_and_current_route_fail_closed",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务候选查询、管理授权、PostgreSQL与目标版本重验"],
+            "simulated": ["本地工作群和人员；无真实渠道发送或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/scope-communication-group-pages",
+          "name": "超过256个工作群候选的翻页与授权重验",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/scope_communication_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::scope_communication_tests::scope_communication_group_pages_recheck_authority",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务工作群候选翻页、授权和PostgreSQL查询"],
+            "simulated": ["本地工作群；无真实渠道发送或生产配置"]
+          }
+        },
+        {
+          "id": "anan-pms/scope-communication-account-pages",
+          "name": "超过256个渠道账号候选的翻页、同名区分与管理撤权",
+          "aliases": [],
+          "executor": "cargo",
+          "target": {
+            "path": "runtime/sidecar/src/person_collaboration/scope_communication_tests.rs",
+            "manifest": "runtime/sidecar/Cargo.toml",
+            "features": ["postgres-integration-tests"],
+            "filter": "person_collaboration::business_tests::scope_communication_tests::scope_communication_account_pages_keep_channels_and_recheck_manager",
+            "args": ["--", "--ignored", "--exact"],
+            "count_strategy": "cargo"
+          },
+          "requires": ["postgres", "rust"],
+          "timeout_seconds": 900,
+          "required": true,
+          "boundary": {
+            "real": ["共同服务已观测与已登记账号翻页、渠道标识和管理撤权"],
+            "simulated": ["本地渠道账号；无真实联系人读取或生产配置"]
           }
         },
         {

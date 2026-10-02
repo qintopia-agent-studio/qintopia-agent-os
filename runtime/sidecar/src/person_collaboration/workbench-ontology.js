@@ -474,7 +474,7 @@ function identityPanel(item) {
       const available = candidates.filter((candidate) => candidate.selectable);
       const form = el("form", undefined, "qo-identity-form");
       form.append(el("h4", `为${item.label}核验来源账号`));
-      const candidate = selectField(
+      const candidate = searchableSelectField(
         form,
         "identity-candidate",
         "待核对的账号",

@@ -15,6 +15,29 @@ returning 503 and retains accounts, sessions and audit. See the
 [implementation contract](../../docs/reports/2026-09-28-management-ui-deploy-wiring.md)
 and [production runbook](../../docs/operations/production-deploy-runner.md).
 
+The first setup window uses `begin <original-T-to-R-request-id>` and `finish <same-id>`
+on a release containing these modes. `begin` verifies the archived signed success,
+direction journal, R/T lineage and empty claim set before it records the timer's
+original state, stops the timer and establishes the request-bound hold. `finish`
+requires the stopped HTTPS 503 route, restores the original timer state while the hold
+blocks the service, then removes only that hold. Both modes are resumable for the same
+request after an interrupted call; conflicting identity or uncertain state retains
+isolation. The fixed v0.3.4 R artifact predates these modes and cannot perform first
+setup without a later reviewed immutable release. No mode publishes a release, replays a
+deployment or activates the UI.
+
+The maintenance verifier accepts the runner's root-owned regular processed request and
+result at mode 0600 or 0644 only inside the root-owned 0700 state directory; its
+direction journal and maintenance record remain private 0600 files. The isolated Linux
+producer fixture uses the real request generator, runner, and poller before first setup,
+with a simulated COS store and release promotion scripts. Its
+`--management-ui-maintenance-systemd-producer` mode expects a fresh generator output at
+`$QINTOPIA_FIXTURE_REPO/management-ui-producer-request.json` in the disposable VM. The
+producer and both timer-state recovery runs passed. The final `pnpm deploy:runner:check`
+reached the existing NATS ACL wrapper's 20-second timeout; its nine Python cases passed
+when run directly in 21.2 seconds. The aggregate check remains failed pending separate
+review of that wrapper.
+
 ## Hermes Core Readiness
 
 `check-hermes-core-readiness.sh` is a read-only server-side preflight for the Hermes

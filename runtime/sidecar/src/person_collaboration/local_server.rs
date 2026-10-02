@@ -230,6 +230,41 @@ pub(super) async fn dispatch_tracked(
                 Ok(state)
             }
             ("GET", "/api/business") => store.business_configuration_state(actor).await,
+            ("GET", path) if path.starts_with("/api/business/candidates?") => {
+                let query = path.trim_start_matches("/api/business/candidates?");
+                let mut fields = std::collections::BTreeMap::new();
+                for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+                    ensure!(
+                        matches!(
+                            key.as_ref(),
+                            "scope" | "kind" | "search" | "limit" | "after"
+                        ) && fields
+                            .insert(key.into_owned(), value.into_owned())
+                            .is_none(),
+                        "invalid_candidate_query"
+                    );
+                }
+                let scope = Uuid::parse_str(
+                    fields
+                        .get("scope")
+                        .ok_or_else(|| anyhow::anyhow!("invalid_candidate_query"))?,
+                )?;
+                let search = fields.get("search").map_or("", String::as_str);
+                let kind = fields
+                    .get("kind")
+                    .ok_or_else(|| anyhow::anyhow!("invalid_candidate_query"))?;
+                let limit = fields.get("limit").map_or(Ok(50), |v| v.parse::<i64>())?;
+                store
+                    .scope_communication_candidates(
+                        actor,
+                        scope,
+                        kind,
+                        search,
+                        limit,
+                        fields.get("after").map(String::as_str),
+                    )
+                    .await
+            }
             ("POST", "/api/business/preview" | "/api/business/save") => {
                 let command: super::store::business_config::BusinessConfigCommand =
                     serde_json::from_slice(&r.body)
@@ -477,6 +512,7 @@ fn live_ui_route_allowed(method: &str, path: &str) -> bool {
     match method {
         "GET" => {
             matches!(path, "/api/state" | "/api/business" | "/api/identities")
+                || path.starts_with("/api/business/candidates?")
                 || path.starts_with("/api/ontology?scope=")
                 || path.starts_with("/api/identities?person=")
         }
