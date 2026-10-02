@@ -299,3 +299,148 @@ Webhook 密钥不能放进可被 Skill 转发的环境变量，实际注入须�
 
 宿主 cron 脚本与 browser_use
 Python 的功能限定仍待负责人决定。首批人员和权限由负责人后续定稿；生产凭据、部署、真实发送及业务写入尚未执行。
+
+## 2026-09-29 宿主恢复和启动保护增量
+
+接手基线是 `8173e53795062d4df53fc78f5099325b2e37ce59`；独立工作树分支
+`codex/anan-host-recovery`。本轮只改 `skills/pms-operations`
+和本报告，未读真实 Token、私密消息，未连接生产 PMS、发送真实消息、安装作业或部署。
+
+`recovery_host.py` 按共享 `pms_workitem_recovery` 的只读 DTO 有界读取原 WorkItem：
+`list` 每页最多100、单次最多10页，`detail` 重验同一事项及当前群配置。仅
+`payment/awaiting_review`、可用的
+`delivery_state=pending`、当前目标、尚无原发送键/回执且 `send.phase` 为空或 `pending`
+时，才向官方 Generic
+webhook 投同一 UUID 的只读 HMAC 提示。202 或 duplicate 只表示内部提示被接受；宿主不写人类送达、不办理 PMS。UNKNOWN、claimed、sent、目标失效均不换键重发。后续实际工作人员群投递仍无安全实现，本入口不把
+`LocalRecordingAdapter` 当成真实渠道。
+
+`startup_preflight.py`
+的无凭据静态门禁要求发布与安装包固定文件清单摘要相同，安装插件和 Profile 配置在 Gateway 挂载命名空间只读且 root 所有，受管配置继续用
+`production.check_managed_files` 的完整目录链检查。它先校验摘要再导入包内代码。
+`check_loaded_plugin`
+核验实际 PluginManager 的模块路径、14 个 registry 工具、3 个活动 hook 和残留 shell 回调。
+
+部署侧需在同一 Gateway 进程调用该探针，并以结果控制入口开放。当前未接入服务启动，预检本身不能阻止 Gateway 在插件失败时继续或重载空窗。
+
+追加官方 `agent/shell_hooks.py:141-181,211-279,330-341,368-377,588-593`
+只读源码核查：非空 `hooks` 事件可能注册宿主
+`subprocess.Popen`，单 Profile 继承进程环境； `enabled:false` 不被 `_parse_single_entry`
+过滤，`hooks_auto_accept=false`
+也不能排除旧 allowlist。故本包生产门禁静态拒绝原始/受管/有效配置中的非空 shell 事件，保留
+`output_spill`、`outbound`，并检查 Manager 中已登记 shell 回调。该核查不改变默认 Docker 工具或插件 Python
+hook；生产现用项仍须安装前再次清点。
+
+### 固定官方核心依据与范围
+
+只读通过 GitHub contents API 核对官方干净核心 `d337b736aa1e8ebecfab043842d13e4a2d2f48a3`
+的固定文件：
+
+| 证据                                               | 结论                                                                                                |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `gateway/run.py:5810-5821`                         | 启动先执行 MCP discovery，异常仅记录，再启动 runner；插件 hook 不能作为更早的阻断。                 |
+| `gateway/run_profile_reconcile.py:182-196,246-271` | 热增 Profile 和周期调和可以重新连接宿主 MCP；只查一次工具注册表不足以约束后续进程。                 |
+| `hermes_cli/plugins.py:1228-1263`                  | `force` 先 `unload()` 再重新发现，期间 hook 被移除；配置型 shell hooks 随后重注册。                 |
+| `hermes_cli/plugins_loader.py:265-333`             | import/register 失败被记在 `LoadedPlugin.error`，本插件注册被清理，Gateway 不因该单个失败自动退出。 |
+| `plugins/platforms/wecom/adapter.py:583-625`       | 公共 `send` 的群路由仍使用被动回复；其超时/RuntimeError fallback 到主动发送，可能在丢 ACK 后双发。  |
+
+虚构凭据的实际证据沿用本报告前文：官方 Docker/PluginManager 模拟见上文第107-114行，独立 Chromium 文件系统见第135-144行，完整一次性 Linux
+Gateway `production.require()`
+见第152-159行，MCP 反例见第163-186行；它们是此前固定代码的隔离模拟，不是本轮新装生产服务。官方 WeCom 丢 ACK 探针及三种公开发送情形见第191-207行，`blocked_duplicate_effect_possible`
+仍为阻断，不把模拟探针的失败改写为成功。
+
+### 最小部署契约与发送选项
+
+部署线需在同一服务挂载命名空间固定受审核心、插件、Profile/受管配置的来源及只读性。
+
+私有凭据在无凭据静态核验、官方 Docker/浏览器隔离和实际插件/工具/hook 装载通过前不可供 Gateway 外部入口使用。MCP、配置型宿主 shell
+hooks、旧存活宿主 PID 及强制 reload 均需逐项核验；reload 前先停止外部接收/发送入口，失败保持关闭，同时保留会话、记忆、WorkItem 和原键。此服务/安装差分由部署 owner 单列并按九原则评审；本轮未修改
+`deploy/runner`、cron 清单、allowlist 或 CI。
+
+现有官方接口有两条可研究的单次调用路径，均未满足完整工作人员群目标：
+
+1. 在同一岸岸 WeCom adapter 上仅调用一次现有
+   `_send_reply_markdown(req_id, text)`，禁用包内 fallback，超时记 UNKNOWN。它依赖当前群的有效被动回复引用；重启或无可用
+   `req_id` 时不能覆盖主动付款通知和定时提醒，且没有按原发送键查询回执的官方协议。
+2. 直接单次调用现有 `_send_proactive_markdown(chat_id, text)`，不经公共
+   `send/_send_inner` 的 fallback。源码显示它向 `APP_CMD_SEND` 提交群
+   `chatid`，但公共实现明确把已识别群判为需要被动
+   `req_id`；真实群是否接受主动发送没有核验。在官方 API 和同 Bot/同群目标的隔离模拟与实际受权验收前不能启用。
+
+两种路径都必须沿原 WorkItem
+claim 和当前共享 group/channel 快照发送前重验；响应丢失保持原键 UNKNOWN，不伪造回执查询，不借另一 Bot/私聊或重新选择群。
+
+若现有 API 无法证明单次群效果，需由官方通道维护方提供受审的单次发送/原键回查能力或等效协议，不能直接解除本次工作人员群通知阻断。
+
+本轮包级 104 项测试通过；恢复专项 7 项、静态预检 3 项和生产隔离专项 12 项通过。生产安装与真实消息验收仍待负责人另行发起。
+
+共享基础 `ecb8e0f` 已提交当前沟通路由，`beb6159b` 已提交 `pms_workitem_recovery`
+读路径。该恢复提交未带专项测试；当前路由 helper 的撤权、角色、职责和 Agent 停用链修正仍在基础线，不能把
+`current=true` 当成已验证的真实发送授权。
+
+本包恢复专项兼容冻结 DTO 与当前共享提交的模拟响应；后者的 `list` 暂缺
+`delivery_state`，`detail.target` 仅在当前路由成立时存在，配置版本在
+`detail.configuration_version`。两种形状均须在 `detail`
+核对无原键/回执且无 UNKNOWN，再投内部只读提示；不据此认定真实群发送获权。
+
+已按共享提交逐字段核对本包模拟响应；现阶段仍不能记为真实 Sidecar 联合通过。基础线完成撤权链与恢复专项后，须以隔离 PostgreSQL 联跑撤权、停用、UNKNOWN 和重启场景。
+
+PR #730 的建议审阅指出宿主曾只验证 `QINTOPIA_PMS_RECOVERY_BINDING`
+的 UUID 格式，未用它筛选返回事项。核对共享 `beb6159b`：`RecoveryRequest`
+拒绝额外字段，`foundation_server` 从受限服务环境读取该 binding；Store 的 `list/detail`
+SQL 都按同一 binding、版本与 gateway 限定 WorkItem。`detail.target.binding_id`
+是工作人员群 binding，不是业务 binding，不可相互比较。移除宿主的无效同名环境检查，并新增实际
+`main()` 导入回归；范围强制仍在共享服务，真实发送另须 action-specific 授权。
+
+### 本轮本地 PR 检查
+
+`pnpm check:pr:auto` 检测到 11 个改动路径，选择 quick
+tier。格式、Markdown、registry、MCP、Skill/Workflow、runtime 和已执行的部署合同检查通过。
+
+执行至 `agents:check` 时，既有 `test-agent-runtime-management.mjs` 在其模拟目录调用
+`check-deploy-runner.mjs` 超过固定 600 秒，抛出
+`spawnSync /usr/local/bin/node ETIMEDOUT`，整条命令退出 1。
+
+该阶段不涉及本轮 PMS 包测试；当前仅能确认超时位置，尚无证据将耗时归因于本轮改动或认定检查已通过。
+
+本轮不修改 CI、runner 或超时阈值。代码审核使用已通过的 PMS 包 104 项、单独的
+`pnpm lint:md` 与 `pnpm registry:check`，PR 后仍需 CI 对最终 head 完整执行。
+
+如同一固定测试在隔离负载下仍超时，由 runner/CI
+owner 按现有审批规则单独调查。此本地失败不解除生产安装和真实群发送门禁。
+
+后续独立 `pnpm secrets:check` 首次报 `test_recovery_host.py:97`
+高置信凭据赋值；该行是固定模拟 HMAC 材料，根因是夹具变量名命中规则。
+
+将变量改为 `fixture_key`，不改签名行为或扫描器；恢复专项 7 项与 `pnpm secrets:check`
+重跑通过。
+
+### 独立 business 检查的预检测试依赖
+
+PR #730 在 `78e2b6c7` 的独立 business run `36555345910`
+中执行全部 170 个已登记场景；其中“受控客户端和可信宿主工具边界”的 104 项执行 103 项通过、1 项报错，整轮为
+`BROKEN`。报错在 `test_startup_preflight.py`
+的静态预检正例：隔离测试 venv 没有 PyYAML，`check_static` 导入 `yaml` 时抛出
+`ModuleNotFoundError`。这不是预检安全拒绝或真实生产 Gateway 验收失败，但该 head 的 business 不能记为通过。
+
+修复只调整 PMS 包测试的配置夹具：使用 JSON（YAML 的兼容子集）及标准库解码替身，继续验证摘要、只读路径与非空 shell
+hook 拒绝。生产预检继续用 Hermes 运行环境的 PyYAML 解析原始 Profile 与受管 YAML；缺少该依赖时仍失败关闭。本轮不修改 CI、共享测试依赖或预检业务规则。修复后的本地和远端结果另记，不能沿用失败 run 的结论。
+
+本地 `python3 -S` 隐去站点包后，预检 3 项及 PMS 全包 104 项均通过；普通 `python3`
+的 PMS 全包 104 项通过，`pnpm lint:md`、`pnpm collaboration:check` 及 `git diff --check`
+通过。首次 `pnpm format:check`
+与自动 PR 检查在本报告新增段落的 Prettier 排版处停止，未进入其他自动检查阶段；排版修正后需重跑。
+
+排版后再次运行 `pnpm check:pr:auto`，选择 quick
+tier。格式、Markdown、registry、MCP、技能、Workflow、runtime、部署合同、inventory、CI 合同及提交信息检查通过；到
+`agents:check` 的既有 `test-agent-runtime-management.mjs` 调用 `check-deploy-runner.mjs`
+时，再次超过固定 600 秒，抛出
+`spawnSync /usr/local/bin/node ETIMEDOUT`，整条命令退出 1；后续检查未执行。未修改检查器、CI 或超时上限，也不把已通过的前段记作整条通过。
+
+### 2026-10-02 重复预检的字节码缓存修复
+
+同步主线后的 `1ae5b1b1` 已通过 CI 和 business，但 reviewer 新发现 `a82c2d36a466`
+指出预检可能污染发布目录。新增重复预检用例显式开启字节码写入后，修复前在首次调用后发现
+`__pycache__`，原固定清单会拒绝后续检查。
+
+修复仅将 `production.py`
+的加载改为编译已校验源码，保留模块元数据，不读取或写入其缓存，不修改全局缓存开关；额外目录仍拒绝。相同目录连续两次检查、摘要不变及外加缓存拒绝由同一回归覆盖。生产安装、真实群发送、CI 与部署机制均未调整。

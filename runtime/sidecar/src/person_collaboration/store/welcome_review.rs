@@ -79,6 +79,7 @@ impl Store {
             identity_namespace: actor.identity_namespace.clone(),
             gateway: actor.gateway.clone(),
             session_hash: actor.session_hash.clone(),
+            foundation_turn_scope: actor.foundation_turn_scope.clone(),
             tenant: actor.tenant.clone(),
         }))
     }
@@ -1136,6 +1137,7 @@ pub(crate) async fn assert_operations_review(
                 .into(),
             gateway: serde_json::from_value(proof["gateway"].clone())?,
             session_hash: None,
+            foundation_turn_scope: None,
             tenant: tenant.into(),
         })
     };

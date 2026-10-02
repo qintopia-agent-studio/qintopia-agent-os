@@ -2304,8 +2304,9 @@ os.fsync = fsync
   process.exit(0);
 }
 if (process.argv[2] === "--fixed-takeover-lock") {
-  const [oldRunnerSource, pollerSource, waiterSource] = process.argv.slice(3);
-  for (const source of [oldRunnerSource, pollerSource, waiterSource]) {
+  const [runnerSource, pollerSource, waiterSource, launcherSource] =
+    process.argv.slice(3);
+  for (const source of [runnerSource, pollerSource, waiterSource, launcherSource]) {
     assert.ok(source && fs.existsSync(source), "fixed takeover source is missing");
   }
   const releaseRoot = "/home/ubuntu/qintopia-agent-os-releases";
@@ -2350,10 +2351,11 @@ if (process.argv[2] === "--fixed-takeover-lock") {
     fs.writeFileSync(target, value, { mode });
     fs.chmodSync(target, mode);
   };
-  const oldRunner = path.join(
-    releaseRoot,
-    oSha,
-    "deploy/runner/qintopia-agent-os-deploy-runner"
+  const staged = "/var/lib/qintopia-agent-os-deploy/recovery/staged";
+  assert.equal(fs.existsSync(staged), false, "staged fixture already exists");
+  const stagedRunner = path.join(
+    staged,
+    "payload/deploy/runner/qintopia-agent-os-deploy-runner"
   );
   const coscli = path.join(fixture, "coscli");
   const unrelatedLock = path.join(fixture, "unrelated.lock");
@@ -2368,12 +2370,35 @@ if (process.argv[2] === "--fixed-takeover-lock") {
     }
     fs.symlinkSync(path.join(releaseRoot, oSha), path.join(releaseRoot, "current"));
     fs.symlinkSync(path.join(releaseRoot, pSha), path.join(releaseRoot, "previous"));
-    fs.mkdirSync(path.dirname(oldRunner), { recursive: true });
-    fs.copyFileSync(oldRunnerSource, oldRunner);
-    fs.chmodSync(oldRunner, 0o755);
-    const runnerDir = path.dirname(oldRunner);
+    fs.mkdirSync(path.dirname(stagedRunner), { recursive: true });
+    fs.copyFileSync(runnerSource, stagedRunner);
+    fs.chmodSync(stagedRunner, 0o755);
+    const runnerDir = path.dirname(stagedRunner);
     fs.copyFileSync(waiterSource, path.join(runnerDir, "wait-deploy-result.sh"));
     fs.chmodSync(path.join(runnerDir, "wait-deploy-result.sh"), 0o755);
+    fs.copyFileSync(
+      launcherSource,
+      path.join(runnerDir, "run-fixed-takeover-request.sh")
+    );
+    fs.chmodSync(path.join(runnerDir, "run-fixed-takeover-request.sh"), 0o755);
+    fs.copyFileSync(pollerSource, path.join(runnerDir, "poll-deploy-requests.sh"));
+    write(
+      path.join(runnerDir, "recover-release-lineage.sh"),
+      "#!/bin/sh\nexit 90\n",
+      0o755
+    );
+    write(
+      path.join(runnerDir, "management-ui-lifecycle.sh"),
+      "#!/bin/sh\nexit 0\n",
+      0o755
+    );
+    write(
+      path.join(
+        runnerDir,
+        "qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+      ),
+      "simulated\n"
+    );
     const quiesceStarted = path.join(fixture, "quiesce-started");
     write(
       path.join(runnerDir, "quiesce-space-automation-runtime.sh"),
@@ -2384,6 +2409,40 @@ if (process.argv[2] === "--fixed-takeover-lock") {
       path.join(runnerDir, "promote-release.sh"),
       `#!/bin/bash\nset -euo pipefail\nexec 9>"$QINTOPIA_UNRELATED_LOCK"\nif flock -n 9; then echo redirected >"$QINTOPIA_UNRELATED_RESULT"; else echo blocked >"$QINTOPIA_UNRELATED_RESULT"; fi\necho "$PPID" >"$QINTOPIA_RUNNER_PID_FILE"\necho started >"$QINTOPIA_PROMOTER_STARTED"\nsleep "$QINTOPIA_PROMOTE_SLEEP"\nexit 42\n`,
       0o755
+    );
+    const artifactManifest = {
+      schema_version: 1,
+      target: "server-operator-files",
+      commit_sha: rSha,
+      files: [
+        "qintopia-agent-os-deploy-runner",
+        "run-fixed-takeover-request.sh",
+        "poll-deploy-requests.sh",
+        "recover-release-lineage.sh",
+        "wait-deploy-result.sh",
+        "quiesce-space-automation-runtime.sh",
+        "management-ui-lifecycle.sh",
+        "promote-release.sh",
+        "qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf",
+      ].map((name) => {
+        const bytes = fs.readFileSync(path.join(runnerDir, name));
+        return {
+          path: `payload/deploy/runner/${name}`,
+          size_bytes: bytes.length,
+          sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+        };
+      }),
+    };
+    write(
+      path.join(staged, "artifact-manifest.json"),
+      JSON.stringify(artifactManifest)
+    );
+    write(
+      path.join(staged, "SHA256SUMS"),
+      crypto
+        .createHash("sha256")
+        .update(fs.readFileSync(path.join(staged, "artifact-manifest.json")))
+        .digest("hex") + "  artifact-manifest.json\n"
     );
     write(
       coscli,
@@ -2472,7 +2531,11 @@ if (process.argv[2] === "--fixed-takeover-lock") {
       const holdToken = crypto.randomBytes(16).toString("hex");
       write(
         path.join(state, "recovery", "takeover.json"),
-        JSON.stringify({ request_id: requestId, hold_token: holdToken }) + "\n",
+        JSON.stringify({
+          request_id: requestId,
+          hold_token: holdToken,
+          phase: "preparing",
+        }) + "\n",
         0o600
       );
       write(path.join(state, "recovery", "hold"), holdToken + "\n", 0o600);
@@ -2480,7 +2543,7 @@ if (process.argv[2] === "--fixed-takeover-lock") {
         ...process.env,
         QINTOPIA_COS_ENV_FILE: path.join(fixture, "missing.env"),
         QINTOPIA_DEPLOY_RUNNER_STATE_DIR: state,
-        QINTOPIA_DEPLOY_RUNNER_BIN: oldRunner,
+        QINTOPIA_DEPLOY_RUNNER_BIN: stagedRunner,
         QINTOPIA_EXPECTED_DEPLOY_REQUEST_ID: requestId,
         COSCLI_PATH: coscli,
         TENCENT_COS_BUCKET: "simulated",
@@ -2505,18 +2568,21 @@ if (process.argv[2] === "--fixed-takeover-lock") {
         QINTOPIA_UNRELATED_RESULT: unrelated,
         QINTOPIA_RELEASE_ROOT: releaseRoot,
       };
+      // Direct-process cases are outside a service invocation. systemd-run below
+      // supplies its own real identity; never borrow the harness host's identity.
+      delete env.INVOCATION_ID;
       if (phase === "drift") {
-        fs.appendFileSync(oldRunner, "\n# simulated drift\n");
+        fs.appendFileSync(stagedRunner, "\n# simulated drift\n");
         const rejected = run("bash", [pollerSource], { env });
         assert.equal(rejected.status, 75, rejected.stderr);
-        assert.match(rejected.stderr, /old runner identity mismatch/);
+        assert.match(rejected.stderr, /staged recovery bundle content mismatch/);
         assert.equal(fs.existsSync(started), false);
         assert.equal(
           fs.existsSync(path.join(state, "recovery", `${requestId}.json`)),
           false
         );
-        fs.copyFileSync(oldRunnerSource, oldRunner);
-        fs.chmodSync(oldRunner, 0o755);
+        fs.copyFileSync(runnerSource, stagedRunner);
+        fs.chmodSync(stagedRunner, 0o755);
         continue;
       }
       if (phase === "cgroup-stop") {
@@ -2678,15 +2744,15 @@ if (process.argv[2] === "--fixed-takeover-lock") {
     const adapterEnv = {
       ...process.env,
       QINTOPIA_FIXED_TAKEOVER_LOCK: "1",
-      QINTOPIA_DEPLOY_RUNNER_BIN: oldRunner,
+      QINTOPIA_DEPLOY_RUNNER_BIN: stagedRunner,
       QINTOPIA_DEPLOY_RUNNER_STATE_DIR: adapterState,
-      fixed_runner: oldRunner,
+      fixed_runner: stagedRunner,
       fixed_runner_sha256: crypto
         .createHash("sha256")
-        .update(fs.readFileSync(oldRunner))
+        .update(fs.readFileSync(stagedRunner))
         .digest("hex"),
     };
-    const adapterCall = (setup, args = "-n 9", runnerName = oldRunner) =>
+    const adapterCall = (setup, args = "-n 9", runnerName = stagedRunner) =>
       run("bash", ["-c", `${setup}\n${adapter}\nflock ${args}`, runnerName], {
         env: adapterEnv,
       });
@@ -2719,20 +2785,21 @@ if (process.argv[2] === "--fixed-takeover-lock") {
       0,
       "unrelated script flock was redirected"
     );
-    fs.appendFileSync(oldRunner, "\n# simulated post-check drift\n");
+    fs.appendFileSync(stagedRunner, "\n# simulated post-check drift\n");
     assert.equal(
       adapterCall(`exec 7>"${adapterLock}"; command flock -n 7`).status,
       75,
       "post-check runner drift was accepted"
     );
-    fs.copyFileSync(oldRunnerSource, oldRunner);
-    console.log("Exact old-runner fixed takeover lock handoff passed.");
+    fs.copyFileSync(runnerSource, stagedRunner);
+    console.log("Verified staged-runner fixed takeover lock handoff passed.");
   } finally {
     if (transientUnit) {
       run("systemctl", ["stop", "qintopia-agent-os-fixed-takeover.service"]);
       run("systemctl", ["reset-failed", "qintopia-agent-os-fixed-takeover.service"]);
     }
     unrelatedHolder?.kill("SIGKILL");
+    fs.rmSync(staged, { recursive: true, force: true });
     fs.rmSync(releaseRoot, { recursive: true, force: true });
     fs.rmSync(fixture, { recursive: true, force: true });
   }

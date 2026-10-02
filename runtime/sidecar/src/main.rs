@@ -72,6 +72,9 @@ mod nats_connection;
 mod operations;
 mod operations_intake;
 pub mod person_collaboration;
+#[cfg(all(test, target_os = "linux", feature = "postgres-integration-tests"))]
+#[path = "../../../skills/person-foundation/tests/linux_production_probe.rs"]
+mod person_foundation_linux_validation;
 #[cfg(all(test, feature = "postgres-integration-tests"))]
 #[path = "../../../skills/pms-operations/tests/broker_driver.rs"]
 mod pms_local_journey_tests;

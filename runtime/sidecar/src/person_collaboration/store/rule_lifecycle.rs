@@ -185,7 +185,7 @@ impl Store {
     pub(crate) async fn rule_command(&self, actor: &Actor, cmd: &RuleCommand) -> Result<Value> {
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        if let Some((_, _, scope)) = actor.gateway {
+        if let Some(scope) = actor.foundation_scope() {
             ensure!(scope == cmd.scope, "gateway_scope_mismatch");
         }
         let auth = authorize_current(

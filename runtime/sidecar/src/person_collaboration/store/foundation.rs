@@ -81,18 +81,20 @@ pub async fn authorize_current(
         agents().contains(&agent) && DOMAINS.contains(&domain) && ACTIONS.contains(&action),
         "unknown_permission_dimension"
     );
-    let row = sqlx::query("SELECT version,mode,initialized FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1 FOR UPDATE")
+    let row = sqlx::query("SELECT version,mode,initialized,identity_namespace FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1 FOR UPDATE")
         .bind(tenant).fetch_optional(&mut **tx).await?.ok_or_else(||anyhow::anyhow!("tenant_not_initialized"))?;
     ensure!(
-        tenant.starts_with("synthetic-collaboration-")
-            && row.get::<String, _>("mode") == "synthetic"
-            && row.get::<bool, _>("initialized"),
-        "synthetic_tenant_required"
+        row.get::<bool, _>("initialized")
+            && ((tenant.starts_with("synthetic-collaboration-")
+                && row.get::<String, _>("mode") == "synthetic")
+                || row.get::<String, _>("mode") == "live"),
+        "tenant_mode_or_namespace_changed"
     );
     let now = sqlx::query_scalar("SELECT clock_timestamp()")
         .fetch_one(&mut **tx)
         .await?;
-    let policy = load_policy(tx, tenant, tenant, now).await?;
+    let namespace: String = row.get("identity_namespace");
+    let policy = load_policy(tx, tenant, &namespace, now).await?;
     Ok(authority_from_policy(
         &policy,
         row.get("version"),
@@ -417,7 +419,7 @@ impl Store {
     ) -> Result<Value> {
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        if let Some((_, _, gateway_scope)) = actor.gateway {
+        if let Some(gateway_scope) = actor.foundation_scope() {
             ensure!(scope == gateway_scope, "gateway_scope_mismatch");
         }
         let kind:String=sqlx::query_scalar("SELECT i.kind FROM qintopia_agent_os.collaboration_knowledge_items i JOIN qintopia_agent_os.collaboration_knowledge_revisions r ON r.item_id=i.id WHERE r.id=$1 AND i.tenant_key=$2 AND i.scope_id=$3").bind(revision).bind(&self.tenant).bind(scope).fetch_one(&mut *tx).await?;
@@ -495,12 +497,12 @@ impl Store {
         let identity = self.identity_context(actor).await?;
         let memory = self.memory_context(actor, topic).await?;
         Ok(
-            json!({"identity":identity,"scope":scope,"configuration_version":version,"knowledge":rules,"knowledge_items":knowledge_items,"later_revisions":later_revisions,"permissions":permissions,"memory":memory,"consumer":"erhua","runtime":"local_controlled_tools","query_ms":started.elapsed().as_millis(),"notification":"未配置群通知；保存回执仅返回当前对话"}),
+            json!({"identity":identity,"scope":scope,"configuration_version":version,"knowledge":rules,"knowledge_items":knowledge_items,"later_revisions":later_revisions,"permissions":permissions,"memory":memory,"consumer":"erhua","runtime":if self.is_live(){"trusted_agent_tools"}else{"local_controlled_tools"},"query_ms":started.elapsed().as_millis(),"notification":"未配置群通知；保存回执仅返回当前对话"}),
         )
     }
 
     pub(super) fn read_scope(&self, policy: &Policy, actor: &Actor, scope: Uuid) -> Result<()> {
-        if let Some((_, _, gateway_scope)) = actor.gateway {
+        if let Some(gateway_scope) = actor.foundation_scope() {
             ensure!(scope == gateway_scope, "gateway_scope_mismatch");
         }
         ensure!(
@@ -523,7 +525,7 @@ impl Store {
     ) -> Result<Value> {
         let (mut tx, _, _) = self.begin().await?;
         self.verify(&mut tx, actor).await?;
-        if let Some((_, _, scope)) = actor.gateway {
+        if let Some(scope) = actor.foundation_scope() {
             ensure!(write.scope == scope, "gateway_scope_mismatch");
         }
         let auth = authorize_current(
@@ -628,9 +630,9 @@ impl Store {
         } else {
             "foundation_context_request"
         };
-        let payload = json!({"input":input,"identity_namespace":actor.identity_namespace,"gateway":actor.gateway,"session_hash":actor.session_hash});
-        let work:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload,metadata) VALUES($1,$2,$3,'erhua',$4,'本栋受控工作','synthetic_foundation',$5,$5,$6,'{\"local_only\":true}') RETURNING id")
-            .bind(work_type).bind(status).bind(if capability=="erhua.foundation_rule"{"erhua"}else{"default"}).bind(capability).bind(&idempotency).bind(payload).fetch_one(&mut **tx).await?;
+        let payload = json!({"input":input,"identity_namespace":actor.identity_namespace,"gateway":actor.gateway,"session_hash":actor.session_hash,"foundation_turn_scope":actor.foundation_turn_scope});
+        let work:Uuid=sqlx::query_scalar("INSERT INTO qintopia_agent_os.work_items(work_item_type,status,requester_agent,target_agent,capability_key,brief_summary,purpose,dedupe_key,idempotency_key,payload,metadata) VALUES($1,$2,$3,'erhua',$4,'本栋受控工作',$7,$5,$5,$6,$8) RETURNING id")
+            .bind(work_type).bind(status).bind(if capability=="erhua.foundation_rule"{"erhua"}else{"default"}).bind(capability).bind(&idempotency).bind(payload).bind(if self.is_live(){"steward_configuration"}else{"synthetic_foundation"}).bind(json!({"local_only":!self.is_live(),"external_effects":false})).fetch_one(&mut **tx).await?;
         sqlx::query("INSERT INTO qintopia_agent_os.collaboration_work_requests(work_item_id,tenant_key,scope_id,actor_identity_id,identity_version,person_id,authority_grant_id,request_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8)")
             .bind(work).bind(&self.tenant).bind(scope).bind(actor.link).bind(actor.identity_version).bind(actor.person).bind(grant).bind(hash).execute(&mut **tx).await?;
         work_event(
@@ -699,7 +701,7 @@ impl Store {
         self.verify(&mut tx, actor).await?;
         let row=sqlx::query("SELECT r.*,w.status,w.capability_key,w.payload FROM qintopia_agent_os.collaboration_work_requests r JOIN qintopia_agent_os.work_items w ON w.id=r.work_item_id WHERE r.tenant_key=$1 AND r.work_item_id=$2 FOR UPDATE OF r,w")
             .bind(&self.tenant).bind(work).fetch_one(&mut *tx).await?;
-        if let Some((_, _, scope)) = actor.gateway {
+        if let Some(scope) = actor.foundation_scope() {
             ensure!(
                 scope == row.get::<Uuid, _>("scope_id"),
                 "gateway_scope_mismatch"
@@ -777,6 +779,9 @@ impl Store {
             identity_namespace: serde_json::from_value(payload["identity_namespace"].clone())?,
             gateway: serde_json::from_value(payload["gateway"].clone())?,
             session_hash: serde_json::from_value(payload["session_hash"].clone())?,
+            foundation_turn_scope: serde_json::from_value(
+                payload["foundation_turn_scope"].clone(),
+            )?,
             tenant: self.tenant.clone(),
         };
         let scope: Uuid = row.get("scope_id");
@@ -800,7 +805,8 @@ impl Store {
                 if auth.status=="confirmation_required" {
                     ensure!(auth.reviewer==row.get::<Option<Uuid>,_>("approval_person_id") && row.get::<Option<String>,_>("approved_input_hash")==Some(row.get("request_hash")),"designated_confirmation_required");
                     let proof=&payload["approval_authority"];
-                    let reviewer=Actor{link:serde_json::from_value(proof["identity_link_id"].clone())?,person:serde_json::from_value(proof["person_id"].clone())?,work_account:None,identity_version:serde_json::from_value(proof["identity_version"].clone())?,identity_namespace:serde_json::from_value(proof["identity_namespace"].clone())?,gateway:serde_json::from_value(proof["gateway"].clone())?,session_hash:None,tenant:self.tenant.clone()};
+                    let reviewer=Actor{link:serde_json::from_value(proof["identity_link_id"].clone())?,person:serde_json::from_value(proof["person_id"].clone())?,work_account:None,identity_version:serde_json::from_value(proof["identity_version"].clone())?,identity_namespace:serde_json::from_value(proof["identity_namespace"].clone())?,gateway:serde_json::from_value(proof["gateway"].clone())?,session_hash:None,
+            foundation_turn_scope: None,tenant:self.tenant.clone()};
                     self.verify(&mut tx,&reviewer).await?;
                     if lifecycle {
                         if let Some(hash)=proof["session_hash"].as_str() {
@@ -946,9 +952,7 @@ impl Store {
     pub(crate) async fn gateway_scope(&self, actor: &Actor) -> Result<Uuid> {
         self.verified_person(actor).await?;
         actor
-            .gateway
-            .as_ref()
-            .map(|(_, _, scope)| *scope)
+            .foundation_scope()
             .ok_or_else(|| anyhow::anyhow!("trusted_gateway_required"))
     }
 }
@@ -966,7 +970,8 @@ pub async fn can_inspect_current(
     let now = sqlx::query_scalar("SELECT clock_timestamp()")
         .fetch_one(&mut **tx)
         .await?;
-    Ok(load_policy(tx, tenant, tenant, now)
+    let namespace: String = sqlx::query_scalar("SELECT identity_namespace FROM qintopia_agent_os.collaboration_tenants WHERE tenant_key=$1").bind(tenant).fetch_one(&mut **tx).await?;
+    Ok(load_policy(tx, tenant, &namespace, now)
         .await?
         .can_inspect(person, scope, agent, domain))
 }

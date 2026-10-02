@@ -100,3 +100,106 @@ QINTOPIA_FOUNDATION_SMOKE_ENABLE=1 python3 skills/person-foundation/tests/local_
 
 原自动工程检查的部署apply
 smoke要求受支持数据库白名单；动态本地PG端口被拒绝时记录失败，不改白名单、不把它算作通过，部署验证仍须使用原受支持环境。
+
+## 舍长与二花最小生产接线（默认未启用）
+
+生产源代码沿用既有二花注册入口接入共同服务。
+
+最小工具为 `context`、`workspace`、`change_knowledge`、`remember`、`history`、
+`task_status`、`delegate_review`、`candidates`。
+
+固定网页例句、欢迎、PMS 和内部宿主能力保持原门禁。本批未修改 Profile、部署和重启规则，也未启用生产工具。
+
+UI 与工具共用人员、任职、权限、知识版本及 WorkItem。保存、更正、停止和撤权按当前持久状态生效，不需要重新部署。
+
+`context`／`workspace` 提供可信消息的 `operation_id`，生产变更必须引用它。知识条目的
+`expected_version` 与 tenant 配置版本不同，应从对应返回值读取。
+
+群聊按当前唯一群绑定解析楼栋，私聊按当前唯一有效二花任职确定范围。多范围私聊返回
+`private_scope_ambiguous`，需在正确的本栋群内办理。每次操作重验身份、授权和范围；群内不披露个人历史。
+
+生产 broker 要求不同进程用户、固定 runner
+UID/GID 和批准的数据库 URL 摘要。仅保存 token 摘要，socket 目录权限为 0750，socket 权限为 0660。
+
+固定参数：
+
+| 环境字段                                                           | 含义或固定值                  |
+| ------------------------------------------------------------------ | ----------------------------- |
+| `QINTOPIA_FOUNDATION_PROFILE`                                      | `erhua`                       |
+| `QINTOPIA_FOUNDATION_PRODUCTION_ENABLE`                            | `1`                           |
+| `QINTOPIA_FOUNDATION_ERHUA_APPROVAL`                               | `steward-foundation-reviewed` |
+| `QINTOPIA_FOUNDATION_DATABASE_URL_SHA256`                          | 经批准的数据库 URL 摘要       |
+| `QINTOPIA_FOUNDATION_TOKEN_SHA256`                                 | 客户端 token 摘要             |
+| `QINTOPIA_FOUNDATION_RUNNER_UID`／`QINTOPIA_FOUNDATION_RUNNER_GID` | 独立客户端用户／组            |
+| `QINTOPIA_FOUNDATION_BROKER_UID`                                   | 客户端核验的 broker 用户      |
+
+客户端沿用 `QINTOPIA_FOUNDATION_TOKEN`，不能混用
+`QINTOPIA_FOUNDATION_LOCAL_ENABLE=1`。真实配置需后续部署审阅；本地同 UID 测试不证明实际多用户进程隔离已通过。
+
+候选可用 GET `/api/workspace/candidates` 或 `candidates`
+工具查询。每页最多 50 条；无权、来源不可用和无匹配分别返回，来源未核验时不可选临时审批人。
+
+生产 `workspace` 的
+`delegation.candidates=null`，`candidate_query_required=true`。这表示需要分页查询，不能理解为无人。
+
+运行新增持久服务测试（持有独立 PostgreSQL 后）：
+
+```sh
+cargo test --manifest-path runtime/sidecar/Cargo.toml --features postgres-integration-tests \
+  steward_production_minimal_tests -- --ignored --test-threads=1
+```
+
+测试使用模拟身份、群和已认证事件，验证实际服务及 HTTP。它们不证明真实 Hermes 模型理解、微信送达或生产 runner 配置。完整欢迎和入住匹配另按原业务规格联调。
+
+## 舍长选择并保存联系渠道
+
+舍长联系对象沿用组织授权和工作连接，独立于岸岸的客房通信配置。复用
+`POST /api/preview`、`POST /api/save` 的 `set_audience`，或原 `configure_work` 的
+`audience`；不要求客房工作群、PMS 权限或新迁移。原字段继续完整提交；新增 `contacts`
+可省略，默认空数组，每项只有以下三个字段：
+
+```json
+{
+  "subject_kind": "work_account",
+  "subject_id": "<候选工作账号引用>",
+  "channel_source_link_id": "<已验证渠道候选引用>"
+}
+```
+
+`subject_kind` 也可为 `person`。候选来源为
+`/api/workspace/candidates`，每次只提取上述三个字段，不提交整个显示对象。`operation_id`
+使用当前配置操作的独立编号， `expected_version`
+为 tenant 配置版本；不是知识版本，也不是渠道来源版本。首次保存前可预览；修改替换完整列表，`contacts=[]`
+清空所选渠道。密码登录入口重复提交返回
+`command_already_processed_refresh_state`，应刷新当前状态；已提交记录保留，不恢复已清空列表。候选可见不产生管理权或发送权。
+
+`POST /api/audience-preview` 输入原 `collaboration`，回读新增 `contacts` 和
+`contacts_current`。联系人包含姓名、渠道昵称、平台和当前核验版本；UI 用可读标签，不要要求用户填写内部编号。保存核验本栋组织管理授权、已授权个人受众、人员／工作账号来源及范围；联系人最多 20 个，同一人可以选择多个不同渠道。
+
+`POST /api/contact-decision` 的原决策接口增加 `kind=channel`，`target`
+为所选来源引用。停用、撤权或来源版本变化后拒绝沿用旧选择；这个决策不是可复用发送票据。工具
+`candidates`
+只负责发现候选。当前二花生产工具清单没有开放通用组织配置命令，不能据此声称自然语言已能替用户保存全部组织设置。
+
+## Broker 停止与排空
+
+二花生产 broker 的 socket 父目录必须由 broker 的实际内核 UID 拥有，且 group 为已配置 runner
+GID、权限为
+`0750`。通过启动时的本进程 socket-pair 取得 UID；不从目录 owner 推导运行身份，不增加可伪造的 owner 配置。其他用户拥有的目录在创建锁和监听之前拒绝。
+
+Foundation
+broker 收到 SIGTERM／SIGINT 后关闭监听，等待已经接收的单项请求完成。客户端 10 秒超时仍返回
+`outcome_unknown`；不取消数据库工作，恢复必须沿用原 `operation_id`
+读取或回放原收据。正常停止使用 SIGTERM，禁止以客户端超时或 Gateway 的 `active_agents=0`
+判断数据库已排空。
+
+等待超过 30 秒输出
+`foundation_broker_drain_deferred`，保持进程存活并继续等待；部署方应暂缓替换，不强杀、不换键重放。排空完成输出
+`foundation_broker_drained`
+并清理 socket。到期后的人工排查和宿主停止策略仍由部署任务负责，本 PR 不修改 systemd、runner、CI、调度器或提供管理控制 API。
+
+显式 Linux 验证入口是
+`person_foundation_linux_validation::actual_production_broker_and_hermes`，要求
+`QINTOPIA_FOUNDATION_LINUX_PROBE=1`、Linux
+root、独立客户端用户和固定官方 Hermes 源码；缺少前提直接失败。官方源码应保存在仓库外的任务依赖缓存，避免第三方语言文件被项目源码检查误识别。它不进入自动 PostgreSQL 业务过滤，不把官方源码依赖加入 CI。实际配置和本轮证据见
+[上线前差分报告](../../docs/reports/2026-10-01-steward-prelaunch-completion.md)。
