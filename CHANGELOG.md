@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.5](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.4...v0.3.5) (2026-10-02)
+
+
+### Features
+
+* **deploy:** guard management UI first setup window ([#729](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/729)) ([74899d4](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/74899d4191b810bc0cf5dc748c742c3b84aea0b5))
+* **person-foundation:** save steward contacts and drain Erhua broker ([#733](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/733)) ([4b40cf8](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4b40cf821cb292a03c0c89fc364cceea9a8eb334))
+* **pms:** add host recovery and startup isolation checks ([#730](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/730)) ([ff168a1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/ff168a1261cb82d635c6d845ee614e7ebe1577d5))
+* **workbench:** add searchable collaboration channel selection ([#731](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/731)) ([fe64665](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/fe6466506cd1f5d73bfacc79f102ff641ec364dc))
+
 ## [0.3.4](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.3...v0.3.4) (2026-09-29)
 
 
