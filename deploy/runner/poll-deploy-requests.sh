@@ -85,7 +85,7 @@ fi
 run_coscli() {
   (
     cd "$coscli_work_dir"
-    "$coscli_path" "$@"
+    "$coscli_path" "$@" --log-path "$coscli_work_dir"
   )
 }
 
@@ -326,7 +326,8 @@ if expected_id and parsed:
     with open(takeover_path, encoding="utf-8") as fh:
         takeover = json.load(fh)
     token = takeover.get("hold_token", "")
-    if (takeover.get("request_id") != expected_id or not isinstance(token, str) or
+    if (takeover.get("request_id") != expected_id or takeover.get("phase") != "preparing" or
+            expected_id in takeover.get("retired_requests", {}) or not isinstance(token, str) or
             not re.fullmatch(r"[0-9a-f]{32}", token)):
         raise SystemExit("fixed takeover claim hold identity mismatch")
     claim["hold_token"] = token
@@ -341,6 +342,18 @@ try:
     os.fsync(directory)
 finally:
     os.close(directory)
+if expected_id:
+    marker = Path(takeover_path).parent / "takeover-consumed"
+    descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w", encoding="ascii") as fh:
+        fh.write(request_id + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    directory = os.open(marker.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 PY
 
 if [[ -n "$expected_request_id" && -n "$parsed_identity" ]]; then

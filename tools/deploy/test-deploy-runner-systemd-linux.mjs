@@ -2472,7 +2472,11 @@ if (process.argv[2] === "--fixed-takeover-lock") {
       const holdToken = crypto.randomBytes(16).toString("hex");
       write(
         path.join(state, "recovery", "takeover.json"),
-        JSON.stringify({ request_id: requestId, hold_token: holdToken }) + "\n",
+        JSON.stringify({
+          request_id: requestId,
+          hold_token: holdToken,
+          phase: "preparing",
+        }) + "\n",
         0o600
       );
       write(path.join(state, "recovery", "hold"), holdToken + "\n", 0o600);

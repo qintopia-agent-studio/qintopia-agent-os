@@ -12,7 +12,7 @@ dropin_dir=/etc/systemd/system/qintopia-agent-os-deploy-runner.service.d
 dropin_name=10-recovery-hold.conf
 
 [[ "$(id -u)" -eq 0 ]] || { echo "root is required" >&2; exit 2; }
-[[ $# -ge 1 ]] || { echo "prepare, consume or finalize is required" >&2; exit 2; }
+[[ $# -ge 1 ]] || { echo "prepare, consume, finalize or retire-unstarted is required" >&2; exit 2; }
 mode="$1"
 shift
 
@@ -123,11 +123,28 @@ PY
 }
 
 unit_stopped() {
-  local properties="" load_state="" active_state=""
-  properties="$(systemctl show "$1" --property=LoadState --property=ActiveState 2>/dev/null)" || return 1
+  local properties="" load_state="" active_state="" main_pid="" control_pid="" control_group=""
+  local allow_not_found="${2:-false}"
+  properties="$(systemctl show "$1" --property=LoadState --property=ActiveState \
+    --property=MainPID --property=ControlPID --property=ControlGroup 2>/dev/null)" || return 1
   load_state="$(printf '%s\n' "$properties" | sed -n 's/^LoadState=//p')"
   active_state="$(printf '%s\n' "$properties" | sed -n 's/^ActiveState=//p')"
-  [[ "$load_state" == loaded && ( "$active_state" == inactive || "$active_state" == failed ) ]]
+  main_pid="$(printf '%s\n' "$properties" | sed -n 's/^MainPID=//p')"
+  control_pid="$(printf '%s\n' "$properties" | sed -n 's/^ControlPID=//p')"
+  control_group="$(printf '%s\n' "$properties" | sed -n 's/^ControlGroup=//p')"
+  if [[ "$1" == *.service ]]; then
+    [[ "$main_pid" == 0 && "$control_pid" == 0 ]] || return 1
+  fi
+  if [[ "$load_state" == not-found ]]; then
+    [[ "$allow_not_found" == true && "$active_state" == inactive ]] || return 1
+  else
+    [[ "$load_state" == loaded && ( "$active_state" == inactive || "$active_state" == failed ) ]] || return 1
+  fi
+  if [[ -n "$control_group" ]]; then
+    [[ "$control_group" == /* && "$control_group" != *..* ]] || return 1
+    [[ -f "/sys/fs/cgroup${control_group}/cgroup.events" ]] || return 1
+    [[ "$(sed -n 's/^populated //p' "/sys/fs/cgroup${control_group}/cgroup.events")" == 0 ]] || return 1
+  fi
 }
 
 timer_file_state() {
@@ -137,7 +154,263 @@ timer_file_state() {
   printf '%s\n' "$value"
 }
 
+retire_unstarted() {
+  verify_hold || return 75
+  exec 8>"${state}/poller.lock"
+  flock -n 8 || return 75
+  exec 9>"${state}/deploy.lock"
+  flock -n 9 || return 75
+  unit_stopped "$unit" && unit_stopped "$timer" &&
+    unit_stopped qintopia-agent-os-fixed-takeover.service true &&
+    unit_stopped qintopia-agent-os-anan-drain-restart.service true || return 75
+  # Read only COS evidence. No request is executed, no result is fabricated and
+  # no ordinary poller is resumed. Expiry prevents the old request being revived.
+  set -a
+  source /etc/qintopia/cos-artifacts.env
+  set +a
+  python3 - "$state" "$release_root" "$request_id" <<'PY'
+import hashlib
+import hmac
+import json
+import os
+import re
+import stat
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+state, root = map(Path, sys.argv[1:3])
+request_id = sys.argv[3]
+recovery = state / "recovery"
+old = "16e8d56b98001579c6288ba13199b80d6d3dfc74"
+prior = "83d694f2c3bc21fd78a73d25da3197379e2a14d5"
+target = "70e7984fab92ddab956009585212d0e9729767b5"
+def private_bytes(path, private=True):
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or
+            info.st_nlink != 1 or stat.S_IMODE(info.st_mode) not in ((0o600,) if private else (0o600, 0o644))):
+        raise SystemExit("unsafe takeover evidence file")
+    return path.read_bytes()
+record_path = recovery / "takeover.json"
+original = private_bytes(record_path)
+record = json.loads(original)
+if record.get("request_id") != request_id or record.get("phase") not in (None, "preparing", "retired"):
+    raise SystemExit("takeover is not an unstarted attempt")
+hold_token = record.get("hold_token", "")
+if not re.fullmatch(r"[0-9a-f]{32}", hold_token) or private_bytes(recovery / "hold") != (hold_token + "\n").encode():
+    raise SystemExit("takeover hold identity mismatch")
+
+def unchanged():
+    if private_bytes(record_path) != original or private_bytes(recovery / "hold") != (hold_token + "\n").encode():
+        raise SystemExit("takeover state changed")
+    for name, sha in (("current", old), ("previous", prior)):
+        link = root / name
+        if not link.is_symlink() or link.resolve(strict=True) != root / sha:
+            raise SystemExit("unstarted takeover pointers changed")
+    if (root / target).exists():
+        raise SystemExit("takeover release already exists")
+    if any((state / "requests/claimed").glob("*.json")):
+        raise SystemExit("execution claim exists")
+    if any(recovery.glob("deploy-*.json")):
+        raise SystemExit("execution journal exists")
+    for directory in ("results", "requests/processed", "requests/failed"):
+        path = state / directory / (request_id + ".json")
+        if path.exists() or path.is_symlink():
+            raise SystemExit("request has execution evidence")
+    # A detached consumer/uploader must not evade the unit/cgroup checks.
+    names = {"poll-deploy-requests.sh", "qintopia-agent-os-deploy-runner", "coscli",
+             "run-hermes-core-release.sh", "restart_anan.py"}
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            args = (entry / "cmdline").read_bytes().split(b"\0")
+        except FileNotFoundError:
+            continue
+        if any(os.path.basename(os.fsdecode(arg)) in names for arg in args[:3]):
+            raise SystemExit("deployment process remains active")
+unchanged()
+bucket = os.environ["TENCENT_COS_BUCKET"]
+region = os.environ["TENCENT_COS_REGION"]
+if not re.fullmatch(r"[A-Za-z0-9-]+", bucket) or not re.fullmatch(r"[a-z0-9-]+", region):
+    raise SystemExit("COS bucket or region identity is invalid")
+endpoint = os.environ.get("TENCENT_COS_ENDPOINT") or f"https://{bucket}.cos.{region}.myqcloud.com"
+if "://" not in endpoint:
+    endpoint = "https://" + endpoint
+parsed = urllib.parse.urlparse(endpoint)
+if (parsed.scheme != "https" and not (parsed.scheme == "http" and
+        parsed.hostname in ("127.0.0.1", "localhost"))) or not parsed.netloc or parsed.path not in ("", "/") or parsed.query:
+    raise SystemExit("COS endpoint is invalid")
+
+auth_mode = os.environ.get("TENCENT_COS_AUTH_MODE") or "SecretKey"
+if auth_mode == "CvmRole":
+    role = os.environ.get("TENCENT_COS_CVM_ROLE_NAME", "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", role):
+        raise SystemExit("COS CVM role identity is invalid")
+    metadata_url = "http://metadata.tencentyun.com/latest/meta-data/cam/security-credentials/" + role
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(metadata_url, timeout=5) as response:
+        if response.status != 200:
+            raise SystemExit("COS CVM role credentials are unavailable")
+        credentials = json.loads(response.read(16385))
+    secret_id = credentials.get("TmpSecretId", "")
+    secret_key = credentials.get("TmpSecretKey", "")
+    token = credentials.get("Token", "")
+elif auth_mode == "SecretKey":
+    secret_id = os.environ.get("TENCENT_COS_SECRET_ID", "")
+    secret_key = os.environ.get("TENCENT_COS_SECRET_KEY", "")
+    token = os.environ.get("TENCENT_COS_SESSION_TOKEN", "")
+else:
+    raise SystemExit("COS authentication mode is unsupported")
+if not secret_id or not secret_key or (auth_mode == "CvmRole" and not token):
+    raise SystemExit("COS read credentials are unavailable")
+
+
+def cos_get(key, allow_missing=False):
+    host = parsed.netloc
+    uri = "/" + key
+    headers = {"host": host}
+    if token:
+        headers["x-cos-security-token"] = token
+    header_names = sorted(headers)
+    header_values = "&".join(f"{name}={urllib.parse.quote(headers[name], safe='~-._')}" for name in header_names)
+    start_time = int(time.time())
+    key_time = f"{start_time};{start_time + 300}"
+    http_string = f"get\n{uri}\n\n{header_values}\n"
+    string_to_sign = f"sha1\n{key_time}\n{hashlib.sha1(http_string.encode()).hexdigest()}\n"
+    sign_key = hmac.new(secret_key.encode(), key_time.encode(), hashlib.sha1).hexdigest()
+    signature = hmac.new(sign_key.encode(), string_to_sign.encode(), hashlib.sha1).hexdigest()
+    authorization = (f"q-sign-algorithm=sha1&q-ak={secret_id}&q-sign-time={key_time}&q-key-time={key_time}"
+                     f"&q-header-list={';'.join(header_names)}&q-url-param-list=&q-signature={signature}")
+    url = endpoint.rstrip("/") + uri
+    request = urllib.request.Request(url, method="GET", headers={**headers, "Authorization": authorization})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=15) as response:
+            if response.status != 200:
+                raise SystemExit("COS result read did not return HTTP 200")
+            payload = response.read(1048577)
+            if len(payload) > 1048576:
+                raise SystemExit("COS result exceeds the fixed size limit")
+            return payload
+    except urllib.error.HTTPError as error:
+        body = error.read(8193)
+        if error.code != 404 or len(body) > 8192:
+            raise SystemExit("COS result object request failed") from None
+        try:
+            root = ET.fromstring(body)
+            fields = {child.tag.rsplit("}", 1)[-1]: child.text for child in root}
+        except ET.ParseError:
+            raise SystemExit("COS error response is invalid") from None
+        if (root.tag.rsplit("}", 1)[-1] != "Error" or fields.get("Code") != "NoSuchKey" or
+                fields.get("Key") != key):
+            raise SystemExit("COS result did not return fixed-key NoSuchKey")
+        if not allow_missing:
+            raise SystemExit("required COS evidence is absent")
+        return None
+
+prefix = "qintopia-agent-os"
+request_key = f"{prefix}/deploy-requests/production/requests/{request_id}.json"
+request_bytes = cos_get(request_key)
+request = json.loads(request_bytes)
+signature = dict(request.get("signature", {}))
+actual = signature.pop("value", "")
+if (signature.get("algorithm"), signature.get("issuer"), signature.get("key_id")) != (
+        "hmac-sha256", "github-actions", os.environ["DEPLOY_REQUEST_SIGNING_KEY_ID"]):
+    raise SystemExit("retired request signature identity mismatch")
+unsigned = dict(request)
+unsigned.pop("signature", None)
+canonical = json.dumps({"request": unsigned, "signature": signature}, sort_keys=True,
+                       ensure_ascii=False, separators=(",", ":"))
+expected = hmac.new(os.environ["DEPLOY_REQUEST_SIGNING_KEY"].encode(), canonical.encode(), hashlib.sha256).hexdigest()
+if not hmac.compare_digest(actual, expected):
+    raise SystemExit("retired request signature mismatch")
+created, expires, signed = [datetime.fromisoformat(v.replace("Z", "+00:00")) for v in
+                            (request["created_at"], request["expires_at"], signature["signed_at"])]
+if (any(v.tzinfo is None for v in (created, expires, signed)) or expires <= created or
+        expires - created > timedelta(minutes=60) or abs(signed - created) > timedelta(minutes=5) or
+        datetime.now(timezone.utc) <= expires + timedelta(minutes=5)):
+    raise SystemExit("request has not safely expired or original signing time is invalid")
+if (request.get("schema_version") != 1 or request.get("request_id") != request_id or
+        request.get("environment") != "production" or
+        request.get("repository") != "qintopia-agent-studio/qintopia-agent-os" or
+        request.get("commit_sha") != old or request.get("runtime_sha") != prior or
+        request.get("release_sha") != target or request.get("release_scope") != ["deploy-bundle"] or
+        request.get("restart_targets") != ["qintopia-system-services"] or request.get("dry_run") is not False):
+    raise SystemExit("retired request is not the fixed takeover")
+result_key = f"{prefix}/deploy-results/production/{request_id}.json"
+if request.get("cos", {}).get("request_key") != request_key or request.get("cos", {}).get("result_key") != result_key:
+    raise SystemExit("retired request COS identity mismatch")
+if cos_get(result_key, allow_missing=True) is not None:
+    raise SystemExit("remote result exists; use result reconciliation")
+pending = state / "requests/pending" / (request_id + ".json")
+pending_digest = None
+if pending.exists() or pending.is_symlink():
+    # A failed download can leave incomplete bytes. No claim means these bytes
+    # were never handed to a runner; preserve their digest instead of deleting them.
+    pending_digest = hashlib.sha256(private_bytes(pending, private=False)).hexdigest()
+marker = recovery / "takeover-consumed"
+marker_bytes = (request_id + "\n").encode()
+if marker.exists() or marker.is_symlink():
+    if record.get("phase") not in (None, "retired") or private_bytes(marker) != marker_bytes:
+        raise SystemExit("claimed attempt cannot be retired")
+    # Legacy v0.3.5 wrote this marker BEFORE downloading the request. New code
+    # creates it AFTER the claim; new-format marked attempts are never retired.
+unchanged()
+digest = hashlib.sha256(request_bytes).hexdigest()
+retired = record.setdefault("retired_requests", {})
+if request_id in retired and retired[request_id]["request_sha256"] != digest:
+    raise SystemExit("retired request identity changed")
+retired.setdefault(request_id, {"request_sha256": digest, "reason": "expired_before_claim",
+                               "pending_sha256": pending_digest,
+                               "recorded_at": datetime.now(timezone.utc).isoformat()})
+record["phase"] = "retired"
+fd, tmp = tempfile.mkstemp(prefix=".retire-", dir=recovery)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(record, fh, sort_keys=True)
+        fh.write("\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, record_path)
+    directory = os.open(recovery, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+        if marker.exists():
+            archive = recovery / ("retired-" + request_id + ".consumed")
+            # Rename is atomic; never discard the legacy marker or overwrite an archive.
+            if archive.exists() or archive.is_symlink():
+                raise SystemExit("retired marker archive already exists")
+            os.rename(marker, archive)
+            os.fsync(directory)
+    finally:
+        os.close(directory)
+finally:
+    if os.path.exists(tmp):
+        os.unlink(tmp)
+print("unstarted request retired; hold retained; a new signed request is required")
+PY
+}
+
+# This lock serialises prepare/bind/retire/finalize, including the wait for the child.
+# The child alone owns poller.lock -> deploy.lock until it exits.
+mkdir -p -m 0700 "$recovery"
+exec 6>"${recovery}/takeover.lock"
+flock -n 6 || { echo "another takeover lifecycle operation is running" >&2; exit 75; }
+
 case "$mode" in
+  retire-unstarted)
+    [[ $# -eq 1 && "$1" =~ ^deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}$ ]] || exit 2
+    request_id="$1"
+    verify_staged_bundle
+    retire_unstarted || exit 75
+    ;;
   prepare)
     [[ $# -eq 0 ]] || exit 2
     verify_staged_bundle
@@ -163,7 +436,7 @@ directory, enabled = sys.argv[1:3]
 token = secrets.token_hex(16)
 fd, temporary = tempfile.mkstemp(prefix=".prepare-", dir=directory)
 with os.fdopen(fd, "w", encoding="utf-8") as fh:
-    json.dump({"timer_was_enabled": enabled == "true", "hold_token": token}, fh)
+    json.dump({"timer_was_enabled": enabled == "true", "hold_token": token, "phase": "prepared"}, fh)
     fh.write("\n")
     fh.flush()
     os.fsync(fh.fileno())
@@ -189,6 +462,7 @@ PY
     old_sha=16e8d56b98001579c6288ba13199b80d6d3dfc74
     if [[ "$mode" == consume ]]; then
       verify_hold
+      [[ ! -e "${recovery}/takeover-consumed" ]] || { echo "takeover already claimed" >&2; exit 75; }
       [[ "$(readlink -f "$release_root/current")" == "$release_root/$old_sha" &&
         -x "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" &&
         "$(sha256sum "${release_root}/${old_sha}/deploy/runner/qintopia-agent-os-deploy-runner" | awk '{print $1}')" == \
@@ -208,12 +482,14 @@ try:
         record = json.load(fh)
     token = record.get("hold_token", "")
     if (not isinstance(token, str) or not re.fullmatch(r"[0-9a-f]{32}", token) or
-            record.get("request_id") not in (None, sys.argv[2])):
+            (record.get("request_id") is not None and record.get("phase") != "retired") or
+            sys.argv[2] in record.get("retired_requests", {})):
         raise SystemExit("takeover request binding is invalid")
     with open(os.path.join(sys.argv[1], "hold"), encoding="ascii") as fh:
         if fh.read() != token + "\n":
             raise SystemExit("takeover hold identity changed")
     record["request_id"] = sys.argv[2]
+    record["phase"] = "preparing"
     fd, temporary = tempfile.mkstemp(prefix=".takeover-binding-", dir=sys.argv[1])
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -227,13 +503,6 @@ try:
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-    marker = os.open("takeover-consumed", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-                     0o600, dir_fd=directory)
-    with os.fdopen(marker, "w", encoding="utf-8") as fh:
-        fh.write(sys.argv[2] + "\n")
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.fsync(directory)
 finally:
     os.close(directory)
 PY
@@ -354,5 +623,5 @@ PY
       rm "${recovery}/hold"
     fi
     ;;
-  *) echo "prepare, consume or finalize is required" >&2; exit 2 ;;
+  *) echo "prepare, consume, finalize or retire-unstarted is required" >&2; exit 2 ;;
 esac

@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-poller-test-"));
+const tmpRoot = fs.realpathSync(
+  fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-poller-test-"))
+);
 
 const writeExecutable = (relativePath, content) => {
   const filePath = path.join(tmpRoot, relativePath);
@@ -34,6 +38,18 @@ fi
 
 source_path="\${2:-}"
 dest_path="\${3:-}"
+
+# COSCLI logs relative to its executable unless --log-path is explicit, not cwd.
+# Model an immutable installation even when this fixture runs as root.
+log_path=""
+args=("$@")
+for ((i=0; i<\${#args[@]}; i++)); do
+  if [[ "\${args[i]}" == --log-path ]]; then log_path="\${args[i+1]}"; fi
+done
+if [[ -z "$log_path" || ! -d "$log_path" || ! -w "$log_path" ]]; then
+  echo 'coscli.log: read-only file system' >&2
+  exit 73
+fi
 
 case "\${QINTOPIA_FAKE_COS_MODE:-}" in
   missing-pointer)
@@ -300,6 +316,7 @@ const runCase = ({
   runnerExpected = "idle",
   expectedId = "",
   preexistingClaim = false,
+  fixedPreparing = false,
   expectedStatus = 0,
 }) => {
   const stateDir = path.join(tmpRoot, name);
@@ -315,6 +332,17 @@ const runCase = ({
       path.join(stateDir, "requests", archive, requestName),
       "{}\n",
       "utf8"
+    );
+  }
+  if (fixedPreparing) {
+    fs.mkdirSync(path.join(stateDir, "recovery"), { recursive: true });
+    fs.writeFileSync(
+      path.join(stateDir, "recovery/takeover.json"),
+      JSON.stringify({
+        request_id: expectedId,
+        hold_token: "a".repeat(32),
+        phase: "preparing",
+      })
     );
   }
   if (preexistingClaim) {
@@ -364,6 +392,26 @@ try {
   if (!wrongIdOutput.output.includes("does not match expected request ID")) {
     throw new Error("wrong-expected-id: pointer mismatch was not rejected");
   }
+  const claimedFixed = runCase({
+    name: "fixed-claim-before-marker",
+    mode: "active",
+    fixedPreparing: true,
+    expectedId: requestName.slice(0, -5),
+    expectedStatus: 75,
+  });
+  // The fixture runner has a deliberately wrong immutable identity: stop before
+  // any execution, but verify the real claim/marker publication ordering.
+  assert.match(claimedFixed.output, /fixed takeover old runner identity mismatch/);
+  assert.ok(
+    fs.existsSync(path.join(claimedFixed.stateDir, "requests/claimed", requestName))
+  );
+  assert.equal(
+    fs.readFileSync(
+      path.join(claimedFixed.stateDir, "recovery/takeover-consumed"),
+      "utf8"
+    ),
+    requestName.slice(0, -5) + "\n"
+  );
   const missingPointerOutput = runCase({
     name: "missing-pointer",
     mode: "missing-pointer",
@@ -570,6 +618,411 @@ try {
     throw new Error(
       "hermes-early-failure: fallback deploy result was not Hermes-specific"
     );
+  }
+  // Run the actual launcher against local path/systemctl/COS boundaries. No VM,
+  // production path, real credentials, systemd mutation or runner effect is used.
+  const launchRoot = path.join(tmpRoot, "takeover");
+  const state = path.join(launchRoot, "state");
+  const recovery = path.join(state, "recovery");
+  const releases = path.join(launchRoot, "releases");
+  const units = path.join(launchRoot, "units");
+  const proc = path.join(launchRoot, "proc");
+  const cgroups = path.join(launchRoot, "cgroups");
+  const privateEnv = path.join(launchRoot, "cos.env");
+  const fixtureBin = path.join(launchRoot, "bin");
+  const rid = "deploy-20261002T083059Z-16e8d56b9800";
+  const nextId = "deploy-20261002T103059Z-16e8d56b9800";
+  const o = "16e8d56b98001579c6288ba13199b80d6d3dfc74";
+  const p = "83d694f2c3bc21fd78a73d25da3197379e2a14d5";
+  const t = "70e7984fab92ddab956009585212d0e9729767b5";
+  const token = "a".repeat(32);
+  const key = "simulated-retirement-key";
+  const write = (name, text, mode = 0o600) => {
+    fs.mkdirSync(path.dirname(name), { recursive: true });
+    fs.writeFileSync(name, text, { mode });
+    fs.chmodSync(name, mode);
+  };
+  const digest = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  const canonical = (value) =>
+    Array.isArray(value)
+      ? `[${value.map(canonical).join(",")}]`
+      : value && typeof value === "object"
+        ? `{${Object.keys(value)
+            .sort()
+            .map((k) => `${JSON.stringify(k)}:${canonical(value[k])}`)
+            .join(",")}}`
+        : JSON.stringify(value);
+  const requestKey = `qintopia-agent-os/deploy-requests/production/requests/${rid}.json`;
+  const resultKey = `qintopia-agent-os/deploy-results/production/${rid}.json`;
+  function signedRequest(expired = true) {
+    const end = new Date(Date.now() + (expired ? -600_000 : 600_000));
+    const start = new Date(end.getTime() - 1_800_000).toISOString();
+    const unsigned = {
+      schema_version: 1,
+      request_id: rid,
+      environment: "production",
+      repository: "qintopia-agent-studio/qintopia-agent-os",
+      commit_sha: o,
+      runtime_sha: p,
+      release_sha: t,
+      deploy_bundle_sha: "4".repeat(40),
+      release_scope: ["deploy-bundle"],
+      restart_targets: ["qintopia-system-services"],
+      dry_run: false,
+      created_at: start,
+      expires_at: end.toISOString(),
+      cos: { request_key: requestKey, result_key: resultKey },
+    };
+    const signature = {
+      algorithm: "hmac-sha256",
+      issuer: "github-actions",
+      key_id: "simulated",
+      signed_at: start,
+    };
+    return {
+      ...unsigned,
+      signature: {
+        ...signature,
+        value: crypto
+          .createHmac("sha256", key)
+          .update(canonical({ request: unsigned, signature }))
+          .digest("hex"),
+      },
+    };
+  }
+  const config = path.join(launchRoot, "cos.json");
+  const portFile = path.join(launchRoot, "port");
+  const serverCode = path.join(launchRoot, "cos.py");
+  write(
+    serverCode,
+    String.raw`import hashlib,hmac,http.server,json,pathlib,sys,urllib.parse
+config,port=map(pathlib.Path,sys.argv[1:])
+class Handler(http.server.BaseHTTPRequestHandler):
+ def do_GET(self):
+  c=json.loads(config.read_text()); auth=urllib.parse.parse_qs(self.headers.get('Authorization',''))
+  times=auth.get('q-key-time',[''])[0]
+  headers='host='+urllib.parse.quote(self.headers.get('Host',''),safe='~-._')
+  string='get\n'+self.path+'\n\n'+headers+'\n'
+  sign='sha1\n'+times+'\n'+hashlib.sha1(string.encode()).hexdigest()+'\n'
+  secret=hmac.new(b'simulated',times.encode(),hashlib.sha1).hexdigest()
+  expected=hmac.new(secret.encode(),sign.encode(),hashlib.sha1).hexdigest()
+  if auth.get('q-signature') != [expected]: code,body=403,b'bad auth'
+  elif self.path == '/'+c['request_key']: code,body=200,json.dumps(c['request']).encode()
+  elif c['mode']=='present': code,body=200,b'{}'
+  elif c['mode']=='unreadable': code,body=403,b'AccessDenied'
+  elif c['mode']=='other-404': code,body=404,b'<Error><Code>NoSuchBucket</Code></Error>'
+  elif c['mode']=='wrong-key': code,body=404,b'<Error><Code>NoSuchKey</Code><Key>wrong</Key></Error>'
+  else: code,body=404,('<Error><Code>NoSuchKey</Code><Key>'+c['result_key']+'</Key></Error>').encode()
+  self.send_response(code); self.end_headers(); self.wfile.write(body)
+ def log_message(self,*args): pass
+server=http.server.HTTPServer(('127.0.0.1',0),Handler)
+port.write_text(str(server.server_port));server.serve_forever()
+`
+  );
+  const server = spawn("python3", [serverCode, config, portFile], {
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  try {
+    for (let i = 0; i < 100 && !fs.existsSync(portFile); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(fs.existsSync(portFile), "COS simulation must start");
+    const port = fs.readFileSync(portFile, "utf8");
+    write(
+      privateEnv,
+      `TENCENT_COS_BUCKET=simulated\nTENCENT_COS_REGION=simulated\nTENCENT_COS_SECRET_ID=simulated\nTENCENT_COS_SECRET_KEY=simulated\nTENCENT_COS_ENDPOINT=http://127.0.0.1:${port}\nDEPLOY_REQUEST_SIGNING_KEY=${key}\nDEPLOY_REQUEST_SIGNING_KEY_ID=simulated\n`.replaceAll(
+        "\\n",
+        "\n"
+      )
+    );
+    write(
+      path.join(fixtureBin, "id"),
+      "#!/bin/sh\necho 0\n".replaceAll("\\n", "\n"),
+      0o755
+    );
+    write(
+      path.join(fixtureBin, "flock"),
+      `#!/usr/bin/env python3
+import fcntl,sys
+try: fcntl.flock(int(sys.argv[-1]),fcntl.LOCK_EX|fcntl.LOCK_NB)
+except BlockingIOError: sys.exit(1)
+`,
+      0o755
+    );
+    write(
+      path.join(fixtureBin, "systemctl"),
+      `#!/bin/sh
+case "$*" in
+ *UnitFileState*--value*) echo disabled ;;
+ show*)
+  echo LoadState=loaded
+  echo ActiveState=inactive
+  echo MainPID=\${FIXTURE_MAIN_PID:-0}
+  echo ControlPID=0
+  echo ControlGroup=\${FIXTURE_CGROUP:-}
+  ;;
+ *) exit 90 ;;
+esac
+`,
+      0o755
+    );
+    write(
+      path.join(fixtureBin, "systemd-run"),
+      "#!/bin/sh\nexit 75\n".replaceAll("\\n", "\n"),
+      0o755
+    );
+    for (const directory of [
+      proc,
+      cgroups,
+      path.join(releases, o),
+      path.join(releases, p),
+    ])
+      fs.mkdirSync(directory, { recursive: true });
+    // Preserve the real old-runner digest for the consume identity check; never execute it.
+    const oldRunner = execFileSync(
+      "git",
+      ["show", `${o}:deploy/runner/qintopia-agent-os-deploy-runner`],
+      { cwd: repoRoot }
+    );
+    write(
+      path.join(releases, o, "deploy/runner/qintopia-agent-os-deploy-runner"),
+      oldRunner,
+      0o755
+    );
+    fs.symlinkSync(path.join(releases, o), path.join(releases, "current"));
+    fs.symlinkSync(path.join(releases, p), path.join(releases, "previous"));
+    const staged = path.join(recovery, "staged");
+    let source = fs
+      .readFileSync(
+        path.join(repoRoot, "deploy/runner/run-fixed-takeover-request.sh"),
+        "utf8"
+      )
+      .replaceAll("/var/lib/qintopia-agent-os-deploy", state)
+      .replaceAll("/home/ubuntu/qintopia-agent-os-releases", releases)
+      .replaceAll("/etc/systemd/system", units)
+      .replaceAll("/etc/qintopia/cos-artifacts.env", privateEnv)
+      .replaceAll('Path("/proc")', `Path(${JSON.stringify(proc)})`)
+      .replaceAll("/sys/fs/cgroup", cgroups)
+      .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()");
+    const launcher = path.join(
+      staged,
+      "payload/deploy/runner/run-fixed-takeover-request.sh"
+    );
+    const files = [
+      "poll-deploy-requests.sh",
+      "recover-release-lineage.sh",
+      "qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf",
+    ];
+    const manifest = { schema_version: 1, target: "server-operator-files", files: [] };
+    for (const file of files) {
+      const relative = `payload/deploy/runner/${file}`;
+      write(path.join(staged, relative), "simulated immutable bytes\n");
+      const bytes = fs.readFileSync(path.join(staged, relative));
+      manifest.files.push({
+        path: relative,
+        sha256: digest(bytes),
+        size_bytes: bytes.length,
+      });
+    }
+    write(launcher, source, 0o755);
+    write(path.join(staged, "artifact-manifest.json"), JSON.stringify(manifest));
+    write(
+      path.join(staged, "SHA256SUMS"),
+      `${digest(fs.readFileSync(path.join(staged, "artifact-manifest.json")))}  artifact-manifest.json\n`
+    );
+    write(
+      path.join(
+        units,
+        "qintopia-agent-os-deploy-runner.service.d/10-recovery-hold.conf"
+      ),
+      "simulated immutable bytes\n"
+    );
+    const env = { ...process.env, PATH: `${fixtureBin}:${process.env.PATH}` };
+    const reset = (legacy = false) => {
+      write(
+        path.join(recovery, "takeover.json"),
+        JSON.stringify({
+          request_id: rid,
+          hold_token: token,
+          timer_was_enabled: true,
+          ...(legacy ? {} : { phase: "preparing" }),
+        })
+      );
+      write(path.join(recovery, "hold"), token + "\n");
+      fs.rmSync(path.join(recovery, "takeover-consumed"), { force: true });
+      fs.rmSync(path.join(recovery, `retired-${rid}.consumed`), { force: true });
+      if (legacy) write(path.join(recovery, "takeover-consumed"), rid + "\n");
+      write(
+        config,
+        JSON.stringify({
+          mode: "absent",
+          request_key: requestKey,
+          result_key: resultKey,
+          request: signedRequest(),
+        })
+      );
+    };
+    const invoke = (mode, id = rid, extra = {}) =>
+      spawnSync("bash", [launcher, mode, id], {
+        env: { ...env, ...extra },
+        encoding: "utf8",
+      });
+    const rejected = (label, change, undo = () => {}, extra = {}) => {
+      reset();
+      change();
+      const before = fs.readFileSync(path.join(recovery, "takeover.json"), "utf8");
+      const response = invoke("retire-unstarted", rid, extra);
+      assert.equal(
+        response.status,
+        75,
+        `${label}: ${response.stdout} ${response.stderr}`
+      );
+      assert.equal(
+        fs.readFileSync(path.join(recovery, "takeover.json"), "utf8"),
+        before,
+        label
+      );
+      assert.equal(fs.readFileSync(path.join(recovery, "hold"), "utf8"), token + "\n");
+      undo();
+    };
+    for (const mode of ["present", "unreadable", "other-404", "wrong-key"])
+      rejected(mode, () => {
+        const value = JSON.parse(fs.readFileSync(config));
+        value.mode = mode;
+        write(config, JSON.stringify(value));
+      });
+    rejected("unexpired", () => {
+      const value = JSON.parse(fs.readFileSync(config));
+      value.request = signedRequest(false);
+      write(config, JSON.stringify(value));
+    });
+    rejected("bad-signature", () => {
+      const value = JSON.parse(fs.readFileSync(config));
+      value.request.signature.value = "0".repeat(64);
+      write(config, JSON.stringify(value));
+    });
+    for (const file of [
+      `requests/claimed/${rid}.json`,
+      `recovery/${rid}.json`,
+      `results/${rid}.json`,
+    ]) {
+      rejected(
+        file,
+        () => write(path.join(state, file), "{}"),
+        () => fs.rmSync(path.join(state, file))
+      );
+    }
+    rejected("new-format-marker", () =>
+      write(path.join(recovery, "takeover-consumed"), rid + "\n")
+    );
+    rejected(
+      "detached-consumer",
+      () => write(path.join(proc, "999999/cmdline"), "bash\0poll-deploy-requests.sh\0"),
+      () => fs.rmSync(path.join(proc, "999999"), { recursive: true })
+    );
+    rejected(
+      "unit-pid",
+      () => {},
+      () => {},
+      { FIXTURE_MAIN_PID: "12" }
+    );
+    rejected(
+      "populated-cgroup",
+      () => write(path.join(cgroups, "fixed/cgroup.events"), "populated 1\n"),
+      () => {},
+      { FIXTURE_CGROUP: "/fixed" }
+    );
+    rejected(
+      "pointer-drift",
+      () => {
+        fs.unlinkSync(path.join(releases, "current"));
+        fs.symlinkSync(path.join(releases, p), path.join(releases, "current"));
+      },
+      () => {
+        fs.unlinkSync(path.join(releases, "current"));
+        fs.symlinkSync(path.join(releases, o), path.join(releases, "current"));
+      }
+    );
+    for (const lockName of ["recovery/takeover.lock", "poller.lock", "deploy.lock"]) {
+      const ready = path.join(launchRoot, "lock-ready");
+      fs.rmSync(ready, { force: true });
+      const holder = spawn(
+        "python3",
+        [
+          "-c",
+          "import fcntl,pathlib,sys,time; f=open(sys.argv[1],'a'); fcntl.flock(f,fcntl.LOCK_EX); pathlib.Path(sys.argv[2]).touch(); time.sleep(30)",
+          path.join(state, lockName),
+          ready,
+        ],
+        { stdio: "ignore" }
+      );
+      try {
+        for (let i = 0; i < 100 && !fs.existsSync(ready); i++)
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        assert.ok(fs.existsSync(ready), "lock holder ready");
+        rejected(`busy-${lockName}`, () => {});
+      } finally {
+        holder.kill();
+        await new Promise((resolve) => holder.once("exit", resolve));
+      }
+    }
+    for (const legacy of [false, true]) {
+      reset(legacy);
+      const result = invoke("retire-unstarted");
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(fs.existsSync(path.join(recovery, "takeover-consumed")), false);
+      assert.equal(
+        fs.existsSync(path.join(recovery, `retired-${rid}.consumed`)),
+        legacy
+      );
+      const retired = JSON.parse(fs.readFileSync(path.join(recovery, "takeover.json")));
+      assert.equal(retired.phase, "retired");
+      assert.match(retired.retired_requests[rid].request_sha256, /^[0-9a-f]{64}$/);
+      assert.equal(fs.readFileSync(path.join(recovery, "hold"), "utf8"), token + "\n");
+      assert.equal(invoke("retire-unstarted").status, 0, "idempotent retirement");
+      if (legacy) {
+        // Interrupted after the durable retirement record, before marker rename.
+        fs.renameSync(
+          path.join(recovery, `retired-${rid}.consumed`),
+          path.join(recovery, "takeover-consumed")
+        );
+        assert.equal(
+          invoke("retire-unstarted").status,
+          0,
+          "resume marker archival without replay"
+        );
+      }
+      assert.notEqual(invoke("consume").status, 0, "old ID cannot be rebound");
+      const next = invoke("consume", nextId);
+      assert.equal(next.status, 75, next.stderr); // simulated systemd failure before claim
+      assert.equal(
+        JSON.parse(fs.readFileSync(path.join(recovery, "takeover.json"))).request_id,
+        nextId
+      );
+      assert.equal(fs.existsSync(path.join(recovery, "takeover-consumed")), false);
+    }
+    reset();
+    write(path.join(state, `requests/pending/${rid}.json`), '{"interrupted":', 0o644);
+    assert.equal(
+      invoke("retire-unstarted").status,
+      0,
+      "partial download can be retired before claim"
+    );
+    assert.equal(
+      fs.readFileSync(path.join(state, `requests/pending/${rid}.json`), "utf8"),
+      '{"interrupted":'
+    );
+    assert.match(
+      JSON.parse(fs.readFileSync(path.join(recovery, "takeover.json")))
+        .retired_requests[rid].pending_sha256,
+      /^[0-9a-f]{64}$/
+    );
+    console.log(
+      "Takeover unstarted retirement and refusal matrix passed (local boundary mocks)."
+    );
+  } finally {
+    server.kill();
+    await new Promise((resolve) => server.once("exit", resolve));
   }
 } finally {
   fs.rmSync(tmpRoot, { recursive: true, force: true });
