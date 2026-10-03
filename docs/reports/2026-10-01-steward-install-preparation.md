@@ -226,4 +226,6 @@ Review 读取远端 checks 返回连接未登录，未通过 CLI 回退读取诊
 - 保留继承 FD9、签名、摘要、claim 和 hold 校验；staged 不获得 prepare/activate 权限。
 - 运行进程仍必须来自固定不可变 release，不将 staged 当作可执行 runtime。
 - 不新增恢复协议、workflow、job、依赖、schema 或门禁；不操作生产、不启用 broker。
-- 修复与拒绝负例验证待执行；真实 Linux/systemd 补充项仍单独记录。
+- 修复后的 poller 组合回归及 staged 拒绝负例通过；操作系统与 COS 边界为模拟。
+- 普通路径夹具曾因真实 broker 新增的 owner/runtime 校验失败，现补齐模拟不可变制品。
+- 生产 root owner、manifest/hash 校验未放宽；真实 Linux/systemd 补充项仍单独记录。

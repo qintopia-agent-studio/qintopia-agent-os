@@ -10,6 +10,12 @@ FD8 then FD9 maintenance ordering and request-bound hold. Closing inherits FD9; 
 reacquires the caller's lock. Installer replacement and rollback's first pointer change
 verify closure without stopping again. The caller already quiesces.
 
+For the fixed takeover only, the complete reviewed staged bundle may run broker
+`quiesce` or `verify-closed` through the existing `verify-staged-closure` authority. A
+definite failed request grants only verification. The broker helper must be listed in
+that verified bundle and inherit FD9; staged `prepare` and `activate` are refused.
+Running broker binaries still require fixed release manifests and digests.
+
 A single stop submission has a 35-second monotonic budget. Snapshot the original
 InvocationID, PID start identity and cgroup before stop; success requires a definite
 same-invocation exit, no old/current cgroup tasks, no broker process or residual socket.
