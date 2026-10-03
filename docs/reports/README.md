@@ -10,6 +10,8 @@
 
 - [2026-09-30 舍长与二花共享服务最小接入](2026-09-30-steward-production-minimal.md)
 
+- [2026-10-01 舍长—二花安装准备与预检缺口](2026-10-01-steward-install-preparation.md)
+
 - [2026-10-01 舍长页面上线前集成与审阅](2026-10-01-steward-prelaunch-integration.md)
 
 - [2026-09-30 舍长与二花岗位入口前端收尾及 Git 恢复](2026-09-30-steward-workbench-closeout.md)

@@ -377,6 +377,7 @@ prepare_ubuntu_owned_directory \
 unit_files=(
   qintopia-message-sidecar.service
   qintopia-agentos-management-ui.service
+  qintopia-agentos-foundation-broker.service
   qintopia-agentos-automation-dispatcher.service
   qintopia-agentos-automation-dispatcher.timer
   qintopia-agentos-space-automation-execution-worker.service
@@ -462,6 +463,38 @@ elif [[ "$ui_load_state" != not-found ]]; then
   echo "management UI load state is unknown" >&2
   exit 1
 fi
+# Closure is a precondition, never a stop operation. The caller already quiesced.
+trusted_release="$release_dir"
+closing_helper="$release_dir/deploy/runner/foundation-broker-lifecycle.sh"
+if ! {
+  python3 - "$trusted_release" "$closing_helper" <<'PY' || exit 75
+import hashlib
+import json
+import os
+from pathlib import Path
+import stat
+import sys
+root, helper = map(Path, sys.argv[1:])
+owner = root.stat().st_uid
+if str(root.parent) == '/home/ubuntu/qintopia-agent-os-releases' and owner != 0:
+    raise SystemExit('closing release ownership drifted')
+for path, mode in ((helper,0o755),(root/'manifest.json',0o444),(root/'deploy-bundle/artifact-manifest.json',0o444)):
+    item = path.lstat()
+    if not stat.S_ISREG(item.st_mode) or item.st_uid != owner or item.st_nlink != 1 or stat.S_IMODE(item.st_mode)!=mode:
+        raise SystemExit('closing helper metadata drifted')
+manifest = json.loads((root/'manifest.json').read_text())
+artifact = json.loads((root/'deploy-bundle/artifact-manifest.json').read_text())
+relative = helper.relative_to(root).as_posix()
+entries = [item for item in artifact.get('files',[]) if item.get('path')=='payload/'+relative]
+if (manifest.get('release_sha')!=root.name or artifact.get('commit_sha')!=manifest.get('deploy_bundle_sha') or
+        len(entries)!=1 or hashlib.sha256(helper.read_bytes()).hexdigest()!=entries[0].get('sha256')):
+    raise SystemExit('closing helper identity/digest drifted')
+PY
+  "$closing_helper" verify-closed
+}; then
+  echo "foundation broker must be closed before unit replacement" >&2
+  exit 75
+fi
 for unit_file in "${unit_files[@]}"; do
   source_path="${render_dir}/${unit_file}"
   if [[ ! -f "$source_path" ]]; then
@@ -490,6 +523,9 @@ done
 "$systemctl_bin" disable --now "$management_ui_unit"
 [[ "$("$systemctl_bin" show --property=UnitFileState --value "$management_ui_unit")" == disabled ]]
 [[ "$("$systemctl_bin" show --property=ActiveState --value "$management_ui_unit")" == inactive ]]
+
+"$systemctl_bin" disable qintopia-agentos-foundation-broker.service
+"$closing_helper" verify-closed || exit 75
 
 if ! quiesce_space_automation_runtime; then
   echo "release install could not prove the Space automation runtime is disabled" >&2
