@@ -188,6 +188,7 @@ const sourceFiles = [
   "deploy/runner/deploy-result.schema.json",
   "deploy/runner/install-release-systemd-units.sh",
   "deploy/runner/management-ui-lifecycle.sh",
+  "deploy/runner/foundation-broker-lifecycle.sh",
   "deploy/runner/quiesce-space-automation-runtime.sh",
   "deploy/runner/manifest.yaml",
   "deploy/runner/qintopia-agent-os-deploy-runner",
