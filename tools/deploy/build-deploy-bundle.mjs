@@ -342,6 +342,8 @@ const toolOutput = (command, args, fallback = "") => {
   }
 };
 
+const copiedPayloadPaths = new Set();
+
 const copyPayloadFile = (sourcePath, targetRelativePath, sourceLabel) => {
   if (!fs.existsSync(sourcePath)) {
     throw new Error(`deploy bundle source file not found: ${sourceLabel}`);
@@ -352,6 +354,10 @@ const copyPayloadFile = (sourcePath, targetRelativePath, sourceLabel) => {
   }
 
   const targetPath = path.join(payloadDir, ...targetRelativePath.split("/"));
+  if (copiedPayloadPaths.has(targetPath)) {
+    throw new Error(`deploy bundle target path collision: ${targetRelativePath}`);
+  }
+  copiedPayloadPaths.add(targetPath);
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.copyFileSync(sourcePath, targetPath);
 
@@ -469,7 +475,11 @@ fs.rmSync(bundleDir, { recursive: true, force: true });
 fs.mkdirSync(payloadDir, { recursive: true });
 
 const files = [
-  ...[...sourceFiles, ...sourceDirs.flatMap(collectDirectoryFiles)].map(copyFile),
+  // File and directory allowlists may select the same repository source.
+  // Merge those selections before copying; other target collisions still fail.
+  ...[...new Set([...sourceFiles, ...sourceDirs.flatMap(collectDirectoryFiles)])].map(
+    copyFile
+  ),
   ...collectVendoredYamlFiles().map(copyVendoredYamlFile),
   ...copyDashboardArtifact(),
 ];

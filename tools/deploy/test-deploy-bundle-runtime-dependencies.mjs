@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +37,22 @@ try {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(bundleRoot, "artifact-manifest.json"), "utf8")
   );
+  const manifestPaths = manifest.files.map((entry) => entry.path);
+  assert.equal(
+    new Set(manifestPaths).size,
+    manifestPaths.length,
+    "actual deploy bundle manifest must contain unique target paths"
+  );
+  for (const entry of manifest.files) {
+    const file = path.join(bundleRoot, entry.path);
+    const content = fs.readFileSync(file);
+    assert.equal(content.length, entry.size_bytes, `${entry.path} size mismatch`);
+    assert.equal(
+      crypto.createHash("sha256").update(content).digest("hex"),
+      entry.sha256,
+      `${entry.path} digest mismatch`
+    );
+  }
   if (process.env.QINTOPIA_HERMES_DASHBOARD_ARTIFACT_DIR) {
     const packaged = path.join(payloadRoot, "runtime/hermes/dashboard-artifact");
     assert.ok(fs.existsSync(path.join(packaged, "web_dist/index.html")));
@@ -104,6 +121,12 @@ try {
     "skills/qiwe/space_agent_completion.py",
     "runtime/hermes/repair_snapshot_permissions.py",
     "deploy/runner/install-hermes-dashboard.py",
+    "runtime/hermes/cron/reviewed-cron-jobs.json",
+    "runtime/hermes/cron/xiaoman/weekly-plan-confirmation.job.json",
+    "runtime/hermes/cron/erhua/morning-brief.job.json",
+    "runtime/hermes/scripts/qintopia-hermes-cron-wrapper.template.sh",
+    "runtime/hermes/scripts/qintopia_xiaoman_weekly_plan_confirmation.sh",
+    "runtime/hermes/scripts/qintopia_erhua_morning_brief.sh",
   ]) {
     assert.ok(
       manifest.files.some((entry) => entry.path === `payload/${relativePath}`),
