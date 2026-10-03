@@ -3,7 +3,7 @@ Description=Poll Qintopia Agent OS deploy requests
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=1min
+OnCalendar=minutely
 Persistent=true
 
 [Install]

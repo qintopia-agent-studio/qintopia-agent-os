@@ -1271,10 +1271,13 @@ exec /usr/bin/rm "$@"
     );
     write(
       timerPath,
-      `[Unit]\nDescription=Simulated takeover timer\n[Timer]\nOnCalendar=daily\n[Install]\nWantedBy=timers.target\n`
+      fs.readFileSync(
+        path.join(path.dirname(launcher), "qintopia-agent-os-deploy-runner.timer")
+      )
     );
     check(run("systemctl", ["daemon-reload"]), "fixture daemon reload");
-    check(run("systemctl", ["enable", "--now", timer]), "initial timer enable");
+    // Record enabled state without letting the boot trigger run before prepare installs the hold.
+    check(run("systemctl", ["enable", timer]), "initial timer enable");
     const stagedRunner = path.join(staged, "payload/deploy/runner");
     fs.mkdirSync(stagedRunner, { recursive: true });
     const stagedFiles = [
@@ -1451,6 +1454,22 @@ exec /usr/bin/rm "$@"
     assert.notEqual(killedBeforeUnlink.status, 0, "caller survived injected SIGKILL");
     assert.equal(fs.existsSync(hold), true, "caller death cleared hold before unlink");
     check(run("systemctl", ["start", service]), "held service start");
+    const assertFutureCalendarElapse = () => {
+      const next = check(
+        run("systemctl", [
+          "show",
+          timer,
+          "--property=NextElapseUSecRealtime",
+          "--value",
+        ]),
+        "next calendar poll"
+      ).stdout.trim();
+      assert.ok(
+        next && next !== "0" && next !== "n/a",
+        "held service exhausted the timer schedule"
+      );
+    };
+    assertFutureCalendarElapse();
     assert.equal(
       fs.existsSync(replayed),
       false,
@@ -1482,7 +1501,12 @@ exec /usr/bin/rm "$@"
     }
     check(launch("finalize"), "resume finalization without replay");
     assert.equal(fs.existsSync(hold), false, "successful finalization retained hold");
-    assert.equal(fs.existsSync(replayed), false, "finalize replayed poller");
+    assertFutureCalendarElapse();
+    assert.equal(fs.readFileSync(requestPath, "utf8"), JSON.stringify(request) + "\n");
+    assert.equal(
+      fs.existsSync(path.join(state, "requests/claimed", `${requestId}.json`)),
+      false
+    );
     assert.equal(
       check(run("systemctl", ["is-active", timer]), "restored timer").stdout.trim(),
       "active"
@@ -1496,7 +1520,11 @@ exec /usr/bin/rm "$@"
     );
     assert.equal(fs.existsSync(hold), false, "post-unlink death restored stale hold");
     check(launch("finalize"), "idempotent finalization after caller death");
-    assert.equal(fs.existsSync(replayed), false, "retry replayed poller");
+    assert.equal(fs.readFileSync(requestPath, "utf8"), JSON.stringify(request) + "\n");
+    assert.equal(
+      fs.existsSync(path.join(state, "requests/claimed", `${requestId}.json`)),
+      false
+    );
     const laterId = "deploy-20260927T020304Z-abcdef1";
     const laterJournal = path.join(recovery, `${laterId}.json`);
     write(
