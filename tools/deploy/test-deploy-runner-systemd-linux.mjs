@@ -1673,6 +1673,12 @@ exec /usr/bin/rm "$@"
     check(launch("finalize"), "resume finalization without replay");
     assert.equal(fs.existsSync(hold), false, "successful finalization retained hold");
     assertFutureCalendarElapse();
+    // Observe a real calendar activation, not just a scheduled timestamp. The
+    // default timer AccuracySec can coalesce the next minute by up to a minute.
+    const naturalPollDeadline = Date.now() + 150_000;
+    while (!fs.existsSync(replayed) && Date.now() < naturalPollDeadline)
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+    assert.equal(fs.existsSync(replayed), true, "calendar poll did not resume");
     assert.equal(fs.readFileSync(requestPath, "utf8"), JSON.stringify(request) + "\n");
     assert.equal(
       fs.existsSync(path.join(state, "requests/claimed", `${requestId}.json`)),
