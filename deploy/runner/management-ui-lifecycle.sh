@@ -21,13 +21,24 @@ case "$mode" in
 esac
 [[ "$(id -u)" -eq 0 ]] || { echo "management UI lifecycle requires root" >&2; exit 75; }
 script_path="$(readlink -f -- "${BASH_SOURCE[0]}")"
-[[ "$script_path" =~ ^/home/ubuntu/qintopia-agent-os-releases/([0-9a-f]{40})/deploy/runner/management-ui-lifecycle\.sh$ ]] || {
+staged="$state/recovery/staged"
+staged_closure=false
+if [[ "$script_path" == "$staged/payload/deploy/runner/management-ui-lifecycle.sh" ]]; then
+  [[ "$mode" == quiesce || "$mode" == verify-closed ]] || exit 75
+  authority="$("$staged/payload/deploy/runner/run-fixed-takeover-request.sh" verify-staged-closure)" || exit 75
+  [[ "$authority" != verify-only || "$mode" == verify-closed ]] || exit 75
+  staged_closure=true
+  release="$staged/payload"
+  release_sha=""
+elif [[ "$script_path" =~ ^/home/ubuntu/qintopia-agent-os-releases/([0-9a-f]{40})/deploy/runner/management-ui-lifecycle\.sh$ ]]; then
+  release_sha="${BASH_REMATCH[1]}"
+  release="${release_root}/${release_sha}"
+else
   echo "management UI lifecycle requires a fixed immutable release" >&2
   exit 75
-}
-release_sha="${BASH_REMATCH[1]}"
-release="${release_root}/${release_sha}"
+fi
 
+if [[ "$staged_closure" != true ]]; then
 python3 - "$release" "$release_sha" <<'PY'
 import hashlib
 import json
@@ -58,6 +69,7 @@ for relative, mode in (("deploy/runner/management-ui-lifecycle.sh", 0o755),
     if len(matches) != 1 or hashlib.sha256(file.read_bytes()).hexdigest() != matches[0].get("sha256"):
         raise SystemExit("management UI deploy bundle file digest drifted")
 PY
+fi
 
 check_inherited_lock() {
   python3 - "$state/deploy.lock" <<'PY'
@@ -164,6 +176,9 @@ import os
 import re
 import subprocess
 import sys
+import hashlib
+import stat
+from pathlib import Path
 
 unit, root = sys.argv[1:3]
 keys = ("LoadState", "ActiveState", "SubState", "UnitFileState", "InvocationID",
@@ -183,6 +198,22 @@ if pid:
     if not re.fullmatch(re.escape(root) + r"/[0-9a-f]{40}/sidecar/qintopia-message-sidecar", executable):
         raise SystemExit("management UI executable is outside an immutable release")
     metadata = os.stat(f"/proc/{pid}/exe")
+    installed = Path(executable).parent.parent
+    manifest_path = installed / "manifest.json"
+    artifact_path = installed / "sidecar/artifact-manifest.json"
+    for path in (manifest_path, artifact_path, Path(executable)):
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise SystemExit("management UI running release metadata is unsafe")
+    manifest = json.loads(manifest_path.read_bytes())
+    artifact = json.loads(artifact_path.read_bytes())
+    matches = [f for f in artifact.get("files", []) if f.get("path") == "qintopia-message-sidecar"]
+    if (manifest.get("release_sha") != installed.name or
+            artifact.get("commit_sha") != manifest.get("runtime_sha") or len(matches) != 1 or
+            hashlib.sha256(Path(executable).read_bytes()).hexdigest() != matches[0].get("sha256") or
+            (Path(executable).stat().st_dev, Path(executable).stat().st_ino) !=
+                (metadata.st_dev, metadata.st_ino)):
+        raise SystemExit("management UI running release identity drifted")
     data["ExecutableIdentity"] = [metadata.st_dev, metadata.st_ino, executable]
 else:
     data["ExecutableIdentity"] = None
@@ -259,6 +290,8 @@ if before and (before["InvocationID"] != after["InvocationID"] or
     raise SystemExit("management UI invocation changed or outcome is unknown")
 if after["Unknown"]:
     raise SystemExit("management UI outcome is unknown")
+if after["MainPID"] != "0" or after["ControlPID"] != "0":
+    raise SystemExit("management UI process remains")
 if after["NRestarts"] != "0":
     raise SystemExit("management UI restart history is unexpected")
 if after["LoadState"] == "loaded":

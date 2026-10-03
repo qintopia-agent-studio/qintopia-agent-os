@@ -2939,6 +2939,44 @@ if (process.argv[2] === "--fixed-takeover-lock") {
       0,
       "correct inherited FD7 was rejected"
     );
+    // Execute the real runner binding and real helper lock check together.
+    // Redirecting only the runner's flock call is insufficient: FD9 itself
+    // must share the poller's held open file description.
+    const binding = fs
+      .readFileSync(runnerSource, "utf8")
+      .split(
+        "# The fixed poller owns FD7 across execution/upload/archive. Give all helpers\n"
+      )[1]
+      ?.split("\n(\n  flock -n 9")[0];
+    const helperLock = fs
+      .readFileSync(
+        path.join(process.cwd(), "deploy/runner/management-ui-lifecycle.sh"),
+        "utf8"
+      )
+      .match(/^check_inherited_lock\(\) \{[\s\S]*?^\}/m)?.[0];
+    assert.ok(binding && helperLock, "real runner/helper lock binding must be found");
+    const bindAndCheck = (setup) =>
+      run(
+        "bash",
+        [
+          "-c",
+          `set -e\nLOCK_FILE="${adapterLock}"\nstate="${adapterState}"\n${setup}\n${binding}\n${helperLock}\ncheck_inherited_lock`,
+        ],
+        { env: adapterEnv }
+      );
+    assert.notEqual(bindAndCheck("").status, 0, "missing FD7 must fail real binding");
+    assert.notEqual(
+      bindAndCheck(`exec 7>"${unrelatedLock}"; flock -n 7`).status,
+      0,
+      "wrong FD7 must fail real binding"
+    );
+    assert.notEqual(
+      bindAndCheck(`exec 7>"${adapterLock}"`).status,
+      0,
+      "unlocked FD7 must not gain closure authority"
+    );
+    const heldBinding = bindAndCheck(`exec 7>"${adapterLock}"; flock -n 7`);
+    assert.equal(heldBinding.status, 0, heldBinding.stderr);
     assert.notEqual(
       adapterCall(
         `exec 7>"${adapterLock}"; command flock -n 7; exec 8>"${unrelatedLock}"`,

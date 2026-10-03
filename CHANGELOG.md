@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.10](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.9...v0.3.10) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deploy:** emit unique bundle manifest targets ([#745](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/745)) ([d98c691](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/d98c691c62600aab637038a623ecccd62bf550ac))
+
+## [0.3.9](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.8...v0.3.9) (2026-10-03)
+
+
+### Features
+
+* **workbench:** prepare steward directory and knowledge access ([#734](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/734)) ([bbaeed0](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/bbaeed0525db4e4a6a3f11dc487f4f4b78d43eaf))
+
+
+### Bug Fixes
+
+* **deploy:** complete staged takeover closure and lock contract ([#744](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/744)) ([65764da](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/65764da12b4dca51a20207427a904337591db267))
+
 ## [0.3.8](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.7...v0.3.8) (2026-10-02)
 
 

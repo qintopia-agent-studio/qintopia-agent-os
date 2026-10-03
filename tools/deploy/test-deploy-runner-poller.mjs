@@ -758,6 +758,21 @@ except BlockingIOError: sys.exit(1)
       path.join(fixtureBin, "systemctl"),
       `#!/bin/sh
 case "$*" in
+ *qintopia-agentos-management-ui.service*)
+  echo LoadState=not-found
+  echo ActiveState=inactive
+  echo SubState=dead
+  echo UnitFileState=disabled
+  echo InvocationID=
+  echo Result=success
+  echo ExecMainCode=0
+  echo ExecMainStatus=0
+  echo MainPID=0
+  echo ControlPID=\${FIXTURE_UI_CONTROL_PID:-0}
+  echo ControlGroup=\${FIXTURE_UI_CGROUP:-}
+  echo NRestarts=0
+  ;;
+ *LoadState*--value*) echo loaded ;;
  *UnitFileState*--value*) echo disabled ;;
  *InvocationID*--value*) echo aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
  *ActiveState*--value*) echo inactive ;;
@@ -812,6 +827,8 @@ esac
       .replaceAll('Path("/proc")', `Path(${JSON.stringify(proc)})`)
       .replaceAll("/sys/fs/cgroup", cgroups)
       .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()")
+      .replaceAll("info.st_uid != 0", "info.st_uid != os.geteuid()")
+      .replaceAll("(path.parent, *path.parent.parents)", "(path.parent,)")
       .replaceAll("(root, *root.parents)", "(root,)");
     const launcher = path.join(
       staged,
@@ -1126,6 +1143,15 @@ esac
         .replaceAll("/etc/qintopia/cos-artifacts.env", privateEnv)
         .replaceAll("/sys/fs/cgroup", cgroups)
         .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()")
+        .replaceAll("info.st_uid != 0", "info.st_uid != os.geteuid()")
+        .replaceAll("path.st_uid != 0", "path.st_uid != os.geteuid()")
+        .replaceAll("/usr/bin/systemctl", path.join(fixtureBin, "systemctl"))
+        .replaceAll(
+          "/usr/bin:/bin:/usr/sbin:/sbin",
+          `${fixtureBin}:${process.env.PATH}`
+        )
+        .replaceAll('Path("/proc")', `Path(${JSON.stringify(proc)})`)
+        .replaceAll("/etc/nginx", path.join(launchRoot, "nginx"))
         .replaceAll("i<120", "i<1");
     write(helper, remap(recoverySource), 0o755);
     write(
@@ -1133,6 +1159,33 @@ esac
       fs.readFileSync(path.join(repoRoot, "deploy/runner/wait-deploy-result.sh")),
       0o755
     );
+    const uiHelper = path.join(
+      staged,
+      "payload/deploy/runner/management-ui-lifecycle.sh"
+    );
+    write(
+      uiHelper,
+      remap(
+        fs.readFileSync(
+          path.join(repoRoot, "deploy/runner/management-ui-lifecycle.sh"),
+          "utf8"
+        )
+      ),
+      0o755
+    );
+    for (const relative of [
+      "deploy/runner/management-ui-lifecycle.sh",
+      "runtime/nginx/templates/management-ui-http.conf.template",
+      "runtime/nginx/templates/management-ui-https.conf.template",
+    ]) {
+      if (!relative.endsWith(".sh"))
+        write(
+          path.join(staged, "payload", relative),
+          fs.readFileSync(path.join(repoRoot, relative)),
+          0o644
+        );
+      manifest.files.push({ path: "payload/" + relative });
+    }
     const refreshBundle = () => {
       for (const item of manifest.files) {
         const bytes = fs.readFileSync(path.join(staged, item.path));
@@ -1163,12 +1216,13 @@ pathlib.Path(args[2]).write_text(json.dumps(c['request'],separators=(',',':')))
     const requestPath = path.join(state, `requests/failed/${rid}.json`);
     const journalPath = path.join(recovery, `${rid}.json`);
     const closeMarker = path.join(recovery, `closed-${rid}.consumed`);
-    const signObject = (unsigned, kind, issuer) => {
+    const signObject = (unsigned, kind, issuer, signedAt = "") => {
       const signature = {
         algorithm: "hmac-sha256",
         issuer,
         key_id: "simulated",
-        signed_at: kind === "result" ? unsigned.finished_at : unsigned.created_at,
+        signed_at:
+          signedAt || (kind === "result" ? unsigned.finished_at : unsigned.created_at),
       };
       return {
         ...unsigned,
@@ -1307,6 +1361,127 @@ pathlib.Path(args[2]).write_text(json.dumps(c['request'],separators=(',',':')))
         j.result_upload.payload_sha256 = digest(fs.readFileSync(resultPath));
       });
     };
+    resetClosure();
+    const binding = fs
+      .readFileSync(
+        path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner"),
+        "utf8"
+      )
+      .split(
+        "# The fixed poller owns FD7 across execution/upload/archive. Give all helpers\n"
+      )[1]
+      ?.split("\n(\n  flock -n 9")[0];
+    const helperLock = remap(
+      fs.readFileSync(
+        path.join(repoRoot, "deploy/runner/management-ui-lifecycle.sh"),
+        "utf8"
+      )
+    ).match(/^check_inherited_lock\(\) \{[\s\S]*?^\}/m)?.[0];
+    assert.ok(binding && helperLock);
+    const lockFile = path.join(state, "deploy.lock");
+    const bindAndCheck = (setup) =>
+      spawnSync(
+        "bash",
+        [
+          "-c",
+          `set -e\nLOCK_FILE="${lockFile}"\nstate="${state}"\n${setup}\n${binding}\n${helperLock}\ncheck_inherited_lock`,
+        ],
+        { encoding: "utf8", env: { ...env, QINTOPIA_FIXED_TAKEOVER_LOCK: "1" } }
+      );
+    assert.notEqual(bindAndCheck("").status, 0, "missing FD7 must refuse");
+    assert.notEqual(
+      bindAndCheck(`exec 7>"${path.join(launchRoot, "other.lock")}"; flock -n 7`)
+        .status,
+      0,
+      "wrong FD7 must refuse"
+    );
+    assert.notEqual(
+      bindAndCheck(`exec 7>"${lockFile}"`).status,
+      0,
+      "unheld FD7 must refuse"
+    );
+    const inherited = bindAndCheck(`exec 7>"${lockFile}"; flock -n 7`);
+    assert.equal(inherited.status, 0, inherited.stderr);
+    const closedUi = (mode, lock = true) =>
+      spawnSync(
+        "bash",
+        [
+          "-c",
+          `${lock ? `exec 9>"${path.join(state, "deploy.lock")}"; flock -n 9;` : ""} exec bash "$1" "$2"`,
+          "fixture",
+          uiHelper,
+          mode,
+        ],
+        { encoding: "utf8", env }
+      );
+    assert.equal(
+      closedUi("verify-closed").status,
+      0,
+      "real staged helper must verify a definite failed request"
+    );
+    const offsetRequest = JSON.parse(fs.readFileSync(requestPath));
+    delete offsetRequest.signature;
+    write(
+      requestPath,
+      JSON.stringify(
+        signObject(
+          offsetRequest,
+          "request",
+          "github-actions",
+          new Date(Date.parse(offsetRequest.created_at) + 60000).toISOString()
+        )
+      )
+    );
+    changeJSON(journalPath, (j) => {
+      j.request_sha256 = digest(fs.readFileSync(requestPath));
+    });
+    assert.equal(
+      closedUi("verify-closed").status,
+      0,
+      "existing signing clock tolerance must remain valid"
+    );
+    changeJSON(requestPath, (r) => {
+      r.signature.value = "0".repeat(64);
+    });
+    changeJSON(journalPath, (j) => {
+      j.request_sha256 = digest(fs.readFileSync(requestPath));
+    });
+    assert.notEqual(
+      closedUi("verify-closed").status,
+      0,
+      "staged helper must independently verify request signature"
+    );
+    resetClosure();
+    assert.notEqual(
+      closedUi("verify-closed", false).status,
+      0,
+      "helper must require inherited lock ownership"
+    );
+    for (const mode of [
+      "quiesce",
+      "prepare",
+      "activate",
+      "install-http",
+      "issue-cert",
+      "install-https",
+    ])
+      assert.notEqual(
+        closedUi(mode).status,
+        0,
+        "archived failure cannot authorize " + mode
+      );
+    const completeFiles = [...manifest.files];
+    manifest.files = manifest.files.filter(
+      (f) => !f.path.endsWith("management-ui-lifecycle.sh")
+    );
+    refreshBundle();
+    assert.notEqual(
+      closedUi("verify-closed").status,
+      0,
+      "unlisted helper is not trusted by a valid manifest"
+    );
+    manifest.files = completeFiles;
+    refreshBundle();
     for (const [label, change, extra] of [
       [
         "remote absent",
@@ -1355,6 +1530,8 @@ pathlib.Path(args[2]).write_text(json.dumps(c['request'],separators=(',',':')))
           }),
       ],
       ["live consumer", () => {}, { FIXTURE_MAIN_PID: "42" }],
+      ["UI residual process", () => {}, { FIXTURE_UI_CONTROL_PID: "42" }],
+      ["UI unknown cgroup", () => {}, { FIXTURE_UI_CGROUP: "/missing" }],
       [
         "signed success",
         () =>
@@ -1394,6 +1571,11 @@ pathlib.Path(args[2]).write_text(json.dumps(c['request'],separators=(',',':')))
       assert.ok(fs.existsSync(path.join(recovery, "takeover-consumed")), label);
     }
     resetClosure();
+    replaceSignedResult((r) => {
+      const detail = JSON.parse(r.checks[0].detail);
+      detail.failure_stage = "quiesce-management-ui";
+      r.checks[0].detail = JSON.stringify(detail);
+    });
     const closed = close();
     assert.equal(closed.status, 0, closed.stderr);
     assert.ok(fs.existsSync(closeMarker));
@@ -1446,11 +1628,6 @@ print(str(s.st_dev)+':'+str(s.st_ino))
       0o755
     );
     write(
-      path.join(runnerDir, "management-ui-lifecycle.sh"),
-      "#!/bin/sh\nexit 0\n",
-      0o755
-    );
-    write(
       path.join(runnerDir, "promote-release.sh"),
       `#!/usr/bin/env python3
 import json,os,pathlib,sys
@@ -1468,7 +1645,7 @@ for name in ('install-release-systemd-units.sh','smoke-release.sh'):
 `,
       0o755
     );
-    for (const name of ["management-ui-lifecycle.sh", "promote-release.sh"])
+    for (const name of ["promote-release.sh"])
       manifest.files.push({ path: `payload/deploy/runner/${name}` });
     refreshBundle();
     const freshUnsigned = { ...JSON.parse(fs.readFileSync(requestPath)) };
@@ -1600,6 +1777,16 @@ os.execv('/bin/bash',['bash',sys.argv[-1]])
     fs.unlinkSync(path.join(recovery, "hold"));
     // Continue with the ordinary full six-target request through T's runner.
     fs.cpSync(runnerDir, path.join(releases, t, "deploy/runner"), { recursive: true });
+    fs.cpSync(path.join(staged, "payload/runtime"), path.join(releases, t, "runtime"), {
+      recursive: true,
+    });
+    fs.mkdirSync(path.join(releases, t, "deploy-bundle"), { recursive: true });
+    fs.copyFileSync(
+      path.join(staged, "artifact-manifest.json"),
+      path.join(releases, t, "deploy-bundle/artifact-manifest.json")
+    );
+    fs.chmodSync(path.join(releases, t, "deploy-bundle/artifact-manifest.json"), 0o444);
+    fs.chmodSync(path.join(releases, t, "manifest.json"), 0o444);
     const fullId = "deploy-20261002T113059Z-444444444444";
     const fullUnsigned = {
       ...freshUnsigned,

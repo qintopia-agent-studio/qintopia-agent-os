@@ -138,11 +138,23 @@ function stewardWorkspace(scope) {
   const chat = box("与二花一起工作"),
     settings = el("div"),
     progress = el("div");
-  chat.append(
-    sub(
-      "把事情交代给二花，或在其他标签里直接维护。当前为本地固定例句验证，真实模型与微信对话尚未接通。"
-    )
-  );
+  const entry = state.dialogue_entry,
+    demo = entry?.mode === "demo" && state.local_dialogue_available === true;
+  if (demo)
+    chat.append(sub("固定示例演示：只产生本地模拟回执，尚未接通真实模型或微信对话。"));
+  else {
+    chat.append(
+      sub(entry?.label || "当前服务未提供可用的二花对话入口说明，请核对服务状态。")
+    );
+    const reason = {
+      web_dialogue_not_connected:
+        "网页聊天尚未接通，可在其他标签核对本栋知识与合作约定。",
+      runtime_not_ready: "二花运行入口尚未就绪，请联系负责人核对服务状态。",
+      identity_unconfirmed: "当前身份尚未核实，请先完成已有账号的身份关联。",
+      scope_access_denied: "当前账号没有本范围的对话权限，请联系负责人核对授权。",
+    }[entry?.reason_code];
+    if (reason) chat.append(sub(reason));
+  }
   const form = el("form"),
     log = el("div"),
     feedback = sub("");
@@ -231,7 +243,7 @@ function stewardWorkspace(scope) {
   });
   const link = el("a", "打开完整本地验证对话");
   link.href = `/foundation?scope=${encodeURIComponent(scope)}`;
-  chat.append(log, form, actions(link));
+  if (demo) chat.append(log, form, actions(link));
   settings.append(
     personalRulePanel(scope),
     stewardWelcomeSettings(scope),
@@ -270,6 +282,11 @@ function stewardDelegationPanel(scope) {
       draw();
       dirty = false;
     } catch (e) {
+      if (workspaceAccessLost(e)) {
+        data = null;
+        content.replaceChildren(button("重新读取", load));
+        dirty = false;
+      }
       status.textContent = e.message;
     } finally {
       panel.inert = false;

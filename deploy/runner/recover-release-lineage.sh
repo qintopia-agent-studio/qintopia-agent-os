@@ -559,6 +559,19 @@ if [[ "$staged_helper" == true ]]; then
   }
   unit_stopped "$timer" && unit_stopped "$unit" && unit_stopped "$fixed_unit" true &&
     unit_stopped "$anan_unit" true || exit 75
+  # Read-only closure first: retirement never stops/replays business work.
+  for closed_unit in qintopia-agentos-automation-dispatcher.timer \
+    qintopia-agentos-automation-dispatcher.service qintopia-agentos-space-automation-execution-worker.service; do
+    unit_stopped "$closed_unit" true || exit 75
+    closed_load="$(systemctl show "$closed_unit" --property=LoadState --value)" || exit 75
+    if [[ "$closed_load" == loaded ]]; then
+      [[ "$(systemctl show "$closed_unit" --property=ActiveState --value)" == inactive ]] || exit 75
+      if [[ "$closed_unit" != qintopia-agentos-automation-dispatcher.service ]]; then
+        [[ "$(systemctl show "$closed_unit" --property=UnitFileState --value)" == disabled ]] || exit 75
+      fi
+    fi
+  done
+  "${verified_release}/deploy/runner/management-ui-lifecycle.sh" verify-closed || exit 75
   shown_invocation="$(systemctl show "$fixed_unit" --property=InvocationID --value)" || exit 75
   python3 - "$state" "$release_root" "$request_id" "$staged" "$shown_invocation" <<'PYCLOSE' || exit 75
 import hashlib
@@ -598,7 +611,7 @@ checks = [item for item in result.get("checks", []) if item.get("name") == "depl
 if len(checks) != 1 or checks[0].get("status") != "failed":
     raise SystemExit("closure has no unambiguous runner failure")
 detail = json.loads(checks[0].get("detail", ""))
-if (detail.get("failure_stage") != "quiesce-space-automation-runtime" or
+if (detail.get("failure_stage") not in ("quiesce-space-automation-runtime", "quiesce-management-ui") or
         detail.get("promoted_current") is not False or detail.get("profile_activation_attempted") is not False or
         type(detail.get("exit_status")) is not int or detail["exit_status"] == 0 or
         result.get("rollback", {}).get("attempted") is not False or

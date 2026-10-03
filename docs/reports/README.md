@@ -1,5 +1,9 @@
 # Reports
 
+- [2026-10-03 v0.3.9 制品 manifest 重复路径阻断](2026-10-03-v039-bundle-manifest-duplicates.md)
+
+- [2026-10-03 首次接管完整执行合同修复](2026-10-03-complete-takeover-contract.md)
+
 - [2026-10-02 v0.3.5 部署与首次接管阻断](2026-10-02-v035-runner-takeover.md)
 
 - [2026-10-01 舍长与二花上线前差分验证](2026-10-01-steward-prelaunch-completion.md)
@@ -7,6 +11,10 @@
 - [2026-09-30 舍长与二花共享服务最小接入](2026-09-30-steward-production-minimal.md)
 
 - [2026-10-01 舍长—二花安装准备与预检缺口](2026-10-01-steward-install-preparation.md)
+
+- [2026-10-01 舍长页面上线前集成与审阅](2026-10-01-steward-prelaunch-integration.md)
+
+- [2026-09-30 舍长与二花岗位入口前端收尾及 Git 恢复](2026-09-30-steward-workbench-closeout.md)
 
 - [2026-09-29 协作渠道选择本地验证](2026-09-29-collaboration-channel-selection-local-validation.md)
 

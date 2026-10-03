@@ -112,7 +112,17 @@ const errors = {
   local_session_required: "本地会话已失效，请重新打开页面。",
   invalid_label: "请补全名称与说明，并检查长度。",
   invalid_text: "请填写实际工作说明，长度不超过 2000 字。",
+  invalid_candidate_query: "候选查询条件已失效，请重新查找并核对范围。",
+  candidate_source_unavailable: "此查询需要的可信目录暂不可用，请稍后重新读取。",
+  foundation_disabled: "本栋知识与约定服务尚未启用，请联系负责人核对服务状态。",
+  authentication_required: "登录或身份已失效，请重新登录。",
   invalid_audience: "请核对人员范围与信息可见性。",
+  too_many_contacts: "最多选择 20 项联系渠道，请移除多余渠道后重试。",
+  duplicate_contact: "同一渠道不能重复加入，请核对联系列表。",
+  invalid_contact: "联系对象与渠道不匹配，请从可信候选重新选择。",
+  contact_source_unavailable: "所选账号或渠道已失效，请重新读取并选择。",
+  contact_outside_scope: "所选渠道不在当前工作范围，请移除并重新选择。",
+  contact_outside_audience: "该人员不在本项工作的联系范围，请先核对具体个人名单。",
   existing_term_differs:
     "此人有同岗位同范围的其他工作。请沿用相同任期，或先结束原任职再配置。",
   expired_term: "任期截止时间须晚于开始时间，且不能已经到期。",
@@ -199,7 +209,10 @@ async function api(path, body) {
   }
   if (response.status === 401) {
     location.replace("/login");
-    throw new Error("登录已失效");
+    const error = new Error("登录已失效，请重新登录。");
+    error.code = "authentication_required";
+    error.status = 401;
+    throw error;
   }
   if (!response.ok) {
     const e = new Error(
@@ -208,9 +221,19 @@ async function api(path, body) {
           (data.code ? `（${data.code}）` : "")
     );
     e.code = data.code;
+    e.status = response.status;
     throw e;
   }
   return data;
+}
+function workspaceAccessLost(error) {
+  return (
+    error.status === 401 ||
+    error.status === 403 ||
+    ["authentication_required", "scope_access_denied", "foundation_disabled"].includes(
+      error.code
+    )
+  );
 }
 function discardPreview() {
   pending = null;

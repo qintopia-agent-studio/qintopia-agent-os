@@ -2759,6 +2759,36 @@ PY
   fi
 }
 
+# The fixed poller owns FD7 across execution/upload/archive. Give all helpers
+# the same open file description on FD9; reopening the lock loses ownership.
+if [[ "${QINTOPIA_FIXED_TAKEOVER_LOCK:-}" == 1 ]]; then
+  python3 - "$LOCK_FILE" <<'PYLOCK' || exit 75
+import fcntl
+import os
+import stat
+import sys
+
+path = os.lstat(sys.argv[1])
+held = os.fstat(7)
+if (not stat.S_ISREG(path.st_mode) or not stat.S_ISREG(held.st_mode) or
+        path.st_nlink != 1 or (path.st_dev, path.st_ino) != (held.st_dev, held.st_ino)):
+    raise SystemExit("fixed takeover inherited lock identity changed")
+probe = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW)
+try:
+    try:
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        raise SystemExit("fixed takeover deploy lock was not held")
+finally:
+    os.close(probe)
+fcntl.flock(7, fcntl.LOCK_EX | fcntl.LOCK_NB)
+PYLOCK
+  exec 9>&7
+else
+  exec 9>"$LOCK_FILE"
+fi
 (
   flock -n 9 || {
     echo "another deploy is already running" >&2
@@ -2945,6 +2975,6 @@ PY
     fi
     exit "$status"
   fi
-  ) 9>"$LOCK_FILE"
+  )
 
 echo "Deploy result: ${result_file}"
