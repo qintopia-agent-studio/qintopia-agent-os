@@ -2,6 +2,17 @@
 
 ## v0.3.7 提升前失败的有限闭合
 
+2026-10-03 完整执行合同修复：受信 staged 包中的管理界面 helper 仅可执行 `quiesce` /
+`verify-closed`，不得执行准备、配置、证书或启用操作。它复用 launcher 的完整包校验，并独立绑定签名请求、takeover、claim/journal、执行实例与继承锁。正式 SHA 入口仍校验安装 manifest。运行中服务的二进制身份以其真实安装版本核对，不要求未提升的候选版本已经存在。
+
+首次接管的 poller 持有 FD7，runner 将同一持锁文件描述符复制到 helper 的 FD9；不能另开 FD9 后仅让
+`flock` 转向 FD7，这样 helper 会正确拒绝错误持锁者。恢复时仅允许
+`verify-closed`，不再次停用业务。除 Space 停用失败外， `quiesce-management-ui`
+的明确提升前失败也可按下述同一证据合同闭合。每次必须核对当前 request
+ID；文中的旧 ID 是历史记录，不是最新恢复指令。最新已知失败 ID 为
+`deploy-20261002T140812Z-16e8d56b9800`，执行前仍须重新验签并核对无状态漂移。详见
+[完整链路报告](../reports/2026-10-03-complete-takeover-contract.md)。
+
 首次 O→T 接管现在必须执行已验完整 staged
 bundle 内的 runner 及其同版本 helper。launcher 与 poller 都验证 manifest 文件摘要、所有权及安全目录；poller 额外要求 bundle
 commit 等于新签名请求的
@@ -20,7 +31,7 @@ sudo /var/lib/qintopia-agent-os-deploy/recovery/staged/payload/deploy/runner/rec
 ```
 
 该入口仅处理原 O/P、T 不存在、无 claim、请求已归档 failed，并且本地及 COS 签名回执完全一致的
-`quiesce-space-automation-runtime`
+`quiesce-space-automation-runtime` 或 `quiesce-management-ui`
 提升前失败。它验证原请求、journal、manifest、hold、消费者退出及调用身份，以 takeover→poller→deploy 顺序持锁。
 
 先持久化包含请求/回执/helper 摘要的闭合审计，再归档消费标记。原 journal、请求、回执和 hold 均保留，不重启业务服务、不回放请求、不变更指针或业务数据。

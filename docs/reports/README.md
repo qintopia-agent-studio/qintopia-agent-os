@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-10-03 首次接管完整执行合同修复](2026-10-03-complete-takeover-contract.md)
+
 - [2026-10-02 v0.3.5 部署与首次接管阻断](2026-10-02-v035-runner-takeover.md)
 
 - [2026-10-01 舍长与二花上线前差分验证](2026-10-01-steward-prelaunch-completion.md)
