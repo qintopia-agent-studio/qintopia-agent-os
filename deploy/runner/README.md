@@ -639,6 +639,12 @@ published and verified on the server. The timer runs
 the referenced request if it has not already been consumed locally, and then invokes
 `qintopia-agent-os-deploy-runner`.
 
+The recurring schedule must not depend on a successful service activation: a recovery
+hold can skip that activation. Use the repository timer's minutely calendar schedule;
+after recovery verify a future timer elapse and a natural poll, not only `active`. See
+the
+[v0.3.10 recovery record](../../docs/reports/2026-10-03-v0310-deploy-timer-recovery.md).
+
 Missing `current.json`, pointers with an existing COS result, and locally consumed
 pointers are normal idle timer states and must exit successfully. COS network,
 authentication, or permission failures remain hard failures.

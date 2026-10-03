@@ -9,6 +9,13 @@ import process from "node:process";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 
 const repoRoot = process.cwd();
+// A skipped service activation must not exhaust the recurring poll schedule.
+const pollTimer = fs.readFileSync(
+  path.join(repoRoot, "deploy/runner/qintopia-agent-os-deploy-runner.timer"),
+  "utf8"
+);
+assert.match(pollTimer, /^OnCalendar=minutely$/m);
+assert.doesNotMatch(pollTimer, /^OnUnit(?:Active|Inactive)Sec=/m);
 const tmpRoot = fs.realpathSync(
   fs.mkdtempSync(path.join(os.tmpdir(), "qintopia-poller-test-"))
 );
