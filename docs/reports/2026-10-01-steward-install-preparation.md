@@ -216,3 +216,14 @@ Reviewer Guide 的 heredoc 提示不成立：固定 Git 对象第493行字节为
 asyncio 用例失败。与仓库 CI 的 Python3.12 不一致；改用现有 bundled
 Python3.12.14 的局部 PATH，不改代码/checker。第二次因尚未格式化的小修 runbook 失败，格式修正后重验；原日志保留。Code
 Review 读取远端 checks 返回连接未登录，未通过 CLI 回退读取诊断；这是读取不可用，不代表远端 job 失败，也不能报告远端绿灯。
+
+## 2026-10-03 v0.3.10 组合回归
+
+- v0.3.10 正式签名部署成功，主分支报告索引冲突已合并保留。
+- 安装、回退、提升三项回归通过；poller 组合回归在 staged 关闭检查返回75。
+- broker 原检查只接受固定 release，与 #744 受约束的 staged 关闭路径不兼容。
+- 复用 verify-staged-closure，只允许 quiesce/verify-closed，保留 verify-only 限制。
+- 保留继承 FD9、签名、摘要、claim 和 hold 校验；staged 不获得 prepare/activate 权限。
+- 运行进程仍必须来自固定不可变 release，不将 staged 当作可执行 runtime。
+- 不新增恢复协议、workflow、job、依赖、schema 或门禁；不操作生产、不启用 broker。
+- 修复与拒绝负例验证待执行；真实 Linux/systemd 补充项仍单独记录。

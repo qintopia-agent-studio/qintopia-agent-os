@@ -9,8 +9,28 @@ trap 'exit 75' ERR
 state=/var/lib/qintopia-agent-os-deploy
 release_root=/home/ubuntu/qintopia-agent-os-releases
 script_path="$(readlink -f -- "${BASH_SOURCE[0]}")"
-[[ "$script_path" =~ ^/home/ubuntu/qintopia-agent-os-releases/([0-9a-f]{40})/deploy/runner/foundation-broker-lifecycle\.sh$ ]] || exit 75
-release="$release_root/${BASH_REMATCH[1]}"
+staged="$state/recovery/staged"
+staged_closure=false
+if [[ "$script_path" == "$staged/payload/deploy/runner/foundation-broker-lifecycle.sh" ]]; then
+  [[ "$mode" == quiesce || "$mode" == verify-closed ]] || exit 75
+  authority="$("$staged/payload/deploy/runner/run-fixed-takeover-request.sh" verify-staged-closure)" || exit 75
+  [[ "$authority" != verify-only || "$mode" == verify-closed ]] || exit 75
+  python3 - "$staged/artifact-manifest.json" <<'PY'
+import json
+import sys
+artifact = json.load(open(sys.argv[1]))
+entries = [f for f in artifact['files'] if f.get('path') ==
+           'payload/deploy/runner/foundation-broker-lifecycle.sh']
+if len(entries) != 1:
+    raise SystemExit('staged broker helper must belong to the verified bundle')
+PY
+  staged_closure=true
+  release="$staged/payload"
+elif [[ "$script_path" =~ ^/home/ubuntu/qintopia-agent-os-releases/([0-9a-f]{40})/deploy/runner/foundation-broker-lifecycle\.sh$ ]]; then
+  release="$release_root/${BASH_REMATCH[1]}"
+else
+  exit 75
+fi
 check_inherited_lock() {
   python3 - "$state/deploy.lock" <<'PY'
 import fcntl
@@ -96,7 +116,7 @@ else
     check_maintenance_hold || exit 75
   fi
 fi
-python3 - "$mode" "$release" 3<&0 <<'PY'
+python3 - "$mode" "$release" "$release_root" "$staged_closure" 3<&0 <<'PY'
 import fcntl
 import grp
 import hashlib
@@ -111,9 +131,9 @@ import sys
 import time
 from urllib.parse import unquote, urlsplit
 
-mode, release_text = sys.argv[1:]
+mode, release_text, release_root_text, staged_closure = sys.argv[1:]
 release = Path(release_text)
-root = release.parent
+root = Path(release_root_text)
 unit = 'qintopia-agentos-foundation-broker.service'
 account = 'qintopia-foundation-broker'
 env_file = Path('/etc/qintopia/foundation-broker.env')
@@ -361,7 +381,7 @@ def read_env(path):
     return values
 
 try:
-    binary = verify_release()
+    binary = None if staged_closure == 'true' else verify_release()
     if mode == 'prepare':
         verify_closed()
         if env_file.exists() or env_file.is_symlink():

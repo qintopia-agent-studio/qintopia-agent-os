@@ -945,6 +945,11 @@ esac
 
 foundation_broker_lifecycle() {
   local trusted_release="$release" closing_helper="$release/deploy/runner/foundation-broker-lifecycle.sh"
+  if [[ "$staged_closure" == true ]]; then
+    # The broker helper independently verifies the same signed staged closure authority.
+    "$closing_helper" "$1" || return 75
+    return 0
+  fi
   python3 - "$trusted_release" "$closing_helper" <<'PY' || return 75
 import hashlib
 import json

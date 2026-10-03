@@ -758,7 +758,7 @@ except BlockingIOError: sys.exit(1)
       path.join(fixtureBin, "systemctl"),
       `#!/bin/sh
 case "$*" in
- *qintopia-agentos-management-ui.service*)
+ *qintopia-agentos-management-ui.service*|*qintopia-agentos-foundation-broker.service*)
   echo LoadState=not-found
   echo ActiveState=inactive
   echo SubState=dead
@@ -1145,12 +1145,20 @@ esac
         .replaceAll("metadata.st_uid != 0", "metadata.st_uid != os.geteuid()")
         .replaceAll("info.st_uid != 0", "info.st_uid != os.geteuid()")
         .replaceAll("path.st_uid != 0", "path.st_uid != os.geteuid()")
+        .replaceAll("owner != 0", "owner != os.geteuid()")
+        .replaceAll("owner=0", "owner=os.geteuid()")
+        .replaceAll("item.st_gid != 0", "item.st_gid != os.getegid()")
+        .replaceAll(
+          "/run/qintopia-foundation-erhua",
+          path.join(launchRoot, "broker-runtime")
+        )
         .replaceAll("/usr/bin/systemctl", path.join(fixtureBin, "systemctl"))
         .replaceAll(
           "/usr/bin:/bin:/usr/sbin:/sbin",
           `${fixtureBin}:${process.env.PATH}`
         )
         .replaceAll('Path("/proc")', `Path(${JSON.stringify(proc)})`)
+        .replaceAll("Path('/proc')", `Path(${JSON.stringify(proc)})`)
         .replaceAll("/etc/nginx", path.join(launchRoot, "nginx"))
         .replaceAll("i<120", "i<1");
     write(helper, remap(recoverySource), 0o755);
@@ -1162,6 +1170,20 @@ esac
     const uiHelper = path.join(
       staged,
       "payload/deploy/runner/management-ui-lifecycle.sh"
+    );
+    const brokerHelper = path.join(
+      staged,
+      "payload/deploy/runner/foundation-broker-lifecycle.sh"
+    );
+    write(
+      brokerHelper,
+      remap(
+        fs.readFileSync(
+          path.join(repoRoot, "deploy/runner/foundation-broker-lifecycle.sh"),
+          "utf8"
+        )
+      ),
+      0o755
     );
     write(
       uiHelper,
@@ -1175,14 +1197,16 @@ esac
     );
     for (const relative of [
       "deploy/runner/management-ui-lifecycle.sh",
+      "deploy/runner/foundation-broker-lifecycle.sh",
+      "deploy/sidecar/scripts/render-systemd-units.sh",
       "runtime/nginx/templates/management-ui-http.conf.template",
       "runtime/nginx/templates/management-ui-https.conf.template",
     ]) {
-      if (!relative.endsWith(".sh"))
+      if (!relative.endsWith("lifecycle.sh"))
         write(
           path.join(staged, "payload", relative),
           fs.readFileSync(path.join(repoRoot, relative)),
-          0o644
+          relative.endsWith(".sh") ? 0o755 : 0o644
         );
       manifest.files.push({ path: "payload/" + relative });
     }
@@ -1419,6 +1443,26 @@ pathlib.Path(args[2]).write_text(json.dumps(c['request'],separators=(',',':')))
       0,
       "real staged helper must verify a definite failed request"
     );
+    const stagedBroker = (mode) =>
+      spawnSync(
+        "bash",
+        [
+          "-c",
+          `exec 9>"${path.join(state, "deploy.lock")}"; flock -n 9; exec bash "$1" "$2"`,
+          "fixture",
+          brokerHelper,
+          mode,
+        ],
+        { encoding: "utf8", env }
+      );
+    assert.equal(stagedBroker("verify-closed").status, 0);
+    for (const mode of ["prepare", "activate", "quiesce"]) {
+      assert.equal(
+        stagedBroker(mode).status,
+        75,
+        `failed-request staged broker must reject ${mode}`
+      );
+    }
     const offsetRequest = JSON.parse(fs.readFileSync(requestPath));
     delete offsetRequest.signature;
     write(
@@ -1787,6 +1831,28 @@ os.execv('/bin/bash',['bash',sys.argv[-1]])
     );
     fs.chmodSync(path.join(releases, t, "deploy-bundle/artifact-manifest.json"), 0o444);
     fs.chmodSync(path.join(releases, t, "manifest.json"), 0o444);
+    // Model the immutable runtime metadata required by the real broker closure helper.
+    const tRelease = path.join(releases, t);
+    const tBinary = path.join(tRelease, "sidecar/qintopia-message-sidecar");
+    write(tBinary, "simulated runtime bytes\n", 0o755);
+    write(
+      path.join(tRelease, "sidecar/artifact-manifest.json"),
+      JSON.stringify({
+        commit_sha: p,
+        files: [
+          {
+            path: "qintopia-message-sidecar",
+            sha256: digest(fs.readFileSync(tBinary)),
+          },
+        ],
+      }),
+      0o444
+    );
+    fs.cpSync(
+      path.join(staged, "payload/deploy/sidecar"),
+      path.join(tRelease, "deploy/sidecar"),
+      { recursive: true }
+    );
     const fullId = "deploy-20261002T113059Z-444444444444";
     const fullUnsigned = {
       ...freshUnsigned,
