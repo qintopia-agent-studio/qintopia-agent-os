@@ -1,5 +1,10 @@
 # Production Deploy Runner
 
+完整 bundle 的 manifest 对每个目标路径只记录一次。同一仓库来源的单文件/目录选择在复制前合并；其他目标冲突必须拒绝。
+
+下载校验不代替 staged 入口校验。v0.3.9 包已被拒绝：保留原制品和隔离，用新提交的完整包恢复，不现场去重或重放。见
+[制品阻断记录](../reports/2026-10-03-v039-bundle-manifest-duplicates.md)。
+
 ## v0.3.7 提升前失败的有限闭合
 
 2026-10-03 完整执行合同修复：受信 staged 包中的管理界面 helper 仅可执行 `quiesce` /
