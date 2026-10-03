@@ -57,6 +57,8 @@ for item in manifest.get("files", []):
     digest = hashlib.sha256(target.read_bytes()).hexdigest()
     if digest != item["sha256"] or metadata.st_size != item["size_bytes"]:
         raise SystemExit("staged recovery bundle content mismatch")
+    if str(relative) in expected:
+        raise SystemExit("staged recovery bundle path is duplicated")
     expected.add(str(relative))
 for relative in ("payload/deploy/runner/run-fixed-takeover-request.sh",
                  "payload/deploy/runner/qintopia-agent-os-deploy-runner",
@@ -419,9 +421,139 @@ PY
 
 # Read-only verification is shared by the fixed poller and staged recovery helper.
 # Do not acquire lifecycle locks here: callers already own their required locks.
-if [[ "$mode" == verify-staged ]]; then
+if [[ "$mode" == verify-staged || "$mode" == verify-staged-closure ]]; then
   [[ $# -eq 0 ]] || exit 2
   verify_staged_bundle
+  if [[ "$mode" == verify-staged-closure ]]; then
+    # A helper may close services before the candidate release exists, but may
+    # never gain maintenance/activation authority from its staged location.
+    source /etc/qintopia/cos-artifacts.env
+    export DEPLOY_REQUEST_SIGNING_KEY DEPLOY_REQUEST_SIGNING_KEY_ID
+    python3 - "$state" "$staged" <<'PYCLOSURE'
+import hashlib
+import hmac
+import json
+import os
+import re
+import stat
+import subprocess
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+state, staged = map(Path, sys.argv[1:3])
+def read(path):
+    for parent in (path.parent, *path.parent.parents):
+        info = parent.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise SystemExit("staged closure evidence parent is unsafe")
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o022:
+        raise SystemExit("staged closure evidence metadata is invalid")
+    return path.read_bytes()
+
+artifact = json.loads(read(staged / "artifact-manifest.json"))
+listed = {f["path"] for f in artifact["files"]}
+for relative in ("payload/deploy/runner/management-ui-lifecycle.sh",
+                 "payload/runtime/nginx/templates/management-ui-http.conf.template",
+                 "payload/runtime/nginx/templates/management-ui-https.conf.template"):
+    if relative not in listed:
+        raise SystemExit("staged closure helper or template is not in the reviewed bundle")
+record = json.loads(read(state / "recovery/takeover.json"))
+rid = record.get("request_id", "")
+token = record.get("hold_token", "")
+if (not re.fullmatch(r"deploy-[0-9]{8}T[0-9]{6}Z-[0-9a-f]{7,40}", rid) or
+        not re.fullmatch(r"[0-9a-f]{32}", token) or
+        read(state / "recovery/hold") != (token + "\n").encode()):
+    raise SystemExit("staged closure request-bound hold is invalid")
+paths = [state / "requests" / kind / (rid + ".json") for kind in ("pending", "processed", "failed")]
+paths = [p for p in paths if p.exists() or p.is_symlink()]
+if len(paths) != 1:
+    raise SystemExit("staged closure request archive is ambiguous")
+raw = read(paths[0])
+request = json.loads(raw)
+signature = request.pop("signature", {})
+value = signature.pop("value", "")
+def canonical(value):
+    if isinstance(value, list):
+        return "[" + ",".join(canonical(item) for item in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ",".join(json.dumps(k, separators=(",", ":")) + ":" + canonical(value[k])
+                             for k in sorted(value)) + "}"
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+payload = canonical({"request": request, "signature": signature}).encode()
+key = os.environ.get("DEPLOY_REQUEST_SIGNING_KEY", "")
+created = datetime.fromisoformat(request["created_at"].replace("Z", "+00:00"))
+expires = datetime.fromisoformat(request["expires_at"].replace("Z", "+00:00"))
+signed = datetime.fromisoformat(signature["signed_at"].replace("Z", "+00:00"))
+if (created.tzinfo is None or expires.tzinfo is None or signed.tzinfo is None or
+        expires <= created or expires - created > timedelta(minutes=60) or
+        abs(signed - created) > timedelta(minutes=5)):
+    raise SystemExit("staged closure signing time is invalid")
+if (not key or signature.get("algorithm") != "hmac-sha256" or
+        signature.get("issuer") != "github-actions" or
+        signature.get("key_id") != os.environ.get("DEPLOY_REQUEST_SIGNING_KEY_ID") or
+        not isinstance(value, str) or not hmac.compare_digest(
+            hmac.new(key.encode(), payload, hashlib.sha256).hexdigest(), value)):
+    raise SystemExit("staged closure request signature is invalid")
+journal = json.loads(read(state / "recovery" / (rid + ".json")))
+execution = journal.get("execution", {})
+runner = staged / "payload/deploy/runner/qintopia-agent-os-deploy-runner"
+if (request.get("request_id") != rid or request.get("environment") != "production" or
+        request.get("repository") != "qintopia-agent-studio/qintopia-agent-os" or
+        request.get("dry_run") is not False or
+        request.get("release_scope") != ["deploy-bundle"] or
+        request.get("restart_targets") != ["qintopia-system-services"] or
+        request.get("commit_sha") != journal.get("original_current_sha") or
+        request.get("runtime_sha") != journal.get("original_previous_sha") or
+        request.get("release_sha") in (request.get("commit_sha"), request.get("runtime_sha")) or
+        journal.get("request_id") != rid or journal.get("direction") != "O→T" or
+        journal.get("request_sha256") != hashlib.sha256(raw).hexdigest() or
+        journal.get("hold_token") != token or
+        execution.get("unit") != "qintopia-agent-os-fixed-takeover.service" or
+        execution.get("unit_invocation_verified") is not True or
+        not re.fullmatch(r"[0-9a-f]{32}", execution.get("invocation_id", ""))):
+    raise SystemExit("staged closure transaction binding is invalid")
+claims = list((state / "requests/claimed").glob("*.json"))
+if claims:
+    if len(claims) != 1 or claims[0].stem != rid:
+        raise SystemExit("staged closure has another consumer")
+    claim = json.loads(read(claims[0]))
+    artifact = json.loads(read(staged / "artifact-manifest.json"))
+    if (record.get("phase") != "preparing" or
+            rid in record.get("retired_requests", {}) or
+            request.get("deploy_bundle_sha") != artifact.get("commit_sha") or
+            execution.get("path") != str(runner) or
+            execution.get("sha256") != hashlib.sha256(read(runner)).hexdigest() or
+            claim.get("request_id") != rid or claim.get("phase") != "possibly_executing" or
+            claim.get("recovery_eligible") is not True or
+            claim.get("result_upload", {}).get("phase") != "not_started" or
+            claim.get("request_sha256") != journal["request_sha256"] or
+            claim.get("execution") != execution or claim.get("hold_token") != token):
+        raise SystemExit("staged closure active consumer identity changed")
+    shown = subprocess.run(["systemctl", "show", execution["unit"],
+                            "--property=InvocationID", "--value"],
+                           capture_output=True, text=True, check=True, timeout=5)
+    if shown.stdout.strip() != execution["invocation_id"]:
+        raise SystemExit("staged closure systemd invocation changed")
+else:
+    # Recovery may use a newer reviewed complete bundle to close the older
+    # definite pre-promotion failure. It cannot use this branch to stop services.
+    result = json.loads(read(state / "results" / (rid + ".json")))
+    checks = [c for c in result.get("checks", []) if c.get("name") == "deploy-runner"]
+    detail = json.loads(checks[0].get("detail", "{}")) if len(checks) == 1 else {}
+    if (paths[0].parent.name != "failed" or result.get("status") != "failed" or
+            result.get("request_id") != rid or journal.get("phase") != "intent" or
+            detail.get("failure_stage") not in ("quiesce-space-automation-runtime", "quiesce-management-ui") or
+            detail.get("promoted_current") is not False or
+            detail.get("profile_activation_attempted") is not False or
+            result.get("rollback", {}).get("attempted") is not False or
+            journal.get("result_upload", {}).get("payload_sha256") !=
+                hashlib.sha256(read(state / "results" / (rid + ".json"))).hexdigest()):
+        raise SystemExit("staged closure has no definite pre-promotion failure")
+    print("verify-only")
+PYCLOSURE
+  fi
   exit 0
 fi
 
