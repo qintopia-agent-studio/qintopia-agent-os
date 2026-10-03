@@ -488,14 +488,13 @@ function renderSettings() {
   const one = box("1 · 谁在这个岗位工作"),
     two = el("div", undefined, "qo-two");
   const peopleBox = el("div");
-  const person = searchableSelectField(
-    peopleBox,
-    "person",
-    "任职人员",
-    personOptions(),
-    r?.person || "",
-    "请选择具体人员"
-  );
+  const person = workspaceCandidateField(peopleBox, "person", "任职人员", {
+    scope: pos.scope_id,
+    kind: "people",
+    purpose: "assign",
+    value: r?.person || "",
+    known: personOptions(),
+  });
   person.required = true;
   const termBox = el("div");
   let startMode = null,
@@ -643,7 +642,7 @@ function renderSettings() {
     visibility: "general",
     topics: "",
   };
-  const contacts = box("3 · 智能体可以触达哪些群和个人"),
+  const contacts = box("3 · 智能体可以触达哪些群、人员和工作账号"),
     contactColumns = el("div", undefined, "qo-two"),
     groupBox = el("fieldset"),
     personBox = el("fieldset");
@@ -669,26 +668,30 @@ function renderSettings() {
   );
   if (!bound.length) groupBox.append(sub("此范围尚未绑定群。请在群台账维护范围关联。"));
   personBox.append(el("legend", "具体个人"));
-  const peopleSearch = inputField(
-    personBox,
-    "audience-search",
-    "查找联系对象",
-    "",
-    "search"
-  );
-  const contactList = checkList(
+  const contactList = workspaceCandidateField(
     personBox,
     "audience-people",
-    personOptions(),
-    audience.people
-  );
-  peopleSearch.addEventListener("input", () =>
-    contactList
-      .querySelectorAll("label")
-      .forEach((l) => (l.hidden = !l.textContent.includes(peopleSearch.value.trim())))
+    "联系人员",
+    {
+      scope: pos.scope_id,
+      kind: "people",
+      purpose: "contact",
+      position: pos.id,
+      multiple: true,
+      chosen: audience.people,
+      known: personOptions(),
+    }
   );
   contactColumns.append(groupBox, personBox);
   contacts.append(contactColumns);
+  const contactChannels = workspaceContactsField(
+    contacts,
+    "audience-contacts",
+    pos.scope_id,
+    audience,
+    contactList,
+    pos.id
+  );
   const residents = selectField(
     contacts,
     "residents",
@@ -942,6 +945,12 @@ function renderSettings() {
   );
   form.addEventListener("submit", (e) => {
     e.preventDefault();
+    if (
+      !person.candidatesReady() ||
+      !contactList.candidatesReady() ||
+      !contactChannels.ready()
+    )
+      return notice("候选尚未读完或当前不可用，请先重新读取候选后预览。", true);
     const d = duties.find((x) => x.id === duty.value);
     if (!d) return notice("请先选择岗位承担的职责。", true);
     const startsAt = r
@@ -1004,6 +1013,7 @@ function renderSettings() {
     const a = {
       groups: selected("audience-groups"),
       people: selected("audience-people"),
+      contacts: contactChannels.value(),
       residents: $("residents").value,
       reply: reply.value,
       proactive: proactive.value,
@@ -1015,7 +1025,7 @@ function renderSettings() {
     preview(
       { kind: "configure_work", assignment, audience: a },
       [
-        ["任职人员", personName(assignment.person)],
+        ["任职人员", person.candidateLabel(assignment.person)],
         ["岗位与范围", `${pos.label} / ${labelOf("scopes", pos.scope_id)}`],
         ["智能体与职责", `${agentName(assignment.agent)} / ${d.label}`],
         [
@@ -1023,7 +1033,8 @@ function renderSettings() {
           `${r ? `沿用 ${displayTime(r.valid_from)} 的开始时间` : assignment.valid_from ? `${displayTime(assignment.valid_from)} 开始` : "保存后立即开始"}；${assignment.valid_until ? `${displayTime(assignment.valid_until)} 截止` : "持续至离任或撤销"}`,
         ],
         ["群触达", a.groups.map((x) => labelOf("groups", x)).join("、") || "无"],
-        ["个人触达", a.people.map(personName).join("、") || "无"],
+        ["个人触达", a.people.map(contactList.candidateLabel).join("、") || "无"],
+        ["联系渠道", contactChannels.summary()],
         ["触达方式", audienceSummary(a)],
         [
           "决定权",
@@ -1069,13 +1080,31 @@ function personalRulePanel(scope, kind = "rule") {
     `本栋${noun}`,
     `停止使用会取消整项${noun}及其未来安排，历史仍可查看。只取消一项未来安排，不影响当前内容。到截止时间自动结束，不恢复旧版。不会自动发送群通知。`
   );
-  if (!state.local_dialogue_available) {
-    content.append(sub("当前本地业务入口未启用。"));
+  if (state.foundation_available !== true) {
+    content.append(
+      sub(
+        state.foundation_available === false
+          ? "本栋知识与约定服务尚未启用，请联系负责人核对服务状态。"
+          : "当前服务未提供知识与约定的能力状态，请重新读取或核对服务版本。"
+      )
+    );
     return panel;
   }
   let data,
     editor = null,
-    working = false;
+    working = false,
+    permissionRecovery = null;
+  const permissionBlocked = new Set();
+  function clearAccessLost(error) {
+    if (!workspaceAccessLost(error)) return false;
+    data = null;
+    editor = null;
+    permissionBlocked.clear();
+    permissionRecovery = null;
+    content.replaceChildren(status, button("重新读取", refresh));
+    status.textContent = error.message;
+    return true;
+  }
   const titleOf = (item) =>
     item?.content?.title ||
     item?.revisions?.[0]?.content?.title ||
@@ -1114,7 +1143,7 @@ function personalRulePanel(scope, kind = "rule") {
       await load();
       draw();
     } catch (e) {
-      status.textContent = e.message;
+      if (!clearAccessLost(e)) status.textContent = e.message;
     } finally {
       working = false;
       panel.inert = false;
@@ -1136,8 +1165,9 @@ function personalRulePanel(scope, kind = "rule") {
     if (working) return;
     working = true;
     panel.inert = true;
+    let result;
     try {
-      const result = await api("/api/foundation/rule/decision", {
+      result = await api("/api/foundation/rule/decision", {
         scope,
         work_item_id: task.id,
         action,
@@ -1146,7 +1176,9 @@ function personalRulePanel(scope, kind = "rule") {
       draw();
       status.textContent = resultText(result);
     } catch (e) {
-      status.textContent = e.message;
+      if (clearAccessLost(e)) {
+        if (result) status.textContent = resultText(result) + " " + e.message;
+      } else status.textContent = e.message;
     } finally {
       working = false;
       panel.inert = false;
@@ -1154,6 +1186,8 @@ function personalRulePanel(scope, kind = "rule") {
   }
   function draw() {
     editor = null;
+    permissionBlocked.clear();
+    permissionRecovery = null;
     content.replaceChildren(status);
     status.textContent = "";
     const decision = data.context.permissions.find(
@@ -1381,6 +1415,11 @@ function personalRulePanel(scope, kind = "rule") {
       panel.inert = true;
       try {
         await load();
+        if (!editable()) {
+          draw();
+          status.textContent = `当前修改权限已失效；本栋${noun}按现有查看权限展示。`;
+          return;
+        }
         const latest = data.items.find((i) => i.key === key);
         feedback.textContent = latest?.current
           ? `当前${noun}：${latest.current.content.text} · ${dates(latest.current)}`
@@ -1396,7 +1435,11 @@ function personalRulePanel(scope, kind = "rule") {
           feedback.textContent += " 草稿保留，请核对后再保存。";
         }
       } catch (e) {
-        feedback.textContent = e.message;
+        if (!clearAccessLost(e)) {
+          feedback.textContent = e.message;
+          save.disabled = true;
+          retry.hidden = true;
+        }
       } finally {
         panel.inert = false;
       }
@@ -1410,14 +1453,21 @@ function personalRulePanel(scope, kind = "rule") {
       if (working || panel.inert) return;
       working = true;
       panel.inert = true;
-      let acknowledged = false;
+      let acknowledged = false,
+        acknowledgedResult;
       try {
         const result = await api("/api/foundation/rule/change", command);
         acknowledged = true;
+        acknowledgedResult = result;
         await load();
         draw();
         status.textContent = resultText(result) + "未发送群通知。";
       } catch (e) {
+        if (clearAccessLost(e)) {
+          if (acknowledged)
+            status.textContent = resultText(acknowledgedResult) + " " + e.message;
+          return;
+        }
         uncertain = acknowledged || !e.code;
         save.disabled = true;
         reread.hidden = false;
@@ -1605,8 +1655,39 @@ function personalRulePanel(scope, kind = "rule") {
     );
     title.focus();
   }
-  panel.refreshWorkspace = () => {
-    if (!editor && !working) refresh();
+  panel.refreshWorkspace = async () => {
+    if (working) return;
+    if (!editor) return refresh();
+    working = true;
+    panel.inert = true;
+    try {
+      await load();
+      if (!editable()) {
+        draw();
+        status.textContent = `当前修改权限已失效；本栋${noun}按现有查看权限展示。`;
+      } else {
+        permissionBlocked.forEach((b) => (b.disabled = false));
+        permissionBlocked.clear();
+        permissionRecovery?.remove();
+        permissionRecovery = null;
+        status.textContent = "已重新核对当前权限，草稿保留；保存时仍核对当前版本。";
+      }
+    } catch (error) {
+      if (!clearAccessLost(error)) {
+        status.textContent = error.message;
+        editor.querySelectorAll('button[type="submit"]').forEach((b) => {
+          if (!b.disabled) permissionBlocked.add(b);
+          b.disabled = true;
+        });
+        if (!permissionRecovery?.isConnected) {
+          permissionRecovery = button("重新读取权限", () => panel.refreshWorkspace());
+          content.append(permissionRecovery);
+        }
+      }
+    } finally {
+      working = false;
+      panel.inert = false;
+    }
   };
   content.append(status, button("重新读取", refresh));
   load()
@@ -1614,7 +1695,7 @@ function personalRulePanel(scope, kind = "rule") {
       if (panel.isConnected) draw();
     })
     .catch((e) => {
-      status.textContent = e.message;
+      if (!clearAccessLost(e)) status.textContent = e.message;
     });
   return panel;
 }
