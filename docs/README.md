@@ -28,30 +28,31 @@ and historical source documents that still have audit or design value.
     [engineering/anti-drift-policy.md](engineering/anti-drift-policy.md)
 13. Server change policy:
     [engineering/server-change-policy.md](engineering/server-change-policy.md)
-14. Source document inventory:
+14. BMAD workflow adoption: [engineering/bmad-adoption.md](engineering/bmad-adoption.md)
+15. Source document inventory:
     [operations/source-document-inventory.md](operations/source-document-inventory.md)
-15. M1 source inventory:
+16. M1 source inventory:
     [operations/inventory/README.md](operations/inventory/README.md)
-16. M9 server cutover runbook:
+17. M9 server cutover runbook:
     [operations/m9-server-cutover-runbook.md](operations/m9-server-cutover-runbook.md)
-17. Server directory plan:
+18. Server directory plan:
     [operations/server-directory-plan.md](operations/server-directory-plan.md)
-18. Release/current model:
+19. Release/current model:
     [operations/release-current-model.md](operations/release-current-model.md)
-19. QiWe image-send staging runbook:
+20. QiWe image-send staging runbook:
     [operations/qiwe-image-send-staging-runbook.md](operations/qiwe-image-send-staging-runbook.md)
-20. Xiaoman production evidence runbook:
+21. Xiaoman production evidence runbook:
     [operations/xiaoman-production-evidence-runbook.md](operations/xiaoman-production-evidence-runbook.md)
-21. Erhua member recognition production runbook:
+22. Erhua member recognition production runbook:
     [operations/erhua-member-recognition-production-runbook.md](operations/erhua-member-recognition-production-runbook.md)
-22. Xiaoman Feishu poster production closeout:
+23. Xiaoman Feishu poster production closeout:
     [operations/xiaoman-feishu-poster-production-closeout-runbook.md](operations/xiaoman-feishu-poster-production-closeout-runbook.md)
-23. Xiaoman weekly minimum loop runbook:
+24. Xiaoman weekly minimum loop runbook:
     [operations/xiaoman-weekly-minimum-loop-runbook.md](operations/xiaoman-weekly-minimum-loop-runbook.md)
-24. Reports index: [reports/README.md](reports/README.md)
-25. Completed migration archive:
+25. Reports index: [reports/README.md](reports/README.md)
+26. Completed migration archive:
     [plans/completed/monorepo-migration.md](plans/completed/monorepo-migration.md)
-26. Local business testing: [testing/README.md](testing/README.md)
+27. Local business testing: [testing/README.md](testing/README.md)
 
 ## Package Entry Points
 
