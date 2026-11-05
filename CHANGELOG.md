@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.11](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.10...v0.3.11) (2026-11-05)
+
+
+### Features
+
+* **deploy:** add guarded foundation broker lifecycle ([#735](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/735)) ([4924b8e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/4924b8e6297b01b5ce1f5f6b26df0034b0c0a04e))
+
+
+### Bug Fixes
+
+* **deploy:** keep polling scheduled across recovery holds ([#747](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/747)) ([1a3ac98](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1a3ac98a53043975417ee80386e4578a2963e8c7))
+* **qiwe:** resolve everyday activity times without contradictory acknowledgements ([#751](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/751)) ([72b1b32](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/72b1b325c221417706947d7a7477e49ecfccebff))
+
+
+### Documentation
+
+* adopt BMAD workflow ([#749](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/749)) ([72c5698](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/72c5698fdc90a20343d5fb3514acfbb5a74544b3))
+
 ## [0.3.10](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.9...v0.3.10) (2026-10-03)
 
 
