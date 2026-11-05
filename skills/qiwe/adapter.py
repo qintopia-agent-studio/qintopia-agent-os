@@ -2933,14 +2933,17 @@ class QiWeAdapter(BasePlatformAdapter):
         subject = _text(getattr(result, "activity_subject", "")) or _text(getattr(result, "activity_id", "")) or "未命名活动"
         start_time = _text(getattr(result, "start_time", "")) or "未识别"
         time_note = _text(getattr(result, "time_normalization_note", ""))
-        time_line = f"时间二花也记下了：{start_time}。" if start_time != "未识别" else "时间二花先记着，等接龙里补清楚了我再更新。"
+        plan = getattr(result, "reminder_plan", None) or {}
+        if plan.get("state") == "needs_confirmation":
+            time_line = f"接龙里的时间写的是「{start_time}」，具体开始时间还待确认。" if start_time != "未识别" else "接龙里还没有明确的开始时间。"
+        else:
+            time_line = f"时间二花也记下了：{start_time}。" if start_time != "未识别" else "接龙里还没有明确的开始时间。"
         lines = [
             f"二花看到有活动啦：{subject}",
             time_line,
         ]
         if time_note:
             lines.append(time_note)
-        plan = getattr(result, "reminder_plan", None) or {}
         if plan.get("state") == "needs_confirmation":
             if not time_note:
                 lines.append("暂未安排提醒，请在接龙里补充完整日期和时间（注明上午或下午）。")

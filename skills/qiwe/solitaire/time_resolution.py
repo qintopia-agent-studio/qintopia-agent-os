@@ -25,6 +25,7 @@ class TimeResolution:
 _DATE = re.compile(r"(?<![\d:：])(?:(\d{4})[-/.年])?(\d{1,2})[-/.月](\d{1,2})(?:日|号)?(?![\d:：])")
 _RELATIVE = re.compile(r"大后天|后天|明天|明日|明晚|今晚|今天|今日|下周[一二三四五六日天]|(?:本周|这周|周|星期)[一二三四五六日天]")
 _CLOCK = re.compile(r"(?<!\d)(?:(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|今晚|明晚)\s*)?(?:([01]?\d|2[0-3])[:：]([0-5]\d)|([零一二两三四五六七八九十]{1,3}|\d{1,2})点(半|[零一二两三四五六七八九十]{1,3}|\d{1,2})?)(?!\d)")
+_DOTTED_CLOCK = re.compile(r"((?:凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|今晚|明晚)\s*\d{1,2})[.．]([0-9]{2})(?![\d.．日号])")
 _DAY_OFFSETS = {"今天": 0, "今日": 0, "今晚": 0, "明天": 1, "明日": 1, "明晚": 1, "后天": 2, "大后天": 3}
 _WEEKDAYS = {v: i for i, v in enumerate("一二三四五六日")}
 _WEEKDAYS["天"] = 6
@@ -56,6 +57,23 @@ def _relative_day(text, anchor):
     return anchor + timedelta(days=delta)
 
 
+def _clock_notation(text):
+    # Only an explicit daypart disambiguates 7.30 as a clock. Keep bare month/day
+    # and dotted calendar dates intact. Replacement preserves source span offsets.
+    return _DOTTED_CLOCK.sub(r"\1:\2", text)
+
+
+def _relative_matches(text, anchor):
+    days = {}
+    for match in _RELATIVE.finditer(text):
+        label = match.group(0)
+        key = _relative_day(label, anchor).date() if anchor else _DAY_OFFSETS.get(label, label)
+        # Preserve evening evidence when synonymous labels share the same day.
+        if key not in days or label in {"今晚", "明晚"}:
+            days[key] = match
+    return list(days.values())
+
+
 def resolve_time(expression, *, anchor: datetime | None, timezone: str,
                  source: str = "", facts: dict | None = None) -> TimeResolution:
     """Facts are verbatim source spans, not model-generated calendar arithmetic.
@@ -69,6 +87,8 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
     def pending(reason, **parts):
         return TimeResolution(**base, reason=reason, **parts)
 
+    zone = ZoneInfo(timezone)
+    local_anchor = (anchor.astimezone(zone) if anchor.tzinfo else anchor.replace(tzinfo=zone)) if anchor else None
     text = expression
     if facts is not None:
         if expression and expression not in source:
@@ -80,10 +100,12 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
             return pending("ungrounded_time_facts")
         # Facts may provide a date from another line, but never override explicit
         # evidence in the extracted expression (e.g. a multiple-day range).
-        text = " ".join([expression] + [v for v in parts if v and v not in expression])
+        date_part, time_part = parts
+        text = " ".join(v for v in [date_part if date_part not in expression else "", expression,
+                                   time_part if time_part not in expression else ""] if v)
     if facts is not None:
-        source_dates = {m.group(0) for m in _DATE.finditer(source)}
-        source_relative_dates = {m.group(0) for m in _RELATIVE.finditer(source)}
+        source_dates = {m.group(0) for m in _DATE.finditer(_clock_notation(source))}
+        source_relative_dates = _relative_matches(source, local_anchor)
         if len(source_dates) > 1 or len(source_relative_dates) > 1:
             return pending("multiple_dates")
         if re.search(r"\d\s*(?:到|至|[-~～—–])\s*\d+\s*(?:日|号)|每天|每日|每周", source):
@@ -94,16 +116,14 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
         return pending("unsupported_time")
     if re.search(r"\d\s*(?:到|至|[-~～—–])\s*\d+\s*(?:日|号)|每天|每日|每周", text):
         return pending("multiple_occurrences")
-    dates = list(_DATE.finditer(text))
-    relatives = list(_RELATIVE.finditer(text))
+    clock_text = _clock_notation(text)
+    dates = list(_DATE.finditer(clock_text))
+    relatives = _relative_matches(text, local_anchor)
     dates = list({m.group(0): m for m in dates}.values())
-    relatives = list({m.group(0): m for m in relatives}.values())
     if len(dates) > 1 or len(relatives) > 1:
         return pending("multiple_dates")
     if not dates and not relatives:
         return pending("missing_date")
-    zone = ZoneInfo(timezone)
-    local_anchor = (anchor.astimezone(zone) if anchor.tzinfo else anchor.replace(tzinfo=zone)) if anchor else None
     date_text = (dates or relatives)[0].group(0)
     try:
         if dates:
@@ -115,8 +135,19 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
             if local_anchor is None:
                 return pending("missing_anchor", date_text=date_text)
             day_value = _relative_day(date_text, local_anchor)
-        if dates and relatives:
-            relative_text = relatives[0].group(0)
+        # Validate all original constraints, including source evidence omitted
+        # by the model. Same-day grouping must not erase a conflicting "today"
+        # beside an explicit date with a matching weekday in another week.
+        evidence = source if facts is not None else text
+        for match in _DATE.finditer(_clock_notation(evidence)):
+            year, month, day = match.groups()
+            if not year and local_anchor is None:
+                return pending("missing_anchor", date_text=date_text)
+            evidence_day = datetime(int(year) if year else local_anchor.year, int(month), int(day), tzinfo=zone)
+            if evidence_day.date() != day_value.date():
+                return pending("conflicting_dates", date_text=date_text)
+        for match in _RELATIVE.finditer(evidence):
+            relative_text = match.group(0)
             if relative_text.startswith(("周", "星期")):
                 agrees = _WEEKDAYS[relative_text[-1]] == day_value.weekday()
             else:
@@ -126,7 +157,7 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
 
     except ValueError:
         return pending("invalid_date", date_text=date_text)
-    clocks = list(_CLOCK.finditer(text))
+    clocks = list(_CLOCK.finditer(clock_text))
     clocks = list({m.group(0): m for m in clocks}.values())
     if not clocks:
         return pending("missing_clock", date_text=date_text)
@@ -137,18 +168,19 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
         if between not in {"-", "–", "—", "‑", "~", "～", "至", "到"}:
             return pending("multiple_times", date_text=date_text)
     clock = clocks[0]
+    time_text = text[clock.start():clock.end()]
     daypart, hh, mm, cn_hour, cn_minute = clock.groups()
     hour = int(hh) if hh is not None else _number(cn_hour)
     minute = int(mm) if mm is not None else (30 if cn_minute == "半" else _number(cn_minute) if cn_minute else 0)
     if hour is None or minute is None or not 0 <= hour <= 23 or not 0 <= minute <= 59:
-        return pending("invalid_clock", date_text=date_text, time_text=clock.group(0))
+        return pending("invalid_clock", date_text=date_text, time_text=time_text)
     daypart = daypart or (date_text if date_text in {"今晚", "明晚"} else "")
     if hh is None and not daypart and 1 <= hour <= 12:
-        return pending("ambiguous_daypart", date_text=date_text, time_text=clock.group(0))
+        return pending("ambiguous_daypart", date_text=date_text, time_text=time_text)
     if daypart in {"下午", "傍晚", "晚上", "今晚", "明晚", "中午"} and hour < 12:
         hour += 12
     if daypart in {"凌晨", "早上", "早晨", "上午"} and hour == 12:
         hour = 0
     resolved = day_value.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    return TimeResolution(**base, date_text=date_text, time_text=clock.group(0),
+    return TimeResolution(**base, date_text=date_text, time_text=time_text,
                           state="resolved", reason="resolved", start_time=resolved.strftime("%Y-%m-%d %H:%M"))

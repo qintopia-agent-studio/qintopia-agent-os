@@ -727,6 +727,16 @@ dates and multiple occurrences remain `needs_confirmation`, never an invented st
 date without a clock time cannot schedule a 30-minute reminder. Explicit past dates are
 not silently moved to the current month.
 
+Everyday clock expressions with an explicit daypart, such as `今晚7.30` and
+`明天晚上7.30`, resolve as hours/minutes, not month/day. Bare `7.30` remains date
+notation; dotted calendar dates such as `2026.7.30` keep their existing meaning.
+Equivalent relative expressions (`今天` / `今日` / `今晚`, `明天` / `明晚`) are compared
+by their date at the first-creation anchor. Different days still require confirmation.
+Unresolved acknowledgements identify the quoted text as unconfirmed and state that no
+reminder was scheduled; only resolved times use the confirmed-time line. Regression
+coverage uses simulated messages and model completions through the existing activity and
+reminder ledgers, without real model calls or channel sends.
+
 The existing activity ledger owns a `reminder_plan` (state, reason, due times), and the
 existing reminder ledger owns delivery outcomes. Activity updates and reminder changes
 use a locked recoverable transaction; duplicate signup updates preserve delivery
