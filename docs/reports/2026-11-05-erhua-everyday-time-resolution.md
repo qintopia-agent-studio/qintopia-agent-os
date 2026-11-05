@@ -49,7 +49,8 @@ Runtime 未生成 HTML 报告。对应业务代码已在 Python
 本地修复保留在原工作区。发布分支 `codex/erhua-everyday-time-release` 基于最新主线
 `72c5698f`，只转入本次改动，保留其他任务的工作区和暂存状态。验证使用模拟身份、正文、模型响应和渠道结果，没有真实模型调用、线上配置更改、真实消息发送或历史提醒重放。
 
-修复尚未发布或部署。上线仍走已评审的不可变发布；部署前遵循 QiWe 包既有台账备份和回滚约定，部署后用新接龙验收正确时间、提醒计划及实际送达。不要自动重放旧接龙或补发过期提醒。
+修复通过 PR 751 合并，发布 PR
+748 生成 v0.3.11。部署结果见后文；真实群提醒送达仍需新接龙验收，未自动重放旧接龙或补发过期提醒。
 
 ## 上线准备
 
@@ -67,4 +68,100 @@ Please 和 CI 通过后发布正式版本；仓库现有发布开关为模拟部
 本次不替换 Profile、凭据、会话或记忆，不升级 Hermes
 core，不启用新的业务开关。回滚目标为本次切换前的 v0.3.10；按固定 rollback 流程恢复完整制品，保留新的台账结果。
 
-上线结果待实际部署后补录；本段准备信息不证明已上线或真实提醒送达。
+本段为上线准备记录，实际执行结果见下文。
+
+## 发布验证与制品
+
+本节执行时间为 2026-11-06（Asia/Shanghai）。修复 PR
+[#751](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/751) head 为
+`2b4ad22826becc82784dad7ded6f4826c9afde0e`，合并提交为
+`72b1b325c221417706947d7a7477e49ecfccebff`。发布工作区 QiWe 全套和 `check:pr:auto` quick
+tier 再次通过。
+
+- [业务测试](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42055600978)
+  通过。
+
+  179 个场景通过，644 个测试执行，0 跳过；提醒生命周期 32 项通过。
+
+- 两轮修复 CI 均通过；完整 Reviewer Guide、reviews、comments 和 inline
+  threads 无待处理建议。
+- Release Please
+  [#748](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/748) head
+  `4fde08976b231322baa1f797685a37f64584d58a` 仅修改版本 manifest 和 CHANGELOG。
+  [手动发布验证](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42058610209)
+  的 check、Rust quality baseline、PostgreSQL integration 和 Release Please
+  validation 全部通过，authenticated PR-Agent no-review 验证通过。
+- [v0.3.11](https://github.com/qintopia-agent-studio/qintopia-agent-os/releases/tag/v0.3.11)
+  精确提交为 `c71f68da1ff3e4472623be7c6f30a3aeb4598e95`。
+  [构建及模拟部署](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42060724607)
+  成功；服务器请求 `deploy-20261105T161616Z-c71f68da1ff3` 返回
+  `dry_run_succeeded`，current 仍为 v0.3.10。
+
+Git SSH 在发布身份复查时发生认证失败，改用现有 GitHub
+CLI 凭据通过 HTTPS 读取，未修改持久 Git 配置或搜索密钥。发布工作流独立核对标签与当前主线提交一致。
+
+模拟部署会清理 staging，并不保留新版本安装目录；因此模拟结果以签名请求及服务器结果核验，正式切换后再检查安装 manifest 和文件哈希。
+
+## 停服异常与一致备份
+
+00:19:09 发起官方 drain，取得两次零活跃观测后停止二花。旧 Gateway 在 00:19:12 以退出码 1 结束，systemd 为
+`failed`，初次脚本因此中止并保留自己的marker；没有据此重复发送、重放或立即解除维护。
+
+后续只读核验确认
+`MainPID=0`、`ControlPID=0`、cgroup 为空、current 仍为 v0.3.10。活跃 turn lease、QiWe
+pending/attempting、cron pending/delivering 均为 0，无 pending activity
+transaction，无 sending
+reminder。255 条活动、154 条提醒可读；有效提醒状态为 sent=145、expired=7、failed=2。
+
+固定时间范围的 journal 未返回可用 Python 异常栈，旧 Gateway 退出码 1 的根因尚未确认，不能将此次停服称为正常关闭。
+
+确认没有残留写入者后，于 00:22:30 继续服务器私有目录中的完整台账 tar 备份；核对归档内所有普通文件哈希与停服状态一致。
+
+归档 SHA-256：`979225f5519696c32a7cff10cbabcc0ba202e7b14af7699987e80113cdb3a533`。
+
+原始台账、备份、会话及连接信息均未进入 Git。后续应在独立问题中调查旧 Core 的关闭退出码；本次未修改 Core 来掩盖异常。
+
+QiWe
+README 已补充官方 drain 的覆盖边界、异常停服的进程与台账核对，以及明确重启插件和按 owner 清理维护标记的要求。
+
+## 正式切换与验收
+
+正式请求使用与模拟相同的 SHA、scope 和 restart
+targets，开启既有 smoke 失败回滚。执行入口为
+[Deploy Production](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42063865314)。服务器请求
+`deploy-20261105T162637Z-c71f68da1ff3` 返回
+`succeeded`，workflow 同时成功。生产 current 为
+`c71f68da1ff3e4472623be7c6f30a3aeb4598e95`，previous 为
+`afe3e81c7c5ac0d74332dfb5aaa79fa35ce06d83`。scope 为
+`sidecar-runtime,deploy-bundle,hermes-plugins`，restart targets 为
+`qintopia-system-services`，未更改仓库发布开关或 CI。
+
+随后运行新发布内的
+`smoke-release.sh --restart-targets hermes-erhua`，明确重启二花。新 PID 为
+`2572894`，与停服前不同；插件链接指向精确的新发布，以下文件 SHA-256 与正式标签一致：
+
+- `skills/qiwe/adapter.py`：
+  `43a9459896698e753827c4cd345955b7c6d28a56ea94e678602f42fb782e5f01`
+- `skills/qiwe/solitaire/time_resolution.py`：
+  `5e206022e2324f8a5fcf8cab89e9fe7afa2582055887e1dea6b9441a84ef8eb8`
+
+服务器上 8 项非发送检查通过：今晚/明晚点号时刻、全角点、同日词与分离事实、裸月日、真实日期冲突、待确认回复和已安排回复。模拟锚点为2026-11-06；“今晚7.30”返回当日 19:30。“待确认”分支不再声称时间已确认。这些是安装版本的纯解析及回复构造检查，没有建立真实活动或发群消息。
+
+本机 QiWe `/health` 返回
+`status=ok`；只清除了与本次完整 marker 匹配的排空请求，随后 fresh gateway 状态为
+`running`，维护标记不存在。旧备份中的 255 条活动和 154 条提醒仍存在，既有提醒的 sent/delivery_state/status 全部保留，没有恢复旧台账覆盖新结果。主 sidecar、QiWe
+companion、deploy bundle 的安装 manifest 均绑定同一正式 SHA。
+
+两种实际生产二进制的 SHA-256 均与各自 artifact manifest 匹配：
+
+- `huabaosi-production`：
+  `034d195990e8acfa2fef7601207cb1f28cc042fd44da142c8332bc1807b7c3ee`
+- `qiwe-production`： `f78444898e849497f88610098428e65573910829884468e185f33cf50773a4e5`
+
+00:32:56 的复查仍为相同新 PID、`gateway_state=running`，本机健康正常。
+
+回滚边界：若需回滚，先重新排空并确认没有在途事务，再通过既有 `Rollback Production`
+入口指定 expected current `v0.3.11` 和 previous
+`v0.3.10`；恢复完整不可变制品后明确重启二花。保持台账和送达状态，禁止覆盖旧备份或重放未知发送。
+
+已实现、已验证和已上线均有上述证据。真实新接龙的完整模型解析、群内确认以及到时提醒送达尚未人工验收；不得将纯函数和健康检查写成真实群消息端到端成功。
