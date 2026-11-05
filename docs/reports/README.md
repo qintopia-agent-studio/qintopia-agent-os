@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-11-05 二花接龙日常时间表达修复](2026-11-05-erhua-everyday-time-resolution.md)
+
 - [2026-10-03 v0.3.10 部署恢复与轮询 timer 缺口](2026-10-03-v0310-deploy-timer-recovery.md)
 
 - [2026-10-03 v0.3.9 制品 manifest 重复路径阻断](2026-10-03-v039-bundle-manifest-duplicates.md)

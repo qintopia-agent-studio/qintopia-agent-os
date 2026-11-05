@@ -69,6 +69,76 @@ class TimeResolutionTests(unittest.TestCase):
                 self.assertEqual(result.reason, reason)
                 self.assertFalse(result.start_time)
 
+    def test_period_clock_with_explicit_daypart(self):
+        for text, expected in [
+            ("今晚7.30", "2026-09-17 19:30"),
+            ("今晚 7.30", "2026-09-17 19:30"),
+            ("明晚7.30", "2026-09-18 19:30"),
+            ("明晚 7.30", "2026-09-18 19:30"),
+            ("今天晚上7.30", "2026-09-17 19:30"),
+            ("今晚7．30", "2026-09-17 19:30"),
+        ]:
+            with self.subTest(text=text):
+                result = self.resolve(text)
+                self.assertEqual(result.state, "resolved")
+                self.assertEqual(result.start_time, expected)
+
+    def test_same_day_words_in_source_do_not_create_multiple_dates(self):
+        source = "今晚7:30，今天一起学习，今日欢迎参与，今晚见。"
+        result = self.resolve("今晚7:30", source=source,
+                              facts={"date_text": "今晚", "time_text": "7:30"})
+        self.assertEqual(result.state, "resolved")
+        self.assertEqual(result.start_time, "2026-09-17 19:30")
+
+    def test_period_clock_combines_verbatim_date_and_clock_facts(self):
+        result = self.resolve("7.30", source="今晚7.30，今天一起学习。",
+                              facts={"date_text": "今晚", "time_text": "7.30"})
+        self.assertEqual(result.state, "resolved")
+        self.assertEqual(result.start_time, "2026-09-17 19:30")
+
+    def test_period_dates_without_daypart_remain_dates(self):
+        for text in ("7.30", "2026.7.30"):
+            with self.subTest(text=text):
+                result = self.resolve(text)
+                self.assertEqual(result.state, "needs_confirmation")
+                self.assertEqual(result.reason, "missing_clock")
+                self.assertEqual(result.date_text, text)
+                self.assertFalse(result.start_time)
+        for text in ("7.30 19:30", "2026.7.30 19:30"):
+            with self.subTest(text=text):
+                self.assertEqual(self.resolve(text).start_time, "2026-07-30 19:30")
+
+    def test_model_cannot_omit_conflicting_source_date_after_same_day_grouping(self):
+        source = "2026-09-24（周四）今天19:30"
+        for expression, facts in [
+            ("2026-09-24（周四）", {"date_text": "2026-09-24", "time_text": "19:30"}),
+            ("今天19:30", {}),
+        ]:
+            with self.subTest(expression=expression):
+                result = self.resolve(expression, source=source, facts=facts)
+                self.assertEqual(result.state, "needs_confirmation")
+                self.assertEqual(result.reason, "conflicting_dates")
+                self.assertFalse(result.start_time)
+
+    def test_explicit_date_must_agree_with_every_relative_word(self):
+        conflicting = "2026-09-24（周四）今天19:30"
+        result = self.resolve(conflicting, source=conflicting, facts={})
+        self.assertEqual(result.state, "needs_confirmation")
+        self.assertEqual(result.reason, "conflicting_dates")
+        self.assertFalse(result.start_time)
+
+        agreeing = "2026-09-17（周四）今天19:30"
+        result = self.resolve(agreeing, source=agreeing, facts={})
+        self.assertEqual(result.state, "resolved")
+        self.assertEqual(result.start_time, "2026-09-17 19:30")
+
+    def test_invalid_period_clock_or_date_suffix_never_schedules(self):
+        for text in ("今晚7.90", "今晚7.30日"):
+            with self.subTest(text=text):
+                result = self.resolve(text)
+                self.assertEqual(result.state, "needs_confirmation")
+                self.assertFalse(result.start_time)
+
     def test_facts_combine_source_lines_without_inventing(self):
         facts = {"date_text": "9月18号", "time_text": "晚上七点"}
         result = self.resolve("晚上七点", source="日期：9月18号\n开场：晚上七点", facts=facts)
@@ -99,6 +169,65 @@ class ReminderLifecycleTests(unittest.TestCase):
     def worker(self, send, dry_run=False, repository=None):
         service = self.service if repository is None else ActivityService(repository, self.service.writer)
         return ReminderWorker(ReminderWorkerConfig(enabled=True, dry_run=dry_run, allowed_groups=["synthetic-room"]), service, send)
+
+    def parse_scripted_activity(self, text, start_time, time_facts):
+        fields = {"is_activity": True, "activity_subject": "模拟学习活动", "activity_type": "社区活动",
+                  "activity_detail": "活动室", "start_time": start_time,
+                  "time_facts": time_facts, "participant_names": ["模拟参与人"], "promo_text": "欢迎参与"}
+        calls = []
+
+        async def complete(**kwargs):
+            self.assertEqual(kwargs["purpose"], "qiwe_solitaire_activity_parse")
+            self.assertIn(text, kwargs["messages"][-1]["content"])
+            calls.append(kwargs)
+            return SimpleNamespace(text=json.dumps(fields))
+
+        parser = HermesSolitaireContentParser(SimpleNamespace(acomplete=complete))
+        service = ActivityService(self.repo, self.service.writer, parser)
+        with patch.object(service, "schedule_feishu_sync"):
+            result = asyncio.run(service.upsert_from_solitaire(event(text)))
+        self.assertEqual(len(calls), 1)
+        return result
+
+    def live_ack(self, result):
+        holder = SimpleNamespace(qiwe=SimpleNamespace(activity_reminder_enabled=True,
+                                 activity_reminder_dry_run=False, activity_reminder_allowed_groups=["synthetic-room"]))
+        return QiWeAdapter._passive_ack_text(holder, result, group_id="synthetic-room")
+
+    def test_period_clock_and_same_day_words_schedule_one_correct_reminder(self):
+        text = "今晚7.30，活动室见。今天一起学习，今日欢迎参与，今晚见。\n\n1. 模拟参与人"
+        result = self.parse_scripted_activity(text, "今晚7.30", {"date_text": "今晚", "time_text": "7.30"})
+        self.assertEqual(result.start_time, "2026-09-17 19:30")
+        self.assertEqual(result.reminder_plan["state"], "scheduled")
+        self.assertEqual(result.reminder_plan["due_at"], ["2026-09-17T11:00:00+00:00"])
+        self.assertEqual(len(self.ledger()), 1)
+        stored = self.repo.get_activity(result.activity_id)
+        self.assertEqual(stored["time_resolution"]["state"], "resolved")
+        self.assertEqual(stored["start_time"], "2026-09-17 19:30")
+        ack = self.live_ack(result)
+        self.assertIn("时间二花也记下了：2026-09-17 19:30。", ack)
+        self.assertIn("已安排活动开始前提醒", ack)
+        self.assertNotIn("待确认", ack)
+        self.assertNotIn("不明确", ack)
+
+    def test_different_days_or_ungrounded_facts_never_schedule(self):
+        for text, facts, reason in [
+            ("今晚7:30一起学习，明天还有一场。\n\n1. 模拟参与人",
+             {"date_text": "今晚", "time_text": "7:30"}, "multiple_dates"),
+            ("今晚7:30一起学习。\n\n1. 模拟参与人",
+             {"date_text": "明天", "time_text": "7:30"}, "ungrounded_time_facts"),
+        ]:
+            with self.subTest(reason=reason):
+                result = self.parse_scripted_activity(text, "今晚7:30", facts)
+                self.assertEqual(result.reminder_plan["state"], "needs_confirmation")
+                stored = self.repo.get_activity(result.activity_id)
+                self.assertEqual(stored["time_resolution"]["reason"], reason)
+                self.assertFalse(self.ledger())
+                ack = self.live_ack(result)
+                self.assertIn("今晚7:30", ack)
+                self.assertIn("待确认", ack)
+                self.assertNotIn("时间二花也记下了", ack)
+                self.assertNotIn("已安排", ack)
 
     def test_parse_to_plan_to_single_fake_delivery(self):
         fields = {"is_activity": True, "activity_subject": "测试活动", "activity_type": "社区活动",
