@@ -41,3 +41,24 @@ Python 使用已安装的 3.12；RTK 不在 PATH，沿用原生 pnpm。没有调
 
 生产当前仍运行 v0.3.11；本地修改不等于上线。发布须使用审阅后的完整不可变制品，沿用 QiWe
 README 的排空、一致备份、明确重启与版本核验流程。回滚保留活动和送达状态，不用旧台账覆盖新结果。
+
+## 远端恢复制品检查
+
+修复 PR [#753](https://github.com/qintopia-agent-studio/qintopia-agent-os/pull/753)
+初始 head 为 `42f49da110f83d69d00b9f91a7515b9d664f5fe2`。
+[Recovery run 42167209197](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42167209197)
+的第一次尝试在官方 dashboard 模拟 Profile HTTP 探针失败：API 返回 500，尚未执行 packaged
+QiWe 导入步骤。独立临时 Profile 禁止外网，不加载本次 solitaire 修改。
+
+上次 PR 751 的
+[同类检查](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42055600766)
+通过；两次官方 Core 均固定为
+`2237be355906fbe6065ce1815711eee52b2d646e`，相关 workflow、构建脚本和探针无变更。
+
+日志未标记失败的具体路由，临时子进程日志未保留，因此 HTTP
+500 根因未确认。不能将其归因于日期修复，也不能据此宣称环境已恢复。
+
+通过现有入口仅重跑失败 job，保持全部检查及原失败证据，不改 CI。相同 head 的第二次尝试
+`127728115511` 全部通过，包括原 HTTP 探针、packaged
+QiWe 导入和候选制品上传。这次重跑通过不能解释第一次 HTTP 500 的根因。QiWe
+README 已明确这类失败的定位边界。记录更新后的最终 head 仍须重新通过 CI 和审查；此时没有上线变更或真实群消息重放。

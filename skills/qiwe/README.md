@@ -220,6 +220,13 @@ Repository-level validation:
 pnpm check
 ```
 
+The separate Hermes recovery-artifact workflow probes the pinned official dashboard in
+an isolated profile before importing packaged QiWe. An HTTP 500 in that probe is not a
+QiWe plugin-import result. Retain the failed run, compare the pinned core and probe with
+the last successful run, and recheck the failed job through the existing workflow; never
+skip the probe or claim a root cause without its diagnostics. See the
+[2026-11-06 investigation](../../docs/reports/2026-11-06-erhua-clock-default-date.md).
+
 ## Server Backup Review
 
 Server untracked file:
