@@ -1676,7 +1676,8 @@ class QiWeParserTests(unittest.TestCase):
                     "activity_subject": "开卡丁车",
                     "activity_type": "运动娱乐",
                     "activity_detail": "下午3点半去开卡丁车",
-                    "start_time": "2026-06-13 15:30",
+                    "start_time": "下午3点半",
+                    "time_facts": {"date_text": "", "time_text": "下午3点半"},
                     "participant_names": ["弦默"],
                     "promo_text": "下午一起去开卡丁车，体验速度与激情。",
                 }
@@ -1693,7 +1694,12 @@ class QiWeParserTests(unittest.TestCase):
         self.assertIsNotNone(activity)
         assert activity is not None
         self.assertEqual(activity.activity_type, "运动娱乐")
-        self.assertEqual(activity.start_time, "2026-06-13 15:30")
+        self.assertEqual(activity.start_time, "2026-06-11 15:30")
+        self.assertEqual(activity.time_resolution["state"], "resolved")
+        self.assertEqual(activity.time_resolution["reason"], "resolved_from_creation_day")
+        self.assertEqual(activity.time_resolution["date_text"], "")
+        self.assertIn("首次发起当天", activity.time_normalization_note)
+        self.assertIn("2026-06-11", activity.time_normalization_note)
         user_message = content_parser.llm.calls[0]["messages"][1]["content"]
         # 相对时间基准 = 接龙首次发起时间（solitaireInfo 最早 timestamp 2026-06-11
         # 19:10:32 +08:00），不是当前转发消息的发送时间。

@@ -220,6 +220,13 @@ Repository-level validation:
 pnpm check
 ```
 
+The separate Hermes recovery-artifact workflow probes the pinned official dashboard in
+an isolated profile before importing packaged QiWe. An HTTP 500 in that probe is not a
+QiWe plugin-import result. Retain the failed run, compare the pinned core and probe with
+the last successful run, and recheck the failed job through the existing workflow; never
+skip the probe or claim a root cause without its diagnostics. See the
+[2026-11-06 investigation](../../docs/reports/2026-11-06-erhua-clock-default-date.md).
+
 ## Server Backup Review
 
 Server untracked file:
@@ -722,10 +729,14 @@ Paths below are repository-relative; Sidecar subsections use `runtime/sidecar/`.
 
 The solitaire parser extracts time evidence; deterministic code resolves it against the
 solitaire's first creation timestamp and configured timezone. Model-provided date/time
-fragments must occur in the source text. Missing dates, ambiguous clock times, invalid
-dates and multiple occurrences remain `needs_confirmation`, never an invented start. A
-date without a clock time cannot schedule a 30-minute reminder. Explicit past dates are
-not silently moved to the current month.
+fragments must occur in the source text. When a single unambiguous clock is given
+without a date, use the solitaire's first creation day in the configured timezone, and
+show the full date/time plus that assumption in the acknowledgement. For example,
+`下午7.30` means 19:30 on that day. Forwarding or signup updates do not move it to a new
+day. Explicit source dates take precedence, even if omitted from the model's extracted
+time. Missing anchors, ambiguous clock times, unsupported or invalid dates and multiple
+occurrences remain `needs_confirmation`. A date without a clock cannot schedule a
+30-minute reminder. Past starts are not moved into the future or backfilled.
 
 Everyday clock expressions with an explicit daypart, such as `今晚7.30` and
 `明天晚上7.30`, resolve as hours/minutes, not month/day. Bare `7.30` remains date
