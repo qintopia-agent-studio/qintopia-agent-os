@@ -1,6 +1,6 @@
 # Production Current Status
 
-Updated: 2026-08-31
+Updated: 2026-11-06
 
 This page is a sanitized operator-facing status index. It is not production evidence and
 must not contain live `jobs.json` content, group ids, prompts, env values, database
@@ -8,7 +8,38 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Release State
 
-- Latest published Release tag in git: `v0.2.173`.
+- Current production release:
+  [v0.3.12](https://github.com/qintopia-agent-studio/qintopia-agent-os/releases/tag/v0.3.12),
+  `9c77a51da30211c7183243e37a7225b86bddd122`, published at `2026-11-06T05:58:24Z`.
+- [Deploy Production run 42173811323](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42173811323)
+  succeeded at 14:24:18 Asia/Shanghai, with all four artifact identities matching that
+  SHA. Previous release is `c71f68da1ff3e4472623be7c6f30a3aeb4598e95` / v0.3.11.
+- Erhua was cleanly drained and stopped; 256 activities and 154 reminders were privately
+  backed up. The release-local helper explicitly restarted `hermes-erhua`. New PID
+  `4044019`, fresh `running` status, local QiWe health, plugin/source pins and retained
+  ledger checks passed before the owned drain marker was cleared. Hermes core remains
+  `v2026.9.21`. No credentials, Profile configuration or send gates were changed.
+- The change resolves an explicit clock without a date against the original solitaire
+  creation day and explains that date in the acknowledgement. Final source, release and
+  installed-code checks passed. New real group acknowledgements remain for human
+  acceptance; no live test message was sent. See the
+  [dated report](../reports/2026-11-06-erhua-clock-default-date.md) for run links,
+  retained failure evidence and the separately authorized single-record correction.
+
+## Current Cron Override
+
+- The owner explicitly requested pausing only `小满·每日案例日报`. The official cron
+  pause operation has completed, and `enabled=false`, `state=paused` were confirmed in
+  this session; the pause record reports `09:18:25` on 2026-11-06.
+- This pause was verified before and after the v0.3.12 switch. Preserve it. Do not
+  enable the job, backfill it, or wait for a new scheduled daily report as an acceptance
+  requirement while the pause remains in force.
+- The August activation and next-action entries below are retained historical evidence.
+  They do not override this decision or authorize new task activation.
+
+## Historical Release Observations — 2026-08-31
+
+- The latest published release recorded at that historical checkpoint was `v0.2.173`.
 - Production `Deploy Production` for `v0.2.173`
   (`9f9423a7fa93fc802b17bcdd3c42cb628ee23ee8`) completed successfully on 2026-08-28.
 - Earlier `v0.2.134` through `v0.2.137` production deploy attempts failed during
@@ -32,7 +63,10 @@ URLs, tokens, raw logs, or raw script output.
   local contracts, fixtures, and the character-universe daily-report PR body only; it is
   not production deployment evidence.
 
-## Hermes Cron Migration State
+## Historical Hermes Cron Migration State — 2026-08-31
+
+These implementation and observation entries describe the August checkpoint. They are
+not a current enablement inventory; the current daily-report pause above takes priority.
 
 - Reviewed registry: implemented. Eight reviewed jobs live in
   `runtime/hermes/cron/reviewed-cron-jobs.json`.
@@ -59,6 +93,9 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Reviewed Recurring Jobs
 
+This is the reviewed declaration catalog, not a statement that each job is currently
+enabled. In particular, `xiaoman-daily-case-report` is now paused.
+
 - `xiaoman` / `xiaoman-weekly-preview`: `30 9 * * 1`,
   `qintopia_xiaoman_weekly_preview.sh`.
 - `xiaoman` / `xiaoman-weekly-recruitment`: `0 10 * * 6`,
@@ -75,7 +112,22 @@ URLs, tokens, raw logs, or raw script output.
 - `erhua` / `erhua-activity-recruitment-sun-noon`: `0 12 * * 0`,
   `qintopia_erhua_activity_recruitment.sh`.
 
-## Next Production Actions
+## Current Follow-up State
+
+1. The separately authorized record correction is complete: one existing activity now
+   starts on November 6 at 19:30, with one pending reminder due at 19:00 Asia/Shanghai.
+   Existing reminders are unchanged; transaction evidence is server-private. Actual
+   reminder delivery remains pending and must not be inferred from creation.
+2. Keep Xiaoman daily case-report paused unless the owner separately asks to resume it.
+3. Observe real new-solitaire recognition and acknowledgements for human acceptance.
+   Deployment health and reminder creation do not prove later group delivery. Do not
+   create live test activities or send test messages for this check.
+
+## Historical Next Actions — Superseded Where Inconsistent with Current Pause
+
+The following August checklist remains for historical context. The daily-report
+scheduled-run and completion observations are deferred while the owner-requested pause
+is active. None of these items authorizes resuming or replaying the daily report.
 
 1. Observe the next normal Xiaoman daily case-report Hermes scheduled run with the
    `xiaoman-daily-case-report-worker-run` target, then retain the successful observation
