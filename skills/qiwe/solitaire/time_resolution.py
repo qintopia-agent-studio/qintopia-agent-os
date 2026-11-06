@@ -1,4 +1,4 @@
-"""Source-grounded activity time facts; never infer a missing day or daypart."""
+"""Source-grounded times, with clock-only dates anchored to first creation."""
 from __future__ import annotations
 
 import re
@@ -22,10 +22,18 @@ class TimeResolution:
         return asdict(self)
 
 
-_DATE = re.compile(r"(?<![\d:：])(?:(\d{4})[-/.年])?(\d{1,2})[-/.月](\d{1,2})(?:日|号)?(?![\d:：])")
+_DATE = re.compile(r"(?<!\d)(?<!\d:)(?<!\d：)(?:(\d{4})[-/.年])?(\d{1,2})[-/.月](\d{1,2})(?:日|号)?(?![\d:：])")
 _RELATIVE = re.compile(r"大后天|后天|明天|明日|明晚|今晚|今天|今日|下周[一二三四五六日天]|(?:本周|这周|周|星期)[一二三四五六日天]")
 _CLOCK = re.compile(r"(?<!\d)(?:(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|今晚|明晚)\s*)?(?:([01]?\d|2[0-3])[:：]([0-5]\d)|([零一二两三四五六七八九十]{1,3}|\d{1,2})点(半|[零一二两三四五六七八九十]{1,3}|\d{1,2})?)(?!\d)")
 _DOTTED_CLOCK = re.compile(r"((?:凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|今晚|明晚)\s*\d{1,2})[.．]([0-9]{2})(?![\d.．日号])")
+# An unparsed date is not an absent date. Do not silently turn these expressions
+# into the creation day when the model extracts only their clock fragment.
+_UNSUPPORTED_DATE = re.compile(
+    r"昨天|昨日|昨晚|前天|前日|明早|明晨|(?:上|下|这|本)(?:周|星期)|"
+    r"(?:上|下|这|本)个(?:星期|周|月)|(?:周|星期)末|(?:上|下|本|这)月|"
+    r"月[底末初中]|[上下]旬|[今明去后]年|\d{1,2}月|\d{1,2}[日号](?!楼|房|门|线)|"
+    r"(?:日期|时间|日程)\s*[:：]?\s*(?:待定|待确认|另行通知)"
+)
 _DAY_OFFSETS = {"今天": 0, "今日": 0, "今晚": 0, "明天": 1, "明日": 1, "明晚": 1, "后天": 2, "大后天": 3}
 _WEEKDAYS = {v: i for i, v in enumerate("一二三四五六日")}
 _WEEKDAYS["天"] = 6
@@ -78,8 +86,8 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
                  source: str = "", facts: dict | None = None) -> TimeResolution:
     """Facts are verbatim source spans, not model-generated calendar arithmetic.
 
-    Missing year means the anchor's year, not the next future occurrence. Clock-only
-    expressions stay unresolved. Multiple days/occurrences need explicit clarification.
+    Missing year or date uses the anchor's year or day, never the next future
+    occurrence. Ambiguous clocks and multiple days/occurrences need clarification.
     """
     expression = str(expression or "").strip()
     base = dict(expression=expression, anchor=anchor.isoformat() if anchor else "", timezone=timezone)
@@ -119,14 +127,28 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
     clock_text = _clock_notation(text)
     dates = list(_DATE.finditer(clock_text))
     relatives = _relative_matches(text, local_anchor)
+    evidence = source if facts is not None else text
+    # Source dates outrank the default even if the model omitted them. Source
+    # context also distinguishes a fragment like "7.30" in "下午7.30" from a date.
+    if facts is not None:
+        dates = list(_DATE.finditer(_clock_notation(source)))
+        relatives = _relative_matches(source, local_anchor)
     dates = list({m.group(0): m for m in dates}.values())
     if len(dates) > 1 or len(relatives) > 1:
         return pending("multiple_dates")
-    if not dates and not relatives:
-        return pending("missing_date")
-    date_text = (dates or relatives)[0].group(0)
+    creation_day = not dates and not relatives
+    # A recognized month/day or weekday must not swallow an unsupported qualifier
+    # such as "明年" or "昨天". Mask complete supported spans, then inspect the rest.
+    date_remainder = _RELATIVE.sub(" ", _DATE.sub(" ", _clock_notation(evidence)))
+    if _UNSUPPORTED_DATE.search(date_remainder):
+        return pending("unsupported_date")
+    date_text = (dates or relatives)[0].group(0) if not creation_day else ""
     try:
-        if dates:
+        if creation_day:
+            if local_anchor is None:
+                return pending("missing_anchor")
+            day_value = local_anchor
+        elif dates:
             year, month, day = dates[0].groups()
             if not year and local_anchor is None:
                 return pending("missing_anchor", date_text=date_text)
@@ -138,7 +160,6 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
         # Validate all original constraints, including source evidence omitted
         # by the model. Same-day grouping must not erase a conflicting "today"
         # beside an explicit date with a matching weekday in another week.
-        evidence = source if facts is not None else text
         for match in _DATE.finditer(_clock_notation(evidence)):
             year, month, day = match.groups()
             if not year and local_anchor is None:
@@ -157,18 +178,21 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
 
     except ValueError:
         return pending("invalid_date", date_text=date_text)
-    clocks = list(_CLOCK.finditer(clock_text))
+    # Defaulting a date must not let a model-selected clock hide another source
+    # occurrence, or choose a range's end as its start.
+    clock_source = source if creation_day and facts is not None else text
+    clocks = list(_CLOCK.finditer(_clock_notation(clock_source)))
     clocks = list({m.group(0): m for m in clocks}.values())
     if not clocks:
         return pending("missing_clock", date_text=date_text)
     if len(clocks) > 2:
         return pending("multiple_times", date_text=date_text)
     if len(clocks) == 2:
-        between = text[clocks[0].end():clocks[1].start()].strip()
+        between = clock_source[clocks[0].end():clocks[1].start()].strip()
         if between not in {"-", "–", "—", "‑", "~", "～", "至", "到"}:
             return pending("multiple_times", date_text=date_text)
     clock = clocks[0]
-    time_text = text[clock.start():clock.end()]
+    time_text = clock_source[clock.start():clock.end()]
     daypart, hh, mm, cn_hour, cn_minute = clock.groups()
     hour = int(hh) if hh is not None else _number(cn_hour)
     minute = int(mm) if mm is not None else (30 if cn_minute == "半" else _number(cn_minute) if cn_minute else 0)
@@ -183,4 +207,5 @@ def resolve_time(expression, *, anchor: datetime | None, timezone: str,
         hour = 0
     resolved = day_value.replace(hour=hour, minute=minute, second=0, microsecond=0)
     return TimeResolution(**base, date_text=date_text, time_text=time_text,
-                          state="resolved", reason="resolved", start_time=resolved.strftime("%Y-%m-%d %H:%M"))
+                          state="resolved", reason="resolved_from_creation_day" if creation_day else "resolved",
+                          start_time=resolved.strftime("%Y-%m-%d %H:%M"))
