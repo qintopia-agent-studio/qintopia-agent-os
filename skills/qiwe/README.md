@@ -767,7 +767,16 @@ rollback.
 Validation: `pnpm test:qiwe`, including synthetic end-to-end reminder lifecycle tests.
 Deployment uses an immutable reviewed release. Before switching, drain the Erhua Gateway
 and back up its server-local `solitaire` directory consistently. Preserve all legacy
-ledgers. Rolling back requires a drained process and no pending transaction; older code
-must not resume unknown delivery states without reconciliation. Do not restore an old
-ledger over newer send outcomes. No live enablement, resend, configuration change or
-production deployment is authorized merely by these tests passing.
+ledgers. Resolve the deployed release through
+`/home/ubuntu/qintopia-agent-os-releases/current`; compare its manifest and plugin link
+before running release-local restart helpers. Do not infer a sibling `*-current` path.
+The general `qintopia-system-services` target does not restart Erhua: explicitly use the
+approved `hermes-erhua` target and verify the new PID before clearing the owned drain.
+For later maintenance, use Core's `runtime_status_is_stale` default together with PID
+identity/liveness checks: a single 5-second snapshot cutoff is shorter than the normal
+heartbeat cadence. Distinguish this from actively waiting for a fresh drain observation.
+
+Rolling back requires a drained process and no pending transaction; older code must not
+resume unknown delivery states without reconciliation. Do not restore an old ledger over
+newer send outcomes. No live enablement, resend, configuration change or production
+deployment is authorized merely by these tests passing.
