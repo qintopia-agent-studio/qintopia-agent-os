@@ -1,6 +1,6 @@
 # Production Current Status
 
-Updated: 2026-08-31
+Updated: 2026-11-06
 
 This page is a sanitized operator-facing status index. It is not production evidence and
 must not contain live `jobs.json` content, group ids, prompts, env values, database
@@ -8,7 +8,19 @@ URLs, tokens, raw logs, or raw script output.
 
 ## Release State
 
-- Latest published Release tag in git: `v0.2.173`.
+- Latest published Release tag in git: `v0.3.11`, exact SHA
+  `c71f68da1ff3e4472623be7c6f30a3aeb4598e95`.
+- Production `Deploy Production` for `v0.3.11` completed successfully on 2026-11-06
+  (Asia/Shanghai), request `deploy-20261105T162637Z-c71f68da1ff3`. Current is the exact
+  release SHA; previous is `v0.3.10` (`afe3e81c7c5ac0d74332dfb5aaa79fa35ce06d83`).
+- Erhua was explicitly restarted after promotion. Plugin hashes, fresh gateway state,
+  loopback health, and eight non-sending time/reply checks passed. Existing activity and
+  reminder delivery records were preserved. Real new-group-message and reminder delivery
+  acceptance remains unverified. The old gateway's abnormal shutdown exit, consistent
+  backup, release checks, and recovery evidence are recorded in the
+  [Erhua time-resolution report](../reports/2026-11-05-erhua-everyday-time-resolution.md).
+- The dated workflow and cron observations below remain historical; this release did not
+  re-accept those business workflows.
 - Production `Deploy Production` for `v0.2.173`
   (`9f9423a7fa93fc802b17bcdd3c42cb628ee23ee8`) completed successfully on 2026-08-28.
 - Earlier `v0.2.134` through `v0.2.137` production deploy attempts failed during

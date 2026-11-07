@@ -764,10 +764,29 @@ do not consume live reminders. Historical expired reminders are not backfilled. 
 `status=failed` sentinel so older workers cannot automatically replay them after
 rollback.
 
-Validation: `pnpm test:qiwe`, including synthetic end-to-end reminder lifecycle tests.
-Deployment uses an immutable reviewed release. Before switching, drain the Erhua Gateway
-and back up its server-local `solitaire` directory consistently. Preserve all legacy
-ledgers. Rolling back requires a drained process and no pending transaction; older code
-must not resume unknown delivery states without reconciliation. Do not restore an old
-ledger over newer send outcomes. No live enablement, resend, configuration change or
-production deployment is authorized merely by these tests passing.
+Validation: `pnpm test:qiwe`, including simulated end-to-end reminder lifecycle tests.
+Deployment uses an immutable reviewed release. Before switching, use the installed
+Hermes core's official reversible drain API, retain the owned marker through shutdown,
+and back up the server-local `solitaire` directory consistently. Writing the drain
+marker only requests draining: require the original live PID, a fresh (at most five
+seconds old) `draining` status, and `active_agents=0` in two observations at least two
+seconds apart with an advancing `updated_at`. Abort if the marker owner or process
+identity changes. The core's aggregate active count does not cover QiWe's reminder
+worker: separately verify no sending reminder, pending activity transaction, active turn
+lease, QiWe pending/attempting delivery obligation, or cron pending/delivering delivery.
+Confirm process exit and recheck the ledgers before copying; preserve all legacy
+ledgers.
+
+A `systemctl stop` acknowledgement alone is not proof of a clean shutdown. If the unit
+reports `failed`, retain the drain marker and inspect `MainPID`, `ControlPID`, cgroup,
+current release identity, and durable in-flight work before continuing or restoring the
+service. Only back up after proving no remaining writer. Record the abnormal exit; do
+not clear another operator's marker or restore old ledgers over new send outcomes. After
+promotion, explicitly restart Erhua when the release restart set omits it, verify the
+exact plugin release and health, then clear only this operation's drain marker and
+confirm the gateway returned to `running`.
+
+Rolling back requires a drained process and no pending transaction; older code must not
+resume unknown delivery states without reconciliation. Do not restore an old ledger over
+newer send outcomes. No live enablement, resend, configuration change or production
+deployment is authorized merely by these tests passing.
