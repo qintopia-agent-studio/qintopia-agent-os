@@ -163,13 +163,17 @@ def build_activity_record_from_fields(
         last_seen_at = seen_at.astimezone(timezone.utc).isoformat()
     else:
         last_seen_at = datetime.now(timezone.utc).isoformat()
-    solitaire_created_at = solitaire_created_at_from_event(event, fallback=last_seen_at)
+    # Wall-clock observation time may timestamp the record, but is not evidence of
+    # when a timestamp-less solitaire was created.
+    solitaire_created_at = solitaire_created_at_from_event(event)
     detail = _text(activity_detail)
     anchor = datetime.fromisoformat(solitaire_created_at) if solitaire_created_at else None
     resolution = resolve_time(start_time, anchor=anchor, timezone=str(_activity_timezone()),
                               source=stable_activity_body(title), facts=time_facts)
     normalized_start_time = resolution.start_time or _text(start_time)
     time_normalization_note = "" if resolution.state == "resolved" else "活动日期或时刻还不明确，暂未安排开始前提醒；请在接龙里补充完整日期和时间。"
+    if resolution.reason == "resolved_from_creation_day":
+        time_normalization_note = f"接龙未写日期，已按首次发起当天（{resolution.start_time[:10]}）记录。"
     stable_body = stable_activity_body(title)
     stable_body_fingerprint = _hash(_compact(stable_body), 20) if stable_body else ""
     identity = _text(activity_identity) or _first_nonempty_line(stable_body) or subject

@@ -29,6 +29,8 @@ reviewed, migrated, and deployed.
   required secret, and merge boundary.
 - [server-change-policy.md](server-change-policy.md): allowed and disallowed server
   activity.
+- [bmad-adoption.md](bmad-adoption.md): BMAD workflow entrypoints, artifact placement,
+  and validation boundaries for this repository.
 
 ## Rules
 

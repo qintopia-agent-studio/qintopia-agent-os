@@ -1,5 +1,9 @@
 # Reports
 
+- [2026-11-06 二花仅有时刻的接龙日期补全](2026-11-06-erhua-clock-default-date.md)
+
+- [2026-11-05 二花接龙日常时间表达修复](2026-11-05-erhua-everyday-time-resolution.md)
+
 - [2026-11-05 Agent OS 跨项目协调历史归档（2026-09-24 至 2026-10-01）](2026-11-05-agent-os-coordination-history.md)
 
 - [2026-10-03 v0.3.10 部署恢复与轮询 timer 缺口](2026-10-03-v0310-deploy-timer-recovery.md)

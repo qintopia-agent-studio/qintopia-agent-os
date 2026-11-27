@@ -202,6 +202,26 @@
           }
         },
         {
+          "id": "qiwe/activity-reminder-lifecycle",
+          "name": "二花接龙时间解析与提醒生命周期",
+          "aliases": ["接龙时间", "今晚7.30", "活动提醒"],
+          "executor": "unittest",
+          "target": {
+            "path": "skills/qiwe/tests/test_reminder_lifecycle.py",
+            "args": ["-v"],
+            "count_strategy": "unittest",
+            "pythonpath": ["skills/qiwe"],
+            "cwd": "skills/qiwe"
+          },
+          "requires": ["python"],
+          "timeout_seconds": 180,
+          "required": true,
+          "boundary": {
+            "real": ["时间解析、活动与提醒台账、提醒决策和记录回复"],
+            "simulated": ["模型 completion、QiWe 发送及活动数据；无真实模型调用或外发"]
+          }
+        },
+        {
           "id": "qiwe/space-change-tools",
           "name": "QiWe Space 配置工具契约",
           "aliases": ["Space 工具", "space change"],
