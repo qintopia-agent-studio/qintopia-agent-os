@@ -1,6 +1,7 @@
 """Deliver pending notifications through the designated Hermes profile."""
 
 import argparse
+import errno
 import json
 import logging
 import subprocess
@@ -35,16 +36,40 @@ def render(job, templates):
     return "\n\n".join(parts)
 
 
-def send(job, target, templates, run=subprocess.run):
+class LaunchFailure(Exception):
+    """The local operating system could not start Hermes."""
+
+
+def run_hermes(command):
+    try:
+        child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except OSError as err:
+        if err.errno not in (errno.ENOENT, errno.EACCES, errno.EAGAIN, errno.ENOMEM, errno.ENOEXEC,
+                             errno.ENOTDIR, errno.EPERM, errno.EMFILE, errno.ENFILE, errno.E2BIG, errno.ETXTBSY):
+            raise
+        raise LaunchFailure(type(err).__name__) from err
+    with child:
+        try:
+            stdout, _ = child.communicate(timeout=24)
+        except (OSError, subprocess.TimeoutExpired):
+            child.kill()
+            child.wait()
+            raise
+    return subprocess.CompletedProcess(command, child.returncode, stdout)
+
+
+def send(job, target, templates, run=run_hermes):
     profile = job["profile"]
     command = ["/usr/local/bin/hermes", "-p", profile, "send", "--json", "--to",
                target, render(job, templates)]
     try:
-        result = run(command, capture_output=True, text=True, timeout=24, check=False)
-    except OSError as err:
-        return "failed", type(err).__name__
+        result = run(command)
+    except LaunchFailure as err:
+        return "failed", str(err)
     except subprocess.TimeoutExpired:
         return "unknown", "timeout"
+    except OSError as err:
+        return "unknown", type(err).__name__
     try:
         reply = json.loads(result.stdout)
     except ValueError:
@@ -64,20 +89,32 @@ def send(job, target, templates, run=subprocess.run):
     return "unknown", "receipt-mismatch"
 
 
-def newer_normals(active, run=subprocess.run):
+def read_shadow(run=subprocess.run):
     try:
         result = run(["/usr/local/bin/qintopia-sensors", "read", "烟雾报警器"],
-                     capture_output=True, text=True, timeout=12, check=True)
+                     capture_output=True, text=True, timeout=12, check=False)
+        # The local CLI returns 1 for a partially successful query. Valid readings
+        # still carry evidence, including a second hazard that must block recovery.
+        if result.returncode not in (0, 1):
+            return []
         rows = json.loads(result.stdout)["devices"]
         device, = [d for d in rows if d["name"] == "烟雾报警器" and d["area"] == "一楼壁炉区"]
         points = []
         for reading in device["readings"]:
-            code = reading["code"]
-            if (state.SIGNALS.get(code, 0) & active and reading.get("status") == "ok"
-                    and reading.get("value") == "normal"):
-                stamp = datetime.fromisoformat(reading["reported_at"])
-                if stamp.tzinfo:
-                    points.append({"code": code, "value": "normal", "time": int(stamp.timestamp()) * 1000})
+            code, value = reading["code"], reading.get("value")
+            if code not in state.SIGNALS or reading.get("status") != "ok" or value not in ("normal", "alarm"):
+                continue
+            at = reading.get("reported_at_ms")
+            if type(at) is not int:
+                # Older query services expose an ISO timestamp only. Never round it up.
+                try:
+                    stamp = datetime.fromisoformat(reading["reported_at"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+                if not stamp.tzinfo:
+                    continue
+                at = int(stamp.timestamp()) * 1000 + stamp.microsecond // 1000
+            points.append({"code": code, "value": value, "time": at})
         return points
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as err:
         logging.warning("could not check a delayed alarm against cloud status: %s", type(err).__name__)
@@ -91,17 +128,18 @@ def serve(profile):
     if platform != PLATFORMS[profile] or not destination:
         raise ValueError("incorrect profile destination")
     db = state.connect()
+    state.initialize(db, state.now_ms())
     logging.info("ready profile=%s", profile)
     while True:
-        job = state.claim(db, profile, state.now_ms(), verify_late=newer_normals)
+        job = state.claim(db, profile, verify_late=read_shadow)
         if job is None:
             time.sleep(0.25)
             continue
         status, receipt = send(job, target, templates)
         state.finish(db, job, status, receipt)
         level = logging.INFO if status == "accepted" else logging.ERROR
-        logging.log(level, "incident=%d profile=%s kind=%s slot=%d status=%s",
-                    job["incident"], profile, job["kind"], job["ordinal"], status)
+        logging.log(level, "incident=%d profile=%s kind=%s slot=%d attempt=%d status=%s",
+                    job["incident"], profile, job["kind"], job["ordinal"], job["attempt"], status)
 
 
 if __name__ == "__main__":

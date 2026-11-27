@@ -77,6 +77,15 @@ class EnvironmentalQuery(unittest.TestCase):
         self.assertEqual(sensors.select_devices(devices, "三楼活动区"), [self.devices[1]])
         self.assertEqual(sensors.select_devices(devices, None), self.devices)
 
+    def test_alarm_query_keeps_device_milliseconds_separate_from_query_time(self):
+        self.cloud.get.return_value = self.response([("smoke_sensor_state", "normal", 900),
+                                                    ("co_state", "alarm", 100)])
+        device, = self.reader.handle({"op": "read", "target": "烟雾报警器"})["devices"]
+        smoke, co = device["readings"]
+        self.assertEqual((smoke["reported_at_ms"], co["reported_at_ms"]), (self.at + 900, self.at + 100))
+        self.assertEqual(smoke["reported_at"], co["reported_at"])
+        self.assertNotEqual(smoke["reported_at"], device["queried_at"])
+
     def test_subscription_fails_closed_on_ambiguous_registered_detector(self):
         self.assertEqual(subscription.fireplace_id(), "demo-alarm")
         self.devices.append(dict(self.devices[-1], name="第二个报警器", device_id="demo-another"))

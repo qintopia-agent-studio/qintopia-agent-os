@@ -122,8 +122,11 @@ def local_time(timestamp):
 
 def format_reading(code, definition, properties):
     point = properties.get(code, {})
+    timestamp = point.get("time")
     result = {"code": code, "label": definition["label"],
-              "reported_at": local_time(point.get("time"))}
+              "reported_at": local_time(timestamp)}
+    if type(timestamp) is int and timestamp > 0:
+        result["reported_at_ms"] = timestamp
     value = point.get("value")
     if value is None:
         return dict(result, status="not_reported")
