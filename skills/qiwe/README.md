@@ -21,6 +21,18 @@ change production server files.
 
 ## Production Boundary
 
+When group mentions stop receiving replies, distinguish process health, webhook
+delivery, model execution and channel delivery. `/health=ok` only proves the local HTTP
+listener. Compare fresh official Core status and PID identity, then the last real
+callback timestamp in nginx and application logs, before proposing a restart. Use only
+documented provider status queries against the already configured endpoint; keep
+credentials and device identifiers server-local, disable redirects and retain only
+bounded status/error summaries. A successful HTTP status alone does not prove the device
+is online. Do not substitute a new example domain, recreate a device, change callback
+configuration or replay old sends as part of a read-only diagnosis. Recovery is accepted
+only after a real authorized group mention reaches the gateway and its reply is observed
+in the group.
+
 Current production route:
 
 ```text
@@ -764,10 +776,26 @@ do not consume live reminders. Historical expired reminders are not backfilled. 
 `status=failed` sentinel so older workers cannot automatically replay them after
 rollback.
 
-Validation: `pnpm test:qiwe`, including synthetic end-to-end reminder lifecycle tests.
-Deployment uses an immutable reviewed release. Before switching, drain the Erhua Gateway
-and back up its server-local `solitaire` directory consistently. Preserve all legacy
-ledgers. Rolling back requires a drained process and no pending transaction; older code
-must not resume unknown delivery states without reconciliation. Do not restore an old
-ledger over newer send outcomes. No live enablement, resend, configuration change or
-production deployment is authorized merely by these tests passing.
+Validation: `pnpm test:qiwe`, including simulated end-to-end reminder lifecycle tests.
+Before switching to a reviewed immutable release, drain and stop the Erhua Gateway. If
+`systemctl stop` leaves the unit in `failed`, retain the drain marker owned by this
+operation. Check `MainPID`, `ControlPID` and the service cgroup for remaining writers.
+Check for in-flight reminder sends, pending activity transactions, active turn leases
+and unfinished QiWe or cron deliveries. Record the abnormal exit. Take a consistent
+backup of the server-local `solitaire` directory only after confirming that no writer,
+send or transaction is still active. Preserve all legacy ledgers.
+
+Resolve the deployed release through the `current` pointer in the
+[runner's release directory](../../deploy/runner/README.md#server-requirements). Compare
+its manifest and plugin link before running release-local restart helpers. Do not infer
+a sibling `*-current` path. The general `qintopia-system-services` target does not
+restart Erhua: explicitly use the approved `hermes-erhua` target and verify the new PID
+before clearing the owned drain. For later maintenance, use Core's
+`runtime_status_is_stale` default together with PID identity/liveness checks: a single
+5-second snapshot cutoff is shorter than the normal heartbeat cadence. Distinguish this
+from actively waiting for a fresh drain observation.
+
+Rolling back requires a drained process and no pending transaction; older code must not
+resume unknown delivery states without reconciliation. Do not restore an old ledger over
+newer send outcomes. No live enablement, resend, configuration change or production
+deployment is authorized merely by these tests passing.
