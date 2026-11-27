@@ -107,6 +107,7 @@ rules:
       - "workflows/erhua-consultation/**"
       - "workflows/erhua-morning-brief/**"
       - "skills/qintopia-weather/**"
+      - "skills/qintopia-tuya-sensors/**"
       - "skills/erhua-csv/**"
       - "mcp/weather-provider/**"
 
@@ -134,6 +135,7 @@ rules:
     reason: Silaoshi profile and daily operations workflow behavior.
     paths:
       - "agents/silaoshi/**"
+      - "skills/qintopia-tuya-sensors/**"
       - "workflows/silaoshi-daily-ops/**"
 
   - target: hermes-huabaosi
@@ -163,6 +165,8 @@ rules:
       Shared sidecar, database, MCP, deploy, QiWe, context, and operations runtime.
     paths:
       - "workflows/resident-welcome/**"
+      - "workflows/fireplace-alarm/**"
+      - "skills/qintopia-tuya-sensors/references/alarm-messages.json"
       - "runtime/sidecar/**"
       - "runtime/postgres/**"
       - "runtime/systemd/**"

@@ -1,6 +1,11 @@
 registry_version: 1
 domain: mcp
 entries:
+  - id: mcp/qintopia-sensors
+    path: mcp/qintopia-sensors
+    manifest: mcp/qintopia-sensors/manifest.yaml
+    status: draft
+    notes: Adopt the existing read-only area list and environmental readings.
   - id: mcp/context-server
     path: mcp/context-server
     manifest: mcp/context-server/manifest.yaml

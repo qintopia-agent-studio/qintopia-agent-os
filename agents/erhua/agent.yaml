@@ -25,6 +25,7 @@ validation:
     - pnpm registry:check
     - pnpm policy:check
 dependencies:
+  - skills/qintopia-tuya-sensors
   - skills/qiwe
   - skills/qintopia-weather
   - skills/erhua-csv

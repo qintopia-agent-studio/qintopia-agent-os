@@ -1,0 +1,29 @@
+id: workflows/fireplace-alarm
+type: workflow
+name: 壁炉区烟雾与一氧化碳报警
+owner: PatrickLiveCool
+status: draft
+risk_level: high
+description:
+  Dispatch new device-reported smoke and CO alerts to two fixed audiences with bounded
+  reminders and recovery.
+source:
+  path: workflows/fireplace-alarm
+  reference:
+    existing Tuya production subscription and reviewed fireplace evacuation messages
+  disposition: adopt
+production_boundary:
+  external_sends: true
+  database_writes: true
+  runtime_profile: true
+  secrets: true
+validation:
+  commands:
+    - python3 -B -m unittest discover -s workflows/fireplace-alarm/tests -v
+dependencies:
+  - skills/qintopia-tuya-sensors
+  - agents/silaoshi
+  - agents/erhua
+next_actions:
+  - Review immutable release ownership and a separate opt-in cutover before starting any
+    sender.

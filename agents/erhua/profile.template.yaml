@@ -25,6 +25,7 @@ prompt_sections:
   - 权限边界
 
 allowed_capabilities:
+  - skills/qintopia-tuya-sensors
   - skills/qiwe
   - mcp/context-server
   - mcp/message-store

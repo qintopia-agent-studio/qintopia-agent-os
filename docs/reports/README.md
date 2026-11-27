@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-11-27 壁炉区报警工作流审阅及发布归属](2026-11-27-fireplace-alarm-review.md)
+
 - [2026-11-16 QiWe 转发实例异常导致二花群内 @ 无回复](2026-11-16-erhua-qiwe-ingress-unavailable.md)
 
 - [2026-11-06 二花仅有时刻的接龙日期补全](2026-11-06-erhua-clock-default-date.md)
