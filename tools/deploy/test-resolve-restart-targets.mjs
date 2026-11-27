@@ -135,6 +135,21 @@ assertSuccess(
   ["skills/person-foundation/__init__.py"],
   ["hermes-anan", "hermes-erhua"]
 );
+assertSuccess(
+  "shared-sensor-skill-consumers",
+  ["skills/qintopia-tuya-sensors/manifest.yaml"],
+  ["hermes-erhua", "hermes-silaoshi"]
+);
+assertSuccess(
+  "alarm-message-consumers",
+  ["skills/qintopia-tuya-sensors/references/alarm-messages.json"],
+  ["hermes-erhua", "hermes-silaoshi", "qintopia-system-services"]
+);
+assertSuccess(
+  "fireplace-dispatcher",
+  ["workflows/fireplace-alarm/dispatch.py"],
+  ["qintopia-system-services"]
+);
 assertFailure("unknown-agent", ["agents/newagent/agent.yaml"]);
 assertFailure("unknown-skill", ["skills/new-skill/manifest.yaml"]);
 

@@ -10,12 +10,25 @@
 
 模拟发送器的启动失败、超时和回执不明分别验收。只有明确未启动时会按原序号重试。重启测试沿用原来的生效时间、已占用序号和群回执。
 
-## 发布归属待审
+## 发布准备与重启归属
 
-仓库现有规则已将 MCP 适配器纳入系统服务，并分别覆盖四老师与二花的 profile。重启范围预检会报告共享 Skill 的清单和报警工作流代码尚无归属。复核该 PR 时可在仓库根目录运行：
+草稿提交 `d1c725d5`
+的发布预检列出 7 个未映射文件，分布在共享 Skill 和报警工作流。四老师和二花的 profile 已引用同一个 Skill，传感器 MCP 已由现有的
+`mcp/**`
+规则覆盖。按上线准备的授权补齐规则后，对这批文件复跑预检，未映射文件从 7 个降为 0 个。
+
+| 单独变更的内容                     | 发布时命中的重启目标                                          |
+| ---------------------------------- | ------------------------------------------------------------- |
+| 共享 Skill 清单                    | `hermes-erhua`、`hermes-silaoshi`                             |
+| 共享报警文案 `alarm-messages.json` | `hermes-erhua`、`hermes-silaoshi`、`qintopia-system-services` |
+| 报警工作流的程序、测试或清单       | `qintopia-system-services`                                    |
+
+发送进程在启动时读取共享报警文案，所以只改这份 JSON 也会命中系统服务。Markdown 说明沿用仓库的免重启规则。可在 PR 分支运行以下检查，其中第一项分别验证单文件变更，第二项按整份 PR 的差异计算影响范围。
 
 ```sh
-node tools/deploy/resolve-restart-targets.mjs --base-ref origin/master --head-ref HEAD
+pnpm deploy:restart-targets:test
+node tools/deploy/resolve-restart-targets.mjs --base-ref origin/master --head-ref HEAD --mode preview
+pnpm deploy:preflight:ci
 ```
 
-在单独的上线评审中明确实际安装位置、接收与发送进程、影响范围、运行身份和回退方案，再确定发布映射。在此之前保留这项发布阻断。本次 PR 供功能和源码审阅。
+本次预检覆盖源码的发布归属。正式切换时仍需核对安装的服务单元、唯一订阅消费者、两群路由和回退版本，并另行验收实机推送与群投递。
