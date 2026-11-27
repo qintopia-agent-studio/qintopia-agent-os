@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 repository uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html) when packages
 become versioned.
 
+## [0.3.13](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.12...v0.3.13) (2026-11-27)
+
+
+### Features
+
+* 纳入共享环境传感器 Skill 和壁炉区报警工作流 ([#756](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/756)) ([6293f1a](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/6293f1a140599fd8d8fdf9f46354e637a34c9f22))
+
+
+### Documentation
+
+* archive cross-project coordination history ([#750](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/750)) ([c5060c1](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/c5060c10e9fbdbcfc953281988658f6c1d65f262))
+* **qiwe:** record Erhua v0.3.12 deployment and forwarding recovery ([#755](https://github.com/qintopia-agent-studio/qintopia-agent-os/issues/755)) ([1220e7e](https://github.com/qintopia-agent-studio/qintopia-agent-os/commit/1220e7ea1f80bc3db0bce52d1ce56fb9aaf439b4))
+
 ## [0.3.12](https://github.com/qintopia-agent-studio/qintopia-agent-os/compare/v0.3.11...v0.3.12) (2026-11-06)
 
 
