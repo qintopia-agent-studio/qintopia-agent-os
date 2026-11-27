@@ -1,5 +1,7 @@
 # Reports
 
+- [2026-11-16 QiWe 转发实例异常导致二花群内 @ 无回复](2026-11-16-erhua-qiwe-ingress-unavailable.md)
+
 - [2026-11-06 二花仅有时刻的接龙日期补全](2026-11-06-erhua-clock-default-date.md)
 
 - [2026-11-05 二花接龙日常时间表达修复](2026-11-05-erhua-everyday-time-resolution.md)

@@ -1,14 +1,35 @@
 # Production Current Status
 
-Updated: 2026-11-06
+Status snapshot: 2026-11-16. Erhua incident follow-up: 2026-11-27.
 
 This page is a sanitized operator-facing status index. It is not production evidence and
 must not contain live `jobs.json` content, group ids, prompts, env values, database
 URLs, tokens, raw logs, or raw script output.
 
+## November 16 Erhua Incident — QiWe Forwarding Instance
+
+- On November 27 the owner confirmed that the QiWe forwarding instance had failed. The
+  team restored forwarding by manually creating a new instance on the QiWe platform.
+- On November 16 the owner reported that group replies had resumed. A read-only check at
+  23:06 Asia/Shanghai found the provider reporting `code=0`, `errorCode=0` and
+  `userOnlineStatus=2`. There were 11 callbacks that day, the latest at 22:49:05 with
+  HTTP 200. The Erhua Gateway PID was unchanged.
+- November 16 read-only checks found the Erhua process alive on v0.3.12, with fresh
+  official runtime status, no drain, healthy loopback HTTP and a reachable public
+  callback route. This does not establish a working group-reply channel.
+- At the initial check, the latest retained QiWe callback in nginx and the application
+  was on November 6 at 12:29:36 Asia/Shanghai, before that day's release switch. The
+  device-status query returned HTTP 200 but business code `422100`, with an error
+  indicating that the client instance does not exist or is not online; no online status
+  was returned.
+- The running and persisted device bindings matched. Provider-side device/login recovery
+  and group-side acceptance were still pending at that checkpoint. No restart, rebind,
+  callback change or historical replay was performed during this diagnosis. See the
+  [incident report](../reports/2026-11-16-erhua-qiwe-ingress-unavailable.md).
+
 ## Release State
 
-- Current production release:
+- Production release verified in the November 16 snapshot:
   [v0.3.12](https://github.com/qintopia-agent-studio/qintopia-agent-os/releases/tag/v0.3.12),
   `9c77a51da30211c7183243e37a7225b86bddd122`, published at `2026-11-06T05:58:24Z`.
 - [Deploy Production run 42173811323](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42173811323)
@@ -112,7 +133,10 @@ enabled. In particular, `xiaoman-daily-case-report` is now paused.
 - `erhua` / `erhua-activity-recruitment-sun-noon`: `0 12 * * 0`,
   `qintopia_erhua_activity_recruitment.sh`.
 
-## Current Follow-up State
+## Historical Follow-up State — November 6
+
+These items record the November 6 checkpoint. The current incident above takes
+precedence; a pending reminder recorded then is not a fresh delivery observation.
 
 1. The separately authorized record correction is complete: one existing activity now
    starts on November 6 at 19:30, with one pending reminder due at 19:00 Asia/Shanghai.
