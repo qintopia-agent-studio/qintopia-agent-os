@@ -66,6 +66,7 @@ def consume(device_id, on_report):
     client_id, secret = credentials["client_id"], credentials["client_secret"]
     secret_digest = hashlib.md5(secret.encode()).hexdigest()
     password_digest = hashlib.md5((client_id + secret_digest).encode()).hexdigest()
+    # Tuya auth1 receives JSON through Pulsar Basic's username + ':' + password.
     auth = pulsar.AuthenticationBasic(
         '{"username": "' + client_id + '","password"',
         '"' + password_digest[8:24] + '"}', "auth1")

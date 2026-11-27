@@ -88,3 +88,21 @@ class EnvironmentalQuery(unittest.TestCase):
         with self.assertRaises(sensors.QueryError):
             self.reader.handle({"op": "send", "target": "烟雾报警器"})
         self.cloud.get.assert_not_called()
+
+    def test_tuya_auth1_frame_and_existing_subscription(self):
+        # Use the live entry point with a local SDK stand-in and a fixed public test vector.
+        creds = Path(self.temp.name) / "tuya.json"
+        creds.write_text(json.dumps({"client_id": "demo-id", "client_secret": "demo-key-for-testing"}))
+        sdk = Mock()
+        client = sdk.Client.return_value
+        client.subscribe.return_value.receive.side_effect = StopIteration
+        with patch.dict(os.environ, {"CREDENTIALS_DIRECTORY": self.temp.name}), patch.dict(sys.modules, {"pulsar": sdk}):
+            with self.assertRaises(StopIteration):
+                subscription.consume("demo-alarm", Mock())
+        username, password, mechanism = sdk.AuthenticationBasic.call_args.args
+        self.assertEqual(mechanism, "auth1")
+        self.assertEqual(json.loads(username + ":" + password),
+                         {"username": "demo-id", "password": "d747ac1367833507"})
+        client.subscribe.assert_called_once_with("demo-id/out/event", "demo-id-sub",
+                                                 consumer_type=sdk.ConsumerType.Failover)
+        client.close.assert_called_once_with()

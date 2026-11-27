@@ -22,3 +22,6 @@ python3 -B -m unittest discover -s mcp/qintopia-sensors/tests -v
 
 订阅适配器沿用现有接收器的 `pulsar-client==3.5.0` 和
 `pycryptodome==3.23.0`。普通查询和离线规则测试只加载各自需要的依赖。
+
+涂鸦的 `auth1` 使用 Pulsar
+Basic 插入的冒号拼出认证 JSON。测试以模拟凭据核对报文、订阅名及连接释放。[涂鸦官方 Python 认证实现](https://github.com/tuya/tuya-pulsar-sdk-python/blob/main/mq_authentication.py)
