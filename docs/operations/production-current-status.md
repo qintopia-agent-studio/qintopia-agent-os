@@ -35,11 +35,11 @@ URLs, tokens, raw logs, or raw script output.
 - [Deploy Production run 42173811323](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42173811323)
   succeeded at 14:24:18 Asia/Shanghai, with all four artifact identities matching that
   SHA. Previous release is `c71f68da1ff3e4472623be7c6f30a3aeb4598e95` / v0.3.11.
-- Erhua was cleanly drained and stopped; 256 activities and 154 reminders were privately
-  backed up. The release-local helper explicitly restarted `hermes-erhua`. New PID
-  `4044019`, fresh `running` status, local QiWe health, plugin/source pins and retained
-  ledger checks passed before the owned drain marker was cleared. Hermes core remains
-  `v2026.9.21`. No credentials, Profile configuration or send gates were changed.
+- Erhua was cleanly drained and stopped. The activity and reminder ledgers were backed
+  up privately. After the release-local helper restarted `hermes-erhua`, the operator
+  verified the new process, fresh heartbeat, local QiWe health, installed plugin and
+  preservation of existing ledger records before clearing the owned drain marker. Hermes
+  core remained at `v2026.9.21`.
 - The change resolves an explicit clock without a date against the original solitaire
   creation day and explains that date in the acknowledgement. Final source, release and
   installed-code checks passed. New real group acknowledgements remain for human

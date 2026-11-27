@@ -94,37 +94,29 @@ Release Please PR
 [v0.3.12](https://github.com/qintopia-agent-studio/qintopia-agent-os/releases/tag/v0.3.12)
 于 `2026-11-06T05:58:24Z` 发布。
 [Deploy Production run 42171539570](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42171539570)
-构建及模拟部署成功，request `deploy-20261106T061313Z-9c77a51da302` 为
-`dry_run_succeeded`。
+完成构建和模拟部署，结果为 `dry_run_succeeded`。
 
 ## 生产切换与恢复结果
 
-切换前使用官方 reversible
-drain，取得两次新鲜零在途观测，并独立核对持久在途状态。14:19:34 正常停止二花：退出码为零，MainPID、ControlPID 为零，原 cgroup 为空，无发送中提醒和待完成事务。256 条活动、154 条提醒完成服务器私有一致备份；文件集合、归档与前后摘要一致，
-`abnormal_stop=false`。原提醒状态为 sent 145、expired 7、failed
-2。备份和记录内容留在服务器，不进入 Git。
+切换前使用官方排空接口，连续两次确认无在途工作，再核对发送中的提醒和待完成的台账事务。网关正常退出，服务进程组已清空。随后在服务器完成活动和提醒台账的一致备份，核对文件集合与前后摘要。原始台账和备份保存在服务器私有目录。
 
 [正式 Deploy Production run 42173811323](https://github.com/qintopia-agent-studio/qintopia-agent-os/actions/runs/42173811323)
-于北京时间 14:24:18 完成，request 为 `deploy-20261106T062325Z-9c77a51da302`，结果
-`succeeded`、`dry_run=false`。commit/runtime/deploy_bundle/release 四个 SHA 均为
+于北京时间 14:24:18 成功完成正式部署。commit/runtime/deploy_bundle/release 四个 SHA 均为
 `9c77a51da30211c7183243e37a7225b86bddd122`；current 指向该完整 release，previous 为
 `c71f68da1ff3e4472623be7c6f30a3aeb4598e95`。deploy-runner 检查通过，无回滚。scope 为
 `sidecar-runtime,deploy-bundle,hermes-plugins`，启用 `rollback_on_smoke_failure=true`。
 
 正式请求的 restart target 为
 `qintopia-system-services`，因此随后明确调用新 release 自带的
-`smoke-release.sh --restart-targets hermes-erhua`，脚本通过。首次调用前的路径断言误用了不存在的
-`/home/ubuntu/qintopia-agent-os-current`，在重启前阻止执行；更正为注册路径
-`/home/ubuntu/qintopia-agent-os-releases/current`
-后重新核验并执行。该次本地操作错误没有改动服务器文件或重复部署，QiWe
-README 已补充路径检查。
+`smoke-release.sh --restart-targets hermes-erhua`，脚本通过。首次预检使用了推测的同级目录，路径断言在重启前阻止执行。按部署手册找到发布目录内的
+`current` 指针后，重新核验并完成重启。QiWe 手册已补上这一步。
 
 恢复检查全部通过后，仅清除本次自己创建的 drain marker：
 
-- 新二花 PID `4044019`，Gateway 新鲜状态 `running`，本机 QiWe health `ok`。
+- 已核验二花新进程的身份、网关心跳和本机 QiWe 健康检查。
 - Profile 插件链接、release
   manifest，以及 adapter/parser/time-resolution 三份源码 SHA-256 与上线前从已审阅提交取得的独立摘要一致。
-- 原 256 条活动和 154 条提醒保留，154 条终态提醒完整内容未变。
+- 逐条核对通过，原有活动和提醒全部保留，已结束的提醒内容完整。
 - 生产安装代码上的纯内存检查通过：5 项明确时间、3 项原始日期锚点、1 项缺少锚点、4 项待确认无计划及回复、1 项完整日期回复。
 - Hermes core 保持 `v2026.9.21`，没有修改凭据、Profile 配置、发送门禁或其他任务。
 - “小满·每日案例日报”仍为 `enabled=false`、`state=paused`；与切换前暂停状态一致。
@@ -145,7 +137,8 @@ pause 操作暂停了该日报，发布没有恢复该任务。本地运维脚�
 
 维护脚本 10 项模拟检查通过。生产事务提交及锁内回读确认仅修改 1 条活动，新增 1 条提醒：开始时间为
 `2026-11-06 19:30`，提醒到期为
-`2026-11-06T11:00:00+00:00`（北京时间 19:00）。提醒当前 pending；原有 154 条提醒完整未变。修复前快照与提交回执仅保存服务器私有目录。
+`2026-11-06T11:00:00+00:00`（北京时间 19:00）。当时新提醒为
+`pending`，原有提醒逐条核对一致。修复前快照与提交回执仅保存服务器私有目录。
 
 根据新进程白名单环境、固定 Profile 环境文件和官方配置加载器核对：提醒启用、非模拟、实际发送启用、目标群在允许范围内。没有修改任何门禁。安装版代码的纯内存检查确认 18:59:59 不到期、19:00 可领取、同一提醒不能重复领取、模拟送达后不再次到期。
 

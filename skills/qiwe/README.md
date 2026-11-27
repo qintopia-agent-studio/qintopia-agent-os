@@ -785,11 +785,12 @@ and unfinished QiWe or cron deliveries. Record the abnormal exit. Take a consist
 backup of the server-local `solitaire` directory only after confirming that no writer,
 send or transaction is still active. Preserve all legacy ledgers.
 
-Resolve the deployed release through `/home/ubuntu/qintopia-agent-os-releases/current`;
-compare its manifest and plugin link before running release-local restart helpers. Do
-not infer a sibling `*-current` path. The general `qintopia-system-services` target does
-not restart Erhua: explicitly use the approved `hermes-erhua` target and verify the new
-PID before clearing the owned drain. For later maintenance, use Core's
+Resolve the deployed release through the `current` pointer in the
+[runner's release directory](../../deploy/runner/README.md#server-requirements). Compare
+its manifest and plugin link before running release-local restart helpers. Do not infer
+a sibling `*-current` path. The general `qintopia-system-services` target does not
+restart Erhua: explicitly use the approved `hermes-erhua` target and verify the new PID
+before clearing the owned drain. For later maintenance, use Core's
 `runtime_status_is_stale` default together with PID identity/liveness checks: a single
 5-second snapshot cutoff is shorter than the normal heartbeat cadence. Distinguish this
 from actively waiting for a fresh drain observation.
