@@ -1,6 +1,11 @@
 registry_version: 1
 domain: workflows
 entries:
+  - id: workflows/fireplace-alarm
+    path: workflows/fireplace-alarm
+    manifest: workflows/fireplace-alarm/workflow.yaml
+    status: draft
+    notes: Review-only fireplace detector subscription and bounded group notifications.
   - id: workflows/resident-welcome
     path: workflows/resident-welcome
     manifest: workflows/resident-welcome/workflow.yaml

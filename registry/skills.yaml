@@ -1,6 +1,11 @@
 registry_version: 1
 domain: skills
 entries:
+  - id: skills/qintopia-tuya-sensors
+    path: skills/qintopia-tuya-sensors
+    manifest: skills/qintopia-tuya-sensors/manifest.yaml
+    status: draft
+    notes: Shared Silaoshi and Erhua query skill and reviewed fireplace notice text.
   - id: skills/qiwe
     path: skills/qiwe
     manifest: skills/qiwe/manifest.yaml

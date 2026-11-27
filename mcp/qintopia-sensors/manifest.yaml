@@ -1,0 +1,25 @@
+id: mcp/qintopia-sensors
+type: mcp
+name: 秦托邦传感器只读接口
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Read registered Tuya devices by area through the existing local socket and Hermes MCP
+  tools.
+source:
+  path: mcp/qintopia-sensors/adapter.py
+  reference: read_environment and list_sensor_areas on the existing sensor service
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: false
+  secrets: true
+validation:
+  commands:
+    - python3 -B -m unittest discover -s mcp/qintopia-sensors/tests -v
+dependencies: []
+next_actions:
+  - Verify both scoped MCP registrations against a reviewed query-service release before
+    cutover.

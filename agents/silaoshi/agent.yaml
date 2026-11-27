@@ -24,6 +24,7 @@ validation:
     - pnpm registry:check
     - pnpm policy:check
 dependencies:
+  - skills/qintopia-tuya-sensors
   - runtime/sidecar
 tags:
   - agent

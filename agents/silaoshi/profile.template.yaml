@@ -27,6 +27,7 @@ prompt_sections:
   - 汇报格式
 
 allowed_capabilities:
+  - skills/qintopia-tuya-sensors
   - internal operations drafts
   - reviewed scheduled operations scripts
   - workflow support for activity and resident operations

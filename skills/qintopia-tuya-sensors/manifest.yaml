@@ -1,0 +1,25 @@
+id: skills/qintopia-tuya-sensors
+type: skill
+name: 秦托邦环境监测与报警
+owner: PatrickLiveCool
+status: draft
+risk_level: medium
+description:
+  Shared environmental readings, alarm interpretation and reviewed evacuation text.
+source:
+  path: skills/qintopia-tuya-sensors/SKILL.md
+  reference: existing qintopia-tuya-sensors Hermes skill used by Silaoshi and Erhua
+  disposition: adopt
+production_boundary:
+  external_sends: false
+  database_writes: false
+  runtime_profile: true
+  secrets: false
+validation:
+  commands:
+    - pnpm registry:check
+    - python3 -B -m unittest discover -s workflows/fireplace-alarm/tests -v
+dependencies:
+  - mcp/qintopia-sensors
+next_actions:
+  - Review the common source before promoting either profile to a release-managed copy.
